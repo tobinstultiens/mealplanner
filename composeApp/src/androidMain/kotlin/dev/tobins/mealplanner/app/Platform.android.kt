@@ -16,3 +16,6 @@ actual fun mondayOf(isoDate: String): String =
 
 actual fun dayLabel(isoDate: String): String =
     java.time.LocalDate.parse(isoDate).format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", java.util.Locale.ENGLISH))
+
+actual fun daysBetween(fromIso: String, toIso: String): Int =
+    (java.time.LocalDate.parse(toIso).toEpochDay() - java.time.LocalDate.parse(fromIso).toEpochDay()).toInt()

@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -39,7 +40,8 @@ fun App(settings: ServerSettings) {
         var mapping by rememberSaveable { mutableStateOf(false) }
         // Null: no editor open. -1: a new recipe. Otherwise the id of the recipe being edited.
         var editing by rememberSaveable { mutableStateOf<Long?>(null) }
-        var tab by rememberSaveable { mutableStateOf(Tab.PLAN) }
+        var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
+        var profileOpen by rememberSaveable { mutableStateOf(false) }
         val recipeId = openRecipeId
         val editingId = editing
         when {
@@ -54,6 +56,10 @@ fun App(settings: ServerSettings) {
                     },
                     onCancel = { editing = null },
                 )
+            }
+            profileOpen -> {
+                BackHandler(enabled = true) { profileOpen = false }
+                ProfileScreen(api, onBack = { profileOpen = false })
             }
             mapping -> {
                 BackHandler(enabled = true) { mapping = false }
@@ -78,9 +84,11 @@ fun App(settings: ServerSettings) {
                 },
             ) { padding ->
                 // Each screen has its own top bar; only the bottom bar's space is reserved here.
-                Box(Modifier.padding(bottom = padding.calculateBottomPadding())) {
+                // consumeWindowInsets stops the inner screens from adding the navigation inset a second time.
+                Box(Modifier.padding(bottom = padding.calculateBottomPadding()).consumeWindowInsets(padding)) {
                     when (tab) {
-                        Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { tab = Tab.PROFILE })
+                        Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenPlan = { tab = Tab.PLAN })
+                        Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { profileOpen = true })
                         Tab.SHOPPING -> ShoppingScreen(api)
                         Tab.RECIPES -> RecipeListScreen(
                             api,
@@ -88,7 +96,7 @@ fun App(settings: ServerSettings) {
                             onOpenMapping = { mapping = true },
                             onNewRecipe = { editing = -1 },
                         )
-                        Tab.PROFILE -> ProfileScreen(api)
+                        Tab.PROGRESS -> ProgressScreen(api, onOpenProfile = { profileOpen = true })
                     }
                 }
             }
@@ -97,8 +105,9 @@ fun App(settings: ServerSettings) {
 }
 
 private enum class Tab(val label: String, val symbol: String) {
+    TODAY("Today", "☀"),
     PLAN("Plan", "▦"),
     SHOPPING("Shopping", "✓"),
     RECIPES("Recipes", "☰"),
-    PROFILE("Profile", "◉"),
+    PROGRESS("Progress", "◉"),
 }

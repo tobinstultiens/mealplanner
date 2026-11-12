@@ -1,11 +1,14 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.Health
+import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodDataset
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RecipeDetail
@@ -17,6 +20,7 @@ import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.api.WeightLog
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -53,6 +57,33 @@ class ApiClient(settings: ServerSettings) {
     suspend fun recipe(id: Long): RecipeDetail = http.get("api/recipes/$id").body()
 
     suspend fun syncCookingSite(): SyncResult = http.post("api/sync/cooking").body()
+
+    suspend fun day(date: String): DayView = http.get("api/days/$date").body()
+
+    suspend fun setMealStatus(weekStart: String, day: Int, slot: MealSlot, status: MealStatus) {
+        http.put("api/plans/$weekStart/meals/$day/${slot.name}/status") {
+            contentType(ContentType.Application.Json)
+            setBody(status)
+        }
+    }
+
+    suspend fun logFood(entry: LogEntry): DayView = http.post("api/log") {
+        contentType(ContentType.Application.Json)
+        setBody(entry)
+    }.body()
+
+    suspend fun deleteLog(id: Long) {
+        http.delete("api/log/$id")
+    }
+
+    suspend fun weights(): WeightLog = http.get("api/weights").body()
+
+    suspend fun setWeight(date: String, kg: Double): WeightLog = http.put("api/weights/$date") {
+        contentType(ContentType.Application.Json)
+        setBody(kg)
+    }.body()
+
+    suspend fun deleteWeight(date: String): WeightLog = http.delete("api/weights/$date").body()
 
     suspend fun shoppingList(weekStart: String): ShoppingList = http.get("api/plans/$weekStart/shopping").body()
 

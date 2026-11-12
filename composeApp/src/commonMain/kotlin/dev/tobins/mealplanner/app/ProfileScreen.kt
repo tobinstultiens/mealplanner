@@ -21,6 +21,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,7 +51,7 @@ private val activityLabels = mapOf(
 /** Body data and goal; the daily calorie and protein targets follow from them. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ProfileScreen(api: ApiClient) {
+fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
     var loaded by remember { mutableStateOf<Load<ProfileState>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
@@ -94,7 +95,12 @@ fun ProfileScreen(api: ApiClient) {
     val problems = draft?.let(TargetCalculator::problems)
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Profile") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Profile and targets") },
+                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         when (val current = loaded) {

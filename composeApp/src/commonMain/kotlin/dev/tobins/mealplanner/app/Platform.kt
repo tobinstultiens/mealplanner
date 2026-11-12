@@ -17,3 +17,6 @@ expect fun mondayOf(isoDate: String): String
 
 /** A short label for a date, e.g. `Mon 16 Nov`. */
 expect fun dayLabel(isoDate: String): String
+
+/** Whole days from [fromIso] to [toIso]; negative when [toIso] is earlier. */
+expect fun daysBetween(fromIso: String, toIso: String): Int

@@ -68,8 +68,9 @@ which is ignored by git.
 
 API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue),
 `/api/mappings` (links from recipe ingredient texts to catalogue ingredients), `/api/profile` (body data
-and daily targets), `/api/pantry` (staples and on-hand items) and `/api/plans/{weekStart}` (week plans:
-`generate`, and per meal `reroll`, `lock` and delete).
+and daily targets), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`,
+and per meal `reroll`, `lock`, `status` and delete), `/api/days/{date}` and `/api/log` (what was eaten)
+and `/api/weights` (weight log, trend and target suggestion).
 
 Ingredient texts are linked without manual work where the match is clear: through the default
 catalogue in `server/src/main/resources/catalogue-seed.csv` (common ingredients, their NEVO food,
