@@ -3,7 +3,9 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.Health
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
@@ -79,6 +81,7 @@ fun Application.module(config: ServerConfig, database: Database) {
     val recipes = RecipeRepository(database, ingredients)
     val profiles = ProfileRepository(database)
     val plans = PlanRepository(database, recipes, profiles)
+    val tracking = TrackingRepository(database, plans, profiles)
     // First start with a dataset configured: import it so nutrition works without a manual step.
     config.nevoFile?.takeIf { it.isFile && foods.dataset().foodCount == 0 }?.let {
         log.info("Imported ${foods.importNevo(it)} foods from ${it.name}")
@@ -171,8 +174,28 @@ fun Application.module(config: ServerConfig, database: Database) {
                     put("/lock") { call.respond(plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
                     delete("/lock") { call.respond(plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
                     delete { call.respond(plans.remove(call.week(), call.day(), call.slot())) }
+                    // Body: "EATEN", "SKIPPED" or "PLANNED".
+                    put("/status") {
+                        call.respond(plans.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))
+                    }
                 }
             }
+
+            // One day: planned meals with their status, extras, and totals against the targets.
+            get("/api/days/{date}") { call.respond(tracking.day(call.parameters["date"]!!)) }
+
+            post("/api/log") { call.respond(HttpStatusCode.Created, tracking.log(call.receive<LogEntry>())) }
+
+            delete("/api/log/{id}") {
+                tracking.deleteLog(call.parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Log id must be a number"))
+                call.respond(HttpStatusCode.NoContent)
+            }
+
+            get("/api/weights") { call.respond(tracking.weights()) }
+
+            put("/api/weights/{date}") { call.respond(tracking.setWeight(call.parameters["date"]!!, call.receive<Double>())) }
+
+            delete("/api/weights/{date}") { call.respond(tracking.deleteWeight(call.parameters["date"]!!)) }
 
             get("/api/pantry") { call.respond(ingredients.pantry()) }
 

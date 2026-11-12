@@ -26,6 +26,7 @@ data class PlannedMeal(
     val leftover: Boolean = false,
     /** Locked meals survive regeneration of the plan. */
     val locked: Boolean = false,
+    val status: MealStatus = MealStatus.PLANNED,
 )
 
 @Serializable

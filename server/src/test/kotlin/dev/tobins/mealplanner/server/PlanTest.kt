@@ -1,7 +1,11 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.DayView
+import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
@@ -13,6 +17,7 @@ import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.api.WeightLog
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -228,5 +233,62 @@ class PlanTest {
         list = http.get("/api/plans/$week/shopping").body()
         assertTrue(list.items.none { it.key == beef.key })
         assertEquals(listOf("Beef raw"), list.staples)
+    }
+
+    @Test
+    fun eatenAndSkippedMealsAndExtrasGiveTheDaysTotals() = testApplication {
+        val http = start().ready()
+        http.post("/api/plans/$week/generate")
+        val tuesday = "2026-11-17"
+
+        var day = http.get("/api/days/$tuesday").body<DayView>()
+        assertEquals(week, day.weekStart)
+        assertEquals(1, day.dayIndex)
+        assertEquals(2000, day.targets?.kcal)
+        val (lunch, dinner) = day.meals
+        assertEquals(0.0, day.eatenKcal)
+        assertEquals(lunch.kcal + dinner.kcal, day.expectedKcal, absoluteTolerance = 1e-9)
+
+        http.put("/api/plans/$week/meals/1/lunch/status") { setBody(MealStatus.EATEN) }
+        http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.SKIPPED) }
+        day = http.post("/api/log") { setBody(LogEntry(date = tuesday, description = "Pizza out", kcal = 900.0, proteinG = 35.0)) }.body()
+        assertEquals(lunch.kcal + 900, day.eatenKcal, absoluteTolerance = 1e-9)
+        assertEquals(lunch.proteinG + 35, day.eatenProteinG, absoluteTolerance = 1e-9)
+        assertEquals(day.eatenKcal, day.expectedKcal, absoluteTolerance = 1e-9, message = "the skipped dinner no longer counts")
+        assertEquals(listOf("Pizza out"), day.extras.map { it.description })
+
+        // Replanning keeps what already happened.
+        val replanned = http.post("/api/plans/$week/generate").body<WeekPlan>().days[1].meals
+        assertEquals(listOf(MealStatus.EATEN, MealStatus.SKIPPED), replanned.map { it.status })
+        assertEquals(listOf(lunch.recipeId, dinner.recipeId), replanned.map { it.recipeId })
+
+        http.delete("/api/log/${day.extras.single().id}")
+        assertEquals(emptyList(), http.get("/api/days/$tuesday").body<DayView>().extras)
+        assertEquals(HttpStatusCode.BadRequest, http.post("/api/log") { setBody(LogEntry(date = tuesday, description = "", kcal = 1.0, proteinG = 1.0)) }.status)
+        assertEquals(HttpStatusCode.BadRequest, http.get("/api/days/tuesday").status)
+    }
+
+    @Test
+    fun weightLogGivesATrendUpdatesTheProfileAndSuggestsATarget() = testApplication {
+        val http = start().ready()
+        assertEquals(WeightLog(emptyList(), null, null), http.get("/api/weights").body<WeightLog>())
+
+        // Four weeks at a steady 90 kg while the goal is 0.5 kg a week.
+        var log = WeightLog(emptyList(), null, null)
+        for (day in 1..28) log = http.put("/api/weights/2026-10-${"%02d".format(day)}") { setBody(90.0) }.body()
+        assertEquals(28, log.entries.size)
+        assertEquals(0.0, log.actualKgPerWeek!!, absoluteTolerance = 1e-9)
+        val suggestion = log.suggestion!!
+        assertEquals(2000, suggestion.currentKcal)
+        assertEquals(1750, suggestion.suggestedKcal, "not losing: 250 kcal less, the largest single step")
+
+        // The newest weighing becomes the profile weight; an older one does not.
+        http.put("/api/weights/2026-10-29") { setBody(88.5) }
+        assertEquals(88.5, http.get("/api/profile").body<ProfileState>().profile?.weightKg)
+        http.put("/api/weights/2026-09-01") { setBody(95.0) }
+        assertEquals(88.5, http.get("/api/profile").body<ProfileState>().profile?.weightKg)
+
+        assertEquals(29, http.delete("/api/weights/2026-09-01").body<WeightLog>().entries.size)
+        assertEquals(HttpStatusCode.BadRequest, http.put("/api/weights/2026-10-30") { setBody(5.0) }.status)
     }
 }

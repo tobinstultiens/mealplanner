@@ -10,6 +10,7 @@ CREATE TABLE planMeal (
     proteinG REAL NOT NULL,
     leftover INTEGER NOT NULL,
     locked INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PLANNED',   -- PLANNED | EATEN | SKIPPED
     PRIMARY KEY (weekStart, day, slot)
 );
 
@@ -17,11 +18,15 @@ selectWeek:
 SELECT * FROM planMeal WHERE weekStart = ? ORDER BY day;
 
 upsertMeal:
-INSERT OR REPLACE INTO planMeal (weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO planMeal (weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- Replanning leaves alone what is locked or already eaten or skipped.
 deleteUnlocked:
-DELETE FROM planMeal WHERE weekStart = ? AND locked = 0;
+DELETE FROM planMeal WHERE weekStart = ? AND locked = 0 AND status = 'PLANNED';
+
+setStatus:
+UPDATE planMeal SET status = ? WHERE weekStart = ? AND day = ? AND slot = ?;
 
 deleteMeal:
 DELETE FROM planMeal WHERE weekStart = ? AND day = ? AND slot = ?;
