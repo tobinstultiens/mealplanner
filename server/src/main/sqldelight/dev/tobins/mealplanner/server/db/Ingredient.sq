@@ -8,7 +8,8 @@ CREATE TABLE ingredient (
     gramsPerMl REAL,                   -- density, for volume lines
     category TEXT,
     pricePerKg REAL,
-    isStaple INTEGER NOT NULL DEFAULT 0
+    isStaple INTEGER NOT NULL DEFAULT 0,
+    negligible INTEGER NOT NULL DEFAULT 0   -- herbs, spices, leaveners: left out of nutrition
 );
 
 -- Remembers which ingredient a recipe line's text means. Keyed by the normalised
@@ -31,15 +32,15 @@ selectIngredientByName:
 SELECT * FROM ingredient WHERE name = ?;
 
 insertIngredient:
-INSERT INTO ingredient (name, nevoCode, gramsPerPiece, gramsPerMl, category, pricePerKg, isStaple)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO ingredient (name, nevoCode, gramsPerPiece, gramsPerMl, category, pricePerKg, isStaple, negligible)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 lastIngredientId:
 SELECT last_insert_rowid();
 
 updateIngredient:
 UPDATE ingredient
-SET name = ?, nevoCode = ?, gramsPerPiece = ?, gramsPerMl = ?, category = ?, pricePerKg = ?, isStaple = ?
+SET name = ?, nevoCode = ?, gramsPerPiece = ?, gramsPerMl = ?, category = ?, pricePerKg = ?, isStaple = ?, negligible = ?
 WHERE id = ?;
 
 selectAliases:
@@ -47,6 +48,9 @@ SELECT * FROM ingredientAlias;
 
 upsertAlias:
 INSERT OR REPLACE INTO ingredientAlias (text, ingredientId) VALUES (?, ?);
+
+insertAliasIfAbsent:
+INSERT OR IGNORE INTO ingredientAlias (text, ingredientId) VALUES (?, ?);
 
 deleteAlias:
 DELETE FROM ingredientAlias WHERE text = ?;

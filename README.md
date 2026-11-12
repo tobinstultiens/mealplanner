@@ -69,4 +69,9 @@ which is ignored by git.
 API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue)
 and `/api/mappings` (links from recipe ingredient texts to catalogue ingredients).
 
+Ingredient texts are linked without manual work where the match is clear: through the default
+catalogue in `server/src/main/resources/catalogue-seed.csv` (common ingredients, their NEVO food,
+typical weights, and negligible items such as spices), and when a text is exactly the name of one
+NEVO food. Only the rest shows up in the app's "Link ingredients" screen.
+
 External data sources (store offers, nutrition data) are described in `docs/data-sources.md`.

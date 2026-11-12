@@ -85,4 +85,14 @@ class NutritionCalculatorTest {
         assertEquals(listOf("rice"), result.uncounted)
         assertEquals(listOf("rice"), NutritionCalculator.perServing(listOf(rice to noFood), 1).uncounted)
     }
+
+    @Test
+    fun negligibleIngredientsAreLeftOutWithoutMakingTheRecipeIncomplete() {
+        val (chickenLine, bay) = lines("400 | g | chicken", "2 | bay leaf |")
+        val bayLeaf = ingredient(food = null).copy(negligible = true)
+        val result = NutritionCalculator.perServing(listOf(chickenLine to chicken, bay to bayLeaf), 1)
+
+        assertEquals(400.0, result.perServing.kcal)
+        assertTrue(result.complete)
+    }
 }

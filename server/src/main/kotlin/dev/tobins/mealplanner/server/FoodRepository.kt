@@ -19,7 +19,7 @@ class FoodRepository(private val db: Database) {
     @Volatile
     private var cache: List<Food>? = null
 
-    private fun all(): List<Food> = cache ?: q.selectAllFoods().executeAsList().map { it.toFood() }.also { cache = it }
+    fun all(): List<Food> = cache ?: q.selectAllFoods().executeAsList().map { it.toFood() }.also { cache = it }
 
     fun dataset(): FoodDataset = FoodDataset(
         foodCount = q.countFoods().executeAsOne().toInt(),

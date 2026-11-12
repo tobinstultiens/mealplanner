@@ -93,7 +93,7 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
                 item {
                     Text(
                         if (current.value.isEmpty()) "Every ingredient with an amount is linked."
-                        else "Link each ingredient to a food so recipes get nutrition values. Most-used first.",
+                        else "Ingredients that match a food exactly are linked automatically. These need your decision; most-used first.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -148,11 +148,17 @@ private fun UnmappedCard(unmapped: UnmappedText, onPick: (Food?) -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                unmapped.suggestedFoods.take(3).forEach { food ->
-                    AssistChip(onClick = { onPick(food) }, label = { Text(food.nameEn) })
+            val linked = unmapped.linkedIngredient
+            if (linked != null) {
+                Text("Linked to ${linked.name}, but its weight per piece is unknown.", style = MaterialTheme.typography.bodyMedium)
+                AssistChip(onClick = { onPick(linked.food) }, label = { Text("Set weight per piece") })
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    unmapped.suggestedFoods.take(3).forEach { food ->
+                        AssistChip(onClick = { onPick(food) }, label = { Text(food.nameEn) })
+                    }
+                    AssistChip(onClick = { onPick(null) }, label = { Text("Search…") })
                 }
-                AssistChip(onClick = { onPick(null) }, label = { Text("Search…") })
             }
         }
     }
@@ -188,7 +194,10 @@ private fun LinkDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val food = selected
-                if (food != null) {
+                val linked = unmapped.linkedIngredient
+                if (linked != null) {
+                    Text("Linked to ${linked.name}.")
+                } else if (food != null) {
                     Text(food.summary())
                     TextButton(onClick = { selected = null }) { Text("Choose another food") }
                 } else {
@@ -221,11 +230,15 @@ private fun LinkDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = selected != null && (gramsText.isBlank() || grams != null),
+                enabled = if (unmapped.linkedIngredient != null) grams != null else selected != null && (gramsText.isBlank() || grams != null),
                 onClick = {
-                    onConfirm(MappingRequest(text = unmapped.text, nevoCode = selected!!.nevoCode, gramsPerPiece = grams))
+                    val linked = unmapped.linkedIngredient
+                    onConfirm(
+                        if (linked != null) MappingRequest(text = unmapped.text, ingredientId = linked.id, gramsPerPiece = grams)
+                        else MappingRequest(text = unmapped.text, nevoCode = selected!!.nevoCode, gramsPerPiece = grams),
+                    )
                 },
-            ) { Text("Link") }
+            ) { Text(if (unmapped.linkedIngredient != null) "Save" else "Link") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

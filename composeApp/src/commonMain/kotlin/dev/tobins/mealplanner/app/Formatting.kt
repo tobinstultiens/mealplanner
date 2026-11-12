@@ -22,8 +22,8 @@ fun IngredientLine.displayText(): String =
         when {
             quantity.isEmpty() -> item
             item.isEmpty() -> quantity
-            // An unknown unit is the ingredient itself ("onion"), so the item is a qualifier.
-            baseAmount == null && unit != null && unit != "clove" && unit != "piece" -> "$quantity, $item"
+            // The unit is the ingredient itself ("onion"), so the item is a qualifier.
+            unitIsTheIngredient -> "$quantity, $item"
             else -> "$quantity $item"
         }
     }

@@ -75,6 +75,7 @@ fun Application.module(config: ServerConfig, database: Database) {
         log.info("Imported ${foods.importNevo(it)} foods from ${it.name}")
     }
 
+    ingredients.applySeed().takeIf { it > 0 }?.let { log.info("Added $it default ingredients to the catalogue") }
     install(CallLogging)
     install(ContentNegotiation) { json() }
     install(StatusPages) {
@@ -133,7 +134,10 @@ fun Application.module(config: ServerConfig, database: Database) {
             }
 
             // Recipe line texts that still need an ingredient, with suggestions.
-            get("/api/mappings/unmapped") { call.respond(ingredients.unmapped()) }
+            get("/api/mappings/unmapped") {
+                val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 1000) ?: 50
+                call.respond(ingredients.unmapped(limit))
+            }
 
             put("/api/mappings") { call.respond(ingredients.map(call.receive<MappingRequest>())) }
 
@@ -161,7 +165,11 @@ fun Application.module(config: ServerConfig, database: Database) {
                         mapOf("error" to "NEVO_CSV_PATH is not set or the file does not exist"),
                     )
                 } else {
-                    withContext(Dispatchers.IO) { foods.importNevo(file) }
+                    withContext(Dispatchers.IO) {
+                        foods.importNevo(file)
+                        ingredients.applySeed()
+                        ingredients.autoLink()
+                    }
                     call.respond(foods.dataset())
                 }
             }
@@ -175,7 +183,11 @@ fun Application.module(config: ServerConfig, database: Database) {
                         mapOf("error" to "COOKING_REPO_PATH is not set or has no content/ folder"),
                     )
                 } else {
-                    call.respond(withContext(Dispatchers.IO) { recipes.syncCookingSite(parsed) })
+                    call.respond(
+                        withContext(Dispatchers.IO) {
+                            recipes.syncCookingSite(parsed).let { it.copy(autoLinked = ingredients.autoLink()) }
+                        },
+                    )
                 }
             }
         }

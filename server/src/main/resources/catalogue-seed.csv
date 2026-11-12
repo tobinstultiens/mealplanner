@@ -1,0 +1,147 @@
+# Default ingredient catalogue: common cooking ingredients and the NEVO food each one means.
+# Applied when NEVO data is present; never overwrites ingredients or links that already exist.
+#
+# name | NEVO code | grams per piece | grams per ml | aliases (;-separated, English and Dutch)
+#
+# A row without a NEVO code is a negligible ingredient: herbs, spices, leaveners and the like,
+# used in amounts that add next to nothing. They are left out of the nutrition without
+# marking a recipe incomplete.
+#
+# Weights per piece and densities are typical kitchen values, not NEVO data. They can be
+# corrected per ingredient in the app. Aliases are matched against a recipe line's core
+# text (the part before a comma, without brackets), case-insensitively.
+Sugar|377||0.85|sugar;white sugar;granulated sugar;caster sugar;suiker;kristalsuiker
+Brown sugar|374||0.9|brown sugar;light brown sugar;dark brown sugar;bruine suiker;basterdsuiker
+Powdered sugar|5089||0.5|powdered sugar;icing sugar;poedersuiker
+Salt|841||1.2|salt;kosher salt;sea salt;table salt;fine salt;coarse salt;zout
+Water|1885||1|water;warm water;cold water;hot water;lukewarm water;boiling water
+Egg|83|50||egg;eggs;large egg;large eggs;ei;eieren
+Egg yolk|85|17||yolk;egg yolk;egg yolks;eidooier
+Olive oil|601||0.92|olive oil;extra-virgin olive oil;extra virgin olive oil;olijfolie
+Vegetable oil|5041||0.92|vegetable oil;oil;neutral oil;canola oil;cooking oil;olie
+Sunflower oil|317||0.92|sunflower oil;zonnebloemolie
+Sesame oil|3376||0.92|sesame oil;toasted sesame oil;pure sesame oil;sesamolie
+Butter|310||0.95|butter;unsalted butter;boter;roomboter
+Salted butter|879||0.95|salted butter
+Flour|220||0.53|flour;all-purpose flour;all purpose flour;plain flour;wheat flour;bread flour;bloem;tarwebloem
+Cornstarch|215||0.54|cornstarch;corn starch;cornflour;maizena
+Black pepper|823||0.45|black pepper;pepper;ground black pepper;crushed black pepper;freshly ground black pepper;white pepper;peper;zwarte peper
+Paprika powder|1229||0.45|paprika powder;smoked paprika;sweet paprika;paprikapoeder
+Cumin|827||0.45|cumin;ground cumin;cumin seeds;cumin seed;komijn
+Dried oregano|1228||0.2|oregano;dried oregano
+Chili powder|1221||0.5|chili powder;chilli powder;chilipoeder
+Cayenne pepper|1225||0.45|cayenne;cayenne pepper
+Cinnamon|826||0.5|cinnamon;ground cinnamon;kaneel
+Curry powder|1223||0.45|curry powder;kerriepoeder
+Ginger|832|||ginger;fresh ginger;grated fresh ginger;grated ginger;gember
+Garlic|830|4||garlic;garlic clove;garlic cloves;minced garlic;knoflook
+Onion|63|110||onion;onions;yellow onion;white onion;ui;uien
+Red onion|5459|100||red onion;rode ui
+Spring onion|2737|15||spring onion;spring onions;green onion;green onions;scallion;scallions;bosui;lente-ui
+Leek|562|150||leek;prei
+Tomato|2734|120||tomato;tomatoes;tomaat;tomaten
+Cucumber|2739|350||cucumber;komkommer
+Bell pepper|2742|160||bell pepper;bell peppers;sweet pepper
+Red bell pepper|884|160||red bell pepper;red pepper;rode paprika
+Chili pepper|2524|15||chili pepper;chilli pepper;chili;red chili;chilipeper;rode peper
+Carrot|71|70||carrot;carrots;wortel;wortels
+Mushrooms|19|||mushroom;mushrooms;champignons
+Potato|1|150||potato;potatoes;aardappel;aardappelen
+Avocado|689|150||avocado
+Mango|692|300||mango
+Orange|171|150||orange;sinaasappel
+Lime|691|65||lime;limes;limoen
+Lemon juice|1127||1.03|lemon juice;citroensap
+Vinegar|2615||1|vinegar;white vinegar;rice vinegar;rice wine vinegar;apple cider vinegar;white wine vinegar;red wine vinegar;azijn
+Soy sauce|5470||1.15|soy sauce;light soy sauce;dark soy sauce;shoyu;sojasaus
+Oyster sauce|5153||1.15|oyster sauce;oestersaus
+Tomato ketchup|462||1.15|ketchup;tomato ketchup
+Sambal|1232||1.1|sambal;sambal oelek
+Mayonnaise|451||0.95|mayonnaise;mayo;mayonaise
+Mustard|824||1.05|mustard;dijon mustard;mosterd
+Honey|443||1.4|honey;honing
+Peanut butter|455||1.1|peanut butter;pindakaas
+Milk|286||1.03|milk;melk;semi-skimmed milk;halfvolle melk
+Whole milk|279||1.03|whole milk;volle melk
+Whipping cream|299||1|whipping cream;heavy cream;cream;slagroom
+Creme fraiche|1808||1|creme fraiche;crème fraîche
+Full-fat yoghurt|278||1.03|yoghurt;yogurt;plain yogurt;plain yoghurt
+Parmesan|718|||parmesan;parmesan cheese;parmigiano reggiano
+Mozzarella|1955|||mozzarella;fresh mozzarella
+Cheddar|725|||cheddar;cheddar cheese
+White rice|5||0.85|rice;white rice;basmati rice;jasmine rice;sushi rice;arborio rice;risotto rice;rijst
+Pasta|4|||pasta;spaghetti;penne
+Wheat tortilla|2359|60||tortilla;tortillas;flour tortilla;flour tortillas;wrap;wraps
+Bread crumbs|1013||0.45|bread crumbs;breadcrumbs;paneermeel
+Dried yeast|1025||0.6|instant yeast;dry yeast;dried yeast;active dry yeast;gist
+Chicken fillet|1634|170||chicken breast;chicken breasts;chicken fillet;kipfilet
+Minced beef|1405|||ground beef;minced beef;beef mince;rundergehakt
+Pork shoulder|1430|||pork shoulder;pork butt
+Bacon|1432|15||bacon
+Lard|314||0.92|lard;reuzel
+Stock cube|429|10||stock cube;bouillon cube;bouillonblokje;maggiblok
+Coconut milk|2290||1|coconut milk;kokosmelk
+Sesame seeds|838||0.6|sesame seeds;sesamzaad
+Fresh parsley|128|||parsley;fresh parsley;peterselie
+Fresh basil|2177|||basil;fresh basil;basilicum
+Black beans (canned)|5176|240||black beans
+Kidney beans (canned)|3184|240||kidney beans;kidneybonen
+Sweetcorn (canned)|2900|140||sweetcorn;corn;mais
+Chicken drumstick|2090|110||chicken drumstick;chicken drumsticks;drumstick;drumsticks
+Minced pork|1421|||ground pork;minced pork;pork mince;varkensgehakt
+Beef steak|1400|200||steak;rump steak;biefstuk
+Pork spareribs|1427|||spareribs;spare ribs;pork ribs;ribs
+Salmon|1587|150||salmon;salmon fillet;zalm;zalmfilet
+Smoked salmon|1096|||smoked salmon;gerookte zalm
+Tofu|5519|||tofu;firm tofu
+Tomato puree|141||1.1|tomato paste;tomato puree;tomatenpuree
+Canned tomatoes|2293|400||whole peeled tomatoes;quality whole peeled tomatoes;canned tomatoes;crushed tomatoes;diced tomatoes;tomatenblokjes
+Stock|1528||1|stock;broth;chicken stock;chicken broth;beef stock;beef broth;vegetable stock;vegetable broth;bouillon;kippenbouillon
+Gouda cheese|513|||cheese;grated cheese;shredded cheese;gouda;kaas;geraspte kaas
+Boursin|728|150||boursin
+Low-fat quark|305||1.03|quark;low-fat quark;kwark;magere kwark
+Lemon|158|100||lemon;lemons;citroen
+Red wine|422||1|red wine;rode wijn
+White wine|423||1|white wine;dry white wine;witte wijn
+Lettuce|2346|||lettuce;sla
+Spinach|51|||spinach;spinazie
+Broccoli|921|300||broccoli
+Courgette|922|250||courgette;zucchini
+Pumpkin|682|||pumpkin;butternut squash;pompoen;flespompoen
+White asparagus|9|||asparagus;white asparagus;asperges
+Banana|151|120||banana;banaan
+Strawberries|148|||strawberries;aardbeien
+Dark chocolate|432|||dark chocolate;pure chocolade
+Cocoa powder|430||0.45|cocoa powder;cocoa;cacao
+Nori|3227|3||nori
+Miso|871||1.1|miso;miso paste;white miso
+Sweet soy sauce|1215||1.2|ketjap manis;sweet soy sauce;ketjap
+Tortilla chips|1937|||tortilla chips;nacho chips
+Olives|3336|||olives;olijven
+Capers|2402|||capers;kappertjes
+Gherkin|131|30||gherkin;gherkins;pickle;pickles;augurk;augurken
+Bay leaf||||bay leaf;bay leaves;laurierblad;laurierblaadjes
+Garlic powder||||garlic powder;knoflookpoeder
+Onion powder||||onion powder;uienpoeder
+Baking powder||||baking powder;bakpoeder
+Baking soda||||baking soda;bicarbonate of soda;baksoda
+Turmeric||||turmeric;ground turmeric;kurkuma
+Vanilla extract||||vanilla extract;vanilla;vanille-extract
+Citrus zest||||lemon zest;lime zest;orange zest
+Cinnamon stick||||cinnamon stick;cinnamon sticks;kaneelstokje
+Thyme||||thyme;fresh thyme;dried thyme;tijm
+Rosemary||||rosemary;fresh rosemary;dried rosemary;rozemarijn
+Coriander||||coriander;ground coriander;coriander seeds;cilantro;fresh cilantro;fresh coriander;koriander
+Cloves (spice)||||cloves;whole cloves;kruidnagel
+Allspice||||allspice;allspice berry;allspice berries;piment
+Nutmeg||||nutmeg;nootmuskaat
+Cardamom||||cardamom;green cardamom pod;cardamom pods;kardemom
+Star anise||||star anise;steranijs
+Garam masala||||garam masala
+Chili flakes||||chili flakes;chilli flakes;red pepper flakes;crushed red pepper;chilivlokken
+Mustard powder||||mustard powder;ground mustard;dry mustard
+Fennel seeds||||fennel seeds;venkelzaad
+Five-spice powder||||five spice;five-spice powder;chinese five spice
+Sichuan peppercorns||||sichuan peppercorns;sichuan pepper
+MSG||||msg;ve-tsin
+Dashi||||dashi

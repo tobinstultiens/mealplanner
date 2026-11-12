@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.UnmappedText
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -32,9 +33,12 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CatalogueTest {
+    // Codes 63 and 5470 are also in the default catalogue (Onion, Soy sauce); 10, 20 and 21 are not.
     private val nevo = listOf(
         "\"NEVO-versie/NEVO-version\"|\"Voedingsmiddelgroep\"|\"Food group\"|\"NEVO-code\"|\"Voedingsmiddelnaam/Dutch food name\"|\"Engelse naam/Food name\"|\"Synoniem\"|\"Hoeveelheid/Quantity\"|\"ENERCC (kcal)\"|\"PROT (g)\"|\"FAT (g)\"|\"FASAT (g)\"|\"CHO (g)\"|\"SUGAR (g)\"|\"FIBT (g)\"|\"NA (mg)\"",
         "NEVO-Online 2025 9.0|Vlees|Meat|10|Rundvlees rauw|Beef raw||per 100g|120|20|4|2|0|0|0|50",
+        "NEVO-Online 2025 9.0|Vlees|Meat|20|Kip m vel rauw|Chicken w skin raw||per 100g|200|18|14|4|0|0|0|70",
+        "NEVO-Online 2025 9.0|Vlees|Meat|21|Kipfilet rauw|Chicken fillet raw||per 100g|110|23|2|1|0|0|0|50",
         "NEVO-Online 2025 9.0|Groente|Vegetables|63|Ui rauw|Onions raw||per 100g|40|1|0|0|8|6|2|3",
         "NEVO-Online 2025 9.0|Sauzen|Sauces|5470|Saus soja-|Soy sauce||per 100g|40|5|0|0|5|1|0|5000",
     ).joinToString("\r\n")
@@ -52,11 +56,23 @@ class CatalogueTest {
         ```
     """.trimIndent()
 
-    private val stew = "```ingredients\nservings: 4\n800 | g | Beef,  thinly sliced\n```"
+    private val stew = "```ingredients\nservings: 4\n800 | g | Beef (chuck),  cubed\n2 | onions | \n2 | bay leaf |\n1 | tsp | Finely chopped ONION\n```"
+
+    private val chicken = """
+        ---
+        title: Chicken
+        ---
+        ```ingredients
+        servings: 1
+        2 | chicken thigh | (boneless)
+        300 | g | chicken thigh, diced
+        1 | can | mystery beans
+        ```
+    """.trimIndent()
 
     private fun ApplicationTestBuilder.start(): HttpClient {
         val repo = createTempDirectory("cooking").toFile()
-        for ((path, text) in listOf("rice-bowls/gyudon.md" to gyudon, "recipes/stew.md" to stew)) {
+        for ((path, text) in listOf("rice-bowls/gyudon.md" to gyudon, "recipes/stew.md" to stew, "recipes/chicken.md" to chicken)) {
             File(repo, "content/$path").apply { parentFile.mkdirs() }.writeText(text)
         }
         val config = ServerConfig(
@@ -76,62 +92,93 @@ class CatalogueTest {
         }
     }
 
-    private suspend fun HttpClient.gyudon(): RecipeDetail {
-        val id = get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Gyudon" }.id
+    private suspend fun HttpClient.recipe(title: String): RecipeDetail {
+        val id = get("/api/recipes").body<List<RecipeSummary>>().first { it.title == title }.id
         return get("/api/recipes/$id").body()
     }
 
     @Test
-    fun unmappedTextsAreListedMostUsedFirstWithSuggestions() = testApplication {
+    fun exactMatchesAreLinkedWithoutAnyManualStep() = testApplication {
+        val http = start()
+        val sync = http.post("/api/sync/cooking").body<SyncResult>()
+        assertEquals(1, sync.autoLinked, "beef is exactly the NEVO food 'Beef raw'; onion and soy sauce come from the default catalogue")
+
+        val gyudon = http.recipe("Gyudon")
+        val nutrition = gyudon.summary.nutrition!!
+        assertTrue(nutrition.complete)
+        assertFalse(nutrition.approximate)
+        assertEquals(listOf("Beef raw", "Onion", "Soy sauce", null), gyudon.ingredients.map { it.ingredientName })
+        // 400 g beef, one 110 g onion, 15 ml soy sauce at 1.15 g/ml
+        assertEquals(listOf(400.0, 110.0, 17.25, null), gyudon.ingredients.map { it.grams })
+        assertEquals((480 + 44 + 6.9) / 2, nutrition.perServing.kcal!!, absoluteTolerance = 1e-9)
+
+        // Variants of the same ingredient resolve too: other notes, capitals, brackets, plural.
+        val stew = http.recipe("Stew")
+        assertEquals(listOf("Beef raw", "Onion", "Bay leaf", "Onion"), stew.ingredients.map { it.ingredientName })
+        assertEquals(listOf(false, false, true, false), stew.ingredients.map { it.negligible })
+        assertTrue(stew.summary.nutrition!!.complete, "the bay leaf is negligible, not missing")
+
+        assertEquals(0, http.post("/api/sync/cooking").body<SyncResult>().autoLinked, "nothing new to link")
+    }
+
+    @Test
+    fun onlyUnclearTextsAreLeftForTheUser() = testApplication {
         val http = start()
         http.post("/api/sync/cooking")
 
         val unmapped = http.get("/api/mappings/unmapped").body<List<UnmappedText>>()
-        assertEquals(
-            listOf("beef, thinly sliced", "light soy sauce", "onion, large"),
-            unmapped.map { it.text },
-            "the line without an amount is not listed; beef is used by two recipes",
-        )
-        val (beef, soy, onion) = unmapped
-        assertEquals(2, beef.recipeCount)
-        assertEquals(listOf(10), beef.suggestedFoods.map { it.nevoCode })
-        assertEquals(listOf(5470), soy.suggestedFoods.map { it.nevoCode }, "falls back from 'light soy sauce' to 'soy sauce'")
-        assertTrue(onion.countedInPieces)
-        assertFalse(beef.countedInPieces)
+        assertEquals(listOf("chicken thigh", "mystery beans"), unmapped.map { it.text })
+        val (thigh, beans) = unmapped
+        assertEquals(listOf(20, 21), thigh.suggestedFoods.map { it.nevoCode }, "two chicken foods: ambiguous, so suggested, not linked")
+        assertTrue(thigh.countedInPieces)
+        assertNull(thigh.linkedIngredient)
+        assertEquals(emptyList(), beans.suggestedFoods)
+        assertTrue(beans.countedInPieces, "a can is a container, so the ingredient is the item")
     }
 
     @Test
-    fun mappingLinesGivesNutritionPerServing() = testApplication {
+    fun oneManualLinkCoversAllVariantsAndThenAsksForTheMissingWeight() = testApplication {
         val http = start()
         http.post("/api/sync/cooking")
 
-        val before = http.gyudon().summary.nutrition!!
-        assertFalse(before.complete)
-        assertEquals(3, before.uncounted.size)
+        val thigh = http.put("/api/mappings") { setBody(MappingRequest("chicken thigh", nevoCode = 20, name = "Chicken thigh")) }
+            .body<Ingredient>()
+        var recipe = http.recipe("Chicken")
+        assertEquals(listOf("Chicken thigh", "Chicken thigh", null), recipe.ingredients.map { it.ingredientName })
+        assertEquals(listOf(null, 300.0, null), recipe.ingredients.map { it.grams }, "the line counted in pieces has no weight yet")
 
-        val beef = http.put("/api/mappings") { setBody(MappingRequest("beef, thinly sliced", nevoCode = 10)) }.body<Ingredient>()
-        assertEquals("Beef raw", beef.name)
-        http.put("/api/mappings") { setBody(MappingRequest("onion, large", nevoCode = 63, name = "Onion", gramsPerPiece = 150.0)) }
-        http.put("/api/mappings") { setBody(MappingRequest("light soy sauce", nevoCode = 5470, gramsPerMl = 1.2)) }
+        // Linked, but the weight per piece is still needed.
+        val pending = http.get("/api/mappings/unmapped").body<List<UnmappedText>>().first { it.text == "chicken thigh" }
+        assertEquals(thigh.id, pending.linkedIngredient?.id)
 
-        val detail = http.gyudon()
-        val nutrition = detail.summary.nutrition!!
-        assertTrue(nutrition.complete)
-        assertFalse(nutrition.approximate)
-        // (400 g beef * 1.2 + 150 g onion * 0.4 + 18 g soy sauce * 0.4) / 2 servings
-        assertEquals((480 + 60 + 7.2) / 2, nutrition.perServing.kcal!!, absoluteTolerance = 1e-9)
-        assertEquals((80 + 1.5 + 0.9) / 2, nutrition.perServing.proteinG!!, absoluteTolerance = 1e-9)
-        assertEquals(listOf("Beef raw", "Onion", "Soy sauce", null), detail.ingredients.map { it.ingredientName })
-        assertEquals(listOf(400.0, 150.0, 18.0, null), detail.ingredients.map { it.grams })
+        http.put("/api/mappings") { setBody(MappingRequest("chicken thigh", ingredientId = thigh.id, gramsPerPiece = 120.0)) }
+        recipe = http.recipe("Chicken")
+        assertEquals(listOf(240.0, 300.0, null), recipe.ingredients.map { it.grams })
+        assertEquals(listOf("mystery beans"), http.get("/api/mappings/unmapped").body<List<UnmappedText>>().map { it.text })
 
-        assertEquals(emptyList(), http.get("/api/mappings/unmapped").body<List<UnmappedText>>(), "the stew's beef line is covered too")
-
-        // Mappings are kept when the cooking repo is synced again.
+        // Links are kept when the cooking repo is synced again.
         http.post("/api/sync/cooking")
-        assertTrue(http.gyudon().summary.nutrition!!.complete)
+        assertEquals(240.0, http.recipe("Chicken").ingredients[0].grams)
 
-        http.delete("/api/mappings?text=onion, large")
-        assertEquals(listOf("onion, large"), http.gyudon().summary.nutrition!!.uncounted)
+        // Removing the link is not enough to unlink here: the ingredient is itself named "Chicken thigh".
+        http.delete("/api/mappings?text=chicken thigh")
+        assertEquals("Chicken thigh", http.recipe("Chicken").ingredients[0].ingredientName)
+
+        // A link whose ingredient has another name does go away.
+        http.put("/api/mappings") { setBody(MappingRequest("mystery beans", ingredientId = thigh.id)) }
+        assertEquals(emptyList(), http.get("/api/mappings/unmapped").body<List<UnmappedText>>())
+        http.delete("/api/mappings?text=mystery beans")
+        assertEquals(listOf("mystery beans"), http.get("/api/mappings/unmapped").body<List<UnmappedText>>().map { it.text })
+    }
+
+    @Test
+    fun anExactLinkForAFullTextWinsOverTheGeneralOne() = testApplication {
+        val http = start()
+        http.post("/api/sync/cooking")
+        http.put("/api/mappings") { setBody(MappingRequest("beef, thinly sliced", nevoCode = 21, name = "Not beef")) }
+
+        assertEquals("Not beef", http.recipe("Gyudon").ingredients[0].ingredientName)
+        assertEquals("Beef raw", http.recipe("Stew").ingredients[0].ingredientName)
     }
 
     @Test
@@ -142,7 +189,20 @@ class CatalogueTest {
 
         assertEquals(first.id, second.id)
         assertEquals(200.0, second.gramsPerPiece)
-        assertEquals(1, http.get("/api/ingredients").body<List<Ingredient>>().size)
+    }
+
+    @Test
+    fun theDefaultCatalogueIsAddedOnceAndOnlyForFoodsThatExist() = testApplication {
+        val http = start()
+        val catalogue = http.get("/api/ingredients").body<List<Ingredient>>()
+        assertEquals(
+            listOf("Onion", "Soy sauce"),
+            catalogue.filter { it.food != null }.map { it.name },
+            "the other default ingredients point at foods this NEVO sample lacks",
+        )
+        val bayLeaf = catalogue.first { it.name == "Bay leaf" }
+        assertTrue(bayLeaf.negligible)
+        assertNull(bayLeaf.food)
     }
 
     @Test

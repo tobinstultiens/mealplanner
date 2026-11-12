@@ -34,7 +34,7 @@ object NutritionCalculator {
 
     /**
      * Nutrition of one of [servings] servings. Lines without an amount ("salt to
-     * taste") are ignored; lines with an amount that cannot be counted (unmapped,
+     * taste") and negligible ingredients are ignored; lines with an amount that cannot be counted (unmapped,
      * no linked food, or no weight per piece) make the result incomplete.
      */
     fun perServing(lines: List<Pair<IngredientLine, Ingredient?>>, servings: Int): RecipeNutrition {
@@ -44,7 +44,7 @@ object NutritionCalculator {
         val uncounted = mutableListOf<String>()
 
         for ((line, ingredient) in lines) {
-            if (line.amount == null) continue
+            if (line.amount == null || ingredient?.negligible == true) continue
             val food = ingredient?.food
             val quantity = ingredient?.let { quantityOf(line, it) }
             if (food == null || quantity == null) {

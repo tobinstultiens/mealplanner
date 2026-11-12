@@ -238,7 +238,12 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                                 Text("•  ${line.displayText()}")
                                 mapped.ingredientName?.let { name ->
                                     Text(
-                                        "     $name" + (mapped.grams?.let { " · ${formatGrams(it)}" } ?: " · weight unknown"),
+                                        "     $name" + when {
+                                            mapped.negligible -> " · not counted (negligible)"
+                                            mapped.grams != null -> " · ${formatGrams(mapped.grams)}"
+                                            mapped.line.amount == null -> ""
+                                            else -> " · weight unknown"
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )

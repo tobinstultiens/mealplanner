@@ -48,7 +48,13 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
             summary = row.toSummary(nutritionOf(row, lines, resolve)),
             ingredients = lines.map { line ->
                 val ingredient = resolve(line)
-                MappedLine(line, ingredient?.id, ingredient?.name, ingredient?.let { NutritionCalculator.quantityOf(line, it)?.grams })
+                MappedLine(
+                    line = line,
+                    ingredientId = ingredient?.id,
+                    ingredientName = ingredient?.name,
+                    grams = ingredient?.takeUnless { it.negligible }?.let { NutritionCalculator.quantityOf(line, it)?.grams },
+                    negligible = ingredient?.negligible == true,
+                )
             },
             instructions = row.instructions,
             problems = Json.decodeFromString(row.problemsJson),
@@ -132,7 +138,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
             }
         }
         val problems = parsed.map { it.first }.filter { it.problems.isNotEmpty() }.associate { it.path to it.problems }
-        return SyncResult(added, updated, unchanged, removed, problems)
+        return SyncResult(added, updated, unchanged, removed, problems = problems)
     }
 
     private fun replaceIngredients(recipeId: Long, lines: List<IngredientLine>) {

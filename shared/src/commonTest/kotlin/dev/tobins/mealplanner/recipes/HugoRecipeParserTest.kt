@@ -119,4 +119,17 @@ class HugoRecipeParserTest {
     fun pageBundleTitleFallsBackToFolderName() {
         assertEquals("Ala mario", parser.parse("recipes/ala_mario/index.md", "No front matter").title)
     }
+
+    @Test
+    fun containerUnitsAreNotTheIngredient() {
+        val text = "```ingredients\n1 | can | black beans, drained (16 oz)\n2 | slice | provolone\n1 | bay leaf |\n3 | Onion | Large (sweet)\n```"
+        val lines = parser.parse("x/y.md", text).ingredients
+
+        assertEquals(listOf("black beans, drained (16 oz)", "provolone", "bay leaf", "Onion, Large (sweet)"), lines.map { it.ingredientText })
+        assertEquals(
+            listOf("black beans", "provolone", "bay leaf", "onion"),
+            lines.map { IngredientLine.coreText(it.ingredientText) },
+        )
+        assertEquals(listOf(false, false, true, true), lines.map { it.unitIsTheIngredient })
+    }
 }

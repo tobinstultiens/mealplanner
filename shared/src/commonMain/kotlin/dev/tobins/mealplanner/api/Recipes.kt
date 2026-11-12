@@ -38,6 +38,8 @@ data class SyncResult(
     val updated: Int,
     val unchanged: Int,
     val removed: Int,
+    /** Ingredient texts linked automatically after this sync because they match a food name exactly. */
+    val autoLinked: Int = 0,
     /** Parse problems by recipe path. */
     val problems: Map<String, List<String>>,
 )

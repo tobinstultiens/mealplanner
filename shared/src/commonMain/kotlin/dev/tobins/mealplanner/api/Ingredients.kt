@@ -18,6 +18,8 @@ data class Ingredient(
     val pricePerKg: Double?,
     /** Always at home: never on the shopping list. */
     val isStaple: Boolean,
+    /** Used in amounts that add next to nothing (herbs, spices, leaveners): left out of nutrition. */
+    val negligible: Boolean = false,
 )
 
 /** Body for creating or replacing an ingredient. */
@@ -30,9 +32,14 @@ data class IngredientInput(
     val category: String? = null,
     val pricePerKg: Double? = null,
     val isStaple: Boolean = false,
+    val negligible: Boolean = false,
 )
 
-/** A recipe line text that no ingredient is linked to yet. */
+/**
+ * A recipe line text that needs attention: either no ingredient is linked to it, or
+ * one is ([linkedIngredient]) but the recipes count it in pieces and its weight per
+ * piece is unknown.
+ */
 @Serializable
 data class UnmappedText(
     /** The line's ingredient text in the normalised form aliases are keyed by (lower case, single spaces). */
@@ -42,6 +49,8 @@ data class UnmappedText(
     val exampleRecipe: String,
     /** True when a line with this text is counted in pieces, so a weight per piece will be needed. */
     val countedInPieces: Boolean,
+    /** Set when the text is already linked and only a weight per piece is missing. */
+    val linkedIngredient: Ingredient? = null,
     val suggestedIngredients: List<Ingredient>,
     val suggestedFoods: List<Food>,
 )
@@ -69,6 +78,8 @@ data class MappedLine(
     val ingredientName: String?,
     /** Weight used for nutrition; null when the line is unmapped or cannot be converted. */
     val grams: Double?,
+    /** True when the ingredient is deliberately left out of the nutrition. */
+    val negligible: Boolean = false,
 )
 
 /** Nutrition of one serving, with how far it can be trusted. */
