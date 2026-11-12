@@ -5,6 +5,8 @@ import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -221,6 +223,19 @@ fun Application.module(config: ServerConfig, database: Database) {
                     }
                     call.respond(foods.dataset())
                 }
+            }
+
+            post("/api/recipes") { call.respond(HttpStatusCode.Created, recipes.create(call.receive<RecipeInput>())) }
+
+            route("/api/recipes/{id}") {
+                fun io.ktor.server.routing.RoutingCall.id() =
+                    parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Recipe id must be a number")
+                put { call.respond(recipes.update(call.id(), call.receive<RecipeInput>())) }
+                delete {
+                    recipes.delete(call.id())
+                    call.respond(HttpStatusCode.NoContent)
+                }
+                put("/settings") { call.respond(recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }
             }
 
             // Re-reads the cooking repo checkout and brings the stored recipes in line with it.

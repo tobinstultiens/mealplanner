@@ -13,6 +13,7 @@ CREATE TABLE recipe (
     hasIngredientsBlock INTEGER NOT NULL,
     problemsJson TEXT NOT NULL,
     kind TEXT NOT NULL,                -- MEAL | COMPONENT. App-owned: set on insert, kept on sync.
+    mealSlotsJson TEXT,                -- App-owned: slots this recipe suits; NULL means the section's default
     removedAt TEXT                     -- set when the file disappears from the cooking repo
 );
 
@@ -51,6 +52,15 @@ UPDATE recipe
 SET contentHash = ?, section = ?, title = ?, tagsJson = ?, servings = ?, instructions = ?,
     hasIngredientsBlock = ?, problemsJson = ?, removedAt = NULL
 WHERE id = ?;
+
+updateSettings:
+UPDATE recipe SET kind = ?, mealSlotsJson = ? WHERE id = ?;
+
+updateManual:
+UPDATE recipe SET title = ?, tagsJson = ?, servings = ?, instructions = ?, problemsJson = ? WHERE id = ? AND source = 'MANUAL';
+
+deleteManual:
+DELETE FROM recipe WHERE id = ? AND source = 'MANUAL';
 
 markRemoved:
 UPDATE recipe SET removedAt = ? WHERE id = ?;

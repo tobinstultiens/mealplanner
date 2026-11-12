@@ -3,6 +3,12 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.RecipeDetail
+import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeKind
+import dev.tobins.mealplanner.api.RecipeSettings
+import dev.tobins.mealplanner.api.RecipeSource
+import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.WeekPlan
 import io.ktor.client.HttpClient
@@ -138,5 +144,45 @@ class PlanTest {
         assertEquals(HttpStatusCode.NotFound, http.post("/api/plans/$week/meals/0/lunch/reroll").status)
         assertEquals(HttpStatusCode.BadRequest, http.post("/api/plans/$week/meals/9/lunch/reroll").status)
         assertEquals(HttpStatusCode.BadRequest, http.post("/api/plans/$week/meals/0/brunch/reroll").status)
+    }
+
+    @Test
+    fun ownRecipesFillBreakfastAndSnackAndCanBeEdited() = testApplication {
+        val http = start().ready()
+        val created = http.post("/api/recipes") {
+            setBody(RecipeInput("Beef bowl", servings = 1, ingredients = "300 | g | beef", mealSlots = listOf(MealSlot.BREAKFAST)))
+        }
+        assertEquals(HttpStatusCode.Created, created.status)
+        val bowl = created.body<RecipeDetail>()
+        assertEquals(RecipeSource.MANUAL, bowl.summary.source)
+        assertEquals(450.0, bowl.summary.nutrition!!.perServing.kcal)
+        assertEquals(listOf(MealSlot.BREAKFAST), bowl.summary.mealSlots)
+
+        var plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        assertEquals(listOf(MealSlot.SNACK), plan.emptySlots)
+        assertEquals(7, plan.days.count { day -> day.meals.any { it.slot == MealSlot.BREAKFAST && it.title == "Beef bowl" } })
+
+        // Editing replaces the ingredients; an imported recipe can become a snack through its settings.
+        val edited = http.put("/api/recipes/${bowl.summary.id}") {
+            setBody(RecipeInput("Beef bowl", 1, "200 | g | beef", mealSlots = listOf(MealSlot.BREAKFAST)))
+        }.body<RecipeDetail>()
+        assertEquals(300.0, edited.summary.nutrition!!.perServing.kcal)
+        val dinner0 = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 0" }
+        assertEquals(listOf(MealSlot.DINNER), dinner0.mealSlots, "the section's default")
+        http.put("/api/recipes/${dinner0.id}/settings") { setBody(RecipeSettings(RecipeKind.MEAL, listOf(MealSlot.SNACK))) }
+        plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        assertEquals(emptyList(), plan.emptySlots)
+        assertTrue(plan.days.all { day -> day.meals.first { it.slot == MealSlot.SNACK }.title == "Dinner 0" })
+
+        // Settings survive a sync of the cooking repo.
+        http.post("/api/sync/cooking")
+        assertEquals(listOf(MealSlot.SNACK), http.get("/api/recipes/${dinner0.id}").body<RecipeDetail>().summary.mealSlots)
+
+        assertEquals(HttpStatusCode.Conflict, http.put("/api/recipes/${dinner0.id}") { setBody(RecipeInput("X", 1, "1 | g | beef")) }.status)
+        assertEquals(HttpStatusCode.Conflict, http.delete("/api/recipes/${dinner0.id}").status)
+        assertEquals(HttpStatusCode.BadRequest, http.post("/api/recipes") { setBody(RecipeInput("X", 1, "some | broken line")) }.status)
+        assertEquals(HttpStatusCode.BadRequest, http.post("/api/recipes") { setBody(RecipeInput(" ", 1, "1 | g | beef")) }.status)
+        assertEquals(HttpStatusCode.NoContent, http.delete("/api/recipes/${bowl.summary.id}").status)
+        assertEquals(HttpStatusCode.NotFound, http.get("/api/recipes/${bowl.summary.id}").status)
     }
 }

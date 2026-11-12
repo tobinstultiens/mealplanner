@@ -6,13 +6,16 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeDetail
+import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeKind
+import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.planner.PlanCandidate
+import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.recipes.ParsedRecipe
 import dev.tobins.mealplanner.server.db.Database
@@ -30,6 +33,9 @@ fun openDatabase(url: String): Pair<SqlDriver, Database> {
     val driver = JdbcSqliteDriver(url, Properties().apply { put("foreign_keys", "true") }, Database.Schema)
     return driver to Database(driver)
 }
+
+/** Section name given to recipes created in the app. */
+private const val MANUAL_SECTION = "own"
 
 /** Sections of the cooking site whose pages are building blocks, not meals. */
 private val componentSections = setOf("sauces", "spices", "templates", "ideas", "fermenting", "baking", "cocktails")
@@ -77,7 +83,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
             PlanCandidate(
                 recipeId = row.id,
                 title = row.title,
-                slots = slotsFor(row.section),
+                slots = slotsOf(row),
                 servings = row.servings!!.toInt(),
                 kcal = nutrition.perServing.kcal ?: 0.0,
                 proteinG = nutrition.perServing.proteinG ?: 0.0,
@@ -86,6 +92,63 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
             )
         }
     }
+
+    /** Creates a recipe of the user's own. */
+    fun create(input: RecipeInput): RecipeDetail = db.transactionWithResult {
+        val parsed = parse(input)
+        q.insertRecipe(
+            source = RecipeSource.MANUAL.name,
+            sourcePath = null,
+            contentHash = null,
+            section = MANUAL_SECTION,
+            title = parsed.title,
+            tagsJson = Json.encodeToString(input.tags),
+            servings = input.servings.toLong(),
+            instructions = input.instructions.trim(),
+            hasIngredientsBlock = 1,
+            problemsJson = "[]",
+            kind = RecipeKind.MEAL.name,
+        )
+        val id = q.lastInsertId().executeAsOne()
+        q.updateSettings(RecipeKind.MEAL.name, Json.encodeToString(input.mealSlots), id)
+        replaceIngredients(id, parsed.ingredients)
+        find(id)!!
+    }
+
+    /** Replaces a recipe of the user's own; imported recipes are edited on the cooking site. */
+    fun update(id: Long, input: RecipeInput): RecipeDetail = db.transactionWithResult {
+        val row = q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+        if (row.source != RecipeSource.MANUAL.name) throw ConflictException("Only your own recipes can be edited here")
+        val parsed = parse(input)
+        q.updateManual(parsed.title, Json.encodeToString(input.tags), input.servings.toLong(), input.instructions.trim(), "[]", id)
+        q.updateSettings(row.kind, Json.encodeToString(input.mealSlots), id)
+        replaceIngredients(id, parsed.ingredients)
+        find(id)!!
+    }
+
+    fun delete(id: Long) {
+        val row = q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+        if (row.source != RecipeSource.MANUAL.name) throw ConflictException("Only your own recipes can be deleted here")
+        q.deleteManual(id)
+    }
+
+    fun updateSettings(id: Long, settings: RecipeSettings): RecipeDetail {
+        q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+        q.updateSettings(settings.kind.name, Json.encodeToString(settings.mealSlots), id)
+        return find(id)!!
+    }
+
+    private fun parse(input: RecipeInput): ParsedRecipe {
+        require(input.title.isNotBlank()) { "title must not be blank" }
+        require(input.servings in 1..100) { "servings must be between 1 and 100" }
+        val parsed = HugoRecipeParser().parse("$MANUAL_SECTION/x.md", "```ingredients\n${input.ingredients}\n```")
+        require(parsed.problems.isEmpty()) { parsed.problems.joinToString("; ") }
+        require(parsed.ingredients.isNotEmpty()) { "at least one ingredient line is required" }
+        return parsed.copy(title = input.title.trim())
+    }
+
+    private fun slotsOf(row: Recipe): Set<MealSlot> =
+        row.mealSlotsJson?.let { Json.decodeFromString<List<MealSlot>>(it).toSet() } ?: slotsFor(row.section)
 
     private fun slotsFor(section: String): Set<MealSlot> = when (section) {
         "deserts" -> setOf(MealSlot.SNACK)
@@ -191,6 +254,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         kind = RecipeKind.valueOf(kind),
         plannable = hasIngredientsBlock != 0L && servings != null,
         nutrition = nutrition,
+        mealSlots = slotsOf(this).sortedBy { it.ordinal },
     )
 
     private fun Boolean.toLong() = if (this) 1L else 0L

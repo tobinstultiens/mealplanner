@@ -20,6 +20,27 @@ data class RecipeSummary(
     val plannable: Boolean,
     /** Null when the recipe has no amounts to compute from. */
     val nutrition: RecipeNutrition? = null,
+    /** Meal slots the planner may use this recipe for. */
+    val mealSlots: List<MealSlot> = emptyList(),
+)
+
+/** Body for creating or replacing a recipe of the user's own (source MANUAL). */
+@Serializable
+data class RecipeInput(
+    val title: String,
+    val servings: Int,
+    /** One ingredient per line as `amount | unit | item`, the format of the cooking site. */
+    val ingredients: String,
+    val instructions: String = "",
+    val tags: List<String> = emptyList(),
+    val mealSlots: List<MealSlot> = emptyList(),
+)
+
+/** Body of `PUT /api/recipes/{id}/settings`: how the planner treats a recipe. Works for every source. */
+@Serializable
+data class RecipeSettings(
+    val kind: RecipeKind,
+    val mealSlots: List<MealSlot>,
 )
 
 @Serializable
