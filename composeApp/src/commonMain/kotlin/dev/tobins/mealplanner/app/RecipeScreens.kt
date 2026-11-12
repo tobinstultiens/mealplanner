@@ -48,13 +48,15 @@ import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSummary
+import io.ktor.client.plugins.ResponseException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** Result of loading something from the server. */
 internal sealed interface Load<out T> {
     data object Loading : Load<Nothing>
-    data class Failed(val message: String) : Load<Nothing>
+    /** [status] is the HTTP status when the server answered with an error. */
+    data class Failed(val message: String, val status: Int? = null) : Load<Nothing>
     data class Ready<T>(val value: T) : Load<T>
 }
 
@@ -62,6 +64,8 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
     Load.Ready(block())
 } catch (e: CancellationException) {
     throw e
+} catch (e: ResponseException) {
+    Load.Failed("The server answered ${e.response.status.value} ${e.response.status.description}", e.response.status.value)
 } catch (e: Exception) {
     Load.Failed(e.message ?: "Unknown error")
 }

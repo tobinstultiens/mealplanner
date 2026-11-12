@@ -66,8 +66,10 @@ which is ignored by git.
 `shared`'s `CookingRepoParseTest` parses every page of the cooking repo. It looks in
 `../cooking`, or wherever `-PcookingRepo=<path>` points, and is skipped when that is missing.
 
-API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue)
-and `/api/mappings` (links from recipe ingredient texts to catalogue ingredients).
+API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue),
+`/api/mappings` (links from recipe ingredient texts to catalogue ingredients), `/api/profile` (body data
+and daily targets), `/api/pantry` (staples and on-hand items) and `/api/plans/{weekStart}` (week plans:
+`generate`, and per meal `reroll`, `lock` and delete).
 
 Ingredient texts are linked without manual work where the match is clear: through the default
 catalogue in `server/src/main/resources/catalogue-seed.csv` (common ingredients, their NEVO food,

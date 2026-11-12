@@ -5,15 +5,20 @@ import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodDataset
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.UnmappedText
+import dev.tobins.mealplanner.api.WeekPlan
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
@@ -55,6 +60,25 @@ class ApiClient(settings: ServerSettings) {
     suspend fun searchFoods(query: String): List<Food> = http.get("api/foods") { parameter("q", query) }.body()
 
     suspend fun foodDataset(): FoodDataset = http.get("api/foods/dataset").body()
+
+    suspend fun profile(): ProfileState = http.get("api/profile").body()
+
+    suspend fun saveProfile(profile: Profile): ProfileState = http.put("api/profile") {
+        contentType(ContentType.Application.Json)
+        setBody(profile)
+    }.body()
+
+    suspend fun plan(weekStart: String): WeekPlan = http.get("api/plans/$weekStart").body()
+
+    suspend fun generatePlan(weekStart: String): WeekPlan = http.post("api/plans/$weekStart/generate").body()
+
+    suspend fun rerollMeal(weekStart: String, day: Int, slot: MealSlot): WeekPlan =
+        http.post("api/plans/$weekStart/meals/$day/${slot.name}/reroll").body()
+
+    suspend fun setMealLocked(weekStart: String, day: Int, slot: MealSlot, locked: Boolean): WeekPlan {
+        val path = "api/plans/$weekStart/meals/$day/${slot.name}/lock"
+        return if (locked) http.put(path).body() else http.delete(path).body()
+    }
 
     fun close() = http.close()
 }

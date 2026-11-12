@@ -1,6 +1,13 @@
 package dev.tobins.mealplanner.app
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -30,6 +37,7 @@ fun App(settings: ServerSettings) {
             nutritionSource = try { api.foodDataset().reference } catch (e: Exception) { null }
         }
         var mapping by rememberSaveable { mutableStateOf(false) }
+        var tab by rememberSaveable { mutableStateOf(Tab.PLAN) }
         val recipeId = openRecipeId
         when {
             mapping -> {
@@ -40,7 +48,35 @@ fun App(settings: ServerSettings) {
                 BackHandler(enabled = true) { openRecipeId = null }
                 RecipeDetailScreen(api, recipeId, nutritionSource, onBack = { openRecipeId = null })
             }
-            else -> RecipeListScreen(api, onOpen = { openRecipeId = it }, onOpenMapping = { mapping = true })
+            else -> Scaffold(
+                bottomBar = {
+                    NavigationBar {
+                        Tab.entries.forEach { entry ->
+                            NavigationBarItem(
+                                selected = tab == entry,
+                                onClick = { tab = entry },
+                                icon = { Text(entry.symbol) },
+                                label = { Text(entry.label) },
+                            )
+                        }
+                    }
+                },
+            ) { padding ->
+                // Each screen has its own top bar; only the bottom bar's space is reserved here.
+                Box(Modifier.padding(bottom = padding.calculateBottomPadding())) {
+                    when (tab) {
+                        Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { tab = Tab.PROFILE })
+                        Tab.RECIPES -> RecipeListScreen(api, onOpen = { openRecipeId = it }, onOpenMapping = { mapping = true })
+                        Tab.PROFILE -> ProfileScreen(api)
+                    }
+                }
+            }
         }
     }
+}
+
+private enum class Tab(val label: String, val symbol: String) {
+    PLAN("Plan", "▦"),
+    RECIPES("Recipes", "☰"),
+    PROFILE("Profile", "◉"),
 }
