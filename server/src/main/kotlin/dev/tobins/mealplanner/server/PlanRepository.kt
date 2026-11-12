@@ -1,0 +1,129 @@
+package dev.tobins.mealplanner.server
+
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.PlanDay
+import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.planner.PlanRequest
+import dev.tobins.mealplanner.planner.WeekPlanner
+import dev.tobins.mealplanner.server.db.Database
+import java.time.LocalDate
+import java.time.format.DateTimeParseException
+import kotlin.random.Random
+
+/** Thrown when a request cannot be carried out in the current state; mapped to 409. */
+class ConflictException(message: String) : RuntimeException(message)
+
+/** Week plans: generating them with [WeekPlanner] and storing the result. */
+class PlanRepository(
+    private val db: Database,
+    private val recipes: RecipeRepository,
+    private val profiles: ProfileRepository,
+) {
+    private val q = db.planQueries
+
+    fun get(weekStart: String): WeekPlan = view(parse(weekStart))
+
+    /** Replaces every unlocked meal of the week with a newly planned one. */
+    fun generate(weekStart: String, seed: Long = Random.nextLong()): WeekPlan {
+        val start = parse(weekStart)
+        val planned = WeekPlanner.plan(request(start, locked = stored(start).filter { it.locked }, seed = seed))
+        db.transaction {
+            q.deleteUnlocked(start.toString())
+            planned.filterNot { it.locked }.forEach { save(start, it) }
+        }
+        return view(start)
+    }
+
+    /**
+     * Picks a different recipe for one meal and keeps the rest of the week. When a dinner
+     * changes, the next day's lunch made of its leftovers changes with it.
+     */
+    fun reroll(weekStart: String, day: Int, slot: MealSlot, seed: Long = Random.nextLong()): WeekPlan {
+        val start = parse(weekStart)
+        val current = stored(start)
+        val target = current.firstOrNull { it.day == day && it.slot == slot }
+            ?: throw NotFoundException("No meal planned for day $day $slot")
+        val dependentLunch = current.firstOrNull {
+            slot == MealSlot.DINNER && it.day == day + 1 && it.slot == MealSlot.LUNCH && it.leftover && !it.locked
+        }
+        val replaced = listOfNotNull(target, dependentLunch)
+        val planned = WeekPlanner.plan(
+            request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = setOf(target.recipeId)),
+        )
+        db.transaction {
+            for (old in replaced) {
+                q.deleteMeal(start.toString(), old.day.toLong(), old.slot.name)
+                planned.firstOrNull { it.day == old.day && it.slot == old.slot }?.let { save(start, it.copy(locked = false)) }
+            }
+        }
+        return view(start)
+    }
+
+    fun setLocked(weekStart: String, day: Int, slot: MealSlot, locked: Boolean): WeekPlan {
+        val start = parse(weekStart)
+        q.setLocked(if (locked) 1 else 0, start.toString(), day.toLong(), slot.name)
+        return view(start)
+    }
+
+    fun remove(weekStart: String, day: Int, slot: MealSlot): WeekPlan {
+        val start = parse(weekStart)
+        q.deleteMeal(start.toString(), day.toLong(), slot.name)
+        return view(start)
+    }
+
+    private fun request(start: LocalDate, locked: List<PlannedMeal>, seed: Long) = PlanRequest(
+        targets = targets(),
+        candidates = recipes.planCandidates(),
+        days = DAYS,
+        locked = locked,
+        // What was planned the week before counts as recently eaten.
+        recent = stored(start.minusDays(DAYS.toLong())).mapTo(HashSet()) { it.recipeId },
+        seed = seed,
+    )
+
+    private fun targets() = profiles.state().targets
+        ?: throw ConflictException("Set up your profile first: the planner needs daily targets")
+
+    private fun view(start: LocalDate): WeekPlan {
+        val meals = stored(start)
+        return WeekPlan(
+            weekStart = start.toString(),
+            targets = targets(),
+            days = (0 until DAYS).map { day ->
+                val ofDay = meals.filter { it.day == day }.sortedBy { it.slot.ordinal }
+                PlanDay(start.plusDays(day.toLong()).toString(), ofDay, ofDay.sumOf { it.kcal }, ofDay.sumOf { it.proteinG })
+            },
+            emptySlots = MealSlot.entries.filter { slot -> meals.none { it.slot == slot } },
+        )
+    }
+
+    private fun stored(start: LocalDate): List<PlannedMeal> = q.selectWeek(start.toString()).executeAsList().map {
+        PlannedMeal(
+            day = it.day.toInt(),
+            slot = MealSlot.valueOf(it.slot),
+            recipeId = it.recipeId,
+            title = it.title,
+            portions = it.portions,
+            kcal = it.kcal,
+            proteinG = it.proteinG,
+            leftover = it.leftover != 0L,
+            locked = it.locked != 0L,
+        )
+    }
+
+    private fun save(start: LocalDate, meal: PlannedMeal) = q.upsertMeal(
+        start.toString(), meal.day.toLong(), meal.slot.name, meal.recipeId, meal.title, meal.portions,
+        meal.kcal, meal.proteinG, if (meal.leftover) 1 else 0, if (meal.locked) 1 else 0,
+    )
+
+    private fun parse(weekStart: String): LocalDate = try {
+        LocalDate.parse(weekStart)
+    } catch (e: DateTimeParseException) {
+        throw IllegalArgumentException("weekStart must be an ISO date such as 2026-11-16")
+    }
+
+    private companion object {
+        const val DAYS = 7
+    }
+}

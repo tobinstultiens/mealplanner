@@ -1,0 +1,30 @@
+-- One planned meal. Nutrition is a snapshot taken when the meal was planned.
+CREATE TABLE planMeal (
+    weekStart TEXT NOT NULL,           -- ISO date of the plan's first day
+    day INTEGER NOT NULL,              -- 0-based offset from weekStart
+    slot TEXT NOT NULL,                -- BREAKFAST | LUNCH | DINNER | SNACK
+    recipeId INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    portions REAL NOT NULL,
+    kcal REAL NOT NULL,
+    proteinG REAL NOT NULL,
+    leftover INTEGER NOT NULL,
+    locked INTEGER NOT NULL,
+    PRIMARY KEY (weekStart, day, slot)
+);
+
+selectWeek:
+SELECT * FROM planMeal WHERE weekStart = ? ORDER BY day;
+
+upsertMeal:
+INSERT OR REPLACE INTO planMeal (weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteUnlocked:
+DELETE FROM planMeal WHERE weekStart = ? AND locked = 0;
+
+deleteMeal:
+DELETE FROM planMeal WHERE weekStart = ? AND day = ? AND slot = ?;
+
+setLocked:
+UPDATE planMeal SET locked = ? WHERE weekStart = ? AND day = ? AND slot = ?;

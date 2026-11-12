@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.Health
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.http.HttpMethod
@@ -74,6 +75,7 @@ fun Application.module(config: ServerConfig, database: Database) {
     val ingredients = IngredientRepository(database, foods)
     val recipes = RecipeRepository(database, ingredients)
     val profiles = ProfileRepository(database)
+    val plans = PlanRepository(database, recipes, profiles)
     // First start with a dataset configured: import it so nutrition works without a manual step.
     config.nevoFile?.takeIf { it.isFile && foods.dataset().foodCount == 0 }?.let {
         log.info("Imported ${foods.importNevo(it)} foods from ${it.name}")
@@ -85,6 +87,9 @@ fun Application.module(config: ServerConfig, database: Database) {
     install(StatusPages) {
         exception<NotFoundException> { call, cause ->
             call.respond(HttpStatusCode.NotFound, mapOf("error" to (cause.message ?: "not found")))
+        }
+        exception<ConflictException> { call, cause ->
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to (cause.message ?: "conflict")))
         }
         exception<BadRequestException> { call, cause ->
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to (cause.message ?: "bad request")))
@@ -140,6 +145,26 @@ fun Application.module(config: ServerConfig, database: Database) {
             get("/api/profile") { call.respond(profiles.state()) }
 
             put("/api/profile") { call.respond(profiles.save(call.receive<Profile>())) }
+
+            route("/api/plans/{weekStart}") {
+                fun io.ktor.server.routing.RoutingCall.week() = parameters["weekStart"]!!
+                fun io.ktor.server.routing.RoutingCall.day() =
+                    parameters["day"]?.toIntOrNull()?.takeIf { it in 0..6 } ?: throw IllegalArgumentException("day must be 0 to 6")
+                fun io.ktor.server.routing.RoutingCall.slot() = MealSlot.entries.firstOrNull { it.name.equals(parameters["slot"], ignoreCase = true) }
+                    ?: throw IllegalArgumentException("slot must be one of ${MealSlot.entries.joinToString()}")
+
+                get { call.respond(plans.get(call.week())) }
+
+                // Replans every meal that is not locked.
+                post("/generate") { call.respond(plans.generate(call.week())) }
+
+                route("/meals/{day}/{slot}") {
+                    post("/reroll") { call.respond(plans.reroll(call.week(), call.day(), call.slot())) }
+                    put("/lock") { call.respond(plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
+                    delete("/lock") { call.respond(plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
+                    delete { call.respond(plans.remove(call.week(), call.day(), call.slot())) }
+                }
+            }
 
             get("/api/pantry") { call.respond(ingredients.pantry()) }
 

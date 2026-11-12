@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MappedLine
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeNutrition
@@ -11,6 +12,7 @@ import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.recipes.ParsedRecipe
 import dev.tobins.mealplanner.server.db.Database
@@ -59,6 +61,37 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
             instructions = row.instructions,
             problems = Json.decodeFromString(row.problemsJson),
         )
+    }
+
+    /**
+     * Recipes the planner may use: meals whose nutrition is complete. Which slots a recipe
+     * suits follows from its section on the cooking site until that can be set per recipe.
+     */
+    fun planCandidates(): List<PlanCandidate> {
+        val resolve = ingredients.resolver()
+        val onHand = ingredients.pantry().onHand.mapTo(HashSet()) { it.id }
+        return q.selectActive().executeAsList().mapNotNull { row ->
+            if (row.kind != RecipeKind.MEAL.name) return@mapNotNull null
+            val lines = linesOf(row.id)
+            val nutrition = nutritionOf(row, lines, resolve)?.takeIf { it.complete } ?: return@mapNotNull null
+            PlanCandidate(
+                recipeId = row.id,
+                title = row.title,
+                slots = slotsFor(row.section),
+                servings = row.servings!!.toInt(),
+                kcal = nutrition.perServing.kcal ?: 0.0,
+                proteinG = nutrition.perServing.proteinG ?: 0.0,
+                tags = Json.decodeFromString(row.tagsJson),
+                onHandCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onHand },
+            )
+        }
+    }
+
+    private fun slotsFor(section: String): Set<MealSlot> = when (section) {
+        "deserts" -> setOf(MealSlot.SNACK)
+        "sandwiches" -> setOf(MealSlot.LUNCH)
+        "salads", "soup" -> setOf(MealSlot.LUNCH, MealSlot.DINNER)
+        else -> setOf(MealSlot.DINNER)
     }
 
     private fun linesOf(recipeId: Long): List<IngredientLine> = q.selectIngredients(recipeId).executeAsList().map {
