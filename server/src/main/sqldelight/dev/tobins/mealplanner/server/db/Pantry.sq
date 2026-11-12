@@ -1,0 +1,17 @@
+-- Perishables currently at home that should be used up. Presence only, no quantities.
+CREATE TABLE onHand (
+    ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE,
+    addedAt TEXT NOT NULL
+);
+
+selectOnHand:
+SELECT ingredientId FROM onHand ORDER BY addedAt, ingredientId;
+
+insertOnHand:
+INSERT OR IGNORE INTO onHand (ingredientId, addedAt) VALUES (?, ?);
+
+deleteOnHand:
+DELETE FROM onHand WHERE ingredientId = ?;
+
+setStaple:
+UPDATE ingredient SET isStaple = ? WHERE id = ?;

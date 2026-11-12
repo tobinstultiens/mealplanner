@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.server.db.Database
@@ -32,6 +33,25 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         )
         q.selectIngredient(id).executeAsOne().toIngredient()
     }
+
+    fun pantry(): Pantry {
+        val all = list()
+        val byId = all.associateBy { it.id }
+        return Pantry(
+            staples = all.filter { it.isStaple },
+            onHand = db.pantryQueries.selectOnHand().executeAsList().mapNotNull(byId::get),
+        )
+    }
+
+    fun setStaple(id: Long, staple: Boolean) = requireIngredient(id).also { db.pantryQueries.setStaple(if (staple) 1 else 0, id) }
+
+    fun setOnHand(id: Long, onHand: Boolean) {
+        requireIngredient(id)
+        if (onHand) db.pantryQueries.insertOnHand(id, java.time.Instant.now().toString()) else db.pantryQueries.deleteOnHand(id)
+    }
+
+    private fun requireIngredient(id: Long) =
+        q.selectIngredient(id).executeAsOneOrNull() ?: throw NotFoundException("No ingredient with id $id")
 
     /**
      * Looks up the ingredient each line's text means. In order: a link for the exact

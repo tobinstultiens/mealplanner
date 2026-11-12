@@ -93,3 +93,7 @@ data class RecipeNutrition(
     /** Ingredient texts of the lines left out. */
     val uncounted: List<String>,
 )
+
+/** What is at home: [staples] are always there, [onHand] are perishables to use up. */
+@Serializable
+data class Pantry(val staples: List<Ingredient>, val onHand: List<Ingredient>)

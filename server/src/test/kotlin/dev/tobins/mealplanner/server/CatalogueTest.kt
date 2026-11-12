@@ -1,6 +1,12 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.DailyTargets
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.Pantry
+import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.ProfileState
+import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.RecipeDetail
@@ -227,5 +233,40 @@ class CatalogueTest {
         assertEquals(HttpStatusCode.NotFound, http.put("/api/ingredients/999") { setBody(IngredientInput("Z")) }.status)
         assertEquals(HttpStatusCode.NotFound, http.put("/api/mappings") { setBody(MappingRequest("x", ingredientId = 999)) }.status)
         assertEquals(HttpStatusCode.BadRequest, http.put("/api/mappings") { setBody(MappingRequest("x")) }.status)
+    }
+
+    @Test
+    fun profileGivesTargetsAndRejectsImplausibleValues() = testApplication {
+        val http = start()
+        assertEquals(ProfileState(null, null, null, null), http.get("/api/profile").body<ProfileState>())
+
+        val profile = Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, goalKgPerWeek = 0.5)
+        val saved = http.put("/api/profile") { setBody(profile) }.body<ProfileState>()
+        assertEquals(DailyTargets(2040, 160), saved.targets)
+        assertEquals(2585, saved.maintenanceKcal)
+
+        val overridden = http.put("/api/profile") { setBody(profile.copy(kcalOverride = 1900)) }.body<ProfileState>()
+        assertEquals(DailyTargets(1900, 160), overridden.targets)
+        assertEquals(DailyTargets(2040, 160), overridden.suggested)
+        assertEquals(overridden, http.get("/api/profile").body<ProfileState>())
+
+        assertEquals(HttpStatusCode.BadRequest, http.put("/api/profile") { setBody(profile.copy(weightKg = 5.0)) }.status)
+    }
+
+    @Test
+    fun pantryTracksStaplesAndOnHandItems() = testApplication {
+        val http = start()
+        val (onion, soy) = http.get("/api/ingredients").body<List<Ingredient>>().filter { it.food != null }
+        assertEquals(Pantry(emptyList(), emptyList()), http.get("/api/pantry").body<Pantry>())
+
+        http.put("/api/pantry/staples/${soy.id}")
+        http.put("/api/pantry/on-hand/${onion.id}")
+        val pantry = http.put("/api/pantry/on-hand/${onion.id}").body<Pantry>()
+        assertEquals(listOf("Soy sauce"), pantry.staples.map { it.name })
+        assertEquals(listOf("Onion"), pantry.onHand.map { it.name }, "adding twice keeps one entry")
+
+        http.delete("/api/pantry/staples/${soy.id}")
+        assertEquals(Pantry(emptyList(), emptyList()), http.delete("/api/pantry/on-hand/${onion.id}").body<Pantry>())
+        assertEquals(HttpStatusCode.NotFound, http.put("/api/pantry/on-hand/99999").status)
     }
 }

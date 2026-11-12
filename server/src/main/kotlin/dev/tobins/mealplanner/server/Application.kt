@@ -3,7 +3,9 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.Health
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.server.db.Database
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -25,6 +27,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -70,6 +73,7 @@ fun Application.module(config: ServerConfig, database: Database) {
     val foods = FoodRepository(database)
     val ingredients = IngredientRepository(database, foods)
     val recipes = RecipeRepository(database, ingredients)
+    val profiles = ProfileRepository(database)
     // First start with a dataset configured: import it so nutrition works without a manual step.
     config.nevoFile?.takeIf { it.isFile && foods.dataset().foodCount == 0 }?.let {
         log.info("Imported ${foods.importNevo(it)} foods from ${it.name}")
@@ -131,6 +135,26 @@ fun Application.module(config: ServerConfig, database: Database) {
                 val id = call.parameters["id"]?.toLongOrNull()
                     ?: throw IllegalArgumentException("Ingredient id must be a number")
                 call.respond(ingredients.update(id, call.receive<IngredientInput>()))
+            }
+
+            get("/api/profile") { call.respond(profiles.state()) }
+
+            put("/api/profile") { call.respond(profiles.save(call.receive<Profile>())) }
+
+            get("/api/pantry") { call.respond(ingredients.pantry()) }
+
+            // PUT adds an ingredient to the staples or on-hand list, DELETE removes it.
+            for (list in listOf("staples", "on-hand")) {
+                for (present in listOf(true, false)) {
+                    route("/api/pantry/$list/{id}", if (present) HttpMethod.Put else HttpMethod.Delete) {
+                        handle {
+                            val id = call.parameters["id"]?.toLongOrNull()
+                                ?: throw IllegalArgumentException("Ingredient id must be a number")
+                            if (list == "staples") ingredients.setStaple(id, present) else ingredients.setOnHand(id, present)
+                            call.respond(ingredients.pantry())
+                        }
+                    }
+                }
             }
 
             // Recipe line texts that still need an ingredient, with suggestions.
