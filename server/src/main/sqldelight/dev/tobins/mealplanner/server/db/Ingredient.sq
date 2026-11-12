@@ -1,0 +1,58 @@
+-- The app's own ingredient catalogue. An ingredient points at a NEVO food for its
+-- nutrition (nevoCode is not a foreign key: the food table is replaced on re-import).
+CREATE TABLE ingredient (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    nevoCode INTEGER,
+    gramsPerPiece REAL,                -- weight of one piece/clove/can, for count lines
+    gramsPerMl REAL,                   -- density, for volume lines
+    category TEXT,
+    pricePerKg REAL,
+    isStaple INTEGER NOT NULL DEFAULT 0
+);
+
+-- Remembers which ingredient a recipe line's text means. Keyed by the normalised
+-- text, so one confirmation covers every recipe and survives re-syncs.
+CREATE TABLE ingredientAlias (
+    text TEXT PRIMARY KEY,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE
+);
+
+selectAllIngredients:
+SELECT * FROM ingredient ORDER BY name COLLATE NOCASE;
+
+selectIngredient:
+SELECT * FROM ingredient WHERE id = ?;
+
+selectIngredientByNevoCode:
+SELECT * FROM ingredient WHERE nevoCode = ? ORDER BY id LIMIT 1;
+
+selectIngredientByName:
+SELECT * FROM ingredient WHERE name = ?;
+
+insertIngredient:
+INSERT INTO ingredient (name, nevoCode, gramsPerPiece, gramsPerMl, category, pricePerKg, isStaple)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+lastIngredientId:
+SELECT last_insert_rowid();
+
+updateIngredient:
+UPDATE ingredient
+SET name = ?, nevoCode = ?, gramsPerPiece = ?, gramsPerMl = ?, category = ?, pricePerKg = ?, isStaple = ?
+WHERE id = ?;
+
+selectAliases:
+SELECT * FROM ingredientAlias;
+
+upsertAlias:
+INSERT OR REPLACE INTO ingredientAlias (text, ingredientId) VALUES (?, ?);
+
+deleteAlias:
+DELETE FROM ingredientAlias WHERE text = ?;
+
+-- Every ingredient line of every active recipe, for finding unmapped texts.
+selectActiveLines:
+SELECT ri.amount, ri.unit, ri.dimension, ri.baseAmount, ri.item, ri.groupName, r.title
+FROM recipeIngredient ri JOIN recipe r ON r.id = ri.recipeId
+WHERE r.removedAt IS NULL;

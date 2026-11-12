@@ -26,4 +26,13 @@ class FormattingTest {
         assertEquals("3 clove garlic", line(3.0, "clove", Dimension.COUNT, null, "garlic").displayText())
         assertEquals("salt to taste", line(null, null, null, null, "salt to taste").displayText())
     }
+
+    @Test
+    fun gramsAreWholeAboveTenAndOneDecimalBelow() {
+        assertEquals("28 g", formatGrams(28.06))
+        assertEquals("302 g", formatGrams(301.65))
+        assertEquals("4.6 g", formatGrams(4.59))
+        assertEquals("5 g", formatGrams(5.0))
+        assertEquals("0 g", formatGrams(null))
+    }
 }

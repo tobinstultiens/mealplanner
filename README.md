@@ -66,4 +66,7 @@ which is ignored by git.
 `shared`'s `CookingRepoParseTest` parses every page of the cooking repo. It looks in
 `../cooking`, or wherever `-PcookingRepo=<path>` points, and is skipped when that is missing.
 
+API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue)
+and `/api/mappings` (links from recipe ingredient texts to catalogue ingredients).
+
 External data sources (store offers, nutrition data) are described in `docs/data-sources.md`.

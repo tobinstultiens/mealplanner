@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -45,18 +46,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
+import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSummary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** Result of loading something from the server. */
-private sealed interface Load<out T> {
+internal sealed interface Load<out T> {
     data object Loading : Load<Nothing>
     data class Failed(val message: String) : Load<Nothing>
     data class Ready<T>(val value: T) : Load<T>
 }
 
-private suspend fun <T> load(block: suspend () -> T): Load<T> = try {
+internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
     Load.Ready(block())
 } catch (e: CancellationException) {
     throw e
@@ -66,7 +68,7 @@ private suspend fun <T> load(block: suspend () -> T): Load<T> = try {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit) {
+fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -> Unit) {
     var state by remember { mutableStateOf<Load<List<RecipeSummary>>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
     var syncing by remember { mutableStateOf(false) }
@@ -85,6 +87,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit) {
             TopAppBar(
                 title = { Text("Recipes") },
                 actions = {
+                    TextButton(onClick = onOpenMapping) { Text("Ingredients") }
                     TextButton(
                         enabled = !syncing,
                         onClick = {
@@ -158,7 +161,12 @@ private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
     val details = buildList {
         if (recipe.tags.isNotEmpty()) add(recipe.tags.joinToString(" · "))
         recipe.servings?.let { add(if (it == 1) "1 serving" else "$it servings") }
-        if (!recipe.plannable) add("no amounts yet")
+        val nutrition = recipe.nutrition
+        when {
+            !recipe.plannable || nutrition == null -> add("no amounts yet")
+            nutrition.complete -> add(nutrition.headline())
+            else -> add("${nutrition.uncounted.size} ingredients to link")
+        }
     }
     ListItem(
         headlineContent = { Text(recipe.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -169,7 +177,7 @@ private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun RecipeDetailScreen(api: ApiClient, recipeId: Long, onBack: () -> Unit) {
+fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?, onBack: () -> Unit) {
     var state by remember(recipeId) { mutableStateOf<Load<RecipeDetail>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
     LaunchedEffect(recipeId, reload) {
@@ -210,6 +218,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, onBack: () -> Unit) {
                     recipe.summary.servings?.let {
                         Text(if (it == 1) "Makes 1 serving" else "Makes $it servings", style = MaterialTheme.typography.labelLarge)
                     }
+                    recipe.summary.nutrition?.let { NutritionCard(it, nutritionSource) }
                     if (recipe.ingredients.isEmpty()) {
                         Text(
                             "This recipe has no structured ingredient list on the cooking site yet, so it cannot be planned.",
@@ -219,12 +228,22 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, onBack: () -> Unit) {
                     } else {
                         Text("Ingredients", style = MaterialTheme.typography.titleMedium)
                         var group: String? = null
-                        for (line in recipe.ingredients) {
+                        for (mapped in recipe.ingredients) {
+                            val line = mapped.line
                             if (line.group != group) {
                                 group = line.group
                                 group?.let { Text(it, style = MaterialTheme.typography.titleSmall) }
                             }
-                            Text("•  ${line.displayText()}")
+                            Column {
+                                Text("•  ${line.displayText()}")
+                                mapped.ingredientName?.let { name ->
+                                    Text(
+                                        "     $name" + (mapped.grams?.let { " · ${formatGrams(it)}" } ?: " · weight unknown"),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                     }
                     if (recipe.instructions.isNotBlank()) {
@@ -238,12 +257,45 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, onBack: () -> Unit) {
 }
 
 @Composable
-private fun CenteredBox(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun NutritionCard(nutrition: RecipeNutrition, source: String?) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Per serving", style = MaterialTheme.typography.labelLarge)
+            Text(nutrition.headline(), style = MaterialTheme.typography.titleLarge)
+            with(nutrition.perServing) {
+                Text(
+                    "Fat ${formatGrams(fatG)} · Carbs ${formatGrams(carbsG)} · Fibre ${formatGrams(fibreG)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (!nutrition.complete) {
+                Text(
+                    "Incomplete: ${nutrition.uncounted.size} ingredients are not counted yet (${nutrition.uncounted.joinToString("; ")}).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (nutrition.approximate) {
+                Text(
+                    "Approximate: some volumes were converted assuming 1 g per ml.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            source?.let {
+                Text("Source: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun CenteredBox(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
 }
 
 @Composable
-private fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
+internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),

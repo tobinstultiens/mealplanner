@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.recipes.IngredientLine
 import kotlin.math.roundToLong
 
@@ -26,3 +27,16 @@ fun IngredientLine.displayText(): String =
             else -> "$quantity $item"
         }
     }
+
+/** `512 kcal · 38 g protein`, prefixed with `~` when a density was assumed. */
+fun RecipeNutrition.headline(): String {
+    val kcal = perServing.kcal?.roundToLong() ?: 0
+    val protein = perServing.proteinG?.roundToLong() ?: 0
+    return "${if (approximate) "~" else ""}$kcal kcal · $protein g protein"
+}
+
+/** Whole grams (`28 g`); below 10 g one decimal (`4.6 g`). A missing value shows as `0 g`. */
+fun formatGrams(grams: Double?): String {
+    val value = grams ?: 0.0
+    return if (value < 10) "${formatAmount((value * 10).roundToLong() / 10.0)} g" else "${value.roundToLong()} g"
+}

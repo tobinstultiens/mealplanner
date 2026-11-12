@@ -1,6 +1,8 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.Health
+import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -16,9 +18,13 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.plugins.BadRequestException
+import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -61,8 +67,9 @@ fun main() {
 }
 
 fun Application.module(config: ServerConfig, database: Database) {
-    val recipes = RecipeRepository(database)
     val foods = FoodRepository(database)
+    val ingredients = IngredientRepository(database, foods)
+    val recipes = RecipeRepository(database, ingredients)
     // First start with a dataset configured: import it so nutrition works without a manual step.
     config.nevoFile?.takeIf { it.isFile && foods.dataset().foodCount == 0 }?.let {
         log.info("Imported ${foods.importNevo(it)} foods from ${it.name}")
@@ -71,6 +78,12 @@ fun Application.module(config: ServerConfig, database: Database) {
     install(CallLogging)
     install(ContentNegotiation) { json() }
     install(StatusPages) {
+        exception<NotFoundException> { call, cause ->
+            call.respond(HttpStatusCode.NotFound, mapOf("error" to (cause.message ?: "not found")))
+        }
+        exception<BadRequestException> { call, cause ->
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to (cause.message ?: "bad request")))
+        }
         exception<IllegalArgumentException> { call, cause ->
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to (cause.message ?: "bad request")))
         }
@@ -105,6 +118,30 @@ fun Application.module(config: ServerConfig, database: Database) {
                 } else {
                     call.respond(recipe)
                 }
+            }
+
+            get("/api/ingredients") { call.respond(ingredients.list()) }
+
+            post("/api/ingredients") {
+                call.respond(HttpStatusCode.Created, ingredients.create(call.receive<IngredientInput>()))
+            }
+
+            put("/api/ingredients/{id}") {
+                val id = call.parameters["id"]?.toLongOrNull()
+                    ?: throw IllegalArgumentException("Ingredient id must be a number")
+                call.respond(ingredients.update(id, call.receive<IngredientInput>()))
+            }
+
+            // Recipe line texts that still need an ingredient, with suggestions.
+            get("/api/mappings/unmapped") { call.respond(ingredients.unmapped()) }
+
+            put("/api/mappings") { call.respond(ingredients.map(call.receive<MappingRequest>())) }
+
+            delete("/api/mappings") {
+                val text = call.request.queryParameters["text"]
+                    ?: throw IllegalArgumentException("Query parameter text is required")
+                ingredients.unmap(text)
+                call.respond(HttpStatusCode.NoContent)
             }
 
             get("/api/foods/dataset") { call.respond(foods.dataset()) }

@@ -2,11 +2,15 @@ package dev.tobins.mealplanner.server
 
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
+import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SyncResult
+import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.recipes.ParsedRecipe
 import dev.tobins.mealplanner.server.db.Database
@@ -28,24 +32,45 @@ fun openDatabase(url: String): Pair<SqlDriver, Database> {
 /** Sections of the cooking site whose pages are building blocks, not meals. */
 private val componentSections = setOf("sauces", "spices", "templates", "ideas", "fermenting", "baking", "cocktails")
 
-class RecipeRepository(private val db: Database) {
+class RecipeRepository(private val db: Database, private val ingredients: IngredientRepository) {
     private val q = db.recipeQueries
 
-    fun list(): List<RecipeSummary> = q.selectActive().executeAsList().map { it.toSummary() }
+    fun list(): List<RecipeSummary> {
+        val resolve = ingredients.resolver()
+        return q.selectActive().executeAsList().map { row -> row.toSummary(nutritionOf(row, linesOf(row.id), resolve)) }
+    }
 
     fun find(id: Long): RecipeDetail? {
         val row = q.selectById(id).executeAsOneOrNull() ?: return null
-        val ingredients = q.selectIngredients(id).executeAsList().map {
-            IngredientLine(
-                amount = it.amount,
-                unit = it.unit,
-                dimension = it.dimension?.let(Dimension::valueOf),
-                baseAmount = it.baseAmount,
-                item = it.item,
-                group = it.groupName,
-            )
-        }
-        return RecipeDetail(row.toSummary(), ingredients, row.instructions, Json.decodeFromString(row.problemsJson))
+        val resolve = ingredients.resolver()
+        val lines = linesOf(id)
+        return RecipeDetail(
+            summary = row.toSummary(nutritionOf(row, lines, resolve)),
+            ingredients = lines.map { line ->
+                val ingredient = resolve(line)
+                MappedLine(line, ingredient?.id, ingredient?.name, ingredient?.let { NutritionCalculator.quantityOf(line, it)?.grams })
+            },
+            instructions = row.instructions,
+            problems = Json.decodeFromString(row.problemsJson),
+        )
+    }
+
+    private fun linesOf(recipeId: Long): List<IngredientLine> = q.selectIngredients(recipeId).executeAsList().map {
+        IngredientLine(
+            amount = it.amount,
+            unit = it.unit,
+            dimension = it.dimension?.let(Dimension::valueOf),
+            baseAmount = it.baseAmount,
+            item = it.item,
+            group = it.groupName,
+        )
+    }
+
+    /** Null when the recipe has no amounts to compute from. */
+    private fun nutritionOf(row: Recipe, lines: List<IngredientLine>, resolve: (IngredientLine) -> Ingredient?): RecipeNutrition? {
+        val servings = row.servings?.toInt() ?: return null
+        if (lines.none { it.amount != null }) return null
+        return NutritionCalculator.perServing(lines.map { it to resolve(it) }, servings)
     }
 
     /**
@@ -117,7 +142,7 @@ class RecipeRepository(private val db: Database) {
         }
     }
 
-    private fun Recipe.toSummary() = RecipeSummary(
+    private fun Recipe.toSummary(nutrition: RecipeNutrition?) = RecipeSummary(
         id = id,
         title = title,
         section = section,
@@ -126,6 +151,7 @@ class RecipeRepository(private val db: Database) {
         source = RecipeSource.valueOf(source),
         kind = RecipeKind.valueOf(kind),
         plannable = hasIngredientsBlock != 0L && servings != null,
+        nutrition = nutrition,
     )
 
     private fun Boolean.toLong() = if (this) 1L else 0L

@@ -1,6 +1,5 @@
 package dev.tobins.mealplanner.api
 
-import dev.tobins.mealplanner.recipes.IngredientLine
 import kotlinx.serialization.Serializable
 
 enum class RecipeSource { COOKING_SITE, MANUAL, GENERATED }
@@ -19,12 +18,14 @@ data class RecipeSummary(
     val kind: RecipeKind,
     /** False until the recipe has amounts to plan with (an ingredients block on the site). */
     val plannable: Boolean,
+    /** Null when the recipe has no amounts to compute from. */
+    val nutrition: RecipeNutrition? = null,
 )
 
 @Serializable
 data class RecipeDetail(
     val summary: RecipeSummary,
-    val ingredients: List<IngredientLine>,
+    val ingredients: List<MappedLine>,
     /** Markdown. */
     val instructions: String,
     val problems: List<String>,

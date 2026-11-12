@@ -106,8 +106,8 @@ class ApplicationTest {
         assertEquals(RecipeKind.COMPONENT, salsa.kind)
 
         val detail = http.get("/api/recipes/${gyudonSummary.id}").body<RecipeDetail>()
-        assertEquals(listOf("beef", "large"), detail.ingredients.map { it.item })
-        assertEquals(400.0, detail.ingredients[0].baseAmount)
+        assertEquals(listOf("beef", "large"), detail.ingredients.map { it.line.item })
+        assertEquals(400.0, detail.ingredients[0].line.baseAmount)
         assertTrue(detail.instructions.startsWith("Steps:"))
     }
 
@@ -129,7 +129,7 @@ class ApplicationTest {
         assertEquals(listOf("Gyudon"), list.map { it.title })
         assertEquals(idBefore, list.single().id, "a changed file keeps its recipe id")
         val detail = http.get("/api/recipes/$idBefore").body<RecipeDetail>()
-        assertEquals(listOf(500.0, 1.0), detail.ingredients.map { it.amount })
+        assertEquals(listOf(500.0, 1.0), detail.ingredients.map { it.line.amount })
     }
 
     @Test
