@@ -1,0 +1,66 @@
+-- A recipe from any source. Rows synced from the cooking repo are identified by
+-- sourcePath; contentHash tells the sync whether the file changed.
+CREATE TABLE recipe (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,              -- COOKING_SITE | MANUAL | GENERATED
+    sourcePath TEXT UNIQUE,            -- path under content/ for COOKING_SITE rows
+    contentHash TEXT,
+    section TEXT NOT NULL,
+    title TEXT NOT NULL,
+    tagsJson TEXT NOT NULL,
+    servings INTEGER,
+    instructions TEXT NOT NULL,
+    hasIngredientsBlock INTEGER NOT NULL,
+    problemsJson TEXT NOT NULL,
+    kind TEXT NOT NULL,                -- MEAL | COMPONENT. App-owned: set on insert, kept on sync.
+    removedAt TEXT                     -- set when the file disappears from the cooking repo
+);
+
+CREATE TABLE recipeIngredient (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipeId INTEGER NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    amount REAL,
+    unit TEXT,
+    dimension TEXT,
+    baseAmount REAL,
+    item TEXT NOT NULL,
+    groupName TEXT
+);
+
+CREATE INDEX recipeIngredient_recipe ON recipeIngredient(recipeId, position);
+
+selectActive:
+SELECT * FROM recipe WHERE removedAt IS NULL ORDER BY title COLLATE NOCASE;
+
+selectById:
+SELECT * FROM recipe WHERE id = ?;
+
+selectSynced:
+SELECT id, sourcePath, contentHash, removedAt FROM recipe WHERE source = 'COOKING_SITE';
+
+insertRecipe:
+INSERT INTO recipe (source, sourcePath, contentHash, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+lastInsertId:
+SELECT last_insert_rowid();
+
+updateSynced:
+UPDATE recipe
+SET contentHash = ?, section = ?, title = ?, tagsJson = ?, servings = ?, instructions = ?,
+    hasIngredientsBlock = ?, problemsJson = ?, removedAt = NULL
+WHERE id = ?;
+
+markRemoved:
+UPDATE recipe SET removedAt = ? WHERE id = ?;
+
+selectIngredients:
+SELECT * FROM recipeIngredient WHERE recipeId = ? ORDER BY position;
+
+deleteIngredients:
+DELETE FROM recipeIngredient WHERE recipeId = ?;
+
+insertIngredient:
+INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item, groupName)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);

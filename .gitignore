@@ -1,0 +1,15 @@
+.gradle/
+build/
+.kotlin/
+local.properties
+.idea/
+*.iml
+.runtime/
+*.db
+*.db-shm
+*.db-wal
+.env
+
+# Licensed datasets (NEVO) are imported from a local file, never committed
+data/
+NEVO*
