@@ -43,3 +43,7 @@ after accepting the conditions of use, so the download is a manual step.
 - The data may only be used unchanged and with the reference
   "NEVO-online version 2025/9.0, RIVM, Bilthoven". Show that reference in the app.
 - Do not commit the dataset to this repository; the server imports it from a local file.
+
+The main file `NEVO2025_v9.0.csv` is UTF-8, `|`-separated, with decimal commas and one row per
+food (2,328 foods). Values are per 100 g, except for foods marked `per 100ml` (mostly drinks).
+An empty cell means "no value", not zero.

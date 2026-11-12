@@ -30,9 +30,23 @@ Run the server locally:
 
 ```bash
 MEALPLANNER_API_TOKEN=dev-token COOKING_REPO_PATH=../cooking \
+  NEVO_CSV_PATH=data/nevo/NEVO2025_v9.0.csv \
   java -jar server/build/libs/server-all.jar
 curl -X POST -H "Authorization: Bearer dev-token" localhost:8080/api/sync/cooking
 curl -H "Authorization: Bearer dev-token" localhost:8080/api/recipes
+```
+
+## Android app
+
+The debug build talks to `http://10.0.2.2:8080` (the host machine, seen from an emulator) with the
+token `dev-token`. For a real phone or another server, pass `-PserverUrl=… -PapiToken=…` to Gradle.
+
+Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
+emulator does not look by default):
+
+```bash
+ANDROID_AVD_HOME=$HOME/.config/.android/avd ~/Android/Sdk/emulator/emulator -avd mealplanner_test
+./gradlew :androidApp:installDebug
 ```
 
 ## Server configuration
@@ -43,6 +57,10 @@ curl -H "Authorization: Bearer dev-token" localhost:8080/api/recipes
 | `PORT` | `8080` | Listen port |
 | `MEALPLANNER_DB_URL` | `jdbc:sqlite:.runtime/mealplanner.db` | SQLite database |
 | `COOKING_REPO_PATH` | unset | Local checkout of the cooking repo; unset disables the sync |
+| `NEVO_CSV_PATH` | unset | NEVO main csv (`NEVO2025_v9.0.csv`). Imported on first start; `POST /api/foods/import` re-imports |
+
+The NEVO dataset is not in this repository (see `docs/data-sources.md`). Keep it under `data/`,
+which is ignored by git.
 
 `shared`'s `CookingRepoParseTest` parses every page of the cooking repo. It looks in
 `../cooking`, or wherever `-PcookingRepo=<path>` points, and is skipped when that is missing.

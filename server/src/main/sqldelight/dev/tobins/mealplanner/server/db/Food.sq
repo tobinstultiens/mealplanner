@@ -1,0 +1,47 @@
+-- Reference foods from the NEVO dataset (RIVM). Imported unchanged from the
+-- dataset file; never edited by the app. Nutrient values are per 100 g, or per
+-- 100 ml for the foods (mostly drinks) that NEVO lists that way; see basis.
+CREATE TABLE food (
+    nevoCode INTEGER PRIMARY KEY,
+    nameNl TEXT NOT NULL,
+    nameEn TEXT NOT NULL,
+    synonym TEXT,
+    groupNl TEXT NOT NULL,
+    groupEn TEXT NOT NULL,
+    basis TEXT NOT NULL,               -- PER_100_G | PER_100_ML
+    kcal REAL,
+    protein REAL,
+    fat REAL,
+    saturatedFat REAL,
+    carbs REAL,
+    sugar REAL,
+    fibre REAL,
+    sodiumMg REAL
+);
+
+CREATE TABLE meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+selectAllFoods:
+SELECT * FROM food;
+
+selectFood:
+SELECT * FROM food WHERE nevoCode = ?;
+
+countFoods:
+SELECT count(*) FROM food;
+
+deleteAllFoods:
+DELETE FROM food;
+
+insertFood:
+INSERT INTO food (nevoCode, nameNl, nameEn, synonym, groupNl, groupEn, basis, kcal, protein, fat, saturatedFat, carbs, sugar, fibre, sodiumMg)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectMeta:
+SELECT value FROM meta WHERE key = ?;
+
+upsertMeta:
+INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?);

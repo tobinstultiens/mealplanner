@@ -6,6 +6,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
+import io.ktor.server.application.log
 import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.UserIdPrincipal
 import io.ktor.server.auth.authenticate
@@ -35,6 +36,8 @@ data class ServerConfig(
     val databaseUrl: String,
     /** Local checkout of the cooking repo to import recipes from; null disables the sync. */
     val cookingRepo: File?,
+    /** The NEVO main csv to import nutrition data from; null leaves the food table as it is. */
+    val nevoFile: File? = null,
 ) {
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): ServerConfig {
@@ -45,6 +48,7 @@ data class ServerConfig(
                 apiToken = token,
                 databaseUrl = env["MEALPLANNER_DB_URL"] ?: "jdbc:sqlite:.runtime/mealplanner.db",
                 cookingRepo = env["COOKING_REPO_PATH"]?.takeIf { it.isNotBlank() }?.let(::File),
+                nevoFile = env["NEVO_CSV_PATH"]?.takeIf { it.isNotBlank() }?.let(::File),
             )
         }
     }
@@ -58,6 +62,11 @@ fun main() {
 
 fun Application.module(config: ServerConfig, database: Database) {
     val recipes = RecipeRepository(database)
+    val foods = FoodRepository(database)
+    // First start with a dataset configured: import it so nutrition works without a manual step.
+    config.nevoFile?.takeIf { it.isFile && foods.dataset().foodCount == 0 }?.let {
+        log.info("Imported ${foods.importNevo(it)} foods from ${it.name}")
+    }
 
     install(CallLogging)
     install(ContentNegotiation) { json() }
@@ -95,6 +104,28 @@ fun Application.module(config: ServerConfig, database: Database) {
                     call.respond(HttpStatusCode.NotFound, mapOf("error" to "No recipe with id $id"))
                 } else {
                     call.respond(recipe)
+                }
+            }
+
+            get("/api/foods/dataset") { call.respond(foods.dataset()) }
+
+            get("/api/foods") {
+                val query = call.request.queryParameters["q"]
+                    ?: throw IllegalArgumentException("Query parameter q is required")
+                call.respond(foods.search(query))
+            }
+
+            // Replaces the food table with the configured NEVO file, e.g. after a new NEVO release.
+            post("/api/foods/import") {
+                val file = config.nevoFile?.takeIf { it.isFile }
+                if (file == null) {
+                    call.respond(
+                        HttpStatusCode.ServiceUnavailable,
+                        mapOf("error" to "NEVO_CSV_PATH is not set or the file does not exist"),
+                    )
+                } else {
+                    withContext(Dispatchers.IO) { foods.importNevo(file) }
+                    call.respond(foods.dataset())
                 }
             }
 
