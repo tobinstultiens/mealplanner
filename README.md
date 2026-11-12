@@ -42,10 +42,11 @@ The debug build talks to `http://10.0.2.2:8080` (the host machine, seen from an 
 token `dev-token`. For a real phone or another server, pass `-PserverUrl=… -PapiToken=…` to Gradle.
 
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
-emulator does not look by default):
+emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):
 
 ```bash
-ANDROID_AVD_HOME=$HOME/.config/.android/avd ~/Android/Sdk/emulator/emulator -avd mealplanner_test
+QT_QPA_PLATFORM=xcb ANDROID_AVD_HOME=$HOME/.config/.android/avd \
+  ~/Android/Sdk/emulator/emulator -avd mealplanner_test
 ./gradlew :androidApp:installDebug
 ```
 
