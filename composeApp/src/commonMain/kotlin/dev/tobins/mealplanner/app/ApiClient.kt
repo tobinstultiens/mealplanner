@@ -9,6 +9,8 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RecipeDetail
+import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.UnmappedText
@@ -49,6 +51,25 @@ class ApiClient(settings: ServerSettings) {
     suspend fun recipe(id: Long): RecipeDetail = http.get("api/recipes/$id").body()
 
     suspend fun syncCookingSite(): SyncResult = http.post("api/sync/cooking").body()
+
+    suspend fun createRecipe(input: RecipeInput): RecipeDetail = http.post("api/recipes") {
+        contentType(ContentType.Application.Json)
+        setBody(input)
+    }.body()
+
+    suspend fun updateRecipe(id: Long, input: RecipeInput): RecipeDetail = http.put("api/recipes/$id") {
+        contentType(ContentType.Application.Json)
+        setBody(input)
+    }.body()
+
+    suspend fun deleteRecipe(id: Long) {
+        http.delete("api/recipes/$id")
+    }
+
+    suspend fun updateRecipeSettings(id: Long, settings: RecipeSettings): RecipeDetail = http.put("api/recipes/$id/settings") {
+        contentType(ContentType.Application.Json)
+        setBody(settings)
+    }.body()
 
     suspend fun unmapped(): List<UnmappedText> = http.get("api/mappings/unmapped").body()
 

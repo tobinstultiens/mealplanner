@@ -44,9 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeNutrition
+import dev.tobins.mealplanner.api.RecipeSettings
+import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import io.ktor.client.plugins.ResponseException
 import kotlinx.coroutines.CancellationException
@@ -72,7 +75,7 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -> Unit) {
+fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -> Unit, onNewRecipe: () -> Unit) {
     var state by remember { mutableStateOf<Load<List<RecipeSummary>>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
     var syncing by remember { mutableStateOf(false) }
@@ -91,6 +94,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
             TopAppBar(
                 title = { Text("Recipes") },
                 actions = {
+                    TextButton(onClick = onNewRecipe) { Text("New") }
                     TextButton(onClick = onOpenMapping) { Text("Ingredients") }
                     TextButton(
                         enabled = !syncing,
@@ -181,7 +185,8 @@ private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?, onBack: () -> Unit) {
+fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?, onBack: () -> Unit, onEdit: () -> Unit) {
+    val scope = rememberCoroutineScope()
     var state by remember(recipeId) { mutableStateOf<Load<RecipeDetail>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
     LaunchedEffect(recipeId, reload) {
@@ -200,6 +205,11 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                     )
                 },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                actions = {
+                    if ((state as? Load.Ready)?.value?.summary?.source == RecipeSource.MANUAL) {
+                        TextButton(onClick = onEdit) { Text("Edit") }
+                    }
+                },
             )
         },
     ) { padding ->
@@ -223,6 +233,11 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                         Text(if (it == 1) "Makes 1 serving" else "Makes $it servings", style = MaterialTheme.typography.labelLarge)
                     }
                     recipe.summary.nutrition?.let { NutritionCard(it, nutritionSource) }
+                    PlannerSettings(recipe.summary) { settings ->
+                        scope.launch {
+                            (load { api.updateRecipeSettings(recipeId, settings) } as? Load.Ready)?.let { state = it }
+                        }
+                    }
                     if (recipe.ingredients.isEmpty()) {
                         Text(
                             "This recipe has no structured ingredient list on the cooking site yet, so it cannot be planned.",
@@ -261,6 +276,36 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                     }
                 }
             }
+        }
+    }
+}
+
+/** Chips that set which meals the planner may use the recipe for; none selected means never. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Plan as", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val isMeal = summary.kind == RecipeKind.MEAL
+            MealSlot.entries.forEach { slot ->
+                val selected = isMeal && slot in summary.mealSlots
+                FilterChip(
+                    selected = selected,
+                    onClick = {
+                        val slots = if (selected) summary.mealSlots - slot else (if (isMeal) summary.mealSlots else emptyList()) + slot
+                        onChange(RecipeSettings(if (slots.isEmpty()) RecipeKind.COMPONENT else RecipeKind.MEAL, slots))
+                    },
+                    label = { Text(slot.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                )
+            }
+        }
+        if (summary.kind == RecipeKind.COMPONENT) {
+            Text(
+                "Not planned as a meal (a sauce, rub, dough or side).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

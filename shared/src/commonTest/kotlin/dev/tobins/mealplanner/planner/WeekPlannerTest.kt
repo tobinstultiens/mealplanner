@@ -68,8 +68,11 @@ class WeekPlannerTest {
     fun portionsAreScaledToTheSlotBudgetWithinOneBatch() {
         // Dinner budget is 760 kcal: 1.5 servings of a 500 kcal recipe is closest.
         assertEquals(1.5, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0), budget = 760.0))
-        // A single-serving recipe cannot be stretched past what it makes.
-        assertEquals(1.0, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0, servings = 1), budget = 760.0))
+        // A single-serving recipe is simply made larger, up to double.
+        assertEquals(1.5, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0, servings = 1), budget = 760.0))
+        assertEquals(2.0, WeekPlanner.portionsFor(candidate(1, DINNER, 150.0, 40.0, servings = 1), budget = 760.0))
+        // Leftovers are limited to what remains.
+        assertEquals(1.0, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0), budget = 760.0, available = 1.0))
         assertEquals(0.5, WeekPlanner.portionsFor(candidate(1, DINNER, 2000.0, 40.0), budget = 760.0))
     }
 

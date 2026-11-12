@@ -138,9 +138,10 @@ object WeekPlanner {
 
     /**
      * The portion size that comes closest to [budget] calories, without exceeding
-     * [available] servings (by default what one batch yields).
+     * [available] servings. By default that is what one batch yields, but at least two:
+     * a single-serving recipe such as a bowl of quark is simply made larger.
      */
-    fun portionsFor(candidate: PlanCandidate, budget: Double, available: Double = candidate.servings.toDouble()): Double =
+    fun portionsFor(candidate: PlanCandidate, budget: Double, available: Double = maxOf(candidate.servings.toDouble(), 2.0)): Double =
         portionSteps.filter { it <= available }.ifEmpty { listOf(available) }
             .minBy { abs(candidate.kcal * it - budget) }
 
@@ -159,7 +160,8 @@ object WeekPlanner {
         leftover: Boolean = false,
         available: Double? = null,
     ): PlannedMeal {
-        val portions = portionsFor(candidate, targets.kcal * slot.share, available ?: candidate.servings.toDouble())
+        val portions = available?.let { portionsFor(candidate, targets.kcal * slot.share, it) }
+            ?: portionsFor(candidate, targets.kcal * slot.share)
         return PlannedMeal(
             day = day,
             slot = slot,

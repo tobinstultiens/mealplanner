@@ -37,16 +37,31 @@ fun App(settings: ServerSettings) {
             nutritionSource = try { api.foodDataset().reference } catch (e: Exception) { null }
         }
         var mapping by rememberSaveable { mutableStateOf(false) }
+        // Null: no editor open. -1: a new recipe. Otherwise the id of the recipe being edited.
+        var editing by rememberSaveable { mutableStateOf<Long?>(null) }
         var tab by rememberSaveable { mutableStateOf(Tab.PLAN) }
         val recipeId = openRecipeId
+        val editingId = editing
         when {
+            editingId != null -> {
+                BackHandler(enabled = true) { editing = null }
+                RecipeEditorScreen(
+                    api = api,
+                    recipeId = editingId.takeIf { it >= 0 },
+                    onDone = { savedId ->
+                        editing = null
+                        openRecipeId = savedId
+                    },
+                    onCancel = { editing = null },
+                )
+            }
             mapping -> {
                 BackHandler(enabled = true) { mapping = false }
                 MappingScreen(api, onBack = { mapping = false })
             }
             recipeId != null -> {
                 BackHandler(enabled = true) { openRecipeId = null }
-                RecipeDetailScreen(api, recipeId, nutritionSource, onBack = { openRecipeId = null })
+                RecipeDetailScreen(api, recipeId, nutritionSource, onBack = { openRecipeId = null }, onEdit = { editing = recipeId })
             }
             else -> Scaffold(
                 bottomBar = {
@@ -66,7 +81,12 @@ fun App(settings: ServerSettings) {
                 Box(Modifier.padding(bottom = padding.calculateBottomPadding())) {
                     when (tab) {
                         Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { tab = Tab.PROFILE })
-                        Tab.RECIPES -> RecipeListScreen(api, onOpen = { openRecipeId = it }, onOpenMapping = { mapping = true })
+                        Tab.RECIPES -> RecipeListScreen(
+                            api,
+                            onOpen = { openRecipeId = it },
+                            onOpenMapping = { mapping = true },
+                            onNewRecipe = { editing = -1 },
+                        )
                         Tab.PROFILE -> ProfileScreen(api)
                     }
                 }
