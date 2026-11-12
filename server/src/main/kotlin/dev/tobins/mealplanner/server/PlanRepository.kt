@@ -3,8 +3,14 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.planner.PlanRequest
+import dev.tobins.mealplanner.recipes.IngredientLine
+import dev.tobins.mealplanner.units.Dimension
 import dev.tobins.mealplanner.planner.WeekPlanner
 import dev.tobins.mealplanner.server.db.Database
 import java.time.LocalDate
@@ -70,6 +76,73 @@ class PlanRepository(
         val start = parse(weekStart)
         q.deleteMeal(start.toString(), day.toLong(), slot.name)
         return view(start)
+    }
+
+    /**
+     * What the week's meals need. Each recipe is scaled to the portions planned for it,
+     * leftovers included; staples are left out and only named as a reminder.
+     */
+    fun shoppingList(weekStart: String): ShoppingList {
+        val start = parse(weekStart)
+        class Need(val name: String, val category: String, val onHand: Boolean) {
+            var grams = 0.0
+            var gramsKnown = true
+            var pieces = 0.0
+            val recipes = linkedSetOf<String>()
+        }
+        val onHand = recipes.onHandIds()
+        val needs = linkedMapOf<String, Need>()
+        val staples = sortedSetOf<String>()
+
+        val portionsByRecipe = stored(start).groupBy { it.recipeId }.mapValues { (_, meals) -> meals.sumOf { it.portions } to meals.first().title }
+        for ((recipeId, planned) in portionsByRecipe) {
+            val (portions, title) = planned
+            val (servings, lines) = recipes.linesWithIngredients(recipeId) ?: continue
+            val factor = portions / servings
+            for ((line, ingredient) in lines) {
+                if (ingredient?.isStaple == true) {
+                    staples += ingredient.name
+                    continue
+                }
+                val key = ingredient?.let { "i${it.id}" } ?: "t:${IngredientRepository.normalise(IngredientLine.coreText(line.ingredientText))}"
+                val need = needs.getOrPut(key) {
+                    Need(
+                        name = ingredient?.name ?: IngredientLine.coreText(line.ingredientText).replaceFirstChar { it.uppercase() },
+                        category = ingredient?.food?.groupEn ?: "Other",
+                        onHand = ingredient?.id in onHand,
+                    )
+                }
+                need.recipes += title
+                val amount = line.amount ?: continue // "salt to taste": needed, but no quantity
+                val grams = ingredient?.let { NutritionCalculator.quantityOf(line, it)?.grams }
+                    ?: line.baseAmount.takeIf { line.dimension == Dimension.WEIGHT }
+                if (grams != null) need.grams += grams * factor else need.gramsKnown = false
+                if (line.dimension == Dimension.COUNT) need.pieces += amount * factor
+            }
+        }
+        val checked = q.selectChecks(start.toString()).executeAsList().toSet()
+        return ShoppingList(
+            weekStart = start.toString(),
+            items = needs.map { (key, need) ->
+                ShoppingItem(
+                    key = key,
+                    name = need.name,
+                    grams = need.grams.takeIf { need.gramsKnown && it > 0 },
+                    pieces = need.pieces.takeIf { it > 0 },
+                    category = need.category,
+                    recipes = need.recipes.toList(),
+                    onHand = need.onHand,
+                    checked = key in checked,
+                )
+            }.sortedWith(compareBy({ it.category == "Other" }, { it.category }, { it.name.lowercase() })),
+            staples = staples.toList(),
+        )
+    }
+
+    fun setChecked(weekStart: String, check: ShoppingCheck): ShoppingList {
+        val start = parse(weekStart)
+        if (check.checked) q.insertCheck(start.toString(), check.key) else q.deleteCheck(start.toString(), check.key)
+        return shoppingList(weekStart)
     }
 
     private fun request(start: LocalDate, locked: List<PlannedMeal>, seed: Long) = PlanRequest(

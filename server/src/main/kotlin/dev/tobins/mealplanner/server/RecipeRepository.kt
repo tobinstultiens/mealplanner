@@ -93,6 +93,15 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         }
     }
 
+    fun onHandIds(): Set<Long> = ingredients.pantry().onHand.mapTo(HashSet()) { it.id }
+
+    /** A recipe's base yield and its lines with the ingredient each one means; null if the recipe is gone. */
+    fun linesWithIngredients(recipeId: Long): Pair<Int, List<Pair<IngredientLine, Ingredient?>>>? {
+        val row = q.selectById(recipeId).executeAsOneOrNull() ?: return null
+        val resolve = ingredients.resolver()
+        return (row.servings?.toInt() ?: 1) to linesOf(recipeId).map { it to resolve(it) }
+    }
+
     /** Creates a recipe of the user's own. */
     fun create(input: RecipeInput): RecipeDetail = db.transactionWithResult {
         val parsed = parse(input)

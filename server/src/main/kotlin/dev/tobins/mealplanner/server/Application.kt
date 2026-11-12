@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
+import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -156,6 +157,11 @@ fun Application.module(config: ServerConfig, database: Database) {
                     ?: throw IllegalArgumentException("slot must be one of ${MealSlot.entries.joinToString()}")
 
                 get { call.respond(plans.get(call.week())) }
+
+                get("/shopping") { call.respond(plans.shoppingList(call.week())) }
+
+                // Ticks an item of the shopping list off, or back on.
+                put("/shopping") { call.respond(plans.setChecked(call.week(), call.receive<ShoppingCheck>())) }
 
                 // Replans every meal that is not locked.
                 post("/generate") { call.respond(plans.generate(call.week())) }

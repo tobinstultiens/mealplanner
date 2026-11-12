@@ -10,6 +10,8 @@ import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Sex
+import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.WeekPlan
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -184,5 +186,47 @@ class PlanTest {
         assertEquals(HttpStatusCode.BadRequest, http.post("/api/recipes") { setBody(RecipeInput(" ", 1, "1 | g | beef")) }.status)
         assertEquals(HttpStatusCode.NoContent, http.delete("/api/recipes/${bowl.summary.id}").status)
         assertEquals(HttpStatusCode.NotFound, http.get("/api/recipes/${bowl.summary.id}").status)
+    }
+
+    @Test
+    fun shoppingListScalesRecipesToPlannedPortionsAndSkipsStaples() = testApplication {
+        val http = start().ready()
+        http.post("/api/recipes") {
+            setBody(RecipeInput("Snack plate", 1, "100 | g | beef\n| | gizmo to taste", mealSlots = listOf(MealSlot.SNACK)))
+        }
+        val plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        val meals = plan.days.flatMap { it.meals }
+
+        var list = http.get("/api/plans/$week/shopping").body<ShoppingList>()
+        val beef = list.items.single { it.name == "Beef raw" }
+        // Every recipe is beef only: grams per serving times the portions planned, summed over the week.
+        val expected = meals.sumOf { meal ->
+            val gramsPerServing = if (meal.title == "Snack plate") 100.0 else (1200 + meal.title.removePrefix("Dinner ").toInt() * 80) / 4.0
+            gramsPerServing * meal.portions
+        }
+        assertEquals(expected, beef.grams!!, absoluteTolerance = 1e-6)
+        assertEquals("Meat", beef.category)
+        assertTrue("Snack plate" in beef.recipes)
+
+        // A line without an amount is still something to have, listed last without a quantity.
+        val gizmo = list.items.last()
+        assertEquals("Gizmo to taste", gizmo.name)
+        assertEquals("Other", gizmo.category)
+        assertEquals(null, gizmo.grams)
+        assertEquals(null, gizmo.pieces)
+
+        // Ticking off, on-hand marking and staples.
+        list = http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(gizmo.key, true)) }.body()
+        assertTrue(list.items.single { it.key == gizmo.key }.checked)
+        list = http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(gizmo.key, false)) }.body()
+        assertTrue(list.items.none { it.checked })
+
+        val beefId = beef.key.removePrefix("i")
+        http.put("/api/pantry/on-hand/$beefId")
+        assertTrue(http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.key == beef.key }.onHand)
+        http.put("/api/pantry/staples/$beefId")
+        list = http.get("/api/plans/$week/shopping").body()
+        assertTrue(list.items.none { it.key == beef.key })
+        assertEquals(listOf("Beef raw"), list.staples)
     }
 }

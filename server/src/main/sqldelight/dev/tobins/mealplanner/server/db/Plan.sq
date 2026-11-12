@@ -28,3 +28,19 @@ DELETE FROM planMeal WHERE weekStart = ? AND day = ? AND slot = ?;
 
 setLocked:
 UPDATE planMeal SET locked = ? WHERE weekStart = ? AND day = ? AND slot = ?;
+
+-- Items ticked off on a week's shopping list.
+CREATE TABLE shoppingCheck (
+    weekStart TEXT NOT NULL,
+    itemKey TEXT NOT NULL,
+    PRIMARY KEY (weekStart, itemKey)
+);
+
+selectChecks:
+SELECT itemKey FROM shoppingCheck WHERE weekStart = ?;
+
+insertCheck:
+INSERT OR IGNORE INTO shoppingCheck (weekStart, itemKey) VALUES (?, ?);
+
+deleteCheck:
+DELETE FROM shoppingCheck WHERE weekStart = ? AND itemKey = ?;

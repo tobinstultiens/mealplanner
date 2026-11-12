@@ -46,3 +46,33 @@ data class WeekPlan(
     /** Slots the planner had no suitable recipe for. */
     val emptySlots: List<MealSlot>,
 )
+
+/** One thing to buy for a week plan. */
+@Serializable
+data class ShoppingItem(
+    /** Stable identifier of the item within the list, used to tick it off. */
+    val key: String,
+    val name: String,
+    /** Total weight needed, when every use could be converted to grams. */
+    val grams: Double?,
+    /** Total number of pieces, when the recipes count this ingredient in pieces. */
+    val pieces: Double?,
+    /** Shop section, taken from the food group; "Other" when unknown. */
+    val category: String,
+    val recipes: List<String>,
+    /** True when the pantry lists it as on hand: check before buying. */
+    val onHand: Boolean,
+    val checked: Boolean,
+)
+
+/** Everything the week's meals need, without the staples that are always at home. */
+@Serializable
+data class ShoppingList(
+    val weekStart: String,
+    val items: List<ShoppingItem>,
+    /** Names of staples the plan uses, as a reminder to check the cupboard. */
+    val staples: List<String>,
+)
+
+@Serializable
+data class ShoppingCheck(val key: String, val checked: Boolean)
