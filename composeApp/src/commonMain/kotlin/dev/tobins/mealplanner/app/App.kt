@@ -81,6 +81,7 @@ fun App(settings: ServerSettings) {
                 Box(Modifier.padding(bottom = padding.calculateBottomPadding())) {
                     when (tab) {
                         Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { tab = Tab.PROFILE })
+                        Tab.SHOPPING -> ShoppingScreen(api)
                         Tab.RECIPES -> RecipeListScreen(
                             api,
                             onOpen = { openRecipeId = it },
@@ -97,6 +98,7 @@ fun App(settings: ServerSettings) {
 
 private enum class Tab(val label: String, val symbol: String) {
     PLAN("Plan", "▦"),
+    SHOPPING("Shopping", "✓"),
     RECIPES("Recipes", "☰"),
     PROFILE("Profile", "◉"),
 }

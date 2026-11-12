@@ -35,4 +35,16 @@ class FormattingTest {
         assertEquals("5 g", formatGrams(5.0))
         assertEquals("0 g", formatGrams(null))
     }
+
+    @Test
+    fun shoppingQuantitiesRoundPiecesUpAndSwitchToKilograms() {
+        fun item(grams: Double?, pieces: Double?) =
+            dev.tobins.mealplanner.api.ShoppingItem("k", "x", grams, pieces, "c", emptyList(), onHand = false, checked = false)
+
+        assertEquals("450 g", item(450.2, null).quantityText())
+        assertEquals("1.25 kg", item(1250.0, null).quantityText())
+        assertEquals("2 × · 165 g", item(165.0, 1.5).quantityText())
+        assertEquals("3 ×", item(null, 3.0).quantityText())
+        assertEquals("", item(null, null).quantityText())
+    }
 }

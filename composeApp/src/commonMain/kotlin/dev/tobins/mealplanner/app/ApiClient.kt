@@ -12,6 +12,8 @@ import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.api.WeekPlan
@@ -51,6 +53,14 @@ class ApiClient(settings: ServerSettings) {
     suspend fun recipe(id: Long): RecipeDetail = http.get("api/recipes/$id").body()
 
     suspend fun syncCookingSite(): SyncResult = http.post("api/sync/cooking").body()
+
+    suspend fun shoppingList(weekStart: String): ShoppingList = http.get("api/plans/$weekStart/shopping").body()
+
+    suspend fun setShoppingChecked(weekStart: String, key: String, checked: Boolean): ShoppingList =
+        http.put("api/plans/$weekStart/shopping") {
+            contentType(ContentType.Application.Json)
+            setBody(ShoppingCheck(key, checked))
+        }.body()
 
     suspend fun createRecipe(input: RecipeInput): RecipeDetail = http.post("api/recipes") {
         contentType(ContentType.Application.Json)
