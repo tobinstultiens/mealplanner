@@ -57,7 +57,8 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      * Looks up the ingredient each line's text means. In order: a link for the exact
      * text, a link for its core text ("garlic, minced" -> "garlic"), then an ingredient
      * whose name is the core text, ignoring a plural s; the last two are then retried
-     * without leading preparation words ("chopped green onion" -> "green onion").
+     * without leading preparation words ("chopped green onion" -> "green onion") and
+     * for each alternative of an "a or b" text.
      */
     fun resolver(): (IngredientLine) -> Ingredient? {
         val all = list()
@@ -65,10 +66,8 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         val byName = all.associateBy { singular(it.name.lowercase()) }
         val aliases = q.selectAliases().executeAsList().associate { it.text to it.ingredientId }
         return { line ->
-            val core = IngredientLine.coreText(line.ingredientText)
-            val plain = IngredientLine.withoutDescriptors(core)
             aliases[normalise(line.ingredientText)]?.let(byId::get)
-                ?: listOf(core, plain).distinct().firstNotNullOfOrNull { text ->
+                ?: IngredientLine.lookupTexts(line.ingredientText).firstNotNullOfOrNull { text ->
                     (aliases[text] ?: aliases[singular(text)])?.let(byId::get) ?: byName[singular(text)]
                 }
         }

@@ -54,13 +54,26 @@ data class IngredientLine(
             "chopped", "minced", "diced", "sliced", "grated", "crushed", "shredded", "peeled", "toasted", "melted",
             "softened", "cooked", "coarse", "coarsely", "finely", "freshly", "thinly", "roughly", "fresh", "large",
             "small", "medium", "cold", "warm", "hot", "boneless", "skinless", "whole", "ripe", "pure", "good", "quality",
-            "verse", "vers", "grote", "kleine", "gesneden", "fijngesneden", "gehakte", "geraspte",
+            "cracked", "lean", "low-sodium", "low-fat", "nonfat", "full-fat", "plain", "baby", "mixed", "chilled",
+            "reserved", "frozen", "canned", "drained",
+            "verse", "vers", "grote", "kleine", "gesneden", "fijngesneden", "gehakte", "geraspte", "gemalen",
         )
 
         /** [core] without leading [descriptors]: `freshly ground black pepper` stays, `chopped green onion` -> `green onion`. */
         fun withoutDescriptors(core: String): String {
             val words = core.split(' ')
             return words.dropWhile { it in descriptors }.ifEmpty { words }.joinToString(" ")
+        }
+
+        /**
+         * The texts to look an ingredient up by, most specific first: the core text, the
+         * core without leading descriptors, and then each alternative of an "a or b" or
+         * "a/b" text, since the first alternative that is known is good enough.
+         */
+        fun lookupTexts(text: String): List<String> {
+            val core = coreText(text)
+            val alternatives = core.split(Regex(" or |/")).map { it.trim() }.filter { it.isNotEmpty() }
+            return (listOf(core, withoutDescriptors(core)) + alternatives.flatMap { listOf(it, withoutDescriptors(it)) }).distinct()
         }
 
         /**

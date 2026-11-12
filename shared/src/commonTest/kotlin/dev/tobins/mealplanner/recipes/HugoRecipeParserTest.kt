@@ -132,4 +132,19 @@ class HugoRecipeParserTest {
         )
         assertEquals(listOf(false, false, true, true), lines.map { it.unitIsTheIngredient })
     }
+
+    @Test
+    fun lookupTextsCoverDescriptorsAndAlternatives() {
+        assertEquals(listOf("garlic"), IngredientLine.lookupTexts("Garlic, minced (fresh)"))
+        assertEquals(listOf("chopped green onion", "green onion"), IngredientLine.lookupTexts("chopped green onion"))
+        assertEquals(
+            listOf("dry sherry or white wine", "dry sherry", "white wine"),
+            IngredientLine.lookupTexts("dry sherry or white wine"),
+        )
+        assertEquals(
+            listOf("maida/all-purpose flour", "maida", "all-purpose flour"),
+            IngredientLine.lookupTexts("Maida/all-purpose flour"),
+        )
+        assertEquals(listOf("ground pork"), IngredientLine.lookupTexts("ground pork"), "ground pork is not pork")
+    }
 }

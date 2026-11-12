@@ -202,7 +202,7 @@ class CatalogueTest {
         val http = start()
         val catalogue = http.get("/api/ingredients").body<List<Ingredient>>()
         assertEquals(
-            listOf("Onion", "Soy sauce"),
+            listOf("Onion", "Shallot", "Soy sauce"),
             catalogue.filter { it.food != null }.map { it.name },
             "the other default ingredients point at foods this NEVO sample lacks",
         )
@@ -256,7 +256,9 @@ class CatalogueTest {
     @Test
     fun pantryTracksStaplesAndOnHandItems() = testApplication {
         val http = start()
-        val (onion, soy) = http.get("/api/ingredients").body<List<Ingredient>>().filter { it.food != null }
+        val catalogue = http.get("/api/ingredients").body<List<Ingredient>>()
+        val onion = catalogue.first { it.name == "Onion" }
+        val soy = catalogue.first { it.name == "Soy sauce" }
         assertEquals(Pantry(emptyList(), emptyList()), http.get("/api/pantry").body<Pantry>())
 
         http.put("/api/pantry/staples/${soy.id}")
