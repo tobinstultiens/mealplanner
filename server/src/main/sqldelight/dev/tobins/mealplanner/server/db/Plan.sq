@@ -49,3 +49,50 @@ INSERT OR IGNORE INTO shoppingCheck (weekStart, itemKey) VALUES (?, ?);
 
 deleteCheck:
 DELETE FROM shoppingCheck WHERE weekStart = ? AND itemKey = ?;
+
+-- The latest offers per store, replaced as a whole by each successful fetch.
+CREATE TABLE offer (
+    store TEXT NOT NULL,
+    title TEXT NOT NULL,
+    deal TEXT,
+    price REAL,
+    originalPrice REAL,
+    packSize TEXT,
+    category TEXT,
+    validFrom TEXT NOT NULL,
+    validUntil TEXT NOT NULL,
+    url TEXT
+);
+
+CREATE INDEX offer_store ON offer(store);
+
+CREATE TABLE offerSource (
+    store TEXT PRIMARY KEY,
+    fetchedAt TEXT,
+    error TEXT
+);
+
+selectOffersValidOn:
+SELECT * FROM offer WHERE validFrom <= :date AND validUntil >= :date ORDER BY store, title;
+
+countOffers:
+SELECT store, count(*) AS n FROM offer GROUP BY store;
+
+deleteOffers:
+DELETE FROM offer WHERE store = ?;
+
+insertOffer:
+INSERT INTO offer (store, title, deal, price, originalPrice, packSize, category, validFrom, validUntil, url)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectSources:
+SELECT * FROM offerSource;
+
+ensureSource:
+INSERT OR IGNORE INTO offerSource (store) VALUES (?);
+
+recordSuccess:
+UPDATE offerSource SET fetchedAt = ?, error = NULL WHERE store = ?;
+
+recordFailure:
+UPDATE offerSource SET error = ? WHERE store = ?;

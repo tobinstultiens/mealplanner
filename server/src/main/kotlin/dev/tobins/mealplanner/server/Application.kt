@@ -35,9 +35,21 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import dev.tobins.mealplanner.server.offers.AhOfferSource
+import dev.tobins.mealplanner.server.offers.JumboOfferSource
+import dev.tobins.mealplanner.server.offers.LidlOfferSource
+import dev.tobins.mealplanner.server.offers.OfferSource
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.Duration
+import java.time.LocalDate
+import kotlin.time.Duration.Companion.hours
 import java.security.MessageDigest
 
 const val APP_VERSION = "0.1.0"
@@ -53,6 +65,8 @@ data class ServerConfig(
     val cookingRepo: File?,
     /** The NEVO main csv to import nutrition data from; null leaves the food table as it is. */
     val nevoFile: File? = null,
+    /** Fetch store offers in the background. Off unless set, so tests never reach the stores. */
+    val fetchOffers: Boolean = false,
 ) {
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): ServerConfig {
@@ -64,6 +78,7 @@ data class ServerConfig(
                 databaseUrl = env["MEALPLANNER_DB_URL"] ?: "jdbc:sqlite:.runtime/mealplanner.db",
                 cookingRepo = env["COOKING_REPO_PATH"]?.takeIf { it.isNotBlank() }?.let(::File),
                 nevoFile = env["NEVO_CSV_PATH"]?.takeIf { it.isNotBlank() }?.let(::File),
+                fetchOffers = env["MEALPLANNER_FETCH_OFFERS"]?.lowercase() !in setOf("false", "off", "0"),
             )
         }
     }
@@ -75,13 +90,28 @@ fun main() {
     embeddedServer(Netty, port = config.port) { module(config, database) }.start(wait = true)
 }
 
-fun Application.module(config: ServerConfig, database: Database) {
+fun Application.module(
+    config: ServerConfig,
+    database: Database,
+    offerSources: List<OfferSource> = defaultOfferSources(),
+) {
     val foods = FoodRepository(database)
     val ingredients = IngredientRepository(database, foods)
     val recipes = RecipeRepository(database, ingredients)
     val profiles = ProfileRepository(database)
     val plans = PlanRepository(database, recipes, profiles)
     val tracking = TrackingRepository(database, plans, profiles)
+    val offers = OfferRepository(database, offerSources)
+    if (config.fetchOffers) {
+        // Stores publish their offers weekly; checking every six hours and fetching
+        // what is older than a day keeps up without hammering them.
+        launch {
+            while (true) {
+                offers.refresh(olderThan = Duration.ofHours(24))
+                delay(6.hours)
+            }
+        }
+    }
     // First start with a dataset configured: import it so nutrition works without a manual step.
     config.nevoFile?.takeIf { it.isFile && foods.dataset().foodCount == 0 }?.let {
         log.info("Imported ${foods.importNevo(it)} foods from ${it.name}")
@@ -228,6 +258,16 @@ fun Application.module(config: ServerConfig, database: Database) {
                 call.respond(HttpStatusCode.NoContent)
             }
 
+            get("/api/offers") {
+                val date = call.request.queryParameters["date"]?.let {
+                    runCatching { LocalDate.parse(it) }.getOrElse { throw IllegalArgumentException("date must be an ISO date") }
+                } ?: LocalDate.now()
+                call.respond(offers.state(date))
+            }
+
+            // Fetches every store now, regardless of when it was last fetched.
+            post("/api/offers/refresh") { call.respond(offers.refresh()) }
+
             get("/api/foods/dataset") { call.respond(foods.dataset()) }
 
             get("/api/foods") {
@@ -285,4 +325,12 @@ fun Application.module(config: ServerConfig, database: Database) {
             }
         }
     }
+}
+
+/** The real stores, sharing one HTTP client. */
+fun defaultOfferSources(): List<OfferSource> {
+    val http = HttpClient(OkHttp) {
+        install(HttpTimeout) { requestTimeoutMillis = 30_000 }
+    }
+    return listOf(AhOfferSource(http), JumboOfferSource(http), LidlOfferSource(http))
 }

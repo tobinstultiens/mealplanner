@@ -1,0 +1,90 @@
+{
+ "sectionType": "AH",
+ "sectionDescription": "Vlees",
+ "bonusGroupOrProducts": [
+  {
+   "product": {
+    "webshopId": 561333,
+    "title": "AH Gemengd gehakt 500 gram",
+    "brand": "AH",
+    "unitPriceDescription": "normale prijs per kg €9.18",
+    "bonusMechanism": "VOOR 3.49",
+    "discountLabels": [
+     {
+      "code": "DISCOUNT_FIXED_PRICE",
+      "defaultDescription": "voor 3.49",
+      "price": 3.49
+     }
+    ],
+    "bonusStartDate": "2026-11-09",
+    "bonusEndDate": "2026-11-15",
+    "priceBeforeBonus": 4.59,
+    "currentPrice": 3.49,
+    "isBonus": true,
+    "mainCategory": "Vlees",
+    "subCategory": "Gehakt (half-om-half)"
+   }
+  },
+  {
+   "bonusGroup": {
+    "id": "824627",
+    "segmentDescription": "AH Excellent vrije uitloop kip van de versafdeling",
+    "bonusStartDate": "2026-11-09",
+    "bonusEndDate": "2026-11-15",
+    "discountDescription": "25% KORTING",
+    "category": "Vlees",
+    "discountLabels": [
+     {
+      "code": "DISCOUNT_PERCENTAGE",
+      "defaultDescription": "25% korting",
+      "percentage": 25,
+      "precisePercentage": 25
+     }
+    ]
+   }
+  },
+  {
+   "product": {
+    "webshopId": 232208,
+    "title": "AH Varkenshaas",
+    "brand": "AH",
+    "unitPriceDescription": "normale prijs per kg €12.50",
+    "bonusMechanism": "10% korting",
+    "discountLabels": [
+     {
+      "code": "DISCOUNT_PERCENTAGE",
+      "defaultDescription": "10% korting",
+      "percentage": 10,
+      "precisePercentage": 10
+     }
+    ],
+    "bonusStartDate": "2026-11-09",
+    "bonusEndDate": "2026-11-15",
+    "priceBeforeBonus": 6.0,
+    "currentPrice": 5.4,
+    "isBonus": true,
+    "mainCategory": "Vlees",
+    "subCategory": "Varkenshaas"
+   }
+  },
+  {
+   "bonusGroup": {
+    "id": "824592",
+    "segmentDescription": "Alle AH Greenfields stoofvlees",
+    "bonusStartDate": "2026-11-09",
+    "bonusEndDate": "2026-11-15",
+    "discountDescription": "100 GRAM VOOR 1.59",
+    "category": "Vlees",
+    "discountLabels": [
+     {
+      "code": "DISCOUNT_WEIGHT",
+      "defaultDescription": "per 100 GRAM voor €1.59",
+      "count": 100,
+      "price": 1.59,
+      "unit": "GRAM"
+     }
+    ]
+   }
+  }
+ ]
+}

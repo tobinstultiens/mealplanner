@@ -1,0 +1,56 @@
+{
+ "periods": [
+  {
+   "bonusStartDate": "2026-11-09",
+   "bonusEndDate": "2026-11-15",
+   "tabs": [
+    {
+     "description": "Uitgelicht",
+     "urlMetadataList": [
+      {
+       "url": "bonuspage/v2/section/spotlight?application=AHWEBSHOP&date=2026-11-09",
+       "count": 6,
+       "bonusType": "SPOTLIGHT",
+       "description": "Uit de Bonusfolder"
+      }
+     ]
+    },
+    {
+     "description": "Alle Bonus",
+     "urlMetadataList": [
+      {
+       "url": "bonuspage/v2/section/spotlight?application=AHWEBSHOP&date=2026-11-09",
+       "count": 6,
+       "bonusType": "SPOTLIGHT",
+       "description": "Uit de Bonusfolder"
+      },
+      {
+       "url": "bonuspage/v2/section?application=AHWEBSHOP&date=2026-11-09&promotionType=NATIONAL&category=Vlees",
+       "count": 8,
+       "bonusType": "NATIONAL",
+       "description": "Vlees"
+      },
+      {
+       "url": "bonuspage/v2/section?application=AHWEBSHOP&date=2026-11-09&promotionType=NATIONAL&category=Zuivel%2C%20eieren",
+       "count": 5,
+       "bonusType": "NATIONAL",
+       "description": "Zuivel, eieren"
+      },
+      {
+       "url": "bonuspage/v2/section?application=AHWEBSHOP&date=2026-11-09&promotionType=NATIONAL&category=Drogisterij",
+       "count": 3,
+       "bonusType": "NATIONAL",
+       "description": "Drogisterij"
+      },
+      {
+       "url": "bonuspage/v2/section?application=AHWEBSHOP&date=2026-11-09&promotionType=ETOS",
+       "count": 35,
+       "bonusType": "ETOS",
+       "description": "Etos acties"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
