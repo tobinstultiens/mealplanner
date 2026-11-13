@@ -95,4 +95,19 @@ class NutritionCalculatorTest {
         assertEquals(400.0, result.perServing.kcal)
         assertTrue(result.complete)
     }
+
+    @Test
+    fun ingredientsWithoutAnAmountAreReportedUnlessTheyAreSeasoning() {
+        val (main, salt, garnish, bay) = lines("| | chicken thighs", "| | salt to taste", "| | sliced scallions (optional)", "| | bay leaf")
+        val bayLeaf = ingredient(food = null).copy(negligible = true)
+        val result = NutritionCalculator.perServing(listOf(main to chicken, salt to null, garnish to null, bay to bayLeaf), 1)
+
+        assertEquals(listOf("chicken thighs"), result.unquantified)
+        assertTrue(result.complete, "nothing with an amount was left out")
+        assertEquals(0.0, result.perServing.kcal)
+
+        val (pepper, chili, red) = lines("| | kosher salt and freshly ground black pepper", "| | chile powder", "| | halve rode peper")
+        val spice = ingredient(food(kcal = 300.0, protein = 10.0).copy(groupEn = "Herbs and spices"))
+        assertEquals(emptyList(), NutritionCalculator.perServing(listOf(pepper to null, chili to spice, red to null), 1).unquantified)
+    }
 }

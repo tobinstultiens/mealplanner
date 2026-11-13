@@ -92,6 +92,12 @@ data class RecipeNutrition(
     val approximate: Boolean,
     /** Ingredient texts of the lines left out. */
     val uncounted: List<String>,
+    /**
+     * Ingredients listed without an amount that are more than seasoning or garnish, such as
+     * "chicken thighs" with no weight. They cannot be counted, so the totals are too low
+     * by however much they add. Fixed by giving them an amount in the recipe.
+     */
+    val unquantified: List<String> = emptyList(),
 )
 
 /** What is at home: [staples] are always there, [onHand] are perishables to use up. */

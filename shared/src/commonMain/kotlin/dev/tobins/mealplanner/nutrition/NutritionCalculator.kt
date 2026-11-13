@@ -33,8 +33,9 @@ object NutritionCalculator {
     }
 
     /**
-     * Nutrition of one of [servings] servings. Lines without an amount ("salt to
-     * taste") and negligible ingredients are ignored; lines with an amount that cannot be counted (unmapped,
+     * Nutrition of one of [servings] servings. Negligible ingredients are ignored. Lines
+     * without an amount cannot be counted: seasoning ("salt to taste") is ignored, anything
+     * else is reported in [RecipeNutrition.unquantified]. Lines with an amount that cannot be counted (unmapped,
      * no linked food, or no weight per piece) make the result incomplete.
      */
     fun perServing(lines: List<Pair<IngredientLine, Ingredient?>>, servings: Int): RecipeNutrition {
@@ -42,9 +43,14 @@ object NutritionCalculator {
         var total = Zero
         var approximate = false
         val uncounted = mutableListOf<String>()
+        val unquantified = mutableListOf<String>()
 
         for ((line, ingredient) in lines) {
-            if (line.amount == null || ingredient?.negligible == true) continue
+            if (ingredient?.negligible == true) continue
+            if (line.amount == null) {
+                if (!isSeasoning(line.ingredientText, ingredient)) unquantified += line.ingredientText
+                continue
+            }
             val food = ingredient?.food
             val quantity = ingredient?.let { quantityOf(line, it) }
             if (food == null || quantity == null) {
@@ -72,8 +78,22 @@ object NutritionCalculator {
             complete = uncounted.isEmpty(),
             approximate = approximate,
             uncounted = uncounted,
+            unquantified = unquantified.distinct(),
         )
     }
+
+    /** Words that mark a line without an amount as seasoning, garnish or optional: fine to leave out. */
+    private val seasoningWords = Regex(
+        "taste|smaak|optional|optioneel|garnish|serving|topping|frying|greasing|dusting|naar keuze|pinch|snufje|sprinkle|handful|handje|beetje|scheutje|" +
+            "\\bsalt\\b|\\bpepper\\b|\\bzout\\b|\\bpeper\\b|cranks",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** Ingredients that, without an amount, add next to nothing however much is used. */
+    private val freeFoods = setOf("Salt", "Water", "Black pepper")
+
+    private fun isSeasoning(text: String, ingredient: Ingredient?): Boolean =
+        seasoningWords.containsMatchIn(text) || ingredient?.name in freeFoods || ingredient?.food?.groupEn == "Herbs and spices"
 
     private val Zero = Nutrition(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 

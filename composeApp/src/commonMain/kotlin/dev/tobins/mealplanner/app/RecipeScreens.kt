@@ -190,6 +190,7 @@ private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
         val nutrition = recipe.nutrition
         when {
             !recipe.plannable || nutrition == null -> add("no amounts yet")
+            nutrition.complete && nutrition.unquantified.isNotEmpty() -> add("${nutrition.headline()} (missing amounts)")
             nutrition.complete -> add(nutrition.headline())
             else -> add("${nutrition.uncounted.size} ingredients to link")
         }
@@ -395,6 +396,13 @@ private fun NutritionCard(nutrition: RecipeNutrition, source: String?) {
             if (!nutrition.complete) {
                 Text(
                     "Incomplete: ${nutrition.uncounted.size} ingredients are not counted yet (${nutrition.uncounted.joinToString("; ")}).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (nutrition.unquantified.isNotEmpty()) {
+                Text(
+                    "Too low: no amount is given for ${nutrition.unquantified.joinToString("; ")}. Add amounts on the cooking site to count them.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
