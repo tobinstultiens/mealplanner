@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -84,8 +85,10 @@ fun App(settings: ServerSettings) {
                 },
             ) { padding ->
                 // Each screen has its own top bar; only the bottom bar's space is reserved here.
-                // consumeWindowInsets stops the inner screens from adding the navigation inset a second time.
-                Box(Modifier.padding(bottom = padding.calculateBottomPadding()).consumeWindowInsets(padding)) {
+                // Only the bottom inset is consumed: the bottom bar already covers the navigation
+                // area, while each screen's own top bar still has to clear the status bar.
+                val bottom = PaddingValues(bottom = padding.calculateBottomPadding())
+                Box(Modifier.padding(bottom).consumeWindowInsets(bottom)) {
                     when (tab) {
                         Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenPlan = { tab = Tab.PLAN })
                         Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { profileOpen = true })
