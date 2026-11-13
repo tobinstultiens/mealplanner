@@ -272,7 +272,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                     }
                     if (recipe.instructions.isNotBlank()) {
                         HorizontalDivider()
-                        Text(recipe.instructions)
+                        MarkdownText(recipe.instructions)
                     }
                 }
             }
