@@ -19,3 +19,6 @@ actual fun dayLabel(isoDate: String): String =
 
 actual fun daysBetween(fromIso: String, toIso: String): Int =
     (java.time.LocalDate.parse(toIso).toEpochDay() - java.time.LocalDate.parse(fromIso).toEpochDay()).toInt()
+
+actual fun nowLabel(): String =
+    java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM HH:mm", java.util.Locale.ENGLISH))

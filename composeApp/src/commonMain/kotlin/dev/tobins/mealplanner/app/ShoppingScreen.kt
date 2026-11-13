@@ -49,16 +49,32 @@ fun ShoppingItem.quantityText(): String = listOfNotNull(
 /** What to buy for a week's plan, grouped by shop section, with items to tick off. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShoppingScreen(api: ApiClient, onOpenPantry: () -> Unit, onOpenOffers: () -> Unit) {
+fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Unit, onOpenOffers: () -> Unit) {
     var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
     var state by remember { mutableStateOf<Load<ShoppingList>>(Load.Loading) }
+    // Set when showing the stored copy because the server could not be reached.
+    var offlineSince by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(weekStart, reload) {
-        state = Load.Loading
-        state = load { api.shoppingList(weekStart) }
+        if (state !is Load.Ready) state = Load.Loading
+        // Ticks made offline go to the server first, so the fresh list includes them.
+        val result = load {
+            cache.pending(weekStart).forEach { (key, checked) -> api.setShoppingChecked(weekStart, key, checked) }
+            cache.clearPending(weekStart)
+            api.shoppingList(weekStart)
+        }
+        val stored = cache.load(weekStart)
+        if (result is Load.Failed && result.status == null && stored != null) {
+            state = Load.Ready(stored.first)
+            offlineSince = stored.second
+        } else {
+            state = result
+            offlineSince = null
+            (result as? Load.Ready)?.let { cache.save(it.value, nowLabel()) }
+        }
     }
 
     Scaffold(
@@ -89,6 +105,19 @@ fun ShoppingScreen(api: ApiClient, onOpenPantry: () -> Unit, onOpenOffers: () ->
                     return@Scaffold
                 }
                 LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+                    offlineSince?.let { since ->
+                        item {
+                            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Offline: the list as of $since. Ticks are saved and sent later.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(onClick = { reload++ }) { Text("Retry") }
+                            }
+                        }
+                    }
                     item {
                         val left = list.items.count { !it.checked }
                         val onOffer = list.items.count { it.offers.isNotEmpty() }
@@ -112,11 +141,24 @@ fun ShoppingScreen(api: ApiClient, onOpenPantry: () -> Unit, onOpenOffers: () ->
                         items(items, key = { it.key }) { item ->
                             ShoppingRow(item) {
                                 // Show the tick at once; the server's answer then confirms or corrects it.
-                                state = Load.Ready(list.copy(items = list.items.map { if (it.key == item.key) it.copy(checked = !item.checked) else it }))
+                                val ticked = list.copy(items = list.items.map { if (it.key == item.key) it.copy(checked = !item.checked) else it })
+                                state = Load.Ready(ticked)
+                                if (offlineSince != null) {
+                                    cache.tickOffline(weekStart, item.key, !item.checked)
+                                    return@ShoppingRow
+                                }
                                 scope.launch {
                                     when (val result = load { api.setShoppingChecked(weekStart, item.key, !item.checked) }) {
-                                        is Load.Ready -> state = result
-                                        is Load.Failed -> {
+                                        is Load.Ready -> {
+                                            state = result
+                                            cache.save(result.value, nowLabel())
+                                        }
+                                        // No connection: keep the tick and send it later.
+                                        is Load.Failed -> if (result.status == null) {
+                                            cache.save(list, offlineSince ?: nowLabel())
+                                            cache.tickOffline(weekStart, item.key, !item.checked)
+                                            offlineSince = nowLabel()
+                                        } else {
                                             state = Load.Ready(list)
                                             snackbar.showSnackbar("Could not save the tick: ${result.message}")
                                         }

@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 fun App(defaults: ServerSettings, storage: SettingsStorage) {
     var settings by remember { mutableStateOf(storage.serverSettings(defaults)) }
     val api = remember(settings) { ApiClient(settings) }
+    val shoppingCache = remember(storage) { ShoppingCache(storage) }
     DisposableEffect(api) { onDispose { api.close() } }
 
     var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
@@ -129,7 +130,7 @@ fun App(defaults: ServerSettings, storage: SettingsStorage) {
                             when (tab) {
                                 Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenPlan = { tab = Tab.PLAN })
                                 Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { profileOpen = true })
-                                Tab.SHOPPING -> ShoppingScreen(api, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
+                                Tab.SHOPPING -> ShoppingScreen(api, shoppingCache, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
                                 Tab.RECIPES -> RecipeListScreen(
                                     api,
                                     onOpen = { openRecipeId = it },

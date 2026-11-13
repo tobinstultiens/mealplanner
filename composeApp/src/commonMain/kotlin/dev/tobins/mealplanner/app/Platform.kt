@@ -20,3 +20,6 @@ expect fun dayLabel(isoDate: String): String
 
 /** Whole days from [fromIso] to [toIso]; negative when [toIso] is earlier. */
 expect fun daysBetween(fromIso: String, toIso: String): Int
+
+/** The current local time, e.g. `Fri 13 Nov 12:40`. */
+expect fun nowLabel(): String
