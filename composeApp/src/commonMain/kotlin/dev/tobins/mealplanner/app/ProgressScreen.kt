@@ -59,7 +59,7 @@ private fun kg(value: Double): String = "${formatAmount((value * 10).roundToInt(
 /** Weight log with its trend, and the calorie-target suggestion that follows from it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit) {
+fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -> Unit) {
     val today = remember { todayIso() }
     var state by remember { mutableStateOf<Load<WeightLog>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
@@ -87,7 +87,10 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Progress") },
-                actions = { TextButton(onClick = onOpenProfile) { Text("Profile and targets") } },
+                actions = {
+                    TextButton(onClick = onOpenProfile) { Text("Profile") }
+                    TextButton(onClick = onOpenServer) { Text("Server") }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },

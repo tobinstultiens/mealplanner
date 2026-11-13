@@ -38,8 +38,10 @@ curl -H "Authorization: Bearer dev-token" localhost:8080/api/recipes
 
 ## Android app
 
-The debug build talks to `http://10.0.2.2:8080` (the host machine, seen from an emulator) with the
-token `dev-token`. For a real phone or another server, pass `-PserverUrl=… -PapiToken=…` to Gradle.
+The server address and token are set in the app under Progress → Server, with a connection test.
+Until then the build's defaults apply: `http://10.0.2.2:8080` (the host machine, seen from an emulator)
+and `dev-token`, which `-PserverUrl=… -PapiToken=…` can change at build time. The token is kept in the
+app's private storage, unencrypted.
 
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):

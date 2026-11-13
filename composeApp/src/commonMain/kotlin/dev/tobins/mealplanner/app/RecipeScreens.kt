@@ -350,6 +350,7 @@ internal fun CenteredBox(modifier: Modifier = Modifier, content: @Composable () 
 
 @Composable
 internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
+    val openServer = LocalOpenServerSettings.current
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
@@ -357,6 +358,12 @@ internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row { Button(onClick = onRetry) { Text("Try again") } }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onRetry) { Text("Try again") }
+            if (openServer != null) TextButton(onClick = openServer) { Text("Server settings") }
+        }
     }
 }
+
+/** Opens the server settings; provided by [App] so any error message can offer it. */
+val LocalOpenServerSettings = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
