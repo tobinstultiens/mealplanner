@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
@@ -84,6 +85,16 @@ class ApiClient(settings: ServerSettings) {
     }.body()
 
     suspend fun deleteWeight(date: String): WeightLog = http.delete("api/weights/$date").body()
+
+    suspend fun ingredients(): List<Ingredient> = http.get("api/ingredients").body()
+
+    suspend fun setStaple(ingredientId: Long, staple: Boolean): Pantry =
+        (if (staple) http.put("api/pantry/staples/$ingredientId") else http.delete("api/pantry/staples/$ingredientId")).body()
+
+    suspend fun setOnHand(ingredientId: Long, onHand: Boolean): Pantry =
+        (if (onHand) http.put("api/pantry/on-hand/$ingredientId") else http.delete("api/pantry/on-hand/$ingredientId")).body()
+
+    suspend fun pantry(): Pantry = http.get("api/pantry").body()
 
     suspend fun shoppingList(weekStart: String): ShoppingList = http.get("api/plans/$weekStart/shopping").body()
 

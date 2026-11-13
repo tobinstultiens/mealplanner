@@ -49,7 +49,7 @@ fun ShoppingItem.quantityText(): String = listOfNotNull(
 /** What to buy for a week's plan, grouped by shop section, with items to tick off. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShoppingScreen(api: ApiClient) {
+fun ShoppingScreen(api: ApiClient, onOpenPantry: () -> Unit) {
     var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
     var state by remember { mutableStateOf<Load<ShoppingList>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
@@ -66,8 +66,9 @@ fun ShoppingScreen(api: ApiClient) {
             TopAppBar(
                 title = { Text("Shopping ${dayLabel(weekStart).substringAfter(' ')}") },
                 actions = {
-                    TextButton(onClick = { weekStart = plusDays(weekStart, -7) }) { Text("‹ Prev") }
-                    TextButton(onClick = { weekStart = plusDays(weekStart, 7) }) { Text("Next ›") }
+                    TextButton(onClick = onOpenPantry) { Text("Pantry") }
+                    TextButton(onClick = { weekStart = plusDays(weekStart, -7) }) { Text("‹") }
+                    TextButton(onClick = { weekStart = plusDays(weekStart, 7) }) { Text("›") }
                 },
             )
         },

@@ -43,6 +43,7 @@ fun App(settings: ServerSettings) {
         var editing by rememberSaveable { mutableStateOf<Long?>(null) }
         var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
         var profileOpen by rememberSaveable { mutableStateOf(false) }
+        var pantryOpen by rememberSaveable { mutableStateOf(false) }
         val recipeId = openRecipeId
         val editingId = editing
         when {
@@ -57,6 +58,10 @@ fun App(settings: ServerSettings) {
                     },
                     onCancel = { editing = null },
                 )
+            }
+            pantryOpen -> {
+                BackHandler(enabled = true) { pantryOpen = false }
+                PantryScreen(api, onBack = { pantryOpen = false })
             }
             profileOpen -> {
                 BackHandler(enabled = true) { profileOpen = false }
@@ -92,7 +97,7 @@ fun App(settings: ServerSettings) {
                     when (tab) {
                         Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenPlan = { tab = Tab.PLAN })
                         Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { profileOpen = true })
-                        Tab.SHOPPING -> ShoppingScreen(api)
+                        Tab.SHOPPING -> ShoppingScreen(api, onOpenPantry = { pantryOpen = true })
                         Tab.RECIPES -> RecipeListScreen(
                             api,
                             onOpen = { openRecipeId = it },
