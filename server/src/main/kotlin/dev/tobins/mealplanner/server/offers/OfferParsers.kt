@@ -161,7 +161,8 @@ object LidlParser {
         val discount = price?.get("discount").obj?.str("discountText")
         return Offer(
             store = Store.LIDL,
-            title = t.str("fullTitle") ?: t.str("title") ?: return null,
+            // Some Lidl titles start with a dash ("- Kipfilet").
+            title = (t.str("fullTitle") ?: t.str("title"))?.trimStart('-', ' ')?.ifBlank { null } ?: return null,
             deal = discount,
             price = price?.num("price"),
             originalPrice = price?.num("oldPrice"),

@@ -47,4 +47,18 @@ class FormattingTest {
         assertEquals("3 ×", item(null, 3.0).quantityText())
         assertEquals("", item(null, null).quantityText())
     }
+
+    @Test
+    fun offersAreSummarisedPerStore() {
+        fun offer(store: dev.tobins.mealplanner.api.Store, deal: String?, price: Double? = null, was: Double? = null) =
+            dev.tobins.mealplanner.api.Offer(store, "x", deal, price, was, validFrom = "a", validUntil = "b")
+
+        assertEquals("AH: €3.49 (was €4.59)", offer(dev.tobins.mealplanner.api.Store.AH, "VOOR 3.49", 3.49, 4.59).shortText())
+        assertEquals("AH: 25% korting", offer(dev.tobins.mealplanner.api.Store.AH, "25% KORTING").shortText())
+        assertEquals("Jumbo: 1+1 gratis", offer(dev.tobins.mealplanner.api.Store.JUMBO, "1+1 gratis").shortText())
+        assertEquals("Lidl: €4.29", offer(dev.tobins.mealplanner.api.Store.LIDL, null, 4.29).shortText())
+        assertEquals("AH: 2 voor 1.99, €1.00", offer(dev.tobins.mealplanner.api.Store.AH, "2 voor 1.99", 1.0).shortText())
+        assertEquals("Jumbo: Alleen online, €1.09", offer(dev.tobins.mealplanner.api.Store.JUMBO, "Voor 1,09 · alleen online", 1.09).shortText())
+        assertEquals("€0.05", formatEuro(0.049))
+    }
 }

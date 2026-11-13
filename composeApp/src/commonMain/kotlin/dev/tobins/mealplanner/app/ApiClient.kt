@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Profile
@@ -95,6 +96,10 @@ class ApiClient(settings: ServerSettings) {
         (if (onHand) http.put("api/pantry/on-hand/$ingredientId") else http.delete("api/pantry/on-hand/$ingredientId")).body()
 
     suspend fun pantry(): Pantry = http.get("api/pantry").body()
+
+    suspend fun offers(date: String): OffersState = http.get("api/offers") { parameter("date", date) }.body()
+
+    suspend fun refreshOffers(): OffersState = http.post("api/offers/refresh").body()
 
     suspend fun shoppingList(weekStart: String): ShoppingList = http.get("api/plans/$weekStart/shopping").body()
 

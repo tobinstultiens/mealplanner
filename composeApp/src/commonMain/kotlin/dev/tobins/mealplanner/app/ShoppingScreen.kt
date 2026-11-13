@@ -49,7 +49,7 @@ fun ShoppingItem.quantityText(): String = listOfNotNull(
 /** What to buy for a week's plan, grouped by shop section, with items to tick off. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShoppingScreen(api: ApiClient, onOpenPantry: () -> Unit) {
+fun ShoppingScreen(api: ApiClient, onOpenPantry: () -> Unit, onOpenOffers: () -> Unit) {
     var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
     var state by remember { mutableStateOf<Load<ShoppingList>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
@@ -64,8 +64,9 @@ fun ShoppingScreen(api: ApiClient, onOpenPantry: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Shopping ${dayLabel(weekStart).substringAfter(' ')}") },
+                title = { Text("Shopping") },
                 actions = {
+                    TextButton(onClick = onOpenOffers) { Text("Offers") }
                     TextButton(onClick = onOpenPantry) { Text("Pantry") }
                     TextButton(onClick = { weekStart = plusDays(weekStart, -7) }) { Text("‹") }
                     TextButton(onClick = { weekStart = plusDays(weekStart, 7) }) { Text("›") }
@@ -90,8 +91,11 @@ fun ShoppingScreen(api: ApiClient, onOpenPantry: () -> Unit) {
                 LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
                     item {
                         val left = list.items.count { !it.checked }
+                        val onOffer = list.items.count { it.offers.isNotEmpty() }
                         Text(
-                            if (left == 0) "All ${list.items.size} items ticked off." else "$left of ${list.items.size} items left",
+                            "Week of ${dayLabel(weekStart).substringAfter(' ')} · " +
+                                (if (left == 0) "all ${list.items.size} items ticked off" else "$left of ${list.items.size} items left") +
+                                if (onOffer > 0) " · $onOffer on offer this week" else "",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
@@ -159,6 +163,15 @@ private fun ShoppingRow(item: ShoppingItem, onToggle: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (item.offers.isNotEmpty()) {
+                Text(
+                    "% " + item.offers.distinctBy { it.store to it.deal }.joinToString("  ·  ") { it.shortText() },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Text(item.quantityText(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 12.dp))
     }
