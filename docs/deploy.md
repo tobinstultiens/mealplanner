@@ -10,14 +10,16 @@ so the server checks its own bearer token. Gatus checks `/health`.
 1. **Docker Hub secrets for CI.** `DOCKER_USERNAME` and `DOCKER_PASSWORD` in this repo's GitHub
    secrets. CI pushes `kick1999/mealplanner:latest` and `kick1999/mealplanner:<commit sha>`.
 2. **Vault keys** in the Ansible repo's `vars/vault.yml`:
+   - `dockerhub_username` / `dockerhub_token`: the image is private, so the server logs in to
+     Docker Hub with a read-only personal access token (hub.docker.com → Account settings →
+     Personal access tokens). Watchtower mounts the same login to pull nightly updates.
    - `mealplanner_api_token`: a long random string (`openssl rand -hex 32`). The app needs it.
    - `mealplanner_nevo_csv`: path on your machine to `NEVO2025_v9.0.csv`. The playbook copies it
      to `<docker_config_dir>/mealplanner/nevo/`. The NEVO data may not be redistributed, so it is
      never baked into the image or committed.
-   - `mealplanner_anthropic_api_key` (optional): a Claude Console API key for recipe generation.
-     Without it the app's Generate button explains that generation is off.
 3. **DNS** for `mealplanner.<DOMAIN>`, as for `cooking.<DOMAIN>`.
-4. Deploy: `ansible-playbook -Kk docker/mealplanner.yml`.
+4. Deploy: `ansible-playbook -Kk docker/watchtower.yml docker/mealplanner.yml` (watchtower once,
+   to pick up the Docker Hub login; later only `docker/mealplanner.yml`).
 
 The database and the cooking repo checkout live next to the NEVO file in
 `<docker_config_dir>/mealplanner`, owned by uid 1000 (the container runs as 1000:1000).
@@ -28,6 +30,12 @@ Watchtower pulls the new `:latest` nightly, like every other container. Database
 the new container starts. To update right away, run the playbook again or `docker restart` after a
 `docker pull`.
 
+## Recipe generation (postponed)
+
+Claude-based generation is built but switched off: the container gets no `ANTHROPIC_API_KEY`, and
+the app's Generate button says generation is off. To turn it on later, add the key to the vault and
+to the container's `env` in `docker/mealplanner.yml`.
+
 ## Connecting the app
 
 In the app, Progress → Server: `https://mealplanner.<DOMAIN>` and the token from step 2, then
@@ -36,4 +44,4 @@ In the app, Progress → Server: `https://mealplanner.<DOMAIN>` and the token fr
 ## Kubernetes
 
 `homelab-gitops/workloads/mealplanner/` holds a k3s version of the same setup for when the stack
-moves to the cluster. Don't run both: they would each use their own database.
+moves to the cluster; it would also need an image pull secret. Don't run both: they would each use their own database.
