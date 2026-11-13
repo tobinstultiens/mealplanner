@@ -109,7 +109,9 @@ fun inlineMarkdown(text: String, linkStyle: SpanStyle): AnnotatedString = buildA
 fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
     val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (block in parseMarkdown(markdown)) {
+        // The cooking site's own "Ingredients" heading is left over once the ingredients block is shown separately.
+        val blocks = parseMarkdown(markdown).filterNot { it is MdBlock.Heading && it.text.trimEnd(':').lowercase() in setOf("ingredients", "ingrediënten") }
+        for (block in blocks) {
             val text = inlineMarkdown(block.text, linkStyle)
             when (block) {
                 is MdBlock.Heading -> Text(
