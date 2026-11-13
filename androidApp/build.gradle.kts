@@ -11,8 +11,9 @@ android {
         applicationId = "dev.tobins.mealplanner"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        // The release workflow passes these from the tag (v1.2.3 -> 1.2.3 and 10203).
+        versionCode = providers.gradleProperty("appVersionCode").getOrElse("1").toInt()
+        versionName = providers.gradleProperty("appVersionName").getOrElse("0.1.0")
 
         // Server to talk to. Override per machine with -PserverUrl=… -PapiToken=… or in
         // ~/.gradle/gradle.properties. The default suits an emulator: 10.0.2.2 is the host machine.

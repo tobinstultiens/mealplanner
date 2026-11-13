@@ -1,0 +1,111 @@
+name: Release
+
+# Run by hand (Actions → Release → Run workflow). Builds a signed APK from the chosen commit,
+# tags it vX.Y.Z and publishes a GitHub release with the APK attached.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. 1.2.0. Empty: the latest v* tag with the patch number raised (first release: 0.1.0)."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pick the version
+        id: version
+        env:
+          INPUT: ${{ inputs.version }}
+        run: |
+          version="${INPUT#v}"
+          if [ -z "$version" ]; then
+            latest=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+            if [ -z "$latest" ]; then
+              version=0.1.0
+            else
+              IFS=. read -r major minor patch <<< "${latest#v}"
+              version="$major.$minor.$((patch + 1))"
+            fi
+          fi
+          if ! [[ "$version" =~ ^([0-9]+)\.([0-9]{1,2})\.([0-9]{1,2})$ ]]; then
+            echo "::error::Version must look like 1.2.3 (minor and patch below 100), got '$version'"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::Tag v$version already exists"
+            exit 1
+          fi
+          code=$(( BASH_REMATCH[1] * 10000 + BASH_REMATCH[2] * 100 + BASH_REMATCH[3] ))
+          echo "name=$version" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$version (versionCode $code) from $GITHUB_SHA"
+
+      # Only release commits whose CI run (build, tests, server image) passed.
+      - name: Check CI passed for this commit
+        run: |
+          conclusion=$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --status completed \
+            --json conclusion --jq 'map(select(.conclusion == "success")) | length')
+          if [ "$conclusion" = "0" ]; then
+            echo "::error::No successful CI run for $GITHUB_SHA; wait for CI or fix it first"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the signed release APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set; run scripts/create-release-key.sh once"
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/release.jks"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          ./gradlew :androidApp:assembleRelease \
+            -PappVersionName=${{ steps.version.outputs.name }} \
+            -PappVersionCode=${{ steps.version.outputs.code }} \
+            -Pmealplanner.keystore="$keystore" \
+            -Pmealplanner.keystorePassword="$KEYSTORE_PASSWORD" \
+            -Pmealplanner.keyAlias="$KEY_ALIAS" \
+            -Pmealplanner.keyPassword="$KEYSTORE_PASSWORD"
+          rm "$keystore"
+
+      - name: Verify the signature
+        id: apk
+        run: |
+          apk="$RUNNER_TEMP/mealplanner-v${{ steps.version.outputs.name }}.apk"
+          cp androidApp/build/outputs/apk/release/androidApp-release.apk "$apk"
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n1)
+          "$apksigner" verify --print-certs "$apk"
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and publish the release
+        run: |
+          gh release create "v${{ steps.version.outputs.name }}" "${{ steps.apk.outputs.path }}" \
+            --target "$GITHUB_SHA" \
+            --title "v${{ steps.version.outputs.name }}" \
+            --generate-notes

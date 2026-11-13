@@ -66,30 +66,26 @@ version. Every change also needs a migration file `N.sqm` (version N to N+1) nex
 applies pending migrations on start. `MigrationTest` builds a version 1 database from
 `server/src/test/resources/schema/v1.sql` and checks it ends up identical to a fresh one.
 
-## Release build for your phone
+## Releases
 
-Create a signing key once and keep it (and its passwords) outside the repo; losing it means
-the app can no longer be updated in place:
+Releases are made by hand, not on every commit: Actions → **Release** → Run workflow, on `main`.
+The workflow checks that CI passed for that commit, builds a signed APK, tags the commit `vX.Y.Z`
+and publishes a GitHub release with `mealplanner-vX.Y.Z.apk` attached. Leave the version empty to
+raise the patch number of the latest tag (the first release is `0.1.0`), or enter one such as
+`0.2.0`. The version code is derived from it (`1.2.3` → 10203), so later releases install as
+updates.
 
-```bash
-keytool -genkeypair -keystore ~/keys/mealplanner.jks -alias mealplanner -keyalg RSA -keysize 4096 -validity 10000
-```
+One-time setup: `scripts/create-release-key.sh` creates the signing key in
+`~/.android/mealplanner-release.jks`, adds the `mealplanner.*` signing properties to
+`~/.gradle/gradle.properties` and stores the key in the repo's GitHub secrets
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`). Back up the keystore
+and its password: Android only installs an update signed with the same key.
 
-Then add to `~/.gradle/gradle.properties`:
-
-```properties
-mealplanner.keystore=/home/<you>/keys/mealplanner.jks
-mealplanner.keystorePassword=...
-mealplanner.keyAlias=mealplanner
-mealplanner.keyPassword=...
-```
-
-`./gradlew :androidApp:assembleRelease` then writes a signed
-`androidApp/build/outputs/apk/release/androidApp-release.apk`; install it with
-`adb install -r` or by copying it to the phone. The release has no token built in and opens on
-the server settings, with `https://mealplanner.tstultiens.com` filled in (`-PreleaseServerUrl=`
-changes that). It only talks HTTPS. A release and a debug build cannot be installed side by
-side: they share the application id but not the signing key.
+With those properties set, `./gradlew :androidApp:assembleRelease` also builds a signed
+`androidApp/build/outputs/apk/release/androidApp-release.apk` locally. The release has no token
+built in and opens on the server settings, with `https://mealplanner.tstultiens.com` filled in
+(`-PreleaseServerUrl=` changes that). It only talks HTTPS. A release and a debug build cannot be
+installed side by side: they share the application id but not the signing key.
 
 ## Server configuration
 
