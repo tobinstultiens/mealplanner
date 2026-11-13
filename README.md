@@ -80,6 +80,8 @@ One-time setup: `scripts/create-release-key.sh` creates the signing key in
 `~/.gradle/gradle.properties` and stores the key in the repo's GitHub secrets
 (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`). Back up the keystore
 and its password: Android only installs an update signed with the same key.
+`scripts/backup-release-key.sh` (run in a terminal) stores both in Bitwarden as the secure note
+`mealplanner-android-signing` and checks the copy; the note says how to restore it.
 
 With those properties set, `./gradlew :androidApp:assembleRelease` also builds a signed
 `androidApp/build/outputs/apk/release/androidApp-release.apk` locally. The release has no token
