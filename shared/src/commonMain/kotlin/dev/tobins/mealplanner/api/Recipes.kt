@@ -29,6 +29,23 @@ data class RecipeSummary(
 @Serializable
 data class RatingInput(val rating: Int?)
 
+enum class GenerationMode {
+    /** A recipe that fits the slot and the wish. */
+    PREFERENCE,
+
+    /** Something different from what was eaten lately, built from what is at home and on offer. */
+    TASTE_BREAKER,
+}
+
+/** Body of `POST /api/recipes/generate`. */
+@Serializable
+data class GenerateRequest(
+    val mode: GenerationMode = GenerationMode.PREFERENCE,
+    val slot: MealSlot = MealSlot.DINNER,
+    /** Free text, e.g. "Korean, spicy, under 30 minutes". */
+    val wish: String = "",
+)
+
 /** Recipes eaten every day in a slot, chosen by the user instead of the planner. */
 @Serializable
 data class Routines(val breakfast: Long? = null, val snack: Long? = null)

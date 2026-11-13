@@ -58,10 +58,10 @@ updateSettings:
 UPDATE recipe SET kind = ?, mealSlotsJson = ? WHERE id = ?;
 
 updateManual:
-UPDATE recipe SET title = ?, tagsJson = ?, servings = ?, instructions = ?, problemsJson = ? WHERE id = ? AND source = 'MANUAL';
+UPDATE recipe SET title = ?, tagsJson = ?, servings = ?, instructions = ?, problemsJson = ? WHERE id = ? AND source IN ('MANUAL', 'GENERATED');
 
 deleteManual:
-DELETE FROM recipe WHERE id = ? AND source = 'MANUAL';
+DELETE FROM recipe WHERE id = ? AND source IN ('MANUAL', 'GENERATED');
 
 setRating:
 UPDATE recipe SET rating = ? WHERE id = ?;

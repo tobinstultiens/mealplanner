@@ -2,6 +2,9 @@ package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.DayView
+import dev.tobins.mealplanner.api.GenerateRequest
+import dev.tobins.mealplanner.api.GenerationMode
+import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
@@ -20,6 +23,11 @@ import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
+import dev.tobins.mealplanner.server.generation.GeneratedIngredient
+import dev.tobins.mealplanner.server.generation.GeneratedRecipe
+import dev.tobins.mealplanner.server.generation.GenerationContext
+import dev.tobins.mealplanner.server.generation.GenerationException
+import dev.tobins.mealplanner.server.generation.RecipeGenerator
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -51,6 +59,27 @@ class PlanTest {
     ).joinToString("\r\n")
 
     /** Ten four-serving dinners of 450 to 720 kcal per serving, one unlinked recipe and one sauce. */
+    /** Records what it was asked and returns a fixed beef recipe. */
+    private class FakeGenerator : RecipeGenerator {
+        val contexts = mutableListOf<GenerationContext>()
+        var fail = false
+
+        override suspend fun generate(context: GenerationContext): GeneratedRecipe {
+            contexts += context
+            if (fail) throw GenerationException("Claude declined to write this recipe.")
+            return GeneratedRecipe(
+                title = "Beef bowl deluxe",
+                servings = context.servings,
+                ingredients = listOf(GeneratedIngredient(150.0 * context.servings, "g", "beef raw"), GeneratedIngredient(null, "", "salt")),
+                steps = listOf("Sear the beef.", "Serve."),
+                tags = listOf("Beef", " "),
+                description = "High in protein.",
+            )
+        }
+    }
+
+    private val fake = FakeGenerator()
+
     private fun ApplicationTestBuilder.start(): HttpClient {
         val repo = createTempDirectory("cooking").toFile()
         fun write(path: String, text: String) = File(repo, "content/$path").apply { parentFile.mkdirs() }.writeText(text)
@@ -63,7 +92,7 @@ class PlanTest {
             port = 0, apiToken = "t", databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
             nevoFile = createTempFile("nevo", ".csv").toFile().apply { writeText(nevo) },
         )
-        application { module(config, openDatabase(config.databaseUrl).second) }
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), generator = fake) }
         return createClient {
             install(ContentNegotiation) { json() }
             defaultRequest {
@@ -311,5 +340,64 @@ class PlanTest {
         val plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
         assertTrue(plan.days.all { day -> day.meals.first { it.slot == MealSlot.BREAKFAST }.recipeId == pick.id })
         assertEquals(HttpStatusCode.NotFound, http.put("/api/routines") { setBody(Routines(snack = 99999)) }.status)
+    }
+
+    @Test
+    fun generatedRecipesAreSizedStoredLinkedAndEditable() = testApplication {
+        val http = start()
+        http.post("/api/sync/cooking")
+        assertEquals(HttpStatusCode.Conflict, http.post("/api/recipes/generate") { setBody(GenerateRequest()) }.status, "needs a profile")
+        http.ready()
+        val beef = http.get("/api/ingredients").body<List<Ingredient>>().first { it.food?.nevoCode == 10 }
+        http.put("/api/pantry/on-hand/${beef.id}")
+        // Plan the current week, so today's and earlier meals count as recently eaten.
+        val thisWeek = java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        http.post("/api/plans/$thisWeek/generate")
+
+        val created = http.post("/api/recipes/generate") {
+            setBody(GenerateRequest(GenerationMode.TASTE_BREAKER, MealSlot.DINNER, "something warm"))
+        }
+        assertEquals(HttpStatusCode.Created, created.status)
+        val recipe = created.body<RecipeDetail>()
+
+        val context = fake.contexts.single()
+        assertEquals(GenerationMode.TASTE_BREAKER, context.mode)
+        assertEquals(4, context.servings)
+        assertEquals(760, context.kcalPerServing, "38% of the 2000 kcal override")
+        assertEquals("something warm", context.wish)
+        assertEquals(listOf(beef.name), context.onHand)
+        assertTrue(context.existing.containsAll((0..9).map { "Dinner $it" }))
+        assertTrue(context.recent.isNotEmpty() && context.recent.all { it.startsWith("Dinner") }, "the planned week counts as recent")
+
+        assertEquals(RecipeSource.GENERATED, recipe.summary.source)
+        assertEquals(listOf(MealSlot.LUNCH, MealSlot.DINNER), recipe.summary.mealSlots)
+        assertEquals(listOf("Beef"), recipe.summary.tags)
+        assertTrue(recipe.instructions.startsWith("High in protein.") && "1. Sear the beef." in recipe.instructions)
+        // "beef raw" is exactly the NEVO name, so it is linked and counted: 150 g at 150 kcal per 100 g.
+        assertEquals(225.0, recipe.summary.nutrition!!.perServing.kcal!!, absoluteTolerance = 1e-9)
+        assertTrue(recipe.summary.nutrition!!.complete)
+
+        // Generated recipes can be edited and deleted like your own.
+        assertEquals(HttpStatusCode.OK, http.put("/api/recipes/${recipe.summary.id}") { setBody(RecipeInput("Beef bowl", 4, "600 | g | beef raw")) }.status)
+        assertEquals(HttpStatusCode.NoContent, http.delete("/api/recipes/${recipe.summary.id}").status)
+
+        fake.fail = true
+        val failed = http.post("/api/recipes/generate") { setBody(GenerateRequest(slot = MealSlot.BREAKFAST)) }
+        assertEquals(HttpStatusCode.BadGateway, failed.status)
+        assertEquals(1, fake.contexts.last().servings)
+    }
+
+    @Test
+    fun generationIsOffWithoutAGenerator() = testApplication {
+        val config = ServerConfig(port = 0, apiToken = "t", databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), generator = null) }
+        val http = createClient {
+            install(ContentNegotiation) { json() }
+            defaultRequest {
+                bearerAuth("t")
+                contentType(ContentType.Application.Json)
+            }
+        }
+        assertEquals(HttpStatusCode.ServiceUnavailable, http.post("/api/recipes/generate") { setBody(GenerateRequest()) }.status)
     }
 }

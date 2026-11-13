@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.Health
+import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
@@ -42,6 +43,9 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import dev.tobins.mealplanner.server.generation.ClaudeRecipeGenerator
+import dev.tobins.mealplanner.server.generation.GenerationException
+import dev.tobins.mealplanner.server.generation.RecipeGenerator
 import dev.tobins.mealplanner.server.offers.AhOfferSource
 import dev.tobins.mealplanner.server.offers.JumboOfferSource
 import dev.tobins.mealplanner.server.offers.LidlOfferSource
@@ -107,6 +111,7 @@ fun Application.module(
     config: ServerConfig,
     database: Database,
     offerSources: List<OfferSource> = defaultOfferSources(),
+    generator: RecipeGenerator? = ClaudeRecipeGenerator.fromEnv(),
 ) {
     val foods = FoodRepository(database)
     val ingredients = IngredientRepository(database, foods)
@@ -115,6 +120,7 @@ fun Application.module(
     val offers = OfferRepository(database, offerSources)
     val plans = PlanRepository(database, recipes, profiles) { from, until -> offers.byIngredient(from, until, ingredients.matchTerms()) }
     val tracking = TrackingRepository(database, plans, profiles)
+    val generation = generator?.let { GenerationService(it, recipes, ingredients, profiles, plans, offers) }
     val cookingRepo = config.cookingRepo?.let { CookingRepo(it, config.cookingRepoUrl) }
     // One sync at a time: the scheduled one and a request must not clone into the same directory.
     val cookingLock = Mutex()
@@ -167,6 +173,9 @@ fun Application.module(
     install(StatusPages) {
         exception<NotFoundException> { call, cause ->
             call.respond(HttpStatusCode.NotFound, mapOf("error" to (cause.message ?: "not found")))
+        }
+        exception<GenerationException> { call, cause ->
+            call.respond(HttpStatusCode.BadGateway, mapOf("error" to (cause.message ?: "generation failed")))
         }
         exception<ConflictException> { call, cause ->
             call.respond(HttpStatusCode.Conflict, mapOf("error" to (cause.message ?: "conflict")))
@@ -349,6 +358,15 @@ fun Application.module(
             get("/api/routines") { call.respond(recipes.routines()) }
 
             put("/api/routines") { call.respond(recipes.saveRoutines(call.receive<Routines>())) }
+
+            // Writes a new recipe with Claude and stores it. Takes up to a minute or so.
+            post("/api/recipes/generate") {
+                val service = generation ?: return@post call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    mapOf("error" to "Recipe generation is off: set ANTHROPIC_API_KEY on the server"),
+                )
+                call.respond(HttpStatusCode.Created, service.generate(call.receive<GenerateRequest>()))
+            }
 
             post("/api/recipes") { call.respond(HttpStatusCode.Created, recipes.create(call.receive<RecipeInput>())) }
 

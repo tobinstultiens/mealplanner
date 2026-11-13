@@ -107,11 +107,12 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         return (row.servings?.toInt() ?: 1) to linesOf(recipeId).map { it to resolve(it) }
     }
 
-    /** Creates a recipe of the user's own. */
-    fun create(input: RecipeInput): RecipeDetail = db.transactionWithResult {
+    /** Creates a recipe of the user's own, or one generated for them ([source] GENERATED). */
+    fun create(input: RecipeInput, source: RecipeSource = RecipeSource.MANUAL): RecipeDetail = db.transactionWithResult {
+        require(source != RecipeSource.COOKING_SITE) { "cooking site recipes come from the sync" }
         val parsed = parse(input)
         q.insertRecipe(
-            source = RecipeSource.MANUAL.name,
+            source = source.name,
             sourcePath = null,
             contentHash = null,
             section = MANUAL_SECTION,
@@ -132,7 +133,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
     /** Replaces a recipe of the user's own; imported recipes are edited on the cooking site. */
     fun update(id: Long, input: RecipeInput): RecipeDetail = db.transactionWithResult {
         val row = q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
-        if (row.source != RecipeSource.MANUAL.name) throw ConflictException("Only your own recipes can be edited here")
+        if (row.source == RecipeSource.COOKING_SITE.name) throw ConflictException("Recipes from the cooking site are edited there")
         val parsed = parse(input)
         q.updateManual(parsed.title, Json.encodeToString(input.tags), input.servings.toLong(), input.instructions.trim(), "[]", id)
         q.updateSettings(row.kind, Json.encodeToString(input.mealSlots), id)
@@ -142,7 +143,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
 
     fun delete(id: Long) {
         val row = q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
-        if (row.source != RecipeSource.MANUAL.name) throw ConflictException("Only your own recipes can be deleted here")
+        if (row.source == RecipeSource.COOKING_SITE.name) throw ConflictException("Recipes from the cooking site are removed there")
         q.deleteManual(id)
     }
 
@@ -152,6 +153,11 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         q.setRating(rating?.toLong(), id)
         return find(id)!!
     }
+
+    /** Titles of the most recently planned recipes, newest first; for variety in generation. */
+    fun titles(ids: Collection<Long>): List<String> = ids.mapNotNull { q.selectById(it).executeAsOneOrNull()?.title }
+
+    fun allTitles(): List<String> = q.selectActive().executeAsList().map { it.title }
 
     fun routines(): Routines =
         db.foodQueries.selectMeta(ROUTINES_KEY).executeAsOneOrNull()?.let { Json.decodeFromString<Routines>(it) } ?: Routines()

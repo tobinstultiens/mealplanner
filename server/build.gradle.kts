@@ -35,6 +35,7 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.jgit)
+    implementation(libs.anthropic.java)
     implementation(libs.kaml)
     implementation(libs.logback)
 

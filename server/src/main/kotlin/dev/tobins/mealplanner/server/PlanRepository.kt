@@ -93,6 +93,15 @@ class PlanRepository(
         return Triple(start, index, stored(start).filter { it.day == index }.sortedBy { it.slot.ordinal })
     }
 
+    /** Titles of meals planned from two weeks before [today] up to [today], newest first. */
+    fun recentTitles(today: LocalDate): List<String> {
+        val start = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        return listOf(start, start.minusDays(7), start.minusDays(14))
+            .flatMap { week -> stored(week).filter { !week.plusDays(it.day.toLong()).isAfter(today) }.sortedByDescending { it.day } }
+            .map { it.title }
+            .distinct()
+    }
+
     fun remove(weekStart: String, day: Int, slot: MealSlot): WeekPlan {
         val start = parse(weekStart)
         q.deleteMeal(start.toString(), day.toLong(), slot.name)
