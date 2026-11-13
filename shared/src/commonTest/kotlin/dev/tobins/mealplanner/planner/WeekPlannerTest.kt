@@ -140,4 +140,21 @@ class WeekPlannerTest {
         assertTrue(plan.none { it.recipeId == 1L }, "a 28 kcal recipe cannot fill a dinner; repeating the real meal is better")
         assertEquals(emptyList(), WeekPlanner.plan(PlanRequest(targets, listOf(side))))
     }
+
+    @Test
+    fun ingredientsOnOfferGiveASmallerPullThanOnHandOnes() {
+        val onOffer = pantryOfRecipes.map { if (it.recipeId == 15L) it.copy(offerCount = 2) else it }
+        val firstDay = WeekPlanner.plan(PlanRequest(targets, onOffer)).filter { it.day == 0 }
+        assertTrue(firstDay.any { it.recipeId == 15L })
+
+        val both = pantryOfRecipes.map {
+            when (it.recipeId) {
+                15L -> it.copy(offerCount = 3)
+                16L -> it.copy(onHandCount = 3)
+                else -> it
+            }
+        }
+        // The first meal the planner fills is the first day's lunch.
+        assertEquals(16L, WeekPlanner.plan(PlanRequest(targets, both)).at(0, LUNCH).recipeId, "using up what is at home comes first")
+    }
 }

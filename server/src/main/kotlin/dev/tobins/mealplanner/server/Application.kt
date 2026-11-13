@@ -99,9 +99,9 @@ fun Application.module(
     val ingredients = IngredientRepository(database, foods)
     val recipes = RecipeRepository(database, ingredients)
     val profiles = ProfileRepository(database)
-    val plans = PlanRepository(database, recipes, profiles)
-    val tracking = TrackingRepository(database, plans, profiles)
     val offers = OfferRepository(database, offerSources)
+    val plans = PlanRepository(database, recipes, profiles) { from, until -> offers.byIngredient(from, until, ingredients.matchTerms()) }
+    val tracking = TrackingRepository(database, plans, profiles)
     if (config.fetchOffers) {
         // Stores publish their offers weekly; checking every six hours and fetching
         // what is older than a day keeps up without hammering them.
@@ -262,7 +262,7 @@ fun Application.module(
                 val date = call.request.queryParameters["date"]?.let {
                     runCatching { LocalDate.parse(it) }.getOrElse { throw IllegalArgumentException("date must be an ISO date") }
                 } ?: LocalDate.now()
-                call.respond(offers.state(date))
+                call.respond(offers.state(date, ingredients.matchTerms(), ingredients.list().associate { it.id to it.name }))
             }
 
             // Fetches every store now, regardless of when it was last fetched.

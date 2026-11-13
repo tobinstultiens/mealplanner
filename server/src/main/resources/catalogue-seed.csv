@@ -39,12 +39,12 @@ Onion|63|110||onion;onions;yellow onion;white onion;ui;uien
 Red onion|5459|100||red onion;rode ui
 Spring onion|2737|15||spring onion;spring onions;green onion;green onions;scallion;scallions;bosui;lente-ui
 Leek|562|150||leek;prei
-Tomato|2734|120||tomato;tomatoes;tomaat;tomaten
+Tomato|2734|120||tomato;tomatoes;tomaat;tomaten;tomaatjes;snoeptomaat;snoeptomaten;cherrytomaten
 Cucumber|2739|350||cucumber;komkommer
-Bell pepper|2742|160||bell pepper;bell peppers;sweet pepper;green bell pepper;green bell peppers;green pepper;yellow bell pepper
+Bell pepper|2742|160||bell pepper;bell peppers;sweet pepper;green bell pepper;green bell peppers;green pepper;yellow bell pepper;paprika;paprika s
 Red bell pepper|884|160||red bell pepper;red pepper;rode paprika
 Chili pepper|2524|15||chili pepper;chilli pepper;chili;red chili;chilipeper;rode peper;jalapeño;jalapeno;serrano pepper;thai chilies;thai chili;calabrian chilies
-Carrot|71|70||carrot;carrots;wortel;wortels
+Carrot|71|70||carrot;carrots;wortel;wortels;winterpeen;peen;bospeen
 Mushrooms|19|||mushroom;mushrooms;champignons;shiitake mushrooms;button mushrooms;cremini mushrooms
 Potato|1|150||potato;potatoes;aardappel;aardappelen
 Avocado|689|150||avocado
@@ -75,7 +75,7 @@ Wheat tortilla|2359|60||tortilla;tortillas;flour tortilla;flour tortillas;wrap;w
 Bread crumbs|1013||0.45|bread crumbs;breadcrumbs;paneermeel
 Dried yeast|1025||0.6|instant yeast;dry yeast;dried yeast;active dry yeast;gist;instant dry yeast
 Chicken fillet|1634|170||chicken breast;chicken breasts;chicken fillet;kipfilet
-Minced beef|1405|||ground beef;minced beef;beef mince;rundergehakt;gemalen rundvlees
+Minced beef|1405|||ground beef;minced beef;beef mince;rundergehakt;gemalen rundvlees;gehakt;gemengd gehakt;half-om-half gehakt
 Pork shoulder|1430|||pork shoulder;pork butt
 Bacon|1432|15||bacon
 Lard|314||0.92|lard;reuzel
@@ -91,15 +91,15 @@ Chicken drumstick|2090|110||chicken drumstick;chicken drumsticks;drumstick;drums
 Minced pork|1421|||ground pork;minced pork;pork mince;varkensgehakt;gemalen varkensvlees
 Beef steak|1400|200||steak;rump steak;biefstuk
 Pork spareribs|1427|||spareribs;spare ribs;pork ribs;ribs
-Salmon|1587|150||salmon;salmon fillet;zalm;zalmfilet
+Salmon|1587|150||salmon;salmon fillet;zalm;zalmfilet;zalmmoot;zalmmoten
 Smoked salmon|1096|||smoked salmon;gerookte zalm
 Tofu|5519|||tofu;firm tofu
 Tomato puree|141||1.1|tomato paste;tomato puree;tomatenpuree
 Canned tomatoes|2293|400||whole peeled tomatoes;quality whole peeled tomatoes;canned tomatoes;crushed tomatoes;diced tomatoes;tomatenblokjes
 Stock|1528||1|stock;broth;chicken stock;chicken broth;beef stock;beef broth;vegetable stock;vegetable broth;bouillon;kippenbouillon;mushroom stock
-Gouda cheese|513|||cheese;grated cheese;shredded cheese;gouda;kaas;geraspte kaas;american cheese;provolone
+Gouda cheese|513|||cheese;grated cheese;shredded cheese;gouda;kaas;geraspte kaas;american cheese;provolone;goudse;goudse kaas;goudse plakken;jong belegen;belegen kaas
 Boursin|728|150||boursin
-Low-fat quark|305||1.03|quark;low-fat quark;kwark;magere kwark
+Low-fat quark|305||1.03|quark;low-fat quark;kwark;magere kwark;skyr;hipro kwark
 Lemon|158|100||lemon;lemons;citroen
 Red wine|422||1|red wine;rode wijn;droge rode wijn
 White wine|423||1|white wine;dry white wine;witte wijn
@@ -109,7 +109,7 @@ Broccoli|921|300||broccoli
 Courgette|922|250||courgette;zucchini
 Pumpkin|682|||pumpkin;butternut squash;pompoen;flespompoen
 White asparagus|9|||asparagus;white asparagus;asperges
-Banana|151|120||banana;banaan
+Banana|151|120||banana;banaan;banaan
 Strawberries|148|||strawberries;aardbeien
 Dark chocolate|432|||dark chocolate;pure chocolade;baking chocolate;70% cacao baking chocolate
 Cocoa powder|430||0.45|cocoa powder;cocoa;cacao
@@ -121,7 +121,7 @@ Olives|3336|60||olives;olijven;black olives;sliced black olives
 Capers|2402|||capers;kappertjes
 Gherkin|131|30||gherkin;gherkins;pickle;pickles;augurk;augurken
 Chicken thigh (skinless)|1305|110||chicken thigh;chicken thighs;chicken thigh fillet;chicken thigh fillets;kippendij;kipdijfilet
-Chicken (with skin)|108|||chicken;whole chicken;kip
+Chicken (with skin)|108|||chicken;whole chicken;kip;hele kip;kippenpoten
 Beef|2336|||beef;stewing beef;round steak;beef top round;rundvlees;stoofvlees
 Lean minced beef|3034|||lean ground beef;lean minced beef;mager rundergehakt
 Anchovy|3199|4||anchovy;anchovies;ansjovis
@@ -133,7 +133,7 @@ Tuna in oil (canned)|1589|120||tuna;canned tuna;tonijn
 Greek yoghurt (full fat)|2503||1.03|greek yogurt;greek yoghurt;griekse yoghurt
 Greek yoghurt (skimmed)|5271||1.03|nonfat greek yogurt;skimmed greek yogurt
 Sour cream|812||1|sour cream;zure room
-Cream cheese with herbs|3368|||cream cheese;roomkaas;roomkaas met kruiden
+Cream cheese with herbs|3368|||cream cheese;roomkaas;roomkaas met kruiden;philadelphia
 Raw ham|328|15||prosciutto;prosciutto di parma;parma ham;rauwe ham
 Crunchy muesli|5593|||granola;cruesli;muesli
 White baguette|2793|250||baguette;stokbrood

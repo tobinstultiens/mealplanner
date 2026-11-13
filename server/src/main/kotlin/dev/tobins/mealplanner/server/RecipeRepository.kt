@@ -73,7 +73,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
      * Recipes the planner may use: meals whose nutrition is complete. Which slots a recipe
      * suits follows from its section on the cooking site until that can be set per recipe.
      */
-    fun planCandidates(): List<PlanCandidate> {
+    fun planCandidates(onOffer: Set<Long> = emptySet()): List<PlanCandidate> {
         val resolve = ingredients.resolver()
         val onHand = ingredients.pantry().onHand.mapTo(HashSet()) { it.id }
         return q.selectActive().executeAsList().mapNotNull { row ->
@@ -89,6 +89,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
                 proteinG = nutrition.perServing.proteinG ?: 0.0,
                 tags = Json.decodeFromString(row.tagsJson),
                 onHandCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onHand },
+                offerCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onOffer },
             )
         }
     }

@@ -64,6 +64,8 @@ data class ShoppingItem(
     /** True when the pantry lists it as on hand: check before buying. */
     val onHand: Boolean,
     val checked: Boolean,
+    /** Store offers for this ingredient during the plan's week. */
+    val offers: List<Offer> = emptyList(),
 )
 
 /** Everything the week's meals need, without the staples that are always at home. */

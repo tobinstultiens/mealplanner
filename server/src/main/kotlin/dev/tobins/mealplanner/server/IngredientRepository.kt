@@ -34,6 +34,16 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         q.selectIngredient(id).executeAsOne().toIngredient()
     }
 
+    /**
+     * Per ingredient, the names it is known by, for recognising it in store offers.
+     * Negligible ingredients (spices and the like) are left out.
+     */
+    fun matchTerms(): Map<Long, List<String>> {
+        val ingredients = list().filterNot { it.negligible }.associateBy { it.id }
+        val aliases = q.selectAliases().executeAsList().groupBy({ it.ingredientId }, { it.text })
+        return ingredients.mapValues { (id, ingredient) -> listOf(ingredient.name) + aliases[id].orEmpty() }
+    }
+
     fun pantry(): Pantry {
         val all = list()
         val byId = all.associateBy { it.id }

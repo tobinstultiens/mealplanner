@@ -28,6 +28,8 @@ class PlanRepository(
     private val db: Database,
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
+    /** Offers valid between two dates, grouped by ingredient id. */
+    private val offersByIngredient: (LocalDate, LocalDate) -> Map<Long, List<dev.tobins.mealplanner.api.Offer>> = { _, _ -> emptyMap() },
 ) {
     private val q = db.planQueries
 
@@ -140,6 +142,7 @@ class PlanRepository(
             }
         }
         val checked = q.selectChecks(start.toString()).executeAsList().toSet()
+        val offers = offersByIngredient(start, start.plusDays(DAYS - 1L))
         return ShoppingList(
             weekStart = start.toString(),
             items = needs.map { (key, need) ->
@@ -152,6 +155,7 @@ class PlanRepository(
                     recipes = need.recipes.toList(),
                     onHand = need.onHand,
                     checked = key in checked,
+                    offers = key.removePrefix("i").toLongOrNull()?.takeIf { key.startsWith("i") }?.let { offers[it] }.orEmpty(),
                 )
             }.sortedWith(compareBy({ it.category == "Other" }, { it.category }, { it.name.lowercase() })),
             staples = staples.toList(),
@@ -166,7 +170,7 @@ class PlanRepository(
 
     private fun request(start: LocalDate, locked: List<PlannedMeal>, seed: Long) = PlanRequest(
         targets = targets(),
-        candidates = recipes.planCandidates(),
+        candidates = recipes.planCandidates(onOffer = offersByIngredient(start, start.plusDays(DAYS - 1L)).keys),
         days = DAYS,
         locked = locked,
         // What was planned the week before counts as recently eaten.

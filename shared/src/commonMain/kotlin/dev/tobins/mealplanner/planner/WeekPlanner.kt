@@ -17,6 +17,8 @@ data class PlanCandidate(
     val tags: List<String> = emptyList(),
     /** How many of its ingredients are on hand and should be used up. */
     val onHandCount: Int = 0,
+    /** How many of its ingredients are on offer at a store during the plan's week. */
+    val offerCount: Int = 0,
     val costPerServing: Double? = null,
 )
 
@@ -128,7 +130,8 @@ object WeekPlanner {
         val proteinFit = (candidate.proteinG * portions / (request.targets.proteinG * slot.share)).coerceAtMost(1.5)
         return 2.0 * calorieFit +
             2.0 * proteinFit +
-            0.5 * candidate.onHandCount.coerceAtMost(3) -
+            0.5 * candidate.onHandCount.coerceAtMost(3) +
+            0.3 * candidate.offerCount.coerceAtMost(3) -
             3.0 * uses -
             (if (sameTagAsYesterday) 0.5 else 0.0) -
             (if (candidate.recipeId in request.recent) 1.0 else 0.0) -

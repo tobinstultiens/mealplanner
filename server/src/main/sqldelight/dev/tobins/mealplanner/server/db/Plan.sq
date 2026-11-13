@@ -75,6 +75,10 @@ CREATE TABLE offerSource (
 selectOffersValidOn:
 SELECT * FROM offer WHERE validFrom <= :date AND validUntil >= :date ORDER BY store, title;
 
+-- Offers valid on at least one day between :from and :until.
+selectOffersOverlapping:
+SELECT * FROM offer WHERE validFrom <= :until AND validUntil >= :from ORDER BY store, title;
+
 countOffers:
 SELECT store, count(*) AS n FROM offer GROUP BY store;
 

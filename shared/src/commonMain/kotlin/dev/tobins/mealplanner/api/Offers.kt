@@ -27,6 +27,9 @@ data class Offer(
     val validFrom: String,
     val validUntil: String,
     val url: String? = null,
+    /** The catalogue ingredient this offer is for, when it matches one. Filled in by the server. */
+    val ingredientId: Long? = null,
+    val ingredientName: String? = null,
 )
 
 /** How the last fetch for one store went. */

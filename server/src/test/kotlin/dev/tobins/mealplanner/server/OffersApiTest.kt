@@ -13,6 +13,13 @@ import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
+import io.ktor.http.contentType
+import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.Sex
+import dev.tobins.mealplanner.api.ActivityLevel
 import kotlinx.coroutines.runBlocking
 import java.time.Duration
 import java.time.Instant
@@ -82,5 +89,44 @@ class OffersApiTest {
 
         repository.refresh(olderThan = Duration.ofHours(24), now = now.plus(Duration.ofHours(25)))
         assertEquals(2, ah.calls)
+    }
+
+    @Test
+    fun shoppingListShowsOffersForItsIngredients() = testApplication {
+        val nevo = listOf(
+            "\"NEVO-versie/NEVO-version\"|\"Voedingsmiddelgroep\"|\"Food group\"|\"NEVO-code\"|\"Voedingsmiddelnaam/Dutch food name\"|\"Engelse naam/Food name\"|\"Synoniem\"|\"Hoeveelheid/Quantity\"|\"ENERCC (kcal)\"|\"PROT (g)\"|\"FAT (g)\"|\"FASAT (g)\"|\"CHO (g)\"|\"SUGAR (g)\"|\"FIBT (g)\"|\"NA (mg)\"",
+            "NEVO-Online 2025 9.0|Vlees|Meat|1405|Rundergehakt rauw|Minced beef raw||per 100g|200|20|13|5|0|0|0|60",
+        ).joinToString("\r\n")
+        val repo = kotlin.io.path.createTempDirectory("cooking").toFile()
+        java.io.File(repo, "content/recipes/chili.md").apply { parentFile.mkdirs() }
+            .writeText("---\ntitle: Chili\n---\n```ingredients\nservings: 4\n1200 | g | ground beef\n```")
+        val config = ServerConfig(
+            port = 0, apiToken = "t", databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
+            nevoFile = kotlin.io.path.createTempFile("nevo", ".csv").toFile().apply { writeText(nevo) },
+        )
+        val ah = FakeSource(Store.AH, listOf(
+            Offer(Store.AH, "AH Gemengd gehakt 500 gram", "VOOR 3.49", price = 3.49, category = "Vlees", validFrom = "2026-11-09", validUntil = "2026-11-15"),
+            Offer(Store.AH, "Kwekkeboom gehaktballen", "2 voor 5.99", category = "Diepvries", validFrom = "2026-11-09", validUntil = "2026-11-15"),
+        ))
+        val lidl = FakeSource(Store.LIDL, listOf(Offer(Store.LIDL, "Rundergehakt", null, price = 4.29, validFrom = "2026-11-17", validUntil = "2026-11-22")))
+        application { module(config, openDatabase(config.databaseUrl).second, listOf(ah, lidl)) }
+        val http = createClient {
+            install(ContentNegotiation) { json() }
+            defaultRequest {
+                bearerAuth("t")
+                contentType(io.ktor.http.ContentType.Application.Json)
+            }
+        }
+        http.post("/api/sync/cooking")
+        http.post("/api/offers/refresh")
+        http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
+        http.post("/api/plans/2026-11-09/generate")
+
+        val mince = http.get("/api/plans/2026-11-09/shopping").body<ShoppingList>().items.single { it.name == "Minced beef" }
+        assertEquals(listOf("AH Gemengd gehakt 500 gram"), mince.offers.map { it.title }, "frozen meatballs are not mince; Lidl's offer is next week")
+
+        http.post("/api/plans/2026-11-16/generate")
+        val nextWeek = http.get("/api/plans/2026-11-16/shopping").body<ShoppingList>().items.single { it.name == "Minced beef" }
+        assertEquals(listOf(Store.LIDL), nextWeek.offers.map { it.store }, "the AH offer ends on the 15th")
     }
 }

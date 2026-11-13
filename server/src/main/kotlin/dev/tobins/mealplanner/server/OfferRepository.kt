@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.OfferSourceStatus
 import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.offers.OfferMatcher
 import dev.tobins.mealplanner.server.offers.OfferSource
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -17,12 +18,25 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
     private val q = db.planQueries
     private val log = LoggerFactory.getLogger(OfferRepository::class.java)
 
-    fun state(date: LocalDate = LocalDate.now()): OffersState {
+    /**
+     * Offers valid at some point between [from] and [until], grouped by the catalogue
+     * ingredient they are for. [terms] are each ingredient's names and aliases.
+     */
+    fun byIngredient(from: LocalDate, until: LocalDate, terms: Map<Long, List<String>>): Map<Long, List<Offer>> =
+        OfferMatcher(terms).group(q.selectOffersOverlapping(until = until.toString(), from = from.toString()).executeAsList().map { it.toOffer() })
+
+    /**
+     * Offers valid on [date] with the store statuses. With [terms] (see [byIngredient])
+     * each offer also names the ingredient it matches.
+     */
+    fun state(date: LocalDate = LocalDate.now(), terms: Map<Long, List<String>>? = null, names: Map<Long, String> = emptyMap()): OffersState {
+        val matcher = terms?.let(::OfferMatcher)
         val counts = q.countOffers().executeAsList().associate { it.store to it.n.toInt() }
         val recorded = q.selectSources().executeAsList().associateBy { it.store }
         return OffersState(
-            offers = q.selectOffersValidOn(date.toString()).executeAsList().map {
-                Offer(Store.valueOf(it.store), it.title, it.deal, it.price, it.originalPrice, it.packSize, it.category, it.validFrom, it.validUntil, it.url)
+            offers = q.selectOffersValidOn(date.toString()).executeAsList().map { row ->
+                val offer = row.toOffer()
+                matcher?.match(offer)?.let { offer.copy(ingredientId = it, ingredientName = names[it]) } ?: offer
             },
             sources = Store.entries.map { store ->
                 val row = recorded[store.name]
@@ -30,6 +44,9 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
             },
         )
     }
+
+    private fun dev.tobins.mealplanner.server.db.Offer.toOffer() =
+        Offer(Store.valueOf(store), title, deal, price, originalPrice, packSize, category, validFrom, validUntil, url)
 
     /**
      * Fetches every store, or only those whose last successful fetch is older than
