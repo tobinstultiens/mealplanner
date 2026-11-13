@@ -1,7 +1,10 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
@@ -22,7 +25,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 
 /**
  * Root of the app: five tabs (Today, Plan, Shopping, Recipes, Progress) and the
@@ -44,7 +49,8 @@ fun App(defaults: ServerSettings, storage: SettingsStorage) {
     var profileOpen by rememberSaveable { mutableStateOf(false) }
     var pantryOpen by rememberSaveable { mutableStateOf(false) }
     var offersOpen by rememberSaveable { mutableStateOf(false) }
-    var serverOpen by rememberSaveable { mutableStateOf(false) }
+    // Without a token nothing works yet, so start on the server settings (the web client's first visit).
+    var serverOpen by rememberSaveable { mutableStateOf(settings.token.isBlank()) }
 
     // NEVO must be credited wherever its values are shown.
     var nutritionSource by remember { mutableStateOf<String?>(null) }
@@ -57,6 +63,9 @@ fun App(defaults: ServerSettings, storage: SettingsStorage) {
     }
 
     MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+      // On a wide browser window the app keeps a phone-like column in the middle.
+      Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
+       Box(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
         // Any error message can offer the server settings, since a wrong address is the usual cause.
         CompositionLocalProvider(LocalOpenServerSettings provides { serverOpen = true }) {
             if (serverOpen) {
@@ -148,6 +157,8 @@ fun App(defaults: ServerSettings, storage: SettingsStorage) {
                 }
             }
         }
+       }
+      }
     }
 }
 

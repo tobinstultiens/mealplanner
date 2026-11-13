@@ -14,6 +14,15 @@ kotlin {
         minSdk = libs.versions.android.minSdk.get().toInt()
         withHostTest {}
     }
+    // The web client: the same UI compiled to WebAssembly, served by the server.
+    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+    wasmJs {
+        outputModuleName.set("composeApp")
+        browser {
+            commonWebpackConfig { outputFileName = "composeApp.js" }
+        }
+        binaries.executable()
+    }
 
     sourceSets {
         commonMain.dependencies {
@@ -26,9 +35,13 @@ kotlin {
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.json)
+            implementation(libs.kotlinx.datetime)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+        }
+        wasmJsMain.dependencies {
+            implementation(libs.ktor.client.js)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)

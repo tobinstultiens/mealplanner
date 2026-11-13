@@ -29,6 +29,7 @@ dependencies {
     implementation(libs.ktor.server.auth)
     implementation(libs.ktor.server.call.logging)
     implementation(libs.ktor.server.status.pages)
+    implementation(libs.ktor.server.compression)
     implementation(libs.ktor.serialization.json)
     implementation(libs.sqldelight.sqlite.driver)
     implementation(libs.ktor.client.core)
@@ -45,4 +46,12 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// The web client (composeApp's WebAssembly build) ships inside the server jar and is served at "/".
+tasks.named<Jar>("shadowJar") {
+    dependsOn(":composeApp:wasmJsBrowserDistribution")
+    from(rootDir.resolve("composeApp/build/dist/wasmJs/productionExecutable")) {
+        into("web")
+    }
 }

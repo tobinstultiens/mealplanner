@@ -7,6 +7,8 @@ plugins {
 kotlin {
     jvmToolchain(17)
     jvm()
+    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+    wasmJs { browser() }
     android {
         namespace = "dev.tobins.mealplanner.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()

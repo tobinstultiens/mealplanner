@@ -29,7 +29,11 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.http.content.staticResources
 import io.ktor.server.plugins.BadRequestException
+import io.ktor.server.plugins.compression.Compression
+import io.ktor.server.plugins.compression.gzip
+import io.ktor.server.plugins.compression.minimumSize
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
@@ -155,6 +159,10 @@ fun Application.module(
 
     ingredients.applySeed().takeIf { it > 0 }?.let { log.info("Added $it default ingredients to the catalogue") }
     install(CallLogging)
+    // Mostly for the web client: its WebAssembly files shrink to about a third.
+    install(Compression) {
+        gzip { minimumSize(1024) }
+    }
     install(ContentNegotiation) { json() }
     install(StatusPages) {
         exception<NotFoundException> { call, cause ->
@@ -187,6 +195,10 @@ fun Application.module(
     }
 
     routing {
+        // The web client, when the jar includes it (see server/build.gradle.kts). Public: it holds no data,
+        // and asks for the token itself.
+        staticResources("/", "web")
+
         // Unauthenticated: used by the container readiness probe.
         get("/health") { call.respond(Health(status = "ok", version = APP_VERSION)) }
 

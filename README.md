@@ -7,7 +7,7 @@ using weekly offers from AH, Jumbo and Lidl and recipes from the cooking site.
 |---|---|
 | `shared` | Domain model, API types, units, Hugo recipe parser. Kotlin Multiplatform (JVM + Android). |
 | `server` | Ktor API with a SQLite database (SQLDelight). |
-| `composeApp` | Compose Multiplatform UI (Android target for now). |
+| `composeApp` | Compose Multiplatform UI for Android and the web (WebAssembly). |
 | `androidApp` | Thin Android application that hosts `composeApp`. |
 
 ## Requirements
@@ -35,6 +35,13 @@ MEALPLANNER_API_TOKEN=dev-token COOKING_REPO_PATH=../cooking \
 curl -X POST -H "Authorization: Bearer dev-token" localhost:8080/api/sync/cooking
 curl -H "Authorization: Bearer dev-token" localhost:8080/api/recipes
 ```
+
+## Web client
+
+`composeApp` also builds for the browser (`./gradlew :composeApp:wasmJsBrowserDistribution`), and the
+server jar includes that build: the server serves it at `/`. On the first visit it asks for the API
+token, which the browser keeps in `localStorage`. `kotlin-js-store/` pins the JavaScript toolchain's
+dependencies; commit changes to it. The web tests run in a headless Chrome.
 
 ## Android app
 
