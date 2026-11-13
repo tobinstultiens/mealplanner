@@ -123,6 +123,7 @@ class PlanRepository(
         val onHand = recipes.onHandIds()
         val needs = linkedMapOf<String, Need>()
         val staples = sortedSetOf<String>()
+        val toTaste = sortedSetOf<String>()
 
         val portionsByRecipe = stored(start).groupBy { it.recipeId }.mapValues { (_, meals) -> meals.sumOf { it.portions } to meals.first().title }
         for ((recipeId, planned) in portionsByRecipe) {
@@ -132,6 +133,10 @@ class PlanRepository(
             for ((line, ingredient) in lines) {
                 if (ingredient?.isStaple == true) {
                     staples += ingredient.name
+                    continue
+                }
+                if (ingredient?.negligible == true || (line.amount == null && NutritionCalculator.isSeasoning(line.ingredientText, ingredient))) {
+                    if (ingredient?.name != "Water") toTaste += ingredient?.name ?: IngredientLine.coreText(line.ingredientText)
                     continue
                 }
                 val key = ingredient?.let { "i${it.id}" } ?: "t:${IngredientRepository.normalise(IngredientLine.coreText(line.ingredientText))}"
@@ -168,6 +173,7 @@ class PlanRepository(
                 )
             }.sortedWith(compareBy({ it.category == "Other" }, { it.category }, { it.name.lowercase() })),
             staples = staples.toList(),
+            toTaste = toTaste.toList(),
         )
     }
 

@@ -244,17 +244,14 @@ class PlanTest {
         assertEquals("Meat", beef.category)
         assertTrue("Snack plate" in beef.recipes)
 
-        // A line without an amount is still something to have, listed last without a quantity.
-        val gizmo = list.items.last()
-        assertEquals("Gizmo to taste", gizmo.name)
-        assertEquals("Other", gizmo.category)
-        assertEquals(null, gizmo.grams)
-        assertEquals(null, gizmo.pieces)
+        // "To taste" lines are a reminder, not something to buy.
+        assertTrue(list.items.none { it.name.startsWith("Gizmo") })
+        assertEquals(listOf("gizmo to taste"), list.toTaste)
 
         // Ticking off, on-hand marking and staples.
-        list = http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(gizmo.key, true)) }.body()
-        assertTrue(list.items.single { it.key == gizmo.key }.checked)
-        list = http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(gizmo.key, false)) }.body()
+        list = http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(beef.key, true)) }.body()
+        assertTrue(list.items.single { it.key == beef.key }.checked)
+        list = http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(beef.key, false)) }.body()
         assertTrue(list.items.none { it.checked })
 
         val beefId = beef.key.removePrefix("i")

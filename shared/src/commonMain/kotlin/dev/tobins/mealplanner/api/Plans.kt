@@ -75,6 +75,8 @@ data class ShoppingList(
     val items: List<ShoppingItem>,
     /** Names of staples the plan uses, as a reminder to check the cupboard. */
     val staples: List<String>,
+    /** Seasoning and garnish the recipes use "to taste", without an amount. */
+    val toTaste: List<String> = emptyList(),
 )
 
 @Serializable

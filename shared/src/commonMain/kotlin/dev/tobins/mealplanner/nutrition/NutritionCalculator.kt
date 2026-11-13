@@ -84,15 +84,17 @@ object NutritionCalculator {
 
     /** Words that mark a line without an amount as seasoning, garnish or optional: fine to leave out. */
     private val seasoningWords = Regex(
-        "taste|smaak|optional|optioneel|garnish|serving|topping|frying|greasing|dusting|naar keuze|pinch|snufje|sprinkle|handful|handje|beetje|scheutje|" +
-            "\\bsalt\\b|\\bpepper\\b|\\bzout\\b|\\bpeper\\b|cranks",
+        "taste|smaak|optional|optioneel|garnish|serving|topping|frying|greasing|dusting|naar keuze|pinch|snufje|sprinkle|beetje|scheutje|" +
+            // Salt is named in every salt-and-pepper line; "peper" alone would also catch chillies ("rode peper").
+            "\\bsalt\\b|\\bzout\\b|cranks",
         RegexOption.IGNORE_CASE,
     )
 
     /** Ingredients that, without an amount, add next to nothing however much is used. */
     private val freeFoods = setOf("Salt", "Water", "Black pepper")
 
-    private fun isSeasoning(text: String, ingredient: Ingredient?): Boolean =
+    /** True for a line without an amount that is only seasoning, garnish or optional ("salt to taste"). */
+    fun isSeasoning(text: String, ingredient: Ingredient?): Boolean =
         seasoningWords.containsMatchIn(text) || ingredient?.name in freeFoods || ingredient?.food?.groupEn == "Herbs and spices"
 
     private val Zero = Nutrition(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)

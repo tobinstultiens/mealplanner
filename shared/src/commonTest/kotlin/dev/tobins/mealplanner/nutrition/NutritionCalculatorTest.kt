@@ -108,6 +108,6 @@ class NutritionCalculatorTest {
 
         val (pepper, chili, red) = lines("| | kosher salt and freshly ground black pepper", "| | chile powder", "| | halve rode peper")
         val spice = ingredient(food(kcal = 300.0, protein = 10.0).copy(groupEn = "Herbs and spices"))
-        assertEquals(emptyList(), NutritionCalculator.perServing(listOf(pepper to null, chili to spice, red to null), 1).unquantified)
+        assertEquals(listOf("halve rode peper"), NutritionCalculator.perServing(listOf(pepper to null, chili to spice, red to null), 1).unquantified, "a chilli is not seasoning")
     }
 }

@@ -168,6 +168,16 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
                             }
                         }
                     }
+                    if (list.toTaste.isNotEmpty()) {
+                        item {
+                            Text(
+                                "To taste (check you have them): ${list.toTaste.joinToString()}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                            )
+                        }
+                    }
                     if (list.staples.isNotEmpty()) {
                         item {
                             Text(
