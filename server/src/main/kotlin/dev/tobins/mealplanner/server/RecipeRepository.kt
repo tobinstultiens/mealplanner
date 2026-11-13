@@ -9,6 +9,7 @@ import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSettings
+import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -33,6 +34,8 @@ fun openDatabase(url: String): Pair<SqlDriver, Database> {
     val driver = JdbcSqliteDriver(url, Properties().apply { put("foreign_keys", "true") }, Database.Schema)
     return driver to Database(driver)
 }
+
+private const val ROUTINES_KEY = "routines"
 
 /** Section name given to recipes created in the app. */
 private const val MANUAL_SECTION = "own"
@@ -90,6 +93,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
                 tags = Json.decodeFromString(row.tagsJson),
                 onHandCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onHand },
                 offerCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onOffer },
+                rating = row.rating?.toInt(),
             )
         }
     }
@@ -140,6 +144,24 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         val row = q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
         if (row.source != RecipeSource.MANUAL.name) throw ConflictException("Only your own recipes can be deleted here")
         q.deleteManual(id)
+    }
+
+    fun setRating(id: Long, rating: Int?): RecipeDetail {
+        require(rating == null || rating in 1..5) { "rating must be 1 to 5, or null" }
+        q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+        q.setRating(rating?.toLong(), id)
+        return find(id)!!
+    }
+
+    fun routines(): Routines =
+        db.foodQueries.selectMeta(ROUTINES_KEY).executeAsOneOrNull()?.let { Json.decodeFromString<Routines>(it) } ?: Routines()
+
+    fun saveRoutines(routines: Routines): Routines {
+        listOfNotNull(routines.breakfast, routines.snack).forEach {
+            q.selectById(it).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $it")
+        }
+        db.foodQueries.upsertMeta(ROUTINES_KEY, Json.encodeToString(routines))
+        return routines
     }
 
     fun updateSettings(id: Long, settings: RecipeSettings): RecipeDetail {
@@ -265,6 +287,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         plannable = hasIngredientsBlock != 0L && servings != null,
         nutrition = nutrition,
         mealSlots = slotsOf(this).sortedBy { it.ordinal },
+        rating = rating?.toInt(),
     )
 
     private fun Boolean.toLong() = if (this) 1L else 0L

@@ -7,7 +7,9 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeDetail
+import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSettings
@@ -290,5 +292,24 @@ class PlanTest {
 
         assertEquals(29, http.delete("/api/weights/2026-09-01").body<WeightLog>().entries.size)
         assertEquals(HttpStatusCode.BadRequest, http.put("/api/weights/2026-10-30") { setBody(5.0) }.status)
+    }
+
+    @Test
+    fun ratingsAndPinnedRoutinesAreStoredAndUsed() = testApplication {
+        val http = start().ready()
+        val dinners = http.get("/api/recipes").body<List<RecipeSummary>>().filter { it.title.startsWith("Dinner") }
+        val pick = dinners.first()
+
+        val rated = http.put("/api/recipes/${pick.id}/rating") { setBody(RatingInput(4)) }.body<RecipeDetail>()
+        assertEquals(4, rated.summary.rating)
+        assertEquals(HttpStatusCode.BadRequest, http.put("/api/recipes/${pick.id}/rating") { setBody(RatingInput(6)) }.status)
+        assertEquals(null, http.put("/api/recipes/${pick.id}/rating") { setBody(RatingInput(null)) }.body<RecipeDetail>().summary.rating)
+
+        assertEquals(Routines(), http.get("/api/routines").body<Routines>())
+        http.put("/api/recipes/${pick.id}/settings") { setBody(RecipeSettings(RecipeKind.MEAL, listOf(MealSlot.BREAKFAST, MealSlot.DINNER))) }
+        assertEquals(Routines(breakfast = pick.id), http.put("/api/routines") { setBody(Routines(breakfast = pick.id)) }.body<Routines>())
+        val plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        assertTrue(plan.days.all { day -> day.meals.first { it.slot == MealSlot.BREAKFAST }.recipeId == pick.id })
+        assertEquals(HttpStatusCode.NotFound, http.put("/api/routines") { setBody(Routines(snack = 99999)) }.status)
     }
 }

@@ -52,6 +52,13 @@ QT_QPA_PLATFORM=xcb ANDROID_AVD_HOME=$HOME/.config/.android/avd \
 ./gradlew :androidApp:installDebug
 ```
 
+## Database changes
+
+The schema lives in `server/src/main/sqldelight/.../db/*.sq` and always describes the current
+version. Every change also needs a migration file `N.sqm` (version N to N+1) next to it; the server
+applies pending migrations on start. `MigrationTest` builds a version 1 database from
+`server/src/test/resources/schema/v1.sql` and checks it ends up identical to a fresh one.
+
 ## Server configuration
 
 | Variable | Default | Meaning |

@@ -13,7 +13,9 @@ import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
+import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeDetail
+import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -126,6 +128,18 @@ class ApiClient(settings: ServerSettings) {
     suspend fun updateRecipeSettings(id: Long, settings: RecipeSettings): RecipeDetail = http.put("api/recipes/$id/settings") {
         contentType(ContentType.Application.Json)
         setBody(settings)
+    }.body()
+
+    suspend fun rateRecipe(id: Long, rating: Int?): RecipeDetail = http.put("api/recipes/$id/rating") {
+        contentType(ContentType.Application.Json)
+        setBody(RatingInput(rating))
+    }.body()
+
+    suspend fun routines(): Routines = http.get("api/routines").body()
+
+    suspend fun saveRoutines(routines: Routines): Routines = http.put("api/routines") {
+        contentType(ContentType.Application.Json)
+        setBody(routines)
     }.body()
 
     suspend fun unmapped(): List<UnmappedText> = http.get("api/mappings/unmapped").body()

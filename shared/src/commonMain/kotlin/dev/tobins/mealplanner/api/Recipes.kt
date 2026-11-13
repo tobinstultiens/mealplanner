@@ -22,7 +22,16 @@ data class RecipeSummary(
     val nutrition: RecipeNutrition? = null,
     /** Meal slots the planner may use this recipe for. */
     val mealSlots: List<MealSlot> = emptyList(),
+    /** 1 to 5; null when not rated. The planner prefers higher-rated recipes. */
+    val rating: Int? = null,
 )
+
+@Serializable
+data class RatingInput(val rating: Int?)
+
+/** Recipes eaten every day in a slot, chosen by the user instead of the planner. */
+@Serializable
+data class Routines(val breakfast: Long? = null, val snack: Long? = null)
 
 /** Body for creating or replacing a recipe of the user's own (source MANUAL). */
 @Serializable

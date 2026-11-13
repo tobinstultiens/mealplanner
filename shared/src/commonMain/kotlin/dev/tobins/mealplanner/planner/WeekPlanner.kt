@@ -20,6 +20,8 @@ data class PlanCandidate(
     /** How many of its ingredients are on offer at a store during the plan's week. */
     val offerCount: Int = 0,
     val costPerServing: Double? = null,
+    /** 1 to 5, or null when not rated (counted as an average 3). */
+    val rating: Int? = null,
 )
 
 data class PlanRequest(
@@ -32,6 +34,8 @@ data class PlanRequest(
     val excluded: Set<Long> = emptySet(),
     /** Recipes eaten recently; picked only when nothing else fits as well. */
     val recent: Set<Long> = emptySet(),
+    /** Recipes to use every day for breakfast or snack, instead of the planner's choice. */
+    val routines: Map<MealSlot, Long> = emptyMap(),
     /** Same seed, same plan. */
     val seed: Long = 0,
 )
@@ -40,7 +44,8 @@ data class PlanRequest(
  * Fills a week of meals so that each day lands near the calorie target and reaches
  * the protein target where the recipes allow it.
  *
- * - Breakfast and snack are routines: one choice, repeated all week.
+ * - Breakfast and snack are routines: one choice, repeated all week. A pinned routine
+ *   is used as long as it is plannable; otherwise the planner chooses.
  * - Dinner is a different recipe each day; what a dinner recipe yields beyond the
  *   portion eaten becomes the next day's lunch.
  * - Portions are adjusted in quarter servings to fit the slot's share of the calories.
@@ -58,7 +63,8 @@ object WeekPlanner {
 
         // Routines: the best breakfast and snack, every day.
         for (slot in listOf(MealSlot.BREAKFAST, MealSlot.SNACK)) {
-            val routine = usable.filter { slot in it.slots }
+            val pinned = request.routines[slot]?.let { id -> request.candidates.firstOrNull { it.recipeId == id } }
+            val routine = pinned ?: usable.filter { slot in it.slots }
                 .maxByOrNull { score(it, slot, request, uses = 0, sameTagAsYesterday = false, jitter = random.nextDouble()) }
                 ?: continue
             for (day in 0 until request.days) {
@@ -131,7 +137,8 @@ object WeekPlanner {
         return 2.0 * calorieFit +
             2.0 * proteinFit +
             0.5 * candidate.onHandCount.coerceAtMost(3) +
-            0.3 * candidate.offerCount.coerceAtMost(3) -
+            0.3 * candidate.offerCount.coerceAtMost(3) +
+            0.4 * ((candidate.rating ?: 3) - 3) -
             3.0 * uses -
             (if (sameTagAsYesterday) 0.5 else 0.0) -
             (if (candidate.recipeId in request.recent) 1.0 else 0.0) -

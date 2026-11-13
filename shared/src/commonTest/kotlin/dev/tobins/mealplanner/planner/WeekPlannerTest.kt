@@ -11,6 +11,7 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class WeekPlannerTest {
@@ -156,5 +157,35 @@ class WeekPlannerTest {
         }
         // The first meal the planner fills is the first day's lunch.
         assertEquals(16L, WeekPlanner.plan(PlanRequest(targets, both)).at(0, LUNCH).recipeId, "using up what is at home comes first")
+    }
+
+    @Test
+    fun pinnedRoutinesReplaceThePlannersChoice() {
+        val plan = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes, routines = mapOf(BREAKFAST to 2L)))
+        assertEquals(setOf(2L), plan.filter { it.slot == BREAKFAST }.map { it.recipeId }.toSet())
+        assertEquals(setOf(3L), plan.filter { it.slot == SNACK }.map { it.recipeId }.toSet(), "the snack is still chosen")
+
+        val gone = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes, routines = mapOf(BREAKFAST to 999L)))
+        assertEquals(setOf(1L), gone.filter { it.slot == BREAKFAST }.map { it.recipeId }.toSet(), "an unplannable pin is ignored")
+    }
+
+    @Test
+    fun ratingsPullARecipeForwardAndPushOneBack() {
+        val rated = pantryOfRecipes.map {
+            when (it.recipeId) {
+                17L -> it.copy(rating = 5)
+                10L -> it.copy(rating = 1)
+                else -> it
+            }
+        }
+        val plan = WeekPlanner.plan(PlanRequest(targets, rated))
+        assertEquals(17L, plan.at(0, LUNCH).recipeId, "the five-star recipe is the first one planned")
+        assertFalse(plan.any { it.recipeId == 10L }, "the one-star recipe is not needed this week")
+    }
+
+    @Test
+    fun lunchAndDinnerOfOneDayDiffer() {
+        val plan = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes))
+        for (day in 0..6) assertNotEquals(plan.at(day, LUNCH).recipeId, plan.at(day, DINNER).recipeId)
     }
 }

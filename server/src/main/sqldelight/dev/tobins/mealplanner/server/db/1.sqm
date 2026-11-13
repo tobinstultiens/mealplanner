@@ -1,0 +1,2 @@
+-- Version 1 -> 2: recipe ratings (1 to 5; NULL = not rated).
+ALTER TABLE recipe ADD COLUMN rating INTEGER;

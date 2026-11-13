@@ -171,6 +171,9 @@ class PlanRepository(
     private fun request(start: LocalDate, locked: List<PlannedMeal>, seed: Long) = PlanRequest(
         targets = targets(),
         candidates = recipes.planCandidates(onOffer = offersByIngredient(start, start.plusDays(DAYS - 1L)).keys),
+        routines = recipes.routines().let { r ->
+            listOfNotNull(r.breakfast?.let { MealSlot.BREAKFAST to it }, r.snack?.let { MealSlot.SNACK to it }).toMap()
+        },
         days = DAYS,
         locked = locked,
         // What was planned the week before counts as recently eaten.

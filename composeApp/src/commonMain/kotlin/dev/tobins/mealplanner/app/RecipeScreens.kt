@@ -49,6 +49,7 @@ import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSettings
+import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import io.ktor.client.plugins.ResponseException
@@ -169,6 +170,7 @@ private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
     val details = buildList {
         if (recipe.tags.isNotEmpty()) add(recipe.tags.joinToString(" · "))
         recipe.servings?.let { add(if (it == 1) "1 serving" else "$it servings") }
+        recipe.rating?.let { add("★".repeat(it)) }
         val nutrition = recipe.nutrition
         when {
             !recipe.plannable || nutrition == null -> add("no amounts yet")
@@ -188,10 +190,12 @@ private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
 fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?, onBack: () -> Unit, onEdit: () -> Unit) {
     val scope = rememberCoroutineScope()
     var state by remember(recipeId) { mutableStateOf<Load<RecipeDetail>>(Load.Loading) }
+    var routines by remember { mutableStateOf<Routines?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     LaunchedEffect(recipeId, reload) {
         state = Load.Loading
         state = load { api.recipe(recipeId) }
+        routines = (load { api.routines() } as? Load.Ready)?.value
     }
 
     Scaffold(
@@ -233,9 +237,17 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                         Text(if (it == 1) "Makes 1 serving" else "Makes $it servings", style = MaterialTheme.typography.labelLarge)
                     }
                     recipe.summary.nutrition?.let { NutritionCard(it, nutritionSource) }
+                    RatingRow(recipe.summary.rating) { rating ->
+                        scope.launch { (load { api.rateRecipe(recipeId, rating) } as? Load.Ready)?.let { state = it } }
+                    }
                     PlannerSettings(recipe.summary) { settings ->
                         scope.launch {
                             (load { api.updateRecipeSettings(recipeId, settings) } as? Load.Ready)?.let { state = it }
+                        }
+                    }
+                    routines?.let { current ->
+                        RoutineButtons(recipe.summary, current) { updated ->
+                            scope.launch { (load { api.saveRoutines(updated) } as? Load.Ready)?.let { routines = it.value } }
                         }
                     }
                     if (recipe.ingredients.isEmpty()) {
@@ -276,6 +288,48 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                     }
                 }
             }
+        }
+    }
+}
+
+/** Five stars; tapping the current rating clears it. */
+@Composable
+private fun RatingRow(rating: Int?, onRate: (Int?) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Rating", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = 8.dp))
+        for (star in 1..5) {
+            TextButton(onClick = { onRate(if (rating == star) null else star) }, contentPadding = PaddingValues(4.dp)) {
+                Text(
+                    if (rating != null && star <= rating) "★" else "☆",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+/** Pins the recipe as the breakfast or snack eaten every day, for the slots it is planned as. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RoutineButtons(summary: RecipeSummary, routines: Routines, onChange: (Routines) -> Unit) {
+    val canBreakfast = summary.kind == RecipeKind.MEAL && MealSlot.BREAKFAST in summary.mealSlots
+    val canSnack = summary.kind == RecipeKind.MEAL && MealSlot.SNACK in summary.mealSlots
+    if (!canBreakfast && !canSnack && routines.breakfast != summary.id && routines.snack != summary.id) return
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (canBreakfast || routines.breakfast == summary.id) {
+            FilterChip(
+                selected = routines.breakfast == summary.id,
+                onClick = { onChange(routines.copy(breakfast = if (routines.breakfast == summary.id) null else summary.id)) },
+                label = { Text("Every day for breakfast") },
+            )
+        }
+        if (canSnack || routines.snack == summary.id) {
+            FilterChip(
+                selected = routines.snack == summary.id,
+                onClick = { onChange(routines.copy(snack = if (routines.snack == summary.id) null else summary.id)) },
+                label = { Text("Every day as snack") },
+            )
         }
     }
 }

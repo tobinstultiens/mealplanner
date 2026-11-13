@@ -8,7 +8,9 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeSettings
+import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.http.HttpMethod
@@ -294,6 +296,10 @@ fun Application.module(
                 }
             }
 
+            get("/api/routines") { call.respond(recipes.routines()) }
+
+            put("/api/routines") { call.respond(recipes.saveRoutines(call.receive<Routines>())) }
+
             post("/api/recipes") { call.respond(HttpStatusCode.Created, recipes.create(call.receive<RecipeInput>())) }
 
             route("/api/recipes/{id}") {
@@ -305,6 +311,7 @@ fun Application.module(
                     call.respond(HttpStatusCode.NoContent)
                 }
                 put("/settings") { call.respond(recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }
+                put("/rating") { call.respond(recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
             }
 
             // Re-reads the cooking repo checkout and brings the stored recipes in line with it.
