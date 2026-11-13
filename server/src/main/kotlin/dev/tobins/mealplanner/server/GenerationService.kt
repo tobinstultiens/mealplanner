@@ -47,6 +47,8 @@ class GenerationService(
             onOffer = onOffer.sorted(),
             recent = plans.recentTitles(today),
             existing = recipes.allTitles(),
+            likes = profiles.profile()?.likes.orEmpty(),
+            dislikes = profiles.profile()?.dislikes.orEmpty(),
         )
     }
 

@@ -34,6 +34,7 @@ class RecipeGenerationTest {
         assertTrue("next day's lunch" in prompt)
         assertTrue("Wish: Korean, spicy" in prompt)
         assertTrue("Olive oil, Salt" in prompt)
+        assertTrue("Never use these ingredients: mushroom." in RecipePrompt.user(context.copy(dislikes = listOf("mushroom"))))
         assertTrue("Spinach" in prompt && "Chicken fillet, Broccoli" in prompt && "Gyros, Carnitas" in prompt && "Gyudon" in prompt)
 
         val breakfast = RecipePrompt.user(context.copy(slot = MealSlot.BREAKFAST, servings = 1, mode = GenerationMode.TASTE_BREAKER, wish = "", onHand = emptyList()))

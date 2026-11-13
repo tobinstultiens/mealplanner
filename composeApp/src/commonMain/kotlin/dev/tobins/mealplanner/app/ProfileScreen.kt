@@ -65,6 +65,8 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
     var goal by remember { mutableStateOf("0.5") }
     var kcalOverride by remember { mutableStateOf("") }
     var proteinOverride by remember { mutableStateOf("") }
+    var likes by remember { mutableStateOf("") }
+    var dislikes by remember { mutableStateOf("") }
 
     LaunchedEffect(reload) {
         loaded = Load.Loading
@@ -78,6 +80,8 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
             goal = formatAmount(profile.goalKgPerWeek)
             kcalOverride = profile.kcalOverride?.toString().orEmpty()
             proteinOverride = profile.proteinOverrideG?.toString().orEmpty()
+            likes = profile.likes.joinToString(", ")
+            dislikes = profile.dislikes.joinToString(", ")
         }
     }
 
@@ -90,7 +94,8 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
         val a = age.trim().toIntOrNull() ?: return@run null
         val g = number(goal) ?: return@run null
         if (!overridesValid) return@run null
-        Profile(w, h, a, sex, activity, g, kcalOverride.trim().toIntOrNull(), proteinOverride.trim().toIntOrNull())
+        fun words(text: String) = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        Profile(w, h, a, sex, activity, g, kcalOverride.trim().toIntOrNull(), proteinOverride.trim().toIntOrNull(), words(likes), words(dislikes))
     }
     val problems = draft?.let(TargetCalculator::problems)
 
@@ -149,6 +154,20 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                 Text("Optional: use your own targets instead of the suggestion", style = MaterialTheme.typography.labelLarge)
                 NumberField("Calories per day", kcalOverride, decimal = false) { kcalOverride = it }
                 NumberField("Protein per day (g)", proteinOverride, decimal = false) { proteinOverride = it }
+
+                Text("Taste", style = MaterialTheme.typography.labelLarge)
+                OutlinedTextField(
+                    likes, { likes = it },
+                    label = { Text("Likes, comma separated") },
+                    supportingText = { Text("Cuisines or flavours for new recipes, e.g. Korean, spicy") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    dislikes, { dislikes = it },
+                    label = { Text("Never use, comma separated") },
+                    supportingText = { Text("Ingredients the planner and new recipes leave out, e.g. mushroom") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
                 Button(
                     enabled = draft != null && problems.isNullOrEmpty(),

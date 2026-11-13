@@ -39,6 +39,8 @@ object RecipePrompt {
             appendLine("The servings not eaten at dinner are next day's lunch, so it should keep and reheat well.")
         }
         if (context.wish.isNotBlank()) appendLine("Wish: ${context.wish.trim()}")
+        list("Generally likes", context.likes)
+        list("Never use these ingredients", context.dislikes)
         list("Always at home, use freely", context.staples)
         list("At home and should be used up soon; use some of these", context.onHand)
         list("On offer this week; prefer these when they fit", context.onOffer)

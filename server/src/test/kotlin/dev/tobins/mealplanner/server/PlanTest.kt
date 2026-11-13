@@ -418,4 +418,21 @@ class PlanTest {
         val untouched = { plan: WeekPlan -> plan.days.flatMap { it.meals }.filterNot { (it.day == 1 && it.slot == MealSlot.DINNER) || (it.day == 2 && it.slot == MealSlot.LUNCH) } }
         assertEquals(untouched(before), untouched(after))
     }
+
+    @Test
+    fun dislikedIngredientsAreNeverPlannedAndLikesReachGeneration() = testApplication {
+        val http = start().ready()
+        val profile = http.get("/api/profile").body<ProfileState>().profile!!
+        http.put("/api/profile") { setBody(profile.copy(likes = listOf("Korean"), dislikes = listOf("beef"))) }
+
+        val plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        assertEquals(0, plan.days.sumOf { it.meals.size }, "every test recipe contains beef")
+
+        http.put("/api/profile") { setBody(profile.copy(likes = listOf("Korean"), dislikes = listOf("bee"))) }
+        assertTrue(http.post("/api/plans/$week/generate").body<WeekPlan>().days.sumOf { it.meals.size } > 0, "whole words only")
+
+        http.post("/api/recipes/generate") { setBody(GenerateRequest()) }
+        assertEquals(listOf("Korean"), fake.contexts.last().likes)
+        assertEquals(listOf("bee"), fake.contexts.last().dislikes)
+    }
 }

@@ -94,12 +94,23 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         )
     }
 
-    fun planCandidates(onOffer: Set<Long> = emptySet()): List<PlanCandidate> {
+    /**
+     * @param dislikes words for ingredients never to plan; a recipe with a line whose text
+     *   or linked ingredient name contains one of them as a word (or its plural) is left out.
+     */
+    fun planCandidates(onOffer: Set<Long> = emptySet(), dislikes: List<String> = emptyList()): List<PlanCandidate> {
         val resolve = ingredients.resolver()
+        val disliked = dislikes.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+            .map { Regex("\\b${Regex.escape(it)}(s|es|en|n)?\\b", RegexOption.IGNORE_CASE) }
         val onHand = ingredients.pantry().onHand.mapTo(HashSet()) { it.id }
         return q.selectActive().executeAsList().mapNotNull { row ->
             if (row.kind != RecipeKind.MEAL.name) return@mapNotNull null
             val lines = linesOf(row.id)
+            if (disliked.isNotEmpty() && lines.any { line ->
+                    val names = listOfNotNull(line.ingredientText, resolve(line)?.name)
+                    disliked.any { word -> names.any(word::containsMatchIn) }
+                }
+            ) return@mapNotNull null
             val nutrition = nutritionOf(row, lines, resolve)?.takeIf { it.complete } ?: return@mapNotNull null
             PlanCandidate(
                 recipeId = row.id,

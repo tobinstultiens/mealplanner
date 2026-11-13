@@ -26,6 +26,10 @@ data class Profile(
     val kcalOverride: Int? = null,
     /** Set to use a fixed protein target instead of the suggested one. */
     val proteinOverrideG: Int? = null,
+    /** Cuisines, flavours or dishes to lean towards when writing recipes, e.g. "Korean", "spicy". */
+    val likes: List<String> = emptyList(),
+    /** Ingredients never to plan or use, e.g. "mushroom"; matched as words in ingredient names. */
+    val dislikes: List<String> = emptyList(),
 )
 
 @Serializable

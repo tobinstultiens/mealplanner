@@ -22,6 +22,8 @@ data class GenerationContext(
     val recent: List<String>,
     /** Titles already in the recipe collection, so no duplicate is written. */
     val existing: List<String>,
+    val likes: List<String> = emptyList(),
+    val dislikes: List<String> = emptyList(),
 )
 
 /** A recipe as a generator returns it, before it is checked and stored. */
