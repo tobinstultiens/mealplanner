@@ -53,6 +53,7 @@ import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import io.ktor.client.plugins.ResponseException
+import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -69,7 +70,13 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
 } catch (e: CancellationException) {
     throw e
 } catch (e: ResponseException) {
-    Load.Failed("The server answered ${e.response.status.value} ${e.response.status.description}", e.response.status.value)
+    // The server explains errors as {"error": "..."}; fall back to the status line.
+    val reason = runCatching {
+        kotlinx.serialization.json.Json.parseToJsonElement(e.response.bodyAsText())
+            .let { it as? kotlinx.serialization.json.JsonObject }?.get("error")
+            ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+    }.getOrNull()
+    Load.Failed(reason ?: "The server answered ${e.response.status.value} ${e.response.status.description}", e.response.status.value)
 } catch (e: Exception) {
     Load.Failed(e.message ?: "Unknown error")
 }
@@ -77,6 +84,7 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -> Unit, onNewRecipe: () -> Unit) {
+    var generating by remember { mutableStateOf(false) }
     var state by remember { mutableStateOf<Load<List<RecipeSummary>>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
     var syncing by remember { mutableStateOf(false) }
@@ -95,6 +103,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
             TopAppBar(
                 title = { Text("Recipes") },
                 actions = {
+                    TextButton(onClick = { generating = true }) { Text("Generate") }
                     TextButton(onClick = onNewRecipe) { Text("New") }
                     TextButton(onClick = onOpenMapping) { Text("Ingredients") }
                     TextButton(
@@ -120,6 +129,13 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
+        if (generating) {
+            GenerateDialog(api, onDismiss = { generating = false }, onCreated = { id ->
+                generating = false
+                reload++
+                onOpen(id)
+            })
+        }
         Column(Modifier.padding(padding).fillMaxSize()) {
             OutlinedTextField(
                 value = query,
@@ -210,7 +226,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                 },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
                 actions = {
-                    if ((state as? Load.Ready)?.value?.summary?.source == RecipeSource.MANUAL) {
+                    if ((state as? Load.Ready)?.value?.summary?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }) {
                         TextButton(onClick = onEdit) { Text("Edit") }
                     }
                 },

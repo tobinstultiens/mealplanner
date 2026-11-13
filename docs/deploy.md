@@ -19,8 +19,11 @@ grocy workload: one pod, `Recreate`, data on a host directory.
    ```
    The database, the cooking repo checkout and the NEVO file all live there. The NEVO data may not
    be redistributed, so it is copied by hand and never baked into the image.
-4. **DNS** for `mealplanner.tstultiens.com`, as for `cooking.tstultiens.com`.
-5. Commit and push `workloads/mealplanner` in homelab-gitops.
+4. **Recipe generation (optional).** Create a Claude Console API key, store it in Bitwarden as
+   `mealplanner-anthropic-api-key`, and add it to the ExternalSecret and the deployment as
+   `ANTHROPIC_API_KEY`. Without it the app's Generate button explains that generation is off.
+5. **DNS** for `mealplanner.tstultiens.com`, as for `cooking.tstultiens.com`.
+6. Commit and push `workloads/mealplanner` in homelab-gitops.
 
 ## Updating
 

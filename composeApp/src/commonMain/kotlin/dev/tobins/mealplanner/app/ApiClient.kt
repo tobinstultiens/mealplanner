@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.Health
 import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodDataset
+import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
@@ -28,7 +29,9 @@ import dev.tobins.mealplanner.api.WeightLog
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -48,6 +51,7 @@ class ApiClient(settings: ServerSettings) {
     private val http = HttpClient {
         expectSuccess = true
         install(ContentNegotiation) { json() }
+        install(HttpTimeout)
         defaultRequest {
             url(settings.url.trimEnd('/') + "/")
             if (settings.token.isNotBlank()) bearerAuth(settings.token)
@@ -110,6 +114,16 @@ class ApiClient(settings: ServerSettings) {
             contentType(ContentType.Application.Json)
             setBody(ShoppingCheck(key, checked))
         }.body()
+
+    /** Writes a recipe with Claude on the server; this can take a minute or two. */
+    suspend fun generateRecipe(request: GenerateRequest): RecipeDetail = http.post("api/recipes/generate") {
+        timeout {
+            requestTimeoutMillis = 240_000
+            socketTimeoutMillis = 240_000
+        }
+        contentType(ContentType.Application.Json)
+        setBody(request)
+    }.body()
 
     suspend fun createRecipe(input: RecipeInput): RecipeDetail = http.post("api/recipes") {
         contentType(ContentType.Application.Json)

@@ -75,6 +75,8 @@ applies pending migrations on start. `MigrationTest` builds a version 1 database
 | `MEALPLANNER_DB_URL` | `jdbc:sqlite:.runtime/mealplanner.db` | SQLite database |
 | `COOKING_REPO_URL` | unset | Git URL of the cooking repo; the server clones it, re-syncs every six hours, and reads its `data/units.yaml` |
 | `COOKING_REPO_PATH` | `.runtime/cooking` with a URL | Checkout to read recipes from; without `COOKING_REPO_URL` it is used as is |
+| `ANTHROPIC_API_KEY` | unset | Enables recipe generation (`POST /api/recipes/generate`) with Claude; pay per use |
+| `MEALPLANNER_MODEL` | `claude-opus-5-5` | Claude model for generation |
 | `MEALPLANNER_FETCH_OFFERS` | on | Set to `off` to stop fetching store offers in the background |
 | `NEVO_CSV_PATH` | unset | NEVO main csv (`NEVO2025_v9.0.csv`). Imported on first start; `POST /api/foods/import` re-imports |
 
