@@ -15,16 +15,39 @@ import dev.tobins.mealplanner.api.Offer
 class OfferMatcher(terms: Map<Long, List<String>>) {
     private data class Term(val ingredientId: Long, val words: List<String>, val length: Int)
 
+    /** The words of all of an ingredient's names. */
+    private val nameWordsById: Map<Long, Set<String>> = terms.mapValues { (_, names) -> names.flatMap(::words).toSet() }
+
     private val terms: List<Term> = terms.flatMap { (id, names) ->
         names.map(::words).filter { it.isNotEmpty() && it.joinToString(" ").length >= 3 }.distinct()
             .map { Term(id, it, it.joinToString(" ").length) }
     }.sortedByDescending { it.length }
 
     /** The ingredient the offer is for, or null; the longest matching term wins. */
-    fun match(offer: Offer): Long? {
-        if (offer.category in notIngredients) return null
-        val title = words(offer.title)
-        return terms.firstOrNull { term -> occursIn(term.words, title) }?.ingredientId
+    fun match(offer: Offer): Long? = match(offer.title, offer.category)
+
+    /**
+     * The ingredient a product with this [title] in store [category] is, or null.
+     * [checkCategory] false skips the non-ingredient categories, for a caller that checks
+     * the category itself.
+     *
+     * - What follows "met", "with" or "in" is a side ingredient: "olijven gevuld met ansjovis"
+     *   is olives, "tonijn in olie" is tuna.
+     * - A prepared product ("pastasaus basilicum", "maaltijdmix broccoli") is not its
+     *   ingredient, unless the ingredient is itself one ("sojasaus", "bouillon").
+     */
+    fun match(title: String, category: String?, checkCategory: Boolean = true): Long? {
+        if (checkCategory && category in notIngredients) return null
+        val all = words(title)
+        val cut = all.indexOfFirst { it in sideWords }.takeIf { it > 0 } ?: all.size
+        val head = all.subList(0, cut)
+        val id = terms.firstOrNull { term -> occursIn(term.words, head) }?.ingredientId ?: return null
+        // "sojasaus" may be soy sauce, but "sap" inside "sinaasappel" does not make orange juice an orange.
+        val names = nameWordsById[id].orEmpty()
+        val prepared = all.any { word ->
+            preparedEndings.any { ending -> word.endsWith(ending) && names.none { it.endsWith(ending) } }
+        }
+        return id.takeUnless { prepared }
     }
 
     /** Offers grouped by the ingredient they match; unmatched offers are left out. */
@@ -78,6 +101,19 @@ class OfferMatcher(terms: Map<Long, List<String>>) {
             "Bier, wijn, aperitieven", "Frisdrank, sappen, water", "Koffie, thee", "Glutenvrij",
             "Zoet gebak", "Gekoelde kant-en-klaarmaaltijden", "Hartige hapjes", "Worst & vleeswaren",
             "Koffie, thee & cacao", "Witte wijn", "Rode wijn", "Diepvriespizza's & snacks",
+            "Baby en kind", "Drogisterij", "Huishouden", "Huisdier",
+        )
+
+        /** Words after which a title names what a product comes with, not what it is. */
+        private val sideWords = setOf("met", "with", "in", "gevuld")
+
+        /** Word endings of prepared products (Dutch compounds end in their head noun). */
+        private val preparedEndings = listOf(
+            "saus", "sauce", "mix", "schotel", "ovenpasta", "maaltijd", "sap", "juice", "drink", "shot", "siroop",
+            "reep", "repen", "chips", "soep", "dressing", "smeerkaas", "roomkaas", "smeltkaas", "spread", "salade",
+            "pizza", "marinade", "bouillon", "snack", "taart", "gebak", "smaak", "creme", "crème", "wafels", "crackers",
+            "oats", "crunch", "hoemoes", "hummus", "pasta", "wok", "oven", "moes", "noodles", "pancake", "crispy",
+            "crispies", "flavor", "flavour", "rösti", "rosti",
         )
 
         internal fun words(text: String): List<String> =

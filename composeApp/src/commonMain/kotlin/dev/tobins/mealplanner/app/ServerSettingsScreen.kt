@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -31,10 +32,19 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-/** Where the server is and the token to use; can be tested before saving. */
+/**
+ * App settings: light or dark, which applies at once, and where the server is and the token
+ * to use, which can be tested before saving.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ServerSettingsScreen(current: ServerSettings, onSave: (ServerSettings) -> Unit, onBack: () -> Unit) {
+fun ServerSettingsScreen(
+    current: ServerSettings,
+    theme: ThemeMode,
+    onTheme: (ThemeMode) -> Unit,
+    onSave: (ServerSettings) -> Unit,
+    onBack: () -> Unit,
+) {
     var url by remember { mutableStateOf(current.url) }
     var token by remember { mutableStateOf(current.token) }
     var showToken by remember { mutableStateOf(false) }
@@ -46,13 +56,20 @@ fun ServerSettingsScreen(current: ServerSettings, onSave: (ServerSettings) -> Un
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Server") }, navigationIcon = { TextButton(onClick = onBack) { Text("Back") } })
+            TopAppBar(title = { Text("Settings") }, navigationIcon = { TextButton(onClick = onBack) { Text("Back") } })
         },
     ) { padding ->
         Column(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Text("Appearance", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemeMode.entries.forEach { mode ->
+                    FilterChip(selected = theme == mode, onClick = { onTheme(mode) }, label = { Text(mode.label) })
+                }
+            }
+            Text("Server", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 url, { url = it; result = null },
                 label = { Text("Server address") },

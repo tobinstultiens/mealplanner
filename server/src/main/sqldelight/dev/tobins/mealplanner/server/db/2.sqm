@@ -1,0 +1,10 @@
+-- Version 2 -> 3: regular store prices per ingredient, the baseline for offers.
+CREATE TABLE ingredientPrice (
+    ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE,
+    store TEXT NOT NULL,
+    product TEXT NOT NULL,
+    packSize TEXT,
+    packPrice REAL,
+    eurosPerKg REAL NOT NULL,
+    fetchedAt TEXT NOT NULL
+);

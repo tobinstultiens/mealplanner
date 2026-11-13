@@ -24,6 +24,19 @@ data class RecipeSummary(
     val mealSlots: List<MealSlot> = emptyList(),
     /** 1 to 5; null when not rated. The planner prefers higher-rated recipes. */
     val rating: Int? = null,
+    /** Estimated cost per serving; null when nothing in it could be priced. */
+    val cost: RecipeCost? = null,
+)
+
+/** What a serving costs, from regular store prices and this week's offers. */
+@Serializable
+data class RecipeCost(
+    /** Euros per serving at regular prices. */
+    val perServing: Double,
+    /** Euros per serving with the current week's offers taken off. */
+    val perServingWithOffers: Double,
+    /** Ingredients without a known price, counted at a typical price per kg. */
+    val estimated: List<String> = emptyList(),
 )
 
 @Serializable
@@ -76,6 +89,19 @@ data class RecipeDetail(
     /** Markdown. */
     val instructions: String,
     val problems: List<String>,
+)
+
+/** When the server last read the cooking site, from `GET /api/sync/cooking`. */
+@Serializable
+data class CookingSyncStatus(
+    /** ISO instant of the last successful sync; null if none yet. */
+    val syncedAt: String?,
+    /** The cooking repo commit that sync read. */
+    val commit: String?,
+    /** Message of the last failed sync, cleared by a successful one. */
+    val error: String?,
+    /** How often the server syncs on its own; null when it doesn't (no repo URL configured). */
+    val everyHours: Int?,
 )
 
 /** Outcome of `POST /api/sync/cooking`. */

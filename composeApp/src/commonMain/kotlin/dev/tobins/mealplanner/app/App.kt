@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun App(defaults: ServerSettings, storage: SettingsStorage) {
     var settings by remember { mutableStateOf(storage.serverSettings(defaults)) }
+    var theme by remember { mutableStateOf(storage.themeMode()) }
     val api = remember(settings) { ApiClient(settings) }
     val shoppingCache = remember(storage) { ShoppingCache(storage) }
     DisposableEffect(api) { onDispose { api.close() } }
@@ -49,6 +50,7 @@ fun App(defaults: ServerSettings, storage: SettingsStorage) {
     var profileOpen by rememberSaveable { mutableStateOf(false) }
     var pantryOpen by rememberSaveable { mutableStateOf(false) }
     var offersOpen by rememberSaveable { mutableStateOf(false) }
+    var pricesOpen by rememberSaveable { mutableStateOf(false) }
     // Without a token nothing works yet, so start on the server settings (the web client's first visit).
     var serverOpen by rememberSaveable { mutableStateOf(settings.token.isBlank()) }
 
@@ -62,7 +64,13 @@ fun App(defaults: ServerSettings, storage: SettingsStorage) {
         }
     }
 
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+    val dark = when (theme) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    SystemBars(dark)
+    MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
       // On a wide browser window the app keeps a phone-like column in the middle.
       Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
        Box(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
@@ -72,6 +80,11 @@ fun App(defaults: ServerSettings, storage: SettingsStorage) {
                 BackHandler(enabled = true) { serverOpen = false }
                 ServerSettingsScreen(
                     current = settings,
+                    theme = theme,
+                    onTheme = {
+                        storage.saveThemeMode(it)
+                        theme = it
+                    },
                     onSave = {
                         storage.saveServerSettings(it)
                         settings = it
@@ -98,9 +111,13 @@ fun App(defaults: ServerSettings, storage: SettingsStorage) {
                             onCancel = { editing = null },
                         )
                     }
+                    pricesOpen -> {
+                        BackHandler(enabled = true) { pricesOpen = false }
+                        PricesScreen(api, onBack = { pricesOpen = false })
+                    }
                     offersOpen -> {
                         BackHandler(enabled = true) { offersOpen = false }
-                        OffersScreen(api, onBack = { offersOpen = false })
+                        OffersScreen(api, onBack = { offersOpen = false }, onOpenPrices = { pricesOpen = true })
                     }
                     pantryOpen -> {
                         BackHandler(enabled = true) { pantryOpen = false }

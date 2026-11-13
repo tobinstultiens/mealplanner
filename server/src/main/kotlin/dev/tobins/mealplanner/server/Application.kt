@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.Health
+import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
@@ -50,6 +51,8 @@ import dev.tobins.mealplanner.server.offers.AhOfferSource
 import dev.tobins.mealplanner.server.offers.JumboOfferSource
 import dev.tobins.mealplanner.server.offers.LidlOfferSource
 import dev.tobins.mealplanner.server.offers.OfferSource
+import dev.tobins.mealplanner.server.prices.AhPriceSource
+import dev.tobins.mealplanner.server.prices.PriceSource
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -60,6 +63,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.Instant
 import java.time.Duration
 import java.time.LocalDate
 import kotlin.time.Duration.Companion.hours
@@ -111,29 +115,53 @@ fun Application.module(
     config: ServerConfig,
     database: Database,
     offerSources: List<OfferSource> = defaultOfferSources(),
+    priceSource: PriceSource? = defaultPriceSource(),
     generator: RecipeGenerator? = ClaudeRecipeGenerator.fromEnv(),
 ) {
     val foods = FoodRepository(database)
     val ingredients = IngredientRepository(database, foods)
-    val recipes = RecipeRepository(database, ingredients)
-    val profiles = ProfileRepository(database)
     val offers = OfferRepository(database, offerSources)
-    val plans = PlanRepository(database, recipes, profiles) { from, until -> offers.byIngredient(from, until, ingredients.matchTerms()) }
+    val prices = PriceRepository(database, priceSource, ingredients, offers)
+    val recipes = RecipeRepository(database, ingredients, prices::pricing)
+    val profiles = ProfileRepository(database)
+    val plans = PlanRepository(
+        database, recipes, profiles,
+        offersByIngredient = { from, until -> offers.byIngredient(from, until, ingredients.matchTerms()) },
+        pricing = prices::pricing,
+    )
     val tracking = TrackingRepository(database, plans, profiles)
     val generation = generator?.let { GenerationService(it, recipes, ingredients, profiles, plans, offers) }
     val cookingRepo = config.cookingRepo?.let { CookingRepo(it, config.cookingRepoUrl) }
     // One sync at a time: the scheduled one and a request must not clone into the same directory.
     val cookingLock = Mutex()
 
+    val meta = database.foodQueries
+
     /** Fetches the cooking repo if the server manages it, then imports its recipes. Null without a repo. */
     suspend fun syncCooking(): SyncResult? = cookingLock.withLock {
       withContext(Dispatchers.IO) {
         val repo = cookingRepo ?: return@withContext null
-        val commit = repo.update()
-        val parsed = CookingSiteReader(repo).readAll() ?: return@withContext null
-        recipes.syncCookingSite(parsed).copy(autoLinked = ingredients.autoLink(), commit = commit)
+        try {
+            val commit = repo.update()
+            val parsed = CookingSiteReader(repo).readAll() ?: return@withContext null
+            recipes.syncCookingSite(parsed).copy(autoLinked = ingredients.autoLink(), commit = commit).also {
+                meta.upsertMeta(SYNCED_AT_KEY, Instant.now().toString())
+                it.commit?.let { commit -> meta.upsertMeta(SYNCED_COMMIT_KEY, commit) }
+                meta.upsertMeta(SYNC_ERROR_KEY, "")
+            }
+        } catch (e: Exception) {
+            meta.upsertMeta(SYNC_ERROR_KEY, e.message ?: e::class.simpleName ?: "unknown error")
+            throw e
+        }
       }
     }
+
+    fun syncStatus() = CookingSyncStatus(
+        syncedAt = meta.selectMeta(SYNCED_AT_KEY).executeAsOneOrNull(),
+        commit = meta.selectMeta(SYNCED_COMMIT_KEY).executeAsOneOrNull(),
+        error = meta.selectMeta(SYNC_ERROR_KEY).executeAsOneOrNull()?.takeIf { it.isNotEmpty() },
+        everyHours = if (config.cookingRepoUrl != null) COOKING_SYNC_HOURS else null,
+    )
     if (config.cookingRepoUrl != null) {
         // Recipes change rarely; a few times a day is plenty.
         launch {
@@ -144,7 +172,7 @@ fun Application.module(
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     log.warn("Cooking repo sync failed: ${e.message}")
                 }
-                delay(6.hours)
+                delay(COOKING_SYNC_HOURS.hours)
             }
         }
     }
@@ -154,6 +182,13 @@ fun Application.module(
         launch {
             while (true) {
                 offers.refresh(olderThan = Duration.ofHours(24))
+                // Regular prices barely move; a weekly lookup (a few minutes of searches) is enough.
+                try {
+                    prices.refresh(olderThan = Duration.ofDays(7))
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    log.warn("Price lookup failed: ${e.message}")
+                }
                 delay(6.hours)
             }
         }
@@ -340,6 +375,12 @@ fun Application.module(
 
             // Fetches every store now, regardless of when it was last fetched.
             post("/api/offers/refresh") { call.respond(offers.refresh()) }
+            get("/api/prices") { call.respond(prices.state()) }
+            // A lookup takes minutes: it runs in the background and the app polls GET /api/prices.
+            post("/api/prices/refresh") {
+                this@module.launch { prices.refresh() }
+                call.respond(prices.state().copy(refreshing = true))
+            }
 
             get("/api/foods/dataset") { call.respond(foods.dataset()) }
 
@@ -394,6 +435,7 @@ fun Application.module(
                 put("/rating") { call.respond(recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
             }
 
+            get("/api/sync/cooking") { call.respond(syncStatus()) }
             // Re-reads the cooking repo checkout and brings the stored recipes in line with it.
             post("/api/sync/cooking") {
                 val result = syncCooking()
@@ -417,3 +459,13 @@ fun defaultOfferSources(): List<OfferSource> {
     }
     return listOf(AhOfferSource(http), JumboOfferSource(http), LidlOfferSource(http))
 }
+
+/** The cooking site changes rarely; four times a day picks up edits the same day. */
+private const val COOKING_SYNC_HOURS = 6
+private const val SYNCED_AT_KEY = "cookingSyncedAt"
+private const val SYNCED_COMMIT_KEY = "cookingSyncedCommit"
+private const val SYNC_ERROR_KEY = "cookingSyncError"
+
+fun defaultPriceSource(): PriceSource = AhPriceSource(HttpClient(OkHttp) {
+    install(HttpTimeout) { requestTimeoutMillis = 30_000 }
+})

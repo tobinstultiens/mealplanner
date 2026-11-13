@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
+import dev.tobins.mealplanner.api.RecipeCost
+import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.Routines
@@ -93,9 +95,11 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    var syncStatus by remember { mutableStateOf<CookingSyncStatus?>(null) }
     LaunchedEffect(reload) {
         state = Load.Loading
         state = load { api.recipes() }
+        syncStatus = (load { api.cookingSyncStatus() } as? Load.Ready)?.value
     }
 
     Scaffold(
@@ -151,6 +155,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                 label = { Text("Meals only") },
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
+            syncStatus?.let { SyncLine(it) }
             when (val current = state) {
                 Load.Loading -> CenteredBox { CircularProgressIndicator() }
                 is Load.Failed -> ErrorMessage("Could not load recipes", current.message) { reload++ }
@@ -182,6 +187,24 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
     }
 }
 
+/** When the cooking site was last read, so it is clear that edits there have arrived. */
+@Composable
+private fun SyncLine(status: CookingSyncStatus) {
+    val text = buildString {
+        append(status.syncedAt?.let { "Cooking site synced ${instantLabel(it)}" } ?: "Cooking site not synced yet")
+        status.everyHours?.let { append(" · automatically every $it hours") }
+        status.error?.let { append(". Last sync failed: $it") }
+    }
+    Text(
+        text,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = if (status.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
 @Composable
 private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
     val details = buildList {
@@ -195,6 +218,7 @@ private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
             nutrition.complete -> add(nutrition.headline())
             else -> add("${nutrition.uncounted.size} ingredients to link")
         }
+        recipe.cost?.let { add("≈ ${formatEuro(it.perServingWithOffers)}") }
     }
     ListItem(
         headlineContent = { Text(recipe.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -255,6 +279,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                         Text(if (it == 1) "Makes 1 serving" else "Makes $it servings", style = MaterialTheme.typography.labelLarge)
                     }
                     recipe.summary.nutrition?.let { NutritionCard(it, nutritionSource) }
+                    recipe.summary.cost?.let { CostCard(it) }
                     RatingRow(recipe.summary.rating) { rating ->
                         scope.launch { (load { api.rateRecipe(recipeId, rating) } as? Load.Ready)?.let { state = it } }
                     }
@@ -418,6 +443,30 @@ private fun NutritionCard(nutrition: RecipeNutrition, source: String?) {
             source?.let {
                 Text("Source: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+    }
+}
+
+@Composable
+private fun CostCard(cost: RecipeCost) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Cost per serving", style = MaterialTheme.typography.labelLarge)
+            Text("≈ ${formatEuro(cost.perServingWithOffers)}", style = MaterialTheme.typography.titleLarge)
+            if (cost.perServingWithOffers < cost.perServing - 0.005) {
+                Text(
+                    "${formatEuro(cost.perServing)} at regular prices; this week's offers save ${formatEuro(cost.perServing - cost.perServingWithOffers)}.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (cost.estimated.isNotEmpty()) {
+                Text(
+                    "Estimated at a typical price: ${cost.estimated.joinToString("; ")}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text("Regular prices from Albert Heijn.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

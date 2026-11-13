@@ -49,3 +49,27 @@ data class OffersState(
     val offers: List<Offer>,
     val sources: List<OfferSourceStatus>,
 )
+
+/** The regular price used as the baseline for an ingredient, from a store's product search. */
+@Serializable
+data class IngredientPrice(
+    val ingredientId: Long,
+    val ingredientName: String,
+    val store: Store,
+    /** The product the price was taken from; "Set by hand" for a price entered in the catalogue. */
+    val product: String,
+    val packSize: String? = null,
+    val packPrice: Double? = null,
+    val eurosPerKg: Double,
+)
+
+@Serializable
+data class PricesState(
+    val prices: List<IngredientPrice>,
+    /** Ingredients no product was found for; costed at a typical price. */
+    val unpriced: List<String>,
+    /** ISO instant of the last completed lookup; null if none ran yet. */
+    val fetchedAt: String?,
+    /** True while a lookup is running (it takes a few minutes). */
+    val refreshing: Boolean = false,
+)

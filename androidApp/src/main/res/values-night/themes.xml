@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.Mealplanner" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF141218</item>
+    </style>
+</resources>

@@ -49,6 +49,36 @@ tile categories `Food` and `F+V` are used. Tiles without `storeStartDate` are re
 with a Lidl Plus app discount, and are skipped. The offers page address
 (`/c/aanbiedingen/a10008785`) may change; the fetch reports an error when it finds no tiles.
 
+## Regular prices (AH)
+
+Offers only say how much is taken off; to know what a meal costs, and so which offers make it
+cheap, the server keeps a regular price per kg for each ingredient (`PriceRepository`, `prices/`).
+
+- Once a week it searches AH's product search (`/mobile-services/product/search/v2?query=…`, same
+  anonymous token as the offers) for up to four of the ingredient's names, Dutch ones first.
+  `POST /api/prices/refresh` starts a lookup now; it takes a few minutes and `GET /api/prices`
+  shows the result with the product each price came from.
+- A product counts for an ingredient when the offer matcher would give it that ingredient, with
+  two extra rules: words after "met", "with" or "in" are a side ingredient, and prepared products
+  (titles with a word ending in "saus", "mix", "sap", "smaak", "oven" and so on) don't count unless
+  the ingredient is itself one ("sojasaus").
+- `priceBeforeBonus` is the regular price, also while the product is on offer. Per kg comes from
+  the pack size (pieces need the ingredient's weight per piece), or else from the unit price text.
+- The product must sit in an AH aisle where the ingredient's kind of food is sold: its NEVO food
+  group maps to AH main categories (`AhAisles`; vegetables to "Groente, aardappelen", canned goods
+  to "Pasta, rijst, wereldkeuken", sugar to "Koffie, thee"). This keeps out flavoured products
+  from other aisles such as "croissants cinnamon" or cumin cheese.
+- Of the matching products, only those in the category holding most of them count (stray matches
+  such as "croissants cinnamon" sit elsewhere); of those, the middle of the three cheapest per kg is used.
+- A price set by hand on the ingredient (`pricePerKg`) wins. Ingredients without a price are
+  costed at the median price per kg and named in the recipe's cost.
+
+An offer becomes a share of the regular price (`Discounts`): "25% korting" pays 0.75, "1+1 gratis"
+0.5, "2e halve prijs" 0.75; stated prices ("2 voor 3,99", "voor 4,49", Lidl's plain prices) are
+compared with the regular price of a pack of the offer's size. Online-only deals are ignored. The
+best offer per ingredient in the plan's week applies. The planner then prefers meals whose
+calories cost less than the median (`WeekPlanner.savings`), so offers pull those meals in.
+
 ## Nutrition: NEVO
 
 NEVO-online 2025/9.0 (RIVM) can be downloaded free of charge from

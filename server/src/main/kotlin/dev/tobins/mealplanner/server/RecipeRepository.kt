@@ -1,5 +1,9 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.pricing.Pricing
+import dev.tobins.mealplanner.api.RecipeCost
+import java.time.LocalDate
+import java.time.ZoneId
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import dev.tobins.mealplanner.api.Ingredient
@@ -43,12 +47,27 @@ private const val MANUAL_SECTION = "own"
 /** Sections of the cooking site whose pages are building blocks, not meals. */
 private val componentSections = setOf("sauces", "spices", "templates", "ideas", "fermenting", "baking", "cocktails")
 
-class RecipeRepository(private val db: Database, private val ingredients: IngredientRepository) {
+class RecipeRepository(
+    private val db: Database,
+    private val ingredients: IngredientRepository,
+    /** Prices with the offers valid between two dates. */
+    private val pricing: (LocalDate, LocalDate) -> Pricing = { _, _ -> Pricing.NONE },
+) {
     private val q = db.recipeQueries
+
+    /** Prices with this week's offers: what a recipe costs if bought now. */
+    private fun currentPricing(): Pricing {
+        val today = LocalDate.now(ZoneId.of("Europe/Amsterdam"))
+        return pricing(today, today.plusDays(6))
+    }
 
     fun list(): List<RecipeSummary> {
         val resolve = ingredients.resolver()
-        return q.selectActive().executeAsList().map { row -> row.toSummary(nutritionOf(row, linesOf(row.id), resolve)) }
+        val prices = currentPricing()
+        return q.selectActive().executeAsList().map { row ->
+            val lines = linesOf(row.id)
+            row.toSummary(nutritionOf(row, lines, resolve), costOf(row, lines, resolve, prices))
+        }
     }
 
     fun find(id: Long): RecipeDetail? {
@@ -56,7 +75,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         val resolve = ingredients.resolver()
         val lines = linesOf(id)
         return RecipeDetail(
-            summary = row.toSummary(nutritionOf(row, lines, resolve)),
+            summary = row.toSummary(nutritionOf(row, lines, resolve), costOf(row, lines, resolve, currentPricing())),
             ingredients = lines.map { line ->
                 val ingredient = resolve(line)
                 MappedLine(
@@ -98,7 +117,11 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
      * @param dislikes words for ingredients never to plan; a recipe with a line whose text
      *   or linked ingredient name contains one of them as a word (or its plural) is left out.
      */
-    fun planCandidates(onOffer: Set<Long> = emptySet(), dislikes: List<String> = emptyList()): List<PlanCandidate> {
+    fun planCandidates(
+        onOffer: Set<Long> = emptySet(),
+        dislikes: List<String> = emptyList(),
+        prices: Pricing = Pricing.NONE,
+    ): List<PlanCandidate> {
         val resolve = ingredients.resolver()
         val disliked = dislikes.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
             .map { Regex("\\b${Regex.escape(it)}(s|es|en|n)?\\b", RegexOption.IGNORE_CASE) }
@@ -122,6 +145,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
                 tags = Json.decodeFromString(row.tagsJson),
                 onHandCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onHand },
                 offerCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onOffer },
+                costPerServing = costOf(row, lines, resolve, prices)?.perServingWithOffers,
                 rating = row.rating?.toInt(),
             )
         }
@@ -236,6 +260,17 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
     }
 
     /** Null when the recipe has no amounts to compute from. */
+    /** Cost per serving of one recipe with [prices]; null when it cannot be priced. */
+    fun cost(recipeId: Long, prices: Pricing): RecipeCost? {
+        val row = q.selectById(recipeId).executeAsOneOrNull() ?: return null
+        return costOf(row, linesOf(recipeId), ingredients.resolver(), prices)
+    }
+
+    private fun costOf(row: Recipe, lines: List<IngredientLine>, resolve: (IngredientLine) -> Ingredient?, prices: Pricing): RecipeCost? {
+        val servings = row.servings?.toInt() ?: return null
+        return prices.cost(lines.map { it to resolve(it) }, servings)
+    }
+
     private fun nutritionOf(row: Recipe, lines: List<IngredientLine>, resolve: (IngredientLine) -> Ingredient?): RecipeNutrition? {
         val servings = row.servings?.toInt() ?: return null
         if (lines.none { it.amount != null }) return null
@@ -311,7 +346,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         }
     }
 
-    private fun Recipe.toSummary(nutrition: RecipeNutrition?) = RecipeSummary(
+    private fun Recipe.toSummary(nutrition: RecipeNutrition?, cost: RecipeCost? = null) = RecipeSummary(
         id = id,
         title = title,
         section = section,
@@ -323,6 +358,7 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
         nutrition = nutrition,
         mealSlots = slotsOf(this).sortedBy { it.ordinal },
         rating = rating?.toInt(),
+        cost = cost,
     )
 
     private fun Boolean.toLong() = if (this) 1L else 0L

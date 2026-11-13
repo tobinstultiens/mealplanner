@@ -33,30 +33,34 @@ class AhOfferSource(private val http: HttpClient, private val baseUrl: String = 
     override val store = Store.AH
 
     override suspend fun fetch(): List<Offer> {
-        val tokenBody = http.post("$baseUrl/mobile-auth/v1/auth/token/anonymous") {
-            appHeaders()
-            contentType(ContentType.Application.Json)
-            setBody("""{"clientId":"appie"}""")
-        }.ok().bodyAsText()
-        val token = Json.parseToJsonElement(tokenBody).jsonObject["access_token"]?.jsonPrimitive?.content
-            ?: error("AH returned no access token")
-
+        val token = ahToken(http, baseUrl)
         val metadata = http.get("$baseUrl/mobile-services/bonuspage/v3/metadata") {
-            appHeaders()
+            ahHeaders()
             bearerAuth(token)
         }.ok().bodyAsText()
         val sections = AhParser.sectionPaths(metadata)
         check(sections.isNotEmpty()) { "AH bonus metadata lists no sections" }
 
         return sections.flatMap { path ->
-            AhParser.section(http.get("$baseUrl/mobile-services/$path") { appHeaders(); bearerAuth(token) }.ok().bodyAsText())
+            AhParser.section(http.get("$baseUrl/mobile-services/$path") { ahHeaders(); bearerAuth(token) }.ok().bodyAsText())
         }.distinctBy { it.url ?: it.title }
     }
+}
 
-    private fun io.ktor.client.request.HttpRequestBuilder.appHeaders() {
-        header("User-Agent", "Appie/8.60.0")
-        header("x-application", "AHWEBSHOP")
-    }
+/** An anonymous token for the AH app API, as the app gets one before logging in. */
+internal suspend fun ahToken(http: HttpClient, baseUrl: String): String {
+    val body = http.post("$baseUrl/mobile-auth/v1/auth/token/anonymous") {
+        ahHeaders()
+        contentType(ContentType.Application.Json)
+        setBody("""{"clientId":"appie"}""")
+    }.ok().bodyAsText()
+    return Json.parseToJsonElement(body).jsonObject["access_token"]?.jsonPrimitive?.content
+        ?: error("AH returned no access token")
+}
+
+internal fun io.ktor.client.request.HttpRequestBuilder.ahHeaders() {
+    header("User-Agent", "Appie/8.60.0")
+    header("x-application", "AHWEBSHOP")
 }
 
 /** Jumbo, from the data embedded in its offers page. */
@@ -88,6 +92,6 @@ private fun io.ktor.client.request.HttpRequestBuilder.browserHeaders() {
     header("Accept-Language", "nl-NL,nl;q=0.9")
 }
 
-private fun io.ktor.client.statement.HttpResponse.ok() = apply {
+internal fun io.ktor.client.statement.HttpResponse.ok() = apply {
     check(status.value in 200..299) { "${call.request.url.host} answered ${status.value}" }
 }

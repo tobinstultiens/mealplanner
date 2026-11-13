@@ -49,3 +49,10 @@ fun nowLabel(): String {
     val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
     return "${dayLabel(now.date.toString())} ${now.hour.toString().padStart(2, '0')}:${now.minute.toString().padStart(2, '0')}"
 }
+
+/** An ISO instant in local time, e.g. `Fri 13 Nov 12:40`. */
+@OptIn(ExperimentalTime::class)
+fun instantLabel(isoInstant: String): String {
+    val local = kotlin.time.Instant.parse(isoInstant).toLocalDateTime(TimeZone.currentSystemDefault())
+    return "${dayLabel(local.date.toString())} ${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+}

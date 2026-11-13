@@ -1,0 +1,22 @@
+-- Regular store prices found for catalogue ingredients: the baseline offers are measured
+-- against. Replaced per ingredient by each lookup.
+CREATE TABLE ingredientPrice (
+    ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE,
+    store TEXT NOT NULL,
+    product TEXT NOT NULL,
+    packSize TEXT,
+    packPrice REAL,
+    eurosPerKg REAL NOT NULL,
+    fetchedAt TEXT NOT NULL
+);
+
+selectPrices:
+SELECT p.*, i.name AS ingredientName FROM ingredientPrice p JOIN ingredient i ON i.id = p.ingredientId
+ORDER BY i.name COLLATE NOCASE;
+
+upsertPrice:
+INSERT OR REPLACE INTO ingredientPrice (ingredientId, store, product, packSize, packPrice, eurosPerKg, fetchedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+deletePrice:
+DELETE FROM ingredientPrice WHERE ingredientId = ?;

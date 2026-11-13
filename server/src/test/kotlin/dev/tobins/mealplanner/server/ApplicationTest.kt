@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SyncResult
+import dev.tobins.mealplanner.api.CookingSyncStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -92,9 +93,14 @@ class ApplicationTest {
             "sauces/salsa.md" to "---\ntitle: Salsa\n---\nBlend it.",
         )
         val http = start(repo)
+        assertEquals(null, http.get("/api/sync/cooking").body<CookingSyncStatus>().syncedAt)
 
         val sync = http.post("/api/sync/cooking").body<SyncResult>()
         assertEquals(SyncResult(added = 2, updated = 0, unchanged = 0, removed = 0, problems = emptyMap()), sync)
+        val status = http.get("/api/sync/cooking").body<CookingSyncStatus>()
+        assertTrue(status.syncedAt != null, "the sync is recorded")
+        assertEquals(null, status.error)
+        assertEquals(null, status.everyHours, "a local checkout is not synced on a schedule")
 
         val list = http.get("/api/recipes").body<List<RecipeSummary>>()
         assertEquals(listOf("Gyudon", "Salsa"), list.map { it.title })

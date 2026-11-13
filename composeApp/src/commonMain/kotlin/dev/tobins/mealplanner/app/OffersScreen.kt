@@ -44,7 +44,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OffersScreen(api: ApiClient, onBack: () -> Unit) {
+fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
     val today = remember { todayIso() }
     var state by remember { mutableStateOf<Load<OffersState>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
@@ -65,6 +65,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit) {
                 title = { Text("Offers") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
                 actions = {
+                    TextButton(onClick = onOpenPrices) { Text("Prices") }
                     TextButton(enabled = !refreshing, onClick = {
                         refreshing = true
                         scope.launch {

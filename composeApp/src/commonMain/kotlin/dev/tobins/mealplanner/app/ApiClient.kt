@@ -10,6 +10,7 @@ import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.OffersState
+import dev.tobins.mealplanner.api.PricesState
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Profile
@@ -23,6 +24,7 @@ import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.SyncResult
+import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
@@ -66,6 +68,8 @@ class ApiClient(settings: ServerSettings) {
 
     suspend fun syncCookingSite(): SyncResult = http.post("api/sync/cooking").body()
 
+    suspend fun cookingSyncStatus(): CookingSyncStatus = http.get("api/sync/cooking").body()
+
     suspend fun day(date: String): DayView = http.get("api/days/$date").body()
 
     suspend fun setMealStatus(weekStart: String, day: Int, slot: MealSlot, status: MealStatus) {
@@ -106,6 +110,11 @@ class ApiClient(settings: ServerSettings) {
     suspend fun offers(date: String): OffersState = http.get("api/offers") { parameter("date", date) }.body()
 
     suspend fun refreshOffers(): OffersState = http.post("api/offers/refresh").body()
+
+    suspend fun prices(): PricesState = http.get("api/prices").body()
+
+    /** Starts a lookup on the server; it runs for a few minutes, so poll [prices]. */
+    suspend fun refreshPrices(): PricesState = http.post("api/prices/refresh").body()
 
     suspend fun shoppingList(weekStart: String): ShoppingList = http.get("api/plans/$weekStart/shopping").body()
 

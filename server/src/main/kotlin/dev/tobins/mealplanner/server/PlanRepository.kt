@@ -14,6 +14,7 @@ import dev.tobins.mealplanner.planner.PlanRequest
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.units.Dimension
 import dev.tobins.mealplanner.planner.WeekPlanner
+import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.server.db.Database
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -31,6 +32,8 @@ class PlanRepository(
     private val profiles: ProfileRepository,
     /** Offers valid between two dates, grouped by ingredient id. */
     private val offersByIngredient: (LocalDate, LocalDate) -> Map<Long, List<dev.tobins.mealplanner.api.Offer>> = { _, _ -> emptyMap() },
+    /** Prices with the offers valid between two dates. */
+    private val pricing: (LocalDate, LocalDate) -> Pricing = { _, _ -> Pricing.NONE },
 ) {
     private val q = db.planQueries
 
@@ -218,6 +221,7 @@ class PlanRepository(
         candidates = recipes.planCandidates(
             onOffer = offersByIngredient(start, start.plusDays(DAYS - 1L)).keys,
             dislikes = profiles.profile()?.dislikes.orEmpty(),
+            prices = pricing(start, start.plusDays(DAYS - 1L)),
         ),
         routines = recipes.routines().let { r ->
             listOfNotNull(r.breakfast?.let { MealSlot.BREAKFAST to it }, r.snack?.let { MealSlot.SNACK to it }).toMap()
@@ -233,7 +237,13 @@ class PlanRepository(
         ?: throw ConflictException("Set up your profile first: the planner needs daily targets")
 
     private fun view(start: LocalDate): WeekPlan {
-        val meals = stored(start)
+        val prices = pricing(start, start.plusDays(DAYS - 1L))
+        val costs = HashMap<Long, dev.tobins.mealplanner.api.RecipeCost?>()
+        val meals = stored(start).map { meal ->
+            val cost = costs.getOrPut(meal.recipeId) { recipes.cost(meal.recipeId, prices) }
+            meal.copy(cost = cost?.let { it.perServingWithOffers * meal.portions })
+        }
+        val priced = meals.filter { it.cost != null }
         return WeekPlan(
             weekStart = start.toString(),
             targets = targets(),
@@ -242,6 +252,8 @@ class PlanRepository(
                 PlanDay(start.plusDays(day.toLong()).toString(), ofDay, ofDay.sumOf { it.kcal }, ofDay.sumOf { it.proteinG })
             },
             emptySlots = MealSlot.entries.filter { slot -> meals.none { it.slot == slot } },
+            cost = priced.takeIf { it.isNotEmpty() }?.sumOf { it.cost!! },
+            costWithoutOffers = priced.takeIf { it.isNotEmpty() }?.sumOf { costs[it.recipeId]!!.perServing * it.portions },
         )
     }
 

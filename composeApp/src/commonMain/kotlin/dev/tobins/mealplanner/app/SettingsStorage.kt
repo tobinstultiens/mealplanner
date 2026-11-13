@@ -29,3 +29,13 @@ fun SettingsStorage.saveServerSettings(settings: ServerSettings) {
     set(URL_KEY, settings.url.trim().trimEnd('/'))
     set(TOKEN_KEY, settings.token.trim())
 }
+
+/** Light, dark, or whatever the device uses. */
+enum class ThemeMode(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
+
+private const val THEME_KEY = "theme"
+
+fun SettingsStorage.themeMode(): ThemeMode =
+    get(THEME_KEY)?.let { stored -> ThemeMode.entries.firstOrNull { it.name == stored } } ?: ThemeMode.SYSTEM
+
+fun SettingsStorage.saveThemeMode(mode: ThemeMode) = set(THEME_KEY, mode.name)

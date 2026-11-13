@@ -1,0 +1,60 @@
+{
+ "page": {
+  "size": 5,
+  "totalElements": 273,
+  "totalPages": 55,
+  "number": 0
+ },
+ "products": [
+  {
+   "title": "AH Scharrel kipfilet naturel",
+   "salesUnitSize": "150 g",
+   "priceBeforeBonus": 2.49,
+   "currentPrice": null,
+   "isBonus": false,
+   "unitPriceDescription": "prijs per kg €16.60",
+   "mainCategory": "Vleeswaren"
+  },
+  {
+   "title": "AH Scharrel roasted kipfilet 4-pack",
+   "salesUnitSize": "4 stuks",
+   "priceBeforeBonus": 15.16,
+   "currentPrice": 13.64,
+   "isBonus": true,
+   "unitPriceDescription": null,
+   "mainCategory": "Vleeswaren"
+  },
+  {
+   "title": "AH Scharrel flinterdunne kipfilet 2-pack",
+   "salesUnitSize": "2 stuks",
+   "priceBeforeBonus": 6.78,
+   "currentPrice": 6.58,
+   "isBonus": true,
+   "unitPriceDescription": null,
+   "mainCategory": "Vleeswaren"
+  },
+  {
+   "title": "AH Scharrel flinterdunne kipfilet 3-pack",
+   "salesUnitSize": "3 stuks",
+   "priceBeforeBonus": 10.17,
+   "currentPrice": 9.66,
+   "isBonus": true,
+   "unitPriceDescription": null,
+   "mainCategory": "Vleeswaren"
+  },
+  {
+   "title": "AH Kipfilet grootverpakking",
+   "salesUnitSize": "250 g",
+   "priceBeforeBonus": 4.15,
+   "currentPrice": null,
+   "isBonus": false,
+   "unitPriceDescription": "prijs per kg €16.60",
+   "mainCategory": "Vleeswaren"
+  },
+  {
+   "title": "AH Kipfilet online only",
+   "salesUnitSize": "500 g",
+   "mainCategory": "Vlees"
+  }
+ ]
+}

@@ -188,4 +188,17 @@ class WeekPlannerTest {
         val plan = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes))
         for (day in 0..6) assertNotEquals(plan.at(day, LUNCH).recipeId, plan.at(day, DINNER).recipeId)
     }
+
+    @Test
+    fun cheaperMealsWinWhenTheyFitAsWell() {
+        // Ten equal dinners; offers make four of them a third of the price.
+        val dinners = (20L..29L).map { id ->
+            candidate(id, DINNER, kcal = 700.0, protein = 50.0).copy(costPerServing = if (id < 24) 1.0 else 3.0)
+        }
+        val plan = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes.take(4) + dinners, seed = 3))
+
+        // The first lunch has no leftovers yet, so it is cooked from a dinner recipe too.
+        val cooked = plan.filter { (it.slot == DINNER || it.slot == LUNCH) && !it.leftover }.map { it.recipeId }.toSet()
+        assertTrue(cooked.containsAll((20L..23L).toList()), "every cheap dinner is used, got $cooked")
+    }
 }

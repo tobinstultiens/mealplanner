@@ -89,7 +89,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                 title = { Text("Progress") },
                 actions = {
                     TextButton(onClick = onOpenProfile) { Text("Profile") }
-                    TextButton(onClick = onOpenServer) { Text("Server") }
+                    TextButton(onClick = onOpenServer) { Text("Settings") }
                 },
             )
         },

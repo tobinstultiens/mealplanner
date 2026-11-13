@@ -129,6 +129,14 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                                 "Daily target: ${plan.targets.kcal} kcal · ${plan.targets.proteinG} g protein",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
+                            plan.cost?.let { cost ->
+                                val saved = (plan.costWithoutOffers ?: cost) - cost
+                                Text(
+                                    "≈ ${formatEuro(cost)} for the week's meals" +
+                                        if (saved >= 0.01) ", ${formatEuro(saved)} saved by offers" else "",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
                             Button(enabled = !busy, onClick = { change { api.generatePlan(weekStart) } }) {
                                 Text(if (hasMeals) "Replan unlocked meals" else "Plan this week")
                             }
@@ -196,7 +204,8 @@ private fun DayCard(
                         Text(meal.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             "${formatAmount(meal.portions)} ${if (meal.portions == 1.0) "serving" else "servings"} · " +
-                                "${meal.kcal.roundToInt()} kcal · ${meal.proteinG.roundToInt()} g protein",
+                                "${meal.kcal.roundToInt()} kcal · ${meal.proteinG.roundToInt()} g protein" +
+                                (meal.cost?.let { " · ≈ ${formatEuro(it)}" } ?: ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

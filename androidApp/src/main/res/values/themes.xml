@@ -1,0 +1,6 @@
+<resources>
+    <!-- Window behind the Compose UI; shown for a moment at start. Follows the system theme. -->
+    <style name="Theme.Mealplanner" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFEF7FF</item>
+    </style>
+</resources>

@@ -27,6 +27,8 @@ data class PlannedMeal(
     /** Locked meals survive regeneration of the plan. */
     val locked: Boolean = false,
     val status: MealStatus = MealStatus.PLANNED,
+    /** Estimated euros for the portions eaten, with the week's offers; null when unknown. */
+    val cost: Double? = null,
 )
 
 @Serializable
@@ -46,6 +48,9 @@ data class WeekPlan(
     val days: List<PlanDay>,
     /** Slots the planner had no suitable recipe for. */
     val emptySlots: List<MealSlot>,
+    /** Estimated euros for every planned meal with the week's offers, and at regular prices. */
+    val cost: Double? = null,
+    val costWithoutOffers: Double? = null,
 )
 
 /** One thing to buy for a week plan. */

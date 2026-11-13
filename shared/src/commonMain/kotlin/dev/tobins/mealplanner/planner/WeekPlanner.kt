@@ -19,6 +19,7 @@ data class PlanCandidate(
     val onHandCount: Int = 0,
     /** How many of its ingredients are on offer at a store during the plan's week. */
     val offerCount: Int = 0,
+    /** Euros per serving with the week's offers taken off; null when unknown. */
     val costPerServing: Double? = null,
     /** 1 to 5, or null when not rated (counted as an average 3). */
     val rating: Int? = null,
@@ -38,7 +39,13 @@ data class PlanRequest(
     val routines: Map<MealSlot, Long> = emptyMap(),
     /** Same seed, same plan. */
     val seed: Long = 0,
-)
+) {
+    /** The typical price of a calorie among the candidates: what "cheap" and "dear" are measured against. */
+    val medianCostPerKcal: Double? by lazy {
+        candidates.mapNotNull { c -> c.costPerServing?.takeIf { c.kcal > 0 }?.let { it / c.kcal } }.sorted()
+            .let { if (it.isEmpty()) null else it[it.size / 2] }
+    }
+}
 
 /**
  * Fills a week of meals so that each day lands near the calorie target and reaches
@@ -137,13 +144,26 @@ object WeekPlanner {
         return 2.0 * calorieFit +
             2.0 * proteinFit +
             0.5 * candidate.onHandCount.coerceAtMost(3) +
-            0.3 * candidate.offerCount.coerceAtMost(3) +
+            savings(candidate, request) +
             0.4 * ((candidate.rating ?: 3) - 3) -
             3.0 * uses -
             (if (sameTagAsYesterday) 0.5 else 0.0) -
-            (if (candidate.recipeId in request.recent) 1.0 else 0.0) -
-            0.1 * (candidate.costPerServing ?: 0.0) * portions +
+            (if (candidate.recipeId in request.recent) 1.0 else 0.0) +
             0.3 * jitter
+    }
+
+    /**
+     * Rewards cheap meals: up to +0.6 for one whose calories cost half the median or less,
+     * down to -1.2 for one at double the median. Offers lower the cost, so they count here.
+     * Per calorie, so a bigger portion is not penalised for costing more. Without costs,
+     * each ingredient on offer counts a little instead.
+     */
+    private fun savings(candidate: PlanCandidate, request: PlanRequest): Double {
+        val median = request.medianCostPerKcal
+        val cost = candidate.costPerServing
+        if (median == null || cost == null || candidate.kcal <= 0) return 0.3 * candidate.offerCount.coerceAtMost(3)
+        val relative = cost / candidate.kcal / median
+        return -(relative - 1).coerceIn(-0.5, 1.0) * 1.2
     }
 
     /**

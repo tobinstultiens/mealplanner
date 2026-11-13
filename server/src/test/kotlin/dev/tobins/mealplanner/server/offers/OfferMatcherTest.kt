@@ -50,6 +50,32 @@ class OfferMatcherTest {
     }
 
     @Test
+    fun sideIngredientsAndPreparedProductsAreNotTheIngredient() {
+        val olives = 10L
+        val anchovy = 11L
+        val basil = 12L
+        val soySauce = 13L
+        val tuna = 14L
+        val products = OfferMatcher(
+            mapOf(
+                olives to listOf("Olives", "olijven"),
+                anchovy to listOf("Anchovy", "ansjovis"),
+                basil to listOf("Fresh basil", "basilicum"),
+                soySauce to listOf("Soy sauce", "sojasaus", "ketjap asin"),
+                tuna to listOf("Tuna", "tonijn"),
+            ),
+        )
+
+        assertEquals(olives, products.match("Amogusti Olijven gevuld met ansjovis", null))
+        assertEquals(tuna, products.match("AH Tonijn met olijven", null), "the longer term comes after \"met\"")
+        assertEquals(null, products.match("AH Pastasaus basilicum", null), "a sauce, not basil")
+        assertEquals(basil, products.match("AH Basilicum", null))
+        assertEquals(soySauce, products.match("Kikkoman Sojasaus", null), "the ingredient is itself a sauce")
+        assertEquals(null, products.match("Nutrilon Groente met ansjovis", "Baby en kind"))
+        assertEquals(null, products.match("AH Basilicum smaak chips", null), "flavoured snacks are not the ingredient")
+    }
+
+    @Test
     fun theLongestTermWins() {
         assertEquals(chickenFillet, match("Kipfilet van de kip"))
         assertEquals(

@@ -45,7 +45,7 @@ dependencies; commit changes to it. The web tests run in a headless Chrome.
 
 ## Android app
 
-The server address and token are set in the app under Progress → Server, with a connection test.
+The server address and token are set in the app under Progress → Settings, with a connection test.
 Until then the build's defaults apply: `http://10.0.2.2:8080` (the host machine, seen from an emulator)
 and `dev-token`, which `-PserverUrl=… -PapiToken=…` can change at build time. The token is kept in the
 app's private storage, unencrypted.
@@ -100,7 +100,7 @@ installed side by side: they share the application id but not the signing key.
 | `COOKING_REPO_PATH` | `.runtime/cooking` with a URL | Checkout to read recipes from; without `COOKING_REPO_URL` it is used as is |
 | `ANTHROPIC_API_KEY` | unset | Enables recipe generation (`POST /api/recipes/generate`) with Claude; pay per use |
 | `MEALPLANNER_MODEL` | `claude-opus-5-5` | Claude model for generation |
-| `MEALPLANNER_FETCH_OFFERS` | on | Set to `off` to stop fetching store offers in the background |
+| `MEALPLANNER_FETCH_OFFERS` | on | Set to `off` to stop fetching store offers and regular prices in the background |
 | `NEVO_CSV_PATH` | unset | NEVO main csv (`NEVO2025_v9.0.csv`). Imported on first start; `POST /api/foods/import` re-imports |
 
 The NEVO dataset is not in this repository (see `docs/data-sources.md`). Keep it under `data/`,
@@ -113,8 +113,9 @@ API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `
 `/api/mappings` (links from recipe ingredient texts to catalogue ingredients), `/api/profile` (body data
 and daily targets), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`,
 and per meal `reroll`, `lock`, `status` and delete), `/api/days/{date}` and `/api/log` (what was eaten)
-`/api/weights` (weight log, trend and target suggestion) and `/api/offers` (weekly store offers;
-`POST /api/offers/refresh` fetches them now).
+`/api/weights` (weight log, trend and target suggestion), `/api/offers` (weekly store offers;
+`POST /api/offers/refresh` fetches them now) and `/api/prices` (regular AH prices per ingredient, the
+baseline for costing meals; `POST /api/prices/refresh` starts a lookup).
 
 Ingredient texts are linked without manual work where the match is clear: through the default
 catalogue in `server/src/main/resources/catalogue-seed.csv` (common ingredients, their NEVO food,

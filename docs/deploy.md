@@ -34,7 +34,7 @@ to the container's `env` in `docker/mealplanner.yml`.
 
 ## Connecting the app
 
-In the app, Progress → Server: `https://mealplanner.<DOMAIN>` and the token from step 2, then
+In the app, Progress → Settings: `https://mealplanner.<DOMAIN>` and the token from step 2, then
 "Test connection". The web client is served on the same address.
 
 ## Kubernetes

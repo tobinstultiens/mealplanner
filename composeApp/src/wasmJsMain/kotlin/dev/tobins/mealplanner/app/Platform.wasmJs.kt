@@ -22,3 +22,7 @@ actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
         onDispose { window.removeEventListener("popstate", listener) }
     }
 }
+
+/** The browser has no system bars to adjust; the page is drawn entirely by the app. */
+@Composable
+actual fun SystemBars(dark: Boolean) {}
