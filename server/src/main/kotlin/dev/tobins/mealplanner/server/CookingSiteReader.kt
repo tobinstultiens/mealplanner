@@ -10,6 +10,8 @@ import java.security.MessageDigest
  * Section index pages (`_index.md`) are not recipes and are skipped.
  */
 class CookingSiteReader(private val repoDir: File, private val parser: HugoRecipeParser = HugoRecipeParser()) {
+    constructor(repo: CookingRepo) : this(repo.dir, HugoRecipeParser(repo.units()))
+
 
     /** Each parsed recipe with the SHA-256 of its file, or null when the checkout has no `content/` folder. */
     fun readAll(): List<Pair<ParsedRecipe, String>>? {

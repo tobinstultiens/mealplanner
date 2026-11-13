@@ -5,6 +5,8 @@ serialization = "1.13.0"
 coroutines = "1.11.0"
 logback = "1.6.6"
 sqldelight = "2.4.1"
+jgit = "7.8.0.202609011348-r"
+kaml = "0.104.0"
 agp = "9.3.3"
 compose = "1.12.2"
 compose-material3 = "1.9.0"
@@ -34,6 +36,8 @@ compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose" }
 compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
 sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
+jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version.ref = "jgit" }
+kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 
 [plugins]

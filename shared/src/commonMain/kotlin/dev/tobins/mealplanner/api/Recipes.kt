@@ -70,6 +70,8 @@ data class SyncResult(
     val removed: Int,
     /** Ingredient texts linked automatically after this sync because they match a food name exactly. */
     val autoLinked: Int = 0,
+    /** The cooking repo commit that was read, when the server fetches the repo itself. */
+    val commit: String? = null,
     /** Parse problems by recipe path. */
     val problems: Map<String, List<String>>,
 )

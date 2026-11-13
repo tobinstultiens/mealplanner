@@ -12,6 +12,7 @@ import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -46,6 +47,8 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -65,6 +68,8 @@ data class ServerConfig(
     val databaseUrl: String,
     /** Local checkout of the cooking repo to import recipes from; null disables the sync. */
     val cookingRepo: File?,
+    /** Git URL of the cooking repo. When set, the server clones it into [cookingRepo] and keeps it up to date. */
+    val cookingRepoUrl: String? = null,
     /** The NEVO main csv to import nutrition data from; null leaves the food table as it is. */
     val nevoFile: File? = null,
     /** Fetch store offers in the background. Off unless set, so tests never reach the stores. */
@@ -78,7 +83,9 @@ data class ServerConfig(
                 port = env["PORT"]?.toInt() ?: 8080,
                 apiToken = token,
                 databaseUrl = env["MEALPLANNER_DB_URL"] ?: "jdbc:sqlite:.runtime/mealplanner.db",
-                cookingRepo = env["COOKING_REPO_PATH"]?.takeIf { it.isNotBlank() }?.let(::File),
+                cookingRepo = (env["COOKING_REPO_PATH"]?.takeIf { it.isNotBlank() }
+                    ?: env["COOKING_REPO_URL"]?.takeIf { it.isNotBlank() }?.let { ".runtime/cooking" })?.let(::File),
+                cookingRepoUrl = env["COOKING_REPO_URL"]?.takeIf { it.isNotBlank() },
                 nevoFile = env["NEVO_CSV_PATH"]?.takeIf { it.isNotBlank() }?.let(::File),
                 fetchOffers = env["MEALPLANNER_FETCH_OFFERS"]?.lowercase() !in setOf("false", "off", "0"),
             )
@@ -104,6 +111,33 @@ fun Application.module(
     val offers = OfferRepository(database, offerSources)
     val plans = PlanRepository(database, recipes, profiles) { from, until -> offers.byIngredient(from, until, ingredients.matchTerms()) }
     val tracking = TrackingRepository(database, plans, profiles)
+    val cookingRepo = config.cookingRepo?.let { CookingRepo(it, config.cookingRepoUrl) }
+    // One sync at a time: the scheduled one and a request must not clone into the same directory.
+    val cookingLock = Mutex()
+
+    /** Fetches the cooking repo if the server manages it, then imports its recipes. Null without a repo. */
+    suspend fun syncCooking(): SyncResult? = cookingLock.withLock {
+      withContext(Dispatchers.IO) {
+        val repo = cookingRepo ?: return@withContext null
+        val commit = repo.update()
+        val parsed = CookingSiteReader(repo).readAll() ?: return@withContext null
+        recipes.syncCookingSite(parsed).copy(autoLinked = ingredients.autoLink(), commit = commit)
+      }
+    }
+    if (config.cookingRepoUrl != null) {
+        // Recipes change rarely; a few times a day is plenty.
+        launch {
+            while (true) {
+                try {
+                    syncCooking()?.let { log.info("Cooking repo synced at ${it.commit}: ${it.added} added, ${it.updated} updated, ${it.removed} removed") }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    log.warn("Cooking repo sync failed: ${e.message}")
+                }
+                delay(6.hours)
+            }
+        }
+    }
     if (config.fetchOffers) {
         // Stores publish their offers weekly; checking every six hours and fetching
         // what is older than a day keeps up without hammering them.
@@ -131,6 +165,10 @@ fun Application.module(
         }
         exception<BadRequestException> { call, cause ->
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to (cause.message ?: "bad request")))
+        }
+        exception<Exception> { call, cause ->
+            call.application.log.error("Request ${call.request.local.uri} failed", cause)
+            call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (cause.message ?: cause::class.simpleName ?: "internal error")))
         }
         exception<IllegalArgumentException> { call, cause ->
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to (cause.message ?: "bad request")))
@@ -316,18 +354,14 @@ fun Application.module(
 
             // Re-reads the cooking repo checkout and brings the stored recipes in line with it.
             post("/api/sync/cooking") {
-                val parsed = config.cookingRepo?.let { CookingSiteReader(it).readAll() }
-                if (parsed == null) {
+                val result = syncCooking()
+                if (result == null) {
                     call.respond(
                         HttpStatusCode.ServiceUnavailable,
-                        mapOf("error" to "COOKING_REPO_PATH is not set or has no content/ folder"),
+                        mapOf("error" to "COOKING_REPO_PATH or COOKING_REPO_URL is not set, or the repo has no content/ folder"),
                     )
                 } else {
-                    call.respond(
-                        withContext(Dispatchers.IO) {
-                            recipes.syncCookingSite(parsed).let { it.copy(autoLinked = ingredients.autoLink()) }
-                        },
-                    )
+                    call.respond(result)
                 }
             }
         }

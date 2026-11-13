@@ -33,6 +33,8 @@ dependencies {
     implementation(libs.sqldelight.sqlite.driver)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)
+    implementation(libs.jgit)
+    implementation(libs.kaml)
     implementation(libs.logback)
 
     testImplementation(kotlin("test"))
