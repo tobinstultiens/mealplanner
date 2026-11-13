@@ -1,36 +1,39 @@
 # Deploying to the homelab
 
-The server runs as the `mealplanner` workload in `homelab-gitops` (`workloads/mealplanner/`),
-picked up by the ArgoCD ApplicationSet once it is on that repo's `main` branch. It follows the
-grocy workload: one pod, `Recreate`, data on a host directory.
+The server runs as the `mealplanner` container on the home server, deployed by the Ansible repo
+(`docker/mealplanner.yml`, also imported by `deploy.yml`). It sits on the `proxy` network behind
+Traefik at `https://mealplanner.<DOMAIN>`, without Authelia: the Android app can't do forward-auth,
+so the server checks its own bearer token. Gatus checks `/health`.
 
 ## One-time steps
 
-1. **Docker Hub secrets for CI.** Add `DOCKER_USERNAME` and `DOCKER_PASSWORD` to this repo's
-   GitHub secrets (the same ones the cooking repo uses), then re-run the latest CI run. CI pushes
-   `kick1999/mealplanner:latest` and `kick1999/mealplanner:<commit sha>`.
-2. **API token.** Create a Bitwarden item `mealplanner-api-token` holding a long random string,
-   e.g. from `openssl rand -hex 32`. The ExternalSecret turns it into the pod's
-   `MEALPLANNER_API_TOKEN`.
-3. **Data directory** on the node, owned by uid 1000 (the pod runs as 1000:1000):
-   ```bash
-   mkdir -p ~/config/mealplanner/nevo
-   cp data/nevo/NEVO2025_v9.0.csv ~/config/mealplanner/nevo/
-   ```
-   The database, the cooking repo checkout and the NEVO file all live there. The NEVO data may not
-   be redistributed, so it is copied by hand and never baked into the image.
-4. **Recipe generation (optional).** Create a Claude Console API key, store it in Bitwarden as
-   `mealplanner-anthropic-api-key`, and add it to the ExternalSecret and the deployment as
-   `ANTHROPIC_API_KEY`. Without it the app's Generate button explains that generation is off.
-5. **DNS** for `mealplanner.tstultiens.com`, as for `cooking.tstultiens.com`.
-6. Commit and push `workloads/mealplanner` in homelab-gitops.
+1. **Docker Hub secrets for CI.** `DOCKER_USERNAME` and `DOCKER_PASSWORD` in this repo's GitHub
+   secrets. CI pushes `kick1999/mealplanner:latest` and `kick1999/mealplanner:<commit sha>`.
+2. **Vault keys** in the Ansible repo's `vars/vault.yml`:
+   - `mealplanner_api_token`: a long random string (`openssl rand -hex 32`). The app needs it.
+   - `mealplanner_nevo_csv`: path on your machine to `NEVO2025_v9.0.csv`. The playbook copies it
+     to `<docker_config_dir>/mealplanner/nevo/`. The NEVO data may not be redistributed, so it is
+     never baked into the image or committed.
+   - `mealplanner_anthropic_api_key` (optional): a Claude Console API key for recipe generation.
+     Without it the app's Generate button explains that generation is off.
+3. **DNS** for `mealplanner.<DOMAIN>`, as for `cooking.<DOMAIN>`.
+4. Deploy: `ansible-playbook -Kk docker/mealplanner.yml`.
+
+The database and the cooking repo checkout live next to the NEVO file in
+`<docker_config_dir>/mealplanner`, owned by uid 1000 (the container runs as 1000:1000).
 
 ## Updating
 
-Set the image tag in `workloads/mealplanner/deployment.yaml` to the commit sha CI pushed, and push
-homelab-gitops. Database migrations run when the new pod starts.
+Watchtower pulls the new `:latest` nightly, like every other container. Database migrations run when
+the new container starts. To update right away, run the playbook again or `docker restart` after a
+`docker pull`.
 
 ## Connecting the app
 
-In the app, Progress → Server: `https://mealplanner.tstultiens.com` and the token from step 2, then
-"Test connection".
+In the app, Progress → Server: `https://mealplanner.<DOMAIN>` and the token from step 2, then
+"Test connection". The web client is served on the same address.
+
+## Kubernetes
+
+`homelab-gitops/workloads/mealplanner/` holds a k3s version of the same setup for when the stack
+moves to the cluster. Don't run both: they would each use their own database.
