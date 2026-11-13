@@ -130,11 +130,12 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (generating) {
-            GenerateDialog(api, onDismiss = { generating = false }, onCreated = { id ->
+            GenerateDialog(onDismiss = { generating = false }) { request ->
+                val id = api.generateRecipe(request).summary.id
                 generating = false
                 reload++
                 onOpen(id)
-            })
+            }
         }
         Column(Modifier.padding(padding).fillMaxSize()) {
             OutlinedTextField(

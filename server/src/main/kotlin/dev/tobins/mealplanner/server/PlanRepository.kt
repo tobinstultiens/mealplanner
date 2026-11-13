@@ -9,6 +9,7 @@ import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.planner.PlanRequest
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.units.Dimension
@@ -69,6 +70,35 @@ class PlanRepository(
                 q.deleteMeal(start.toString(), old.day.toLong(), old.slot.name)
                 planned.firstOrNull { it.day == old.day && it.slot == old.slot }
                     ?.let { save(start, it.copy(locked = false, status = MealStatus.PLANNED)) }
+            }
+        }
+        return view(start)
+    }
+
+    /**
+     * Puts [candidate] in a slot, sized to the slot's share of the targets. A dinner's
+     * leftovers replace the next day's leftover lunch, unless that lunch is locked or done.
+     */
+    fun place(weekStart: String, day: Int, slot: MealSlot, candidate: PlanCandidate): WeekPlan {
+        val start = parse(weekStart)
+        val targets = targets()
+        val portions = WeekPlanner.portionsFor(candidate, targets.kcal * slot.share)
+        val meal = PlannedMeal(day, slot, candidate.recipeId, candidate.title, portions, candidate.kcal * portions, candidate.proteinG * portions)
+        val nextLunch = stored(start).firstOrNull {
+            slot == MealSlot.DINNER && it.day == day + 1 && it.slot == MealSlot.LUNCH && it.leftover && !it.locked && it.status == MealStatus.PLANNED
+        }
+        db.transaction {
+            save(start, meal)
+            val remaining = candidate.servings - portions
+            if (nextLunch != null) {
+                if (remaining >= 0.5) {
+                    val lunchPortions = WeekPlanner.portionsFor(candidate, targets.kcal * MealSlot.LUNCH.share, remaining)
+                    save(start, nextLunch.copy(recipeId = candidate.recipeId, title = candidate.title, portions = lunchPortions,
+                        kcal = candidate.kcal * lunchPortions, proteinG = candidate.proteinG * lunchPortions))
+                } else {
+                    // Nothing left over: the old dinner's leftovers are gone too.
+                    q.deleteMeal(start.toString(), nextLunch.day.toLong(), nextLunch.slot.name)
+                }
             }
         }
         return view(start)

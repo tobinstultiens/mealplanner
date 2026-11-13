@@ -76,6 +76,24 @@ class RecipeRepository(private val db: Database, private val ingredients: Ingred
      * Recipes the planner may use: meals whose nutrition is complete. Which slots a recipe
      * suits follows from its section on the cooking site until that can be set per recipe.
      */
+    /**
+     * One recipe as a plan candidate, even with incomplete nutrition (used when the user
+     * puts a recipe in a slot themselves). Null when the recipe has no amounts at all.
+     */
+    fun candidate(id: Long): PlanCandidate? {
+        val row = q.selectById(id).executeAsOneOrNull() ?: return null
+        val resolve = ingredients.resolver()
+        val nutrition = nutritionOf(row, linesOf(id), resolve) ?: return null
+        return PlanCandidate(
+            recipeId = row.id,
+            title = row.title,
+            slots = slotsOf(row),
+            servings = row.servings!!.toInt(),
+            kcal = nutrition.perServing.kcal ?: 0.0,
+            proteinG = nutrition.perServing.proteinG ?: 0.0,
+        )
+    }
+
     fun planCandidates(onOffer: Set<Long> = emptySet()): List<PlanCandidate> {
         val resolve = ingredients.resolver()
         val onHand = ingredients.pantry().onHand.mapTo(HashSet()) { it.id }

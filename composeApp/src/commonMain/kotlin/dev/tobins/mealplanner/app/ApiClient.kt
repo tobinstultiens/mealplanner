@@ -125,6 +125,17 @@ class ApiClient(settings: ServerSettings) {
         setBody(request)
     }.body()
 
+    /** Writes a recipe for one meal of the plan and puts it there; can take a minute or two. */
+    suspend fun generateIntoPlan(weekStart: String, day: Int, slot: MealSlot, request: GenerateRequest): WeekPlan =
+        http.post("api/plans/$weekStart/meals/$day/${slot.name}/generate") {
+            timeout {
+                requestTimeoutMillis = 240_000
+                socketTimeoutMillis = 240_000
+            }
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
     suspend fun createRecipe(input: RecipeInput): RecipeDetail = http.post("api/recipes") {
         contentType(ContentType.Application.Json)
         setBody(input)

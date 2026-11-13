@@ -397,4 +397,25 @@ class PlanTest {
         }
         assertEquals(HttpStatusCode.ServiceUnavailable, http.post("/api/recipes/generate") { setBody(GenerateRequest()) }.status)
     }
+
+    @Test
+    fun aGeneratedRecipeGoesStraightIntoAPlanSlotWithItsLeftovers() = testApplication {
+        val http = start().ready()
+        val before = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        assertTrue(before.days[2].meals.first { it.slot == MealSlot.LUNCH }.leftover)
+
+        val after = http.post("/api/plans/$week/meals/1/dinner/generate") { setBody(GenerateRequest(wish = "beef")) }.body<WeekPlan>()
+        val dinner = after.days[1].meals.first { it.slot == MealSlot.DINNER }
+        assertEquals("Beef bowl deluxe", dinner.title)
+        assertEquals(MealSlot.DINNER, fake.contexts.single().slot)
+        // 225 kcal a serving against a 760 kcal dinner budget: two servings, the most allowed.
+        assertEquals(2.0, dinner.portions)
+        val lunch = after.days[2].meals.first { it.slot == MealSlot.LUNCH }
+        assertEquals(dinner.recipeId, lunch.recipeId, "the next lunch is the new dinner's leftovers")
+        assertTrue(lunch.leftover)
+        assertEquals(2.0, lunch.portions, "four servings made, two eaten at dinner")
+
+        val untouched = { plan: WeekPlan -> plan.days.flatMap { it.meals }.filterNot { (it.day == 1 && it.slot == MealSlot.DINNER) || (it.day == 2 && it.slot == MealSlot.LUNCH) } }
+        assertEquals(untouched(before), untouched(after))
+    }
 }

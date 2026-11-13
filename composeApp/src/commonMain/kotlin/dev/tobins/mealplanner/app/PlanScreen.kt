@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,6 +53,8 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
     var busy by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    // The meal a new recipe is being written for.
+    var generatingFor by remember { mutableStateOf<PlannedMeal?>(null) }
 
     LaunchedEffect(weekStart) {
         state = Load.Loading
@@ -67,6 +72,17 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                 Load.Loading -> Unit
             }
             busy = false
+        }
+    }
+
+    generatingFor?.let { meal ->
+        GenerateDialog(
+            onDismiss = { generatingFor = null },
+            fixedSlot = meal.slot,
+            title = "New ${meal.slot.name.lowercase()} for ${dayLabel(plusDays(weekStart, meal.day))}",
+        ) { request ->
+            state = Load.Ready(api.generateIntoPlan(weekStart, meal.day, meal.slot, request))
+            generatingFor = null
         }
     }
 
@@ -134,6 +150,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                                 enabled = !busy,
                                 onOpenRecipe = onOpenRecipe,
                                 onReroll = { meal -> change { api.rerollMeal(weekStart, meal.day, meal.slot) } },
+                                onGenerate = { meal -> generatingFor = meal },
                                 onToggleLock = { meal -> change { api.setMealLocked(weekStart, meal.day, meal.slot, !meal.locked) } },
                             )
                         }
@@ -151,6 +168,7 @@ private fun DayCard(
     enabled: Boolean,
     onOpenRecipe: (Long) -> Unit,
     onReroll: (PlannedMeal) -> Unit,
+    onGenerate: (PlannedMeal) -> Unit,
     onToggleLock: (PlannedMeal) -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
@@ -184,7 +202,14 @@ private fun DayCard(
                         )
                     }
                     TextButton(enabled = enabled, onClick = { onToggleLock(meal) }) { Text(if (meal.locked) "Unlock" else "Lock") }
-                    TextButton(enabled = enabled && !meal.locked, onClick = { onReroll(meal) }) { Text("Swap") }
+                    Box {
+                        var menu by remember { mutableStateOf(false) }
+                        TextButton(enabled = enabled && !meal.locked, onClick = { menu = true }) { Text("Swap") }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(text = { Text("Another recipe") }, onClick = { menu = false; onReroll(meal) })
+                            DropdownMenuItem(text = { Text("Write a new recipe…") }, onClick = { menu = false; onGenerate(meal) })
+                        }
+                    }
                 }
             }
         }

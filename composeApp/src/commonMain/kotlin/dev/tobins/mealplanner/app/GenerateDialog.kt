@@ -27,12 +27,20 @@ import dev.tobins.mealplanner.api.GenerationMode
 import dev.tobins.mealplanner.api.MealSlot
 import kotlinx.coroutines.launch
 
-/** Asks the server for a new recipe: what kind, for which meal, and an optional wish. */
+/**
+ * Asks for a new recipe: what kind, for which meal (unless [fixedSlot] decides it), and an
+ * optional wish. [submit] does the request and throws on failure; the dialog shows the error.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun GenerateDialog(api: ApiClient, onDismiss: () -> Unit, onCreated: (Long) -> Unit) {
+fun GenerateDialog(
+    onDismiss: () -> Unit,
+    fixedSlot: MealSlot? = null,
+    title: String = "Generate a recipe",
+    submit: suspend (GenerateRequest) -> Unit,
+) {
     var mode by remember { mutableStateOf(GenerationMode.PREFERENCE) }
-    var slot by remember { mutableStateOf(MealSlot.DINNER) }
+    var slot by remember { mutableStateOf(fixedSlot ?: MealSlot.DINNER) }
     var wish by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -40,7 +48,7 @@ fun GenerateDialog(api: ApiClient, onDismiss: () -> Unit, onCreated: (Long) -> U
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Generate a recipe") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -53,7 +61,7 @@ fun GenerateDialog(api: ApiClient, onDismiss: () -> Unit, onCreated: (Long) -> U
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (fixedSlot == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MealSlot.entries.forEach { s ->
                         FilterChip(selected = slot == s, onClick = { slot = s }, label = { Text(s.name.lowercase().replaceFirstChar { it.uppercase() }) })
                     }
@@ -77,8 +85,8 @@ fun GenerateDialog(api: ApiClient, onDismiss: () -> Unit, onCreated: (Long) -> U
                 busy = true
                 error = null
                 scope.launch {
-                    when (val result = load { api.generateRecipe(GenerateRequest(mode, slot, wish.trim())) }) {
-                        is Load.Ready -> onCreated(result.value.summary.id)
+                    when (val result = load { submit(GenerateRequest(mode, slot, wish.trim())) }) {
+                        is Load.Ready -> Unit
                         is Load.Failed -> {
                             busy = false
                             error = when (result.status) {

@@ -265,6 +265,18 @@ fun Application.module(
                     put("/lock") { call.respond(plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
                     delete("/lock") { call.respond(plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
                     delete { call.respond(plans.remove(call.week(), call.day(), call.slot())) }
+                    // Writes a new recipe for this meal with Claude and puts it in the plan.
+                    post("/generate") {
+                        val service = generation ?: return@post call.respond(
+                            HttpStatusCode.ServiceUnavailable,
+                            mapOf("error" to "Recipe generation is off: set ANTHROPIC_API_KEY on the server"),
+                        )
+                        val slot = call.slot()
+                        val recipe = service.generate(call.receive<GenerateRequest>().copy(slot = slot))
+                        val candidate = recipes.candidate(recipe.summary.id)
+                            ?: throw GenerationException("The generated recipe has no amounts to plan with")
+                        call.respond(plans.place(call.week(), call.day(), slot, candidate))
+                    }
                     // Body: "EATEN", "SKIPPED" or "PLANNED".
                     put("/status") {
                         call.respond(plans.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))
