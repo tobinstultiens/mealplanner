@@ -22,6 +22,31 @@ android {
         buildConfigField("String", "API_TOKEN", "\"$apiToken\"")
     }
 
+    // Release signing reads its key from Gradle properties kept outside the repo, e.g. in
+    // ~/.gradle/gradle.properties: mealplanner.keystore, mealplanner.keystorePassword,
+    // mealplanner.keyAlias, mealplanner.keyPassword. Without them the release APK is unsigned.
+    val keystore = providers.gradleProperty("mealplanner.keystore").orNull
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = providers.gradleProperty("mealplanner.keystorePassword").get()
+                keyAlias = providers.gradleProperty("mealplanner.keyAlias").get()
+                keyPassword = providers.gradleProperty("mealplanner.keyPassword").get()
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (keystore != null) signingConfig = signingConfigs.getByName("release")
+            // No token is built into a release: the app asks for it on first launch.
+            val releaseUrl = providers.gradleProperty("releaseServerUrl").getOrElse("https://mealplanner.tstultiens.com")
+            buildConfigField("String", "SERVER_URL", "\"$releaseUrl\"")
+            buildConfigField("String", "API_TOKEN", "\"\"")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

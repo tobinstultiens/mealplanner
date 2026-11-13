@@ -66,6 +66,31 @@ version. Every change also needs a migration file `N.sqm` (version N to N+1) nex
 applies pending migrations on start. `MigrationTest` builds a version 1 database from
 `server/src/test/resources/schema/v1.sql` and checks it ends up identical to a fresh one.
 
+## Release build for your phone
+
+Create a signing key once and keep it (and its passwords) outside the repo; losing it means
+the app can no longer be updated in place:
+
+```bash
+keytool -genkeypair -keystore ~/keys/mealplanner.jks -alias mealplanner -keyalg RSA -keysize 4096 -validity 10000
+```
+
+Then add to `~/.gradle/gradle.properties`:
+
+```properties
+mealplanner.keystore=/home/<you>/keys/mealplanner.jks
+mealplanner.keystorePassword=...
+mealplanner.keyAlias=mealplanner
+mealplanner.keyPassword=...
+```
+
+`./gradlew :androidApp:assembleRelease` then writes a signed
+`androidApp/build/outputs/apk/release/androidApp-release.apk`; install it with
+`adb install -r` or by copying it to the phone. The release has no token built in and opens on
+the server settings, with `https://mealplanner.tstultiens.com` filled in (`-PreleaseServerUrl=`
+changes that). It only talks HTTPS. A release and a debug build cannot be installed side by
+side: they share the application id but not the signing key.
+
 ## Server configuration
 
 | Variable | Default | Meaning |
