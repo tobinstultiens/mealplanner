@@ -40,6 +40,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ServerSettingsScreen(
     current: ServerSettings,
+    updater: UpdateInstaller?,
     theme: ThemeMode,
     onTheme: (ThemeMode) -> Unit,
     onSave: (ServerSettings) -> Unit,
@@ -69,6 +70,7 @@ fun ServerSettingsScreen(
                     FilterChip(selected = theme == mode, onClick = { onTheme(mode) }, label = { Text(mode.label) })
                 }
             }
+            if (updater != null) AppVersionSection(updater)
             Text("Server", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 url, { url = it; result = null },
@@ -113,5 +115,32 @@ fun ServerSettingsScreen(
             }
             result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         }
+    }
+}
+
+/** The installed version and a manual "Check for updates". */
+@Composable
+private fun AppVersionSection(updater: UpdateInstaller) {
+    var checking by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var found by remember { mutableStateOf<AppUpdate?>(null) }
+    val scope = rememberCoroutineScope()
+    Text("App", style = MaterialTheme.typography.titleMedium)
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("Version ${updater.currentVersion}", style = MaterialTheme.typography.bodyMedium)
+        OutlinedButton(enabled = !checking, onClick = {
+            checking = true
+            message = null
+            scope.launch {
+                runCatching { AppUpdates.check(updater.currentVersion) }
+                    .onSuccess { if (it == null) message = "You have the latest version." else found = it }
+                    .onFailure { message = "Could not check: ${it.message}" }
+                checking = false
+            }
+        }) { Text(if (checking) "Checking…" else "Check for updates") }
+    }
+    message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    found?.let { update ->
+        UpdateDialog(update, updater.currentVersion, onUpdate = { updater.install(update); found = null }, onLater = { found = null })
     }
 }

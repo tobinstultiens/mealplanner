@@ -83,6 +83,11 @@ and its password: Android only installs an update signed with the same key.
 `scripts/backup-release-key.sh` (run in a terminal) stores both in Bitwarden as the secure note
 `mealplanner-android-signing` and checks the copy; the note says how to restore it.
 
+Installed release builds update themselves: on start, from Settings → Check for updates, and
+once a day in the background (a notification), the app looks at the latest GitHub release. If it
+is newer, **Update** downloads the APK and Android installs it over the current app; Android asks
+once to allow installs from the app. Debug builds don't check, since a release can't replace them.
+
 With those properties set, `./gradlew :androidApp:assembleRelease` also builds a signed
 `androidApp/build/outputs/apk/release/androidApp-release.apk` locally. The release has no token
 built in and opens on the server settings, with `https://mealplanner.tstultiens.com` filled in

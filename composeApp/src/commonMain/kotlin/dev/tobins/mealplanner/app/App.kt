@@ -35,9 +35,14 @@ import androidx.compose.ui.unit.dp
  * used until the user saves their own in [storage].
  */
 @Composable
-fun App(defaults: ServerSettings, storage: SettingsStorage) {
+fun App(defaults: ServerSettings, storage: SettingsStorage, updater: UpdateInstaller? = null) {
     var settings by remember { mutableStateOf(storage.serverSettings(defaults)) }
     var theme by remember { mutableStateOf(storage.themeMode()) }
+    // A newer release found on start; "Later" hides it until the next start.
+    var update by remember { mutableStateOf<AppUpdate?>(null) }
+    LaunchedEffect(updater) {
+        if (updater != null) update = runCatching { AppUpdates.check(updater.currentVersion) }.getOrNull()
+    }
     val api = remember(settings) { ApiClient(settings) }
     val shoppingCache = remember(storage) { ShoppingCache(storage) }
     DisposableEffect(api) { onDispose { api.close() } }
@@ -75,11 +80,24 @@ fun App(defaults: ServerSettings, storage: SettingsStorage) {
       Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
        Box(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
         // Any error message can offer the server settings, since a wrong address is the usual cause.
+        update?.let { found ->
+            if (updater != null) {
+                UpdateDialog(
+                    found, updater.currentVersion,
+                    onUpdate = {
+                        updater.install(found)
+                        update = null
+                    },
+                    onLater = { update = null },
+                )
+            }
+        }
         CompositionLocalProvider(LocalOpenServerSettings provides { serverOpen = true }) {
             if (serverOpen) {
                 BackHandler(enabled = true) { serverOpen = false }
                 ServerSettingsScreen(
                     current = settings,
+                    updater = updater,
                     theme = theme,
                     onTheme = {
                         storage.saveThemeMode(it)
