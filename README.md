@@ -29,26 +29,42 @@ docker build -t mealplanner:dev .    # needs the fat jar built first
 Run the server locally:
 
 ```bash
-MEALPLANNER_API_TOKEN=dev-token COOKING_REPO_PATH=../cooking \
+MEALPLANNER_OIDC_ISSUER=https://authelia.example.nl COOKING_REPO_PATH=../cooking \
   NEVO_CSV_PATH=data/nevo/NEVO2025_v9.0.csv \
   java -jar server/build/libs/server-all.jar
-curl -X POST -H "Authorization: Bearer dev-token" localhost:8080/api/sync/cooking
-curl -H "Authorization: Bearer dev-token" localhost:8080/api/recipes
 ```
+
+## Accounts and login
+
+Users log in with an OpenID Connect provider (Authelia in the homelab); every account it knows may
+use the app and gets its own recipes, ingredient catalogue, pantry, profile, plans, shopping lists,
+log and weights. Store offers, regular prices and the NEVO data are shared.
+
+- Clients use the authorization code flow with PKCE as the public client `mealplanner`; the server
+  tells them where to log in (`GET /api/auth/config`). The web client returns to `/`, the Android app
+  to `/app/login`: an App Link (`/.well-known/assetlinks.json`, from `MEALPLANNER_ANDROID_CERTS`), and
+  when Android does not open the app for it, that page sends the browser on to the app's own scheme.
+- The server accepts JWT access tokens (RS256) from that issuer issued to that client, checked against
+  the provider's keys. The token's subject is the account; new accounts start with the default
+  ingredient catalogue. `GET /api/me` names the caller.
+- Data from before accounts existed belongs to account 1, which `MEALPLANNER_OWNER` (a username)
+  claims on first login, or else the first account to log in.
+- Each account can set its own cooking-site repository (Recipes tab, `PUT /api/sync/cooking/repo`); it
+  is cloned under `<data dir>/users/<id>/cooking` and synced every six hours. `COOKING_REPO_URL` and
+  `COOKING_REPO_PATH` only serve the owner until they set one.
 
 ## Web client
 
 `composeApp` also builds for the browser (`./gradlew :composeApp:wasmJsBrowserDistribution`), and the
-server jar includes that build: the server serves it at `/`. On the first visit it asks for the API
-token, which the browser keeps in `localStorage`. `kotlin-js-store/` pins the JavaScript toolchain's
+server jar includes that build: the server serves it at `/`. On the first visit it logs in through the
+login page in the same tab; the tokens are kept in the browser's `localStorage`. `kotlin-js-store/` pins the JavaScript toolchain's
 dependencies; commit changes to it. The web tests run in a headless Chrome.
 
 ## Android app
 
-The server address and token are set in the app under Progress → Settings, with a connection test.
-Until then the build's defaults apply: `http://10.0.2.2:8080` (the host machine, seen from an emulator)
-and `dev-token`, which `-PserverUrl=… -PapiToken=…` can change at build time. The token is kept in the
-app's private storage, unencrypted.
+The server address and the login are under Progress → Settings. Until another address is saved the
+build's default applies: `http://10.0.2.2:8080` (the host machine, seen from an emulator), which
+`-PserverUrl=…` changes at build time. The tokens are kept in the app's private storage.
 
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):
@@ -89,8 +105,8 @@ is newer, **Update** downloads the APK and Android installs it over the current 
 once to allow installs from the app. Debug builds don't check, since a release can't replace them.
 
 With those properties set, `./gradlew :androidApp:assembleRelease` also builds a signed
-`androidApp/build/outputs/apk/release/androidApp-release.apk` locally. The release has no token
-built in and opens on the server settings, with `https://mealplanner.tstultiens.com` filled in
+`androidApp/build/outputs/apk/release/androidApp-release.apk` locally. The release opens on the
+login, with `https://mealplanner.tstultiens.com` filled in
 (`-PreleaseServerUrl=` changes that). It only talks HTTPS. A release and a debug build cannot be
 installed side by side: they share the application id but not the signing key.
 
@@ -98,11 +114,15 @@ installed side by side: they share the application id but not the signing key.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MEALPLANNER_API_TOKEN` | required | Bearer token for every `/api` call |
+| `MEALPLANNER_OIDC_ISSUER` | unset | OpenID Connect issuer whose access tokens are accepted, e.g. `https://authelia.example.nl`; without it nobody can log in |
+| `MEALPLANNER_OIDC_CLIENT_ID` | `mealplanner` | The app's client id at the issuer |
+| `MEALPLANNER_OWNER` | unset | Username that claims the data from before accounts; unset: the first login |
+| `MEALPLANNER_ANDROID_CERTS` | unset | SHA-256 fingerprints of the app's signing certificates, for `assetlinks.json` |
+| `MEALPLANNER_DATA_DIR` | the database's directory | Where per-account cooking repo clones go |
 | `PORT` | `8080` | Listen port |
 | `MEALPLANNER_DB_URL` | `jdbc:sqlite:.runtime/mealplanner.db` | SQLite database |
-| `COOKING_REPO_URL` | unset | Git URL of the cooking repo; the server clones it, re-syncs every six hours, and reads its `data/units.yaml` |
-| `COOKING_REPO_PATH` | `.runtime/cooking` with a URL | Checkout to read recipes from; without `COOKING_REPO_URL` it is used as is |
+| `COOKING_REPO_URL` | unset | The owner's cooking repo until they set one in the app; cloned and re-synced every six hours |
+| `COOKING_REPO_PATH` | `.runtime/cooking` with a URL | The owner's checkout; without `COOKING_REPO_URL` it is used as is |
 | `ANTHROPIC_API_KEY` | unset | Enables recipe generation (`POST /api/recipes/generate`) with Claude; pay per use |
 | `MEALPLANNER_MODEL` | `claude-opus-5-5` | Claude model for generation |
 | `MEALPLANNER_FETCH_OFFERS` | on | Set to `off` to stop fetching store offers and regular prices in the background |

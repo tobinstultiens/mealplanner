@@ -28,13 +28,17 @@ import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
+import dev.tobins.mealplanner.api.CookingRepoSetting
+import dev.tobins.mealplanner.api.Me
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.auth.Auth
+import io.ktor.client.plugins.auth.providers.BearerTokens
+import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.timeout
-import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
@@ -45,20 +49,40 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 
-/** Where the server is and how to authenticate to it. */
-data class ServerSettings(val url: String, val token: String)
+/** Where the server is. */
+data class ServerSettings(val url: String)
 
-/** Talks to the meal planner server. Calls throw on network errors and non-2xx responses. */
-class ApiClient(settings: ServerSettings) {
+/**
+ * Talks to the meal planner server as the logged-in account. Calls throw on network errors
+ * and non-2xx responses. An expired access token is renewed with [refresh] and the call retried.
+ */
+class ApiClient(
+    settings: ServerSettings,
+    session: Session? = null,
+    refresh: suspend () -> Session? = { null },
+) {
     private val http = HttpClient {
         expectSuccess = true
         install(ContentNegotiation) { json() }
         install(HttpTimeout)
-        defaultRequest {
-            url(settings.url.trimEnd('/') + "/")
-            if (settings.token.isNotBlank()) bearerAuth(settings.token)
+        if (session != null) {
+            install(Auth) {
+                bearer {
+                    loadTokens { BearerTokens(session.accessToken, session.refreshToken) }
+                    refreshTokens { refresh()?.let { BearerTokens(it.accessToken, it.refreshToken) } }
+                    sendWithoutRequest { true }
+                }
+            }
         }
+        defaultRequest { url(settings.url.trimEnd('/') + "/") }
     }
+
+    suspend fun me(): Me = http.get("api/me").body()
+
+    suspend fun setCookingRepo(url: String?): CookingSyncStatus = http.put("api/sync/cooking/repo") {
+        contentType(ContentType.Application.Json)
+        setBody(CookingRepoSetting(url))
+    }.body()
 
     suspend fun health(): Health = http.get("health").body()
 

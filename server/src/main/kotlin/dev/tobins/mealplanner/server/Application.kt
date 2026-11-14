@@ -1,7 +1,8 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.Health
-import dev.tobins.mealplanner.api.CookingSyncStatus
+import dev.tobins.mealplanner.api.CookingRepoSetting
+import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
@@ -23,7 +24,7 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.application.log
 import io.ktor.server.auth.Authentication
-import io.ktor.server.auth.UserIdPrincipal
+import io.ktor.server.auth.principal
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.bearer
 import io.ktor.server.engine.embeddedServer
@@ -38,6 +39,9 @@ import io.ktor.server.plugins.compression.gzip
 import io.ktor.server.plugins.compression.minimumSize
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
+import io.ktor.server.request.queryString
+import io.ktor.http.ContentType
 import io.ktor.server.routing.get
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.post
@@ -67,39 +71,54 @@ import java.time.Instant
 import java.time.Duration
 import java.time.LocalDate
 import kotlin.time.Duration.Companion.hours
-import java.security.MessageDigest
 
 const val APP_VERSION = "0.1.0"
 
 /** Runtime settings, read from the environment in [ServerConfig.fromEnv]. */
 data class ServerConfig(
     val port: Int,
-    /** Single-user bearer token every `/api` call must present. */
-    val apiToken: String,
     /** JDBC URL of the SQLite database. */
     val databaseUrl: String,
-    /** Local checkout of the cooking repo to import recipes from; null disables the sync. */
+    /** Local checkout of the cooking repo, for the owner account (see [CookingSync]); null when none. */
     val cookingRepo: File?,
-    /** Git URL of the cooking repo. When set, the server clones it into [cookingRepo] and keeps it up to date. */
+    /** Git URL of the owner's cooking repo, until they set one in the app. */
     val cookingRepoUrl: String? = null,
     /** The NEVO main csv to import nutrition data from; null leaves the food table as it is. */
     val nevoFile: File? = null,
     /** Fetch store offers in the background. Off unless set, so tests never reach the stores. */
     val fetchOffers: Boolean = false,
+    /** The OpenID Connect issuer whose access tokens are accepted (Authelia), e.g. https://authelia.example.nl. */
+    val oidcIssuer: String? = null,
+    /** This app's client id at the issuer. */
+    val oidcClientId: String = "mealplanner",
+    /** Username that takes over the data from before accounts; unset: the first account to log in. */
+    val owner: String? = null,
+    /** Where per-account files (cooking repo clones) go. */
+    val dataDir: File = File(".runtime"),
+    /**
+     * SHA-256 fingerprints of the Android app's signing certificates, published in
+     * `/.well-known/assetlinks.json` so Android opens the app for the login redirect.
+     */
+    val androidCertificates: List<String> = emptyList(),
 ) {
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): ServerConfig {
-            val token = env["MEALPLANNER_API_TOKEN"]?.takeIf { it.isNotBlank() }
-                ?: error("MEALPLANNER_API_TOKEN must be set")
+            val databaseUrl = env["MEALPLANNER_DB_URL"] ?: "jdbc:sqlite:.runtime/mealplanner.db"
             return ServerConfig(
                 port = env["PORT"]?.toInt() ?: 8080,
-                apiToken = token,
-                databaseUrl = env["MEALPLANNER_DB_URL"] ?: "jdbc:sqlite:.runtime/mealplanner.db",
+                databaseUrl = databaseUrl,
                 cookingRepo = (env["COOKING_REPO_PATH"]?.takeIf { it.isNotBlank() }
                     ?: env["COOKING_REPO_URL"]?.takeIf { it.isNotBlank() }?.let { ".runtime/cooking" })?.let(::File),
                 cookingRepoUrl = env["COOKING_REPO_URL"]?.takeIf { it.isNotBlank() },
                 nevoFile = env["NEVO_CSV_PATH"]?.takeIf { it.isNotBlank() }?.let(::File),
                 fetchOffers = env["MEALPLANNER_FETCH_OFFERS"]?.lowercase() !in setOf("false", "off", "0"),
+                oidcIssuer = env["MEALPLANNER_OIDC_ISSUER"]?.takeIf { it.isNotBlank() },
+                oidcClientId = env["MEALPLANNER_OIDC_CLIENT_ID"]?.takeIf { it.isNotBlank() } ?: "mealplanner",
+                owner = env["MEALPLANNER_OWNER"]?.takeIf { it.isNotBlank() },
+                androidCertificates = env["MEALPLANNER_ANDROID_CERTS"].orEmpty().split(',', ' ').map { it.trim() }.filter { it.isNotEmpty() },
+                dataDir = env["MEALPLANNER_DATA_DIR"]?.takeIf { it.isNotBlank() }?.let(::File)
+                    ?: databaseUrl.removePrefix("jdbc:sqlite:").takeIf { !it.startsWith(":") }?.let { File(it).absoluteFile.parentFile }
+                    ?: File(".runtime"),
             )
         }
     }
@@ -117,63 +136,30 @@ fun Application.module(
     offerSources: List<OfferSource> = defaultOfferSources(),
     priceSource: PriceSource? = defaultPriceSource(),
     generator: RecipeGenerator? = ClaudeRecipeGenerator.fromEnv(),
+    verifier: TokenVerifier = config.oidcIssuer?.let { OidcVerifier(it, config.oidcClientId) } ?: NoLogin,
 ) {
+    if (config.oidcIssuer == null && verifier === NoLogin) log.error("MEALPLANNER_OIDC_ISSUER is not set: nobody can log in")
+    // Shared by every account: nutrition data, store offers and regular prices.
     val foods = FoodRepository(database)
-    val ingredients = IngredientRepository(database, foods)
     val offers = OfferRepository(database, offerSources)
-    val prices = PriceRepository(database, priceSource, ingredients, offers)
-    val recipes = RecipeRepository(database, ingredients, prices::pricing)
-    val profiles = ProfileRepository(database)
-    val plans = PlanRepository(
-        database, recipes, profiles,
-        offersByIngredient = { from, until -> offers.byIngredient(from, until, ingredients.matchTerms()) },
-        pricing = prices::pricing,
-    )
-    val tracking = TrackingRepository(database, plans, profiles)
-    val generation = generator?.let { GenerationService(it, recipes, ingredients, profiles, plans, offers) }
-    val cookingRepo = config.cookingRepo?.let { CookingRepo(it, config.cookingRepoUrl) }
-    // One sync at a time: the scheduled one and a request must not clone into the same directory.
-    val cookingLock = Mutex()
+    val prices = PriceRepository(database, priceSource, foods, offers)
+    val users = UserRepository(database)
+    // Everything else belongs to one account and is reached through its scope.
+    fun scope(accountId: Long) = UserScope(accountId, database, foods, offers, prices, generator)
+    val cooking = CookingSync(users, config.dataDir, config.cookingRepo, config.cookingRepoUrl, ::scope)
 
-    val meta = database.foodQueries
-
-    /** Fetches the cooking repo if the server manages it, then imports its recipes. Null without a repo. */
-    suspend fun syncCooking(): SyncResult? = cookingLock.withLock {
-      withContext(Dispatchers.IO) {
-        val repo = cookingRepo ?: return@withContext null
-        try {
-            val commit = repo.update()
-            val parsed = CookingSiteReader(repo).readAll() ?: return@withContext null
-            recipes.syncCookingSite(parsed).copy(autoLinked = ingredients.autoLink(), commit = commit).also {
-                meta.upsertMeta(SYNCED_AT_KEY, Instant.now().toString())
-                it.commit?.let { commit -> meta.upsertMeta(SYNCED_COMMIT_KEY, commit) }
-                meta.upsertMeta(SYNC_ERROR_KEY, "")
-            }
-        } catch (e: Exception) {
-            meta.upsertMeta(SYNC_ERROR_KEY, e.message ?: e::class.simpleName ?: "unknown error")
-            throw e
-        }
-      }
-    }
-
-    fun syncStatus() = CookingSyncStatus(
-        syncedAt = meta.selectMeta(SYNCED_AT_KEY).executeAsOneOrNull(),
-        commit = meta.selectMeta(SYNCED_COMMIT_KEY).executeAsOneOrNull(),
-        error = meta.selectMeta(SYNC_ERROR_KEY).executeAsOneOrNull()?.takeIf { it.isNotEmpty() },
-        everyHours = if (config.cookingRepoUrl != null) COOKING_SYNC_HOURS else null,
-    )
-    if (config.cookingRepoUrl != null) {
-        // Recipes change rarely; a few times a day is plenty.
-        launch {
-            while (true) {
+    // Accounts with a repository of their own: synced a few times a day.
+    launch {
+        while (true) {
+            for (accountId in cooking.scheduled()) {
                 try {
-                    syncCooking()?.let { log.info("Cooking repo synced at ${it.commit}: ${it.added} added, ${it.updated} updated, ${it.removed} removed") }
+                    cooking.sync(accountId)?.let { log.info("Cooking repo of account $accountId synced at ${it.commit}: ${it.added} added, ${it.updated} updated, ${it.removed} removed") }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    log.warn("Cooking repo sync failed: ${e.message}")
+                    log.warn("Cooking repo sync of account $accountId failed: ${e.message}")
                 }
-                delay(COOKING_SYNC_HOURS.hours)
             }
+            delay(CookingSync.EVERY_HOURS.hours)
         }
     }
     if (config.fetchOffers) {
@@ -198,7 +184,10 @@ fun Application.module(
         log.info("Imported ${foods.importNevo(it)} foods from ${it.name}")
     }
 
-    ingredients.applySeed().takeIf { it > 0 }?.let { log.info("Added $it default ingredients to the catalogue") }
+    // New default ingredients reach every account's catalogue; new accounts get them on first login.
+    for (accountId in users.all()) {
+        scope(accountId).ingredients.applySeed().takeIf { it > 0 }?.let { log.info("Added $it default ingredients to account $accountId") }
+    }
     install(CallLogging)
     // Mostly for the web client: its WebAssembly files shrink to about a third.
     install(Compression) {
@@ -227,16 +216,20 @@ fun Application.module(
         }
     }
     install(Authentication) {
+        // Access tokens from Authelia (or another OpenID Connect provider). Any account it
+        // knows may log in; the token's subject decides whose data a call sees.
         bearer("api") {
             authenticate { credential ->
-                val matches = MessageDigest.isEqual(
-                    credential.token.toByteArray(),
-                    config.apiToken.toByteArray(),
-                )
-                if (matches) UserIdPrincipal("owner") else null
+                val identity = verifier.verify(credential.token) ?: return@authenticate null
+                // Access tokens may not carry names; ask once, when the account is new.
+                val known = database.userQueries.selectBySubject(identity.subject).executeAsOneOrNull() != null
+                val named = if (identity.username == null && !known) verifier.userinfo(credential.token) ?: identity else identity
+                users.resolve(named, config.owner) { accountId -> scope(accountId).ingredients.applySeed() }
             }
         }
     }
+
+    attributes.put(ScopeFactory, ::scope)
 
     routing {
         // The web client, when the jar includes it (see server/build.gradle.kts). Public: it holds no data,
@@ -246,15 +239,34 @@ fun Application.module(
         // Unauthenticated: used by the container readiness probe.
         get("/health") { call.respond(Health(status = "ok", version = APP_VERSION)) }
 
+        // Unauthenticated: where and how clients log in.
+        get("/api/auth/config") { call.respond(verifier.clientConfig()) }
+
+        // The Android app's login redirect (Authelia only allows http(s) redirects). Android opens
+        // the app for it directly once assetlinks.json vouches for the app; otherwise the browser
+        // lands here and is sent on to the app's own scheme.
+        get("/app/login") {
+            val query = call.request.queryString()
+            call.respondText(appReturnPage(query), ContentType.Text.Html)
+        }
+        get("/.well-known/assetlinks.json") {
+            call.respondText(assetLinks(config.androidCertificates), ContentType.Application.Json)
+        }
+
         authenticate("api") {
             get("/api/ping") { call.respond(mapOf("pong" to true)) }
 
-            get("/api/recipes") { call.respond(recipes.list()) }
+            get("/api/me") {
+                val account = call.principal<Account>()!!
+                call.respond(Me(account.username, account.displayName))
+            }
+
+            get("/api/recipes") { call.respond(call.user.recipes.list()) }
 
             get("/api/recipes/{id}") {
                 val id = call.parameters["id"]?.toLongOrNull()
                     ?: throw IllegalArgumentException("Recipe id must be a number")
-                val recipe = recipes.find(id)
+                val recipe = call.user.recipes.find(id)
                 if (recipe == null) {
                     call.respond(HttpStatusCode.NotFound, mapOf("error" to "No recipe with id $id"))
                 } else {
@@ -262,21 +274,21 @@ fun Application.module(
                 }
             }
 
-            get("/api/ingredients") { call.respond(ingredients.list()) }
+            get("/api/ingredients") { call.respond(call.user.ingredients.list()) }
 
             post("/api/ingredients") {
-                call.respond(HttpStatusCode.Created, ingredients.create(call.receive<IngredientInput>()))
+                call.respond(HttpStatusCode.Created, call.user.ingredients.create(call.receive<IngredientInput>()))
             }
 
             put("/api/ingredients/{id}") {
                 val id = call.parameters["id"]?.toLongOrNull()
                     ?: throw IllegalArgumentException("Ingredient id must be a number")
-                call.respond(ingredients.update(id, call.receive<IngredientInput>()))
+                call.respond(call.user.ingredients.update(id, call.receive<IngredientInput>()))
             }
 
-            get("/api/profile") { call.respond(profiles.state()) }
+            get("/api/profile") { call.respond(call.user.profiles.state()) }
 
-            put("/api/profile") { call.respond(profiles.save(call.receive<Profile>())) }
+            put("/api/profile") { call.respond(call.user.profiles.save(call.receive<Profile>())) }
 
             route("/api/plans/{weekStart}") {
                 fun io.ktor.server.routing.RoutingCall.week() = parameters["weekStart"]!!
@@ -285,57 +297,57 @@ fun Application.module(
                 fun io.ktor.server.routing.RoutingCall.slot() = MealSlot.entries.firstOrNull { it.name.equals(parameters["slot"], ignoreCase = true) }
                     ?: throw IllegalArgumentException("slot must be one of ${MealSlot.entries.joinToString()}")
 
-                get { call.respond(plans.get(call.week())) }
+                get { call.respond(call.user.plans.get(call.week())) }
 
-                get("/shopping") { call.respond(plans.shoppingList(call.week())) }
+                get("/shopping") { call.respond(call.user.plans.shoppingList(call.week())) }
 
                 // Ticks an item of the shopping list off, or back on.
-                put("/shopping") { call.respond(plans.setChecked(call.week(), call.receive<ShoppingCheck>())) }
+                put("/shopping") { call.respond(call.user.plans.setChecked(call.week(), call.receive<ShoppingCheck>())) }
 
                 // Replans every meal that is not locked.
-                post("/generate") { call.respond(plans.generate(call.week())) }
+                post("/generate") { call.respond(call.user.plans.generate(call.week())) }
 
                 route("/meals/{day}/{slot}") {
-                    post("/reroll") { call.respond(plans.reroll(call.week(), call.day(), call.slot())) }
-                    put("/lock") { call.respond(plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
-                    delete("/lock") { call.respond(plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
-                    delete { call.respond(plans.remove(call.week(), call.day(), call.slot())) }
+                    post("/reroll") { call.respond(call.user.plans.reroll(call.week(), call.day(), call.slot())) }
+                    put("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
+                    delete("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
+                    delete { call.respond(call.user.plans.remove(call.week(), call.day(), call.slot())) }
                     // Writes a new recipe for this meal with Claude and puts it in the plan.
                     post("/generate") {
-                        val service = generation ?: return@post call.respond(
+                        val service = call.user.generation ?: return@post call.respond(
                             HttpStatusCode.ServiceUnavailable,
                             mapOf("error" to "Recipe generation is off: set ANTHROPIC_API_KEY on the server"),
                         )
                         val slot = call.slot()
                         val recipe = service.generate(call.receive<GenerateRequest>().copy(slot = slot))
-                        val candidate = recipes.candidate(recipe.summary.id)
+                        val candidate = call.user.recipes.candidate(recipe.summary.id)
                             ?: throw GenerationException("The generated recipe has no amounts to plan with")
-                        call.respond(plans.place(call.week(), call.day(), slot, candidate))
+                        call.respond(call.user.plans.place(call.week(), call.day(), slot, candidate))
                     }
                     // Body: "EATEN", "SKIPPED" or "PLANNED".
                     put("/status") {
-                        call.respond(plans.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))
+                        call.respond(call.user.plans.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))
                     }
                 }
             }
 
             // One day: planned meals with their status, extras, and totals against the targets.
-            get("/api/days/{date}") { call.respond(tracking.day(call.parameters["date"]!!)) }
+            get("/api/days/{date}") { call.respond(call.user.tracking.day(call.parameters["date"]!!)) }
 
-            post("/api/log") { call.respond(HttpStatusCode.Created, tracking.log(call.receive<LogEntry>())) }
+            post("/api/log") { call.respond(HttpStatusCode.Created, call.user.tracking.log(call.receive<LogEntry>())) }
 
             delete("/api/log/{id}") {
-                tracking.deleteLog(call.parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Log id must be a number"))
+                call.user.tracking.deleteLog(call.parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Log id must be a number"))
                 call.respond(HttpStatusCode.NoContent)
             }
 
-            get("/api/weights") { call.respond(tracking.weights()) }
+            get("/api/weights") { call.respond(call.user.tracking.weights()) }
 
-            put("/api/weights/{date}") { call.respond(tracking.setWeight(call.parameters["date"]!!, call.receive<Double>())) }
+            put("/api/weights/{date}") { call.respond(call.user.tracking.setWeight(call.parameters["date"]!!, call.receive<Double>())) }
 
-            delete("/api/weights/{date}") { call.respond(tracking.deleteWeight(call.parameters["date"]!!)) }
+            delete("/api/weights/{date}") { call.respond(call.user.tracking.deleteWeight(call.parameters["date"]!!)) }
 
-            get("/api/pantry") { call.respond(ingredients.pantry()) }
+            get("/api/pantry") { call.respond(call.user.ingredients.pantry()) }
 
             // PUT adds an ingredient to the staples or on-hand list, DELETE removes it.
             for (list in listOf("staples", "on-hand")) {
@@ -344,8 +356,8 @@ fun Application.module(
                         handle {
                             val id = call.parameters["id"]?.toLongOrNull()
                                 ?: throw IllegalArgumentException("Ingredient id must be a number")
-                            if (list == "staples") ingredients.setStaple(id, present) else ingredients.setOnHand(id, present)
-                            call.respond(ingredients.pantry())
+                            if (list == "staples") call.user.ingredients.setStaple(id, present) else call.user.ingredients.setOnHand(id, present)
+                            call.respond(call.user.ingredients.pantry())
                         }
                     }
                 }
@@ -354,15 +366,15 @@ fun Application.module(
             // Recipe line texts that still need an ingredient, with suggestions.
             get("/api/mappings/unmapped") {
                 val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 1000) ?: 50
-                call.respond(ingredients.unmapped(limit))
+                call.respond(call.user.ingredients.unmapped(limit))
             }
 
-            put("/api/mappings") { call.respond(ingredients.map(call.receive<MappingRequest>())) }
+            put("/api/mappings") { call.respond(call.user.ingredients.map(call.receive<MappingRequest>())) }
 
             delete("/api/mappings") {
                 val text = call.request.queryParameters["text"]
                     ?: throw IllegalArgumentException("Query parameter text is required")
-                ingredients.unmap(text)
+                call.user.ingredients.unmap(text)
                 call.respond(HttpStatusCode.NoContent)
             }
 
@@ -370,16 +382,16 @@ fun Application.module(
                 val date = call.request.queryParameters["date"]?.let {
                     runCatching { LocalDate.parse(it) }.getOrElse { throw IllegalArgumentException("date must be an ISO date") }
                 } ?: LocalDate.now()
-                call.respond(offers.state(date, ingredients.matchTerms(), ingredients.list().associate { it.id to it.name }))
+                call.respond(call.user.ingredients.let { offers.state(date, it.matchTerms(), it.list().associate { i -> i.id to i.name }) })
             }
 
             // Fetches every store now, regardless of when it was last fetched.
             post("/api/offers/refresh") { call.respond(offers.refresh()) }
-            get("/api/prices") { call.respond(prices.state()) }
+            get("/api/prices") { call.respond(prices.state(call.user.ingredients)) }
             // A lookup takes minutes: it runs in the background and the app polls GET /api/prices.
             post("/api/prices/refresh") {
                 this@module.launch { prices.refresh() }
-                call.respond(prices.state().copy(refreshing = true))
+                call.respond(prices.state(call.user.ingredients).copy(refreshing = true))
             }
 
             get("/api/foods/dataset") { call.respond(foods.dataset()) }
@@ -401,48 +413,57 @@ fun Application.module(
                 } else {
                     withContext(Dispatchers.IO) {
                         foods.importNevo(file)
-                        ingredients.applySeed()
-                        ingredients.autoLink()
+                        for (accountId in users.all()) {
+                            scope(accountId).ingredients.applySeed()
+                            scope(accountId).ingredients.autoLink()
+                        }
                     }
                     call.respond(foods.dataset())
                 }
             }
 
-            get("/api/routines") { call.respond(recipes.routines()) }
+            get("/api/routines") { call.respond(call.user.recipes.routines()) }
 
-            put("/api/routines") { call.respond(recipes.saveRoutines(call.receive<Routines>())) }
+            put("/api/routines") { call.respond(call.user.recipes.saveRoutines(call.receive<Routines>())) }
 
             // Writes a new recipe with Claude and stores it. Takes up to a minute or so.
             post("/api/recipes/generate") {
-                val service = generation ?: return@post call.respond(
+                val service = call.user.generation ?: return@post call.respond(
                     HttpStatusCode.ServiceUnavailable,
                     mapOf("error" to "Recipe generation is off: set ANTHROPIC_API_KEY on the server"),
                 )
                 call.respond(HttpStatusCode.Created, service.generate(call.receive<GenerateRequest>()))
             }
 
-            post("/api/recipes") { call.respond(HttpStatusCode.Created, recipes.create(call.receive<RecipeInput>())) }
+            post("/api/recipes") { call.respond(HttpStatusCode.Created, call.user.recipes.create(call.receive<RecipeInput>())) }
 
             route("/api/recipes/{id}") {
                 fun io.ktor.server.routing.RoutingCall.id() =
                     parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Recipe id must be a number")
-                put { call.respond(recipes.update(call.id(), call.receive<RecipeInput>())) }
+                put { call.respond(call.user.recipes.update(call.id(), call.receive<RecipeInput>())) }
                 delete {
-                    recipes.delete(call.id())
+                    call.user.recipes.delete(call.id())
                     call.respond(HttpStatusCode.NoContent)
                 }
-                put("/settings") { call.respond(recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }
-                put("/rating") { call.respond(recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
+                put("/settings") { call.respond(call.user.recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }
+                put("/rating") { call.respond(call.user.recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
             }
 
-            get("/api/sync/cooking") { call.respond(syncStatus()) }
-            // Re-reads the cooking repo checkout and brings the stored recipes in line with it.
+            get("/api/sync/cooking") { call.respond(cooking.status(call.accountId)) }
+
+            // The account's own cooking-site repository; synced right away when set.
+            put("/api/sync/cooking/repo") {
+                cooking.setRepo(call.accountId, call.receive<CookingRepoSetting>().url)
+                call.respond(cooking.status(call.accountId))
+            }
+
+            // Fetches the account's cooking repo and brings its recipes in line with it.
             post("/api/sync/cooking") {
-                val result = syncCooking()
+                val result = cooking.sync(call.accountId)
                 if (result == null) {
                     call.respond(
                         HttpStatusCode.ServiceUnavailable,
-                        mapOf("error" to "COOKING_REPO_PATH or COOKING_REPO_URL is not set, or the repo has no content/ folder"),
+                        mapOf("error" to "No cooking site repository is set, or it has no content/ folder"),
                     )
                 } else {
                     call.respond(result)
@@ -460,11 +481,37 @@ fun defaultOfferSources(): List<OfferSource> {
     return listOf(AhOfferSource(http), JumboOfferSource(http), LidlOfferSource(http))
 }
 
-/** The cooking site changes rarely; four times a day picks up edits the same day. */
-private const val COOKING_SYNC_HOURS = 6
-private const val SYNCED_AT_KEY = "cookingSyncedAt"
-private const val SYNCED_COMMIT_KEY = "cookingSyncedCommit"
-private const val SYNC_ERROR_KEY = "cookingSyncError"
+private val ScopeFactory = io.ktor.util.AttributeKey<(Long) -> UserScope>("scopeFactory")
+private val CallScope = io.ktor.util.AttributeKey<UserScope>("userScope")
+
+/** The calling account's id; only inside `authenticate`. */
+val io.ktor.server.application.ApplicationCall.accountId: Long get() = principal<Account>()!!.id
+
+/** The calling account's repositories, made once per call. */
+val io.ktor.server.application.ApplicationCall.user: UserScope
+    get() = attributes.computeIfAbsent(CallScope) { application.attributes[ScopeFactory](accountId) }
+
+/** HTML that sends the browser on to the app with the login answer; with a link in case it doesn't go by itself. */
+internal fun appReturnPage(query: String): String {
+    val target = "dev.tobins.mealplanner://login" + if (query.isEmpty()) "" else "?$query"
+    val href = target.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+    return """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Meal planner</title>
+        <style>body{font-family:sans-serif;margin:2rem;color-scheme:light dark}a{font-size:1.2rem}</style></head>
+        <body><p>Logged in. Returning to the app…</p><p><a id="open" href="$href">Open the Meal planner app</a></p>
+        <script>location.replace(document.getElementById("open").href)</script></body></html>
+    """.trimIndent()
+}
+
+/** Digital Asset Links: lets Android open the app for the login redirect on this host. */
+internal fun assetLinks(certificates: List<String>): String {
+    if (certificates.isEmpty()) return "[]"
+    val prints = certificates.joinToString(",") { "\"${it.uppercase()}\"" }
+    return """[{"relation":["delegate_permission/common.handle_all_urls"],""" +
+        """"target":{"namespace":"android_app","package_name":"dev.tobins.mealplanner","sha256_cert_fingerprints":[$prints]}}]"""
+}
 
 fun defaultPriceSource(): PriceSource = AhPriceSource(HttpClient(OkHttp) {
     install(HttpTimeout) { requestTimeoutMillis = 30_000 }

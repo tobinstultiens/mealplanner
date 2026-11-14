@@ -15,18 +15,22 @@ import java.io.File
  * used as it is (a checkout managed by hand); with one, it is cloned on first use and
  * reset to the remote branch on every [update], so local edits there are discarded.
  */
-class CookingRepo(val dir: File, private val url: String?, private val branch: String = "master") {
+class CookingRepo(val dir: File, val url: String?) {
 
-    /** Brings the checkout up to date. @return the commit now checked out, or null without [url]. */
+    /**
+     * Brings the checkout up to date with the repo's default branch (whatever it is called).
+     * @return the commit now checked out, or null without [url].
+     */
     fun update(): String? {
         if (url == null) return null
         if (!File(dir, ".git").isDirectory) {
             dir.mkdirs()
-            Git.cloneRepository().setURI(url).setDirectory(dir).setBranch(branch).call().close()
+            Git.cloneRepository().setURI(url).setDirectory(dir).call().close()
         }
         Git.open(dir).use { git ->
             git.fetch().setRemote("origin").call()
-            git.reset().setMode(ResetCommand.ResetType.HARD).setRef("origin/$branch").call()
+            // The clone checked out the default branch; follow that branch on the remote.
+            git.reset().setMode(ResetCommand.ResetType.HARD).setRef("origin/${git.repository.branch}").call()
             return git.repository.resolve("HEAD")?.name
         }
     }

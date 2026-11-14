@@ -83,12 +83,11 @@ class CatalogueTest {
         }
         val config = ServerConfig(
             port = 0,
-            apiToken = "t",
             databaseUrl = "jdbc:sqlite::memory:",
             cookingRepo = repo,
             nevoFile = createTempFile("nevo", ".csv").toFile().apply { writeText(nevo) },
         )
-        application { module(config, openDatabase(config.databaseUrl).second) }
+        application { module(config, openDatabase(config.databaseUrl).second, verifier = TestTokens) }
         return createClient {
             install(ContentNegotiation) { json() }
             defaultRequest {

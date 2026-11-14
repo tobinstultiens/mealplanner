@@ -29,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -96,6 +97,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
     val scope = rememberCoroutineScope()
 
     var syncStatus by remember { mutableStateOf<CookingSyncStatus?>(null) }
+    var editingRepo by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
         state = Load.Loading
         state = load { api.recipes() }
@@ -155,7 +157,27 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                 label = { Text("Meals only") },
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
-            syncStatus?.let { SyncLine(it) }
+            syncStatus?.let { SyncLine(it, onEdit = { editingRepo = true }) }
+            if (editingRepo) {
+                CookingRepoDialog(
+                    current = syncStatus?.repoUrl,
+                    onDismiss = { editingRepo = false },
+                    onSave = { url ->
+                        syncStatus = api.setCookingRepo(url)
+                        editingRepo = false
+                        // A new repository is imported right away.
+                        if (url != null) {
+                            val message = when (val result = load { api.syncCookingSite() }) {
+                                is Load.Ready -> with(result.value) { "Imported: $added added, $updated updated, $removed removed" }
+                                is Load.Failed -> "Import failed: ${result.message}"
+                                Load.Loading -> ""
+                            }
+                            reload++
+                            snackbar.showSnackbar(message)
+                        }
+                    },
+                )
+            }
             when (val current = state) {
                 Load.Loading -> CenteredBox { CircularProgressIndicator() }
                 is Load.Failed -> ErrorMessage("Could not load recipes", current.message) { reload++ }
@@ -187,21 +209,70 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
     }
 }
 
-/** When the cooking site was last read, so it is clear that edits there have arrived. */
+/**
+ * When the account's cooking site was last read, so it is clear that edits there have
+ * arrived; tapping it sets the repository to import from.
+ */
 @Composable
-private fun SyncLine(status: CookingSyncStatus) {
+private fun SyncLine(status: CookingSyncStatus, onEdit: () -> Unit) {
     val text = buildString {
+        if (status.repoUrl == null && status.syncedAt == null) {
+            append("No cooking site set. Tap to import recipes from a cooking site repository.")
+            return@buildString
+        }
         append(status.syncedAt?.let { "Cooking site synced ${instantLabel(it)}" } ?: "Cooking site not synced yet")
         status.everyHours?.let { append(" · automatically every $it hours") }
         status.error?.let { append(". Last sync failed: $it") }
     }
     Text(
         text,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier.clickable(onClick = onEdit).padding(horizontal = 16.dp, vertical = 4.dp),
         style = MaterialTheme.typography.bodySmall,
         color = if (status.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** Sets the git repository of the account's cooking site (Hugo recipes), or clears it. */
+@Composable
+private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: suspend (String?) -> Unit) {
+    var url by remember { mutableStateOf(current.orEmpty()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    fun save(value: String?) {
+        saving = true
+        scope.launch {
+            runCatching { onSave(value) }.onFailure { error = (load { throw it } as? Load.Failed)?.message ?: it.message }
+            saving = false
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cooking site") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("The git repository of your cooking site. Its recipes are imported now and every 6 hours.")
+                OutlinedTextField(
+                    url, { url = it; error = null },
+                    label = { Text("Repository URL") },
+                    placeholder = { Text("https://github.com/you/cooking.git") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !saving && url.isNotBlank(), onClick = { save(url.trim()) }) { Text(if (saving) "Importing…" else "Save") }
+        },
+        dismissButton = {
+            Row {
+                if (current != null) TextButton(enabled = !saving, onClick = { save(null) }) { Text("Remove") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
     )
 }
 

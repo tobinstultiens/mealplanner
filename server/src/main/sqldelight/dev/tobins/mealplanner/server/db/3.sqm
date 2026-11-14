@@ -1,0 +1,220 @@
+-- Version 3 -> 4: accounts (Authelia logins). Every account has its own recipes, catalogue,
+-- pantry, profile, plans, logs and weights; offers and regular prices are shared. Data from
+-- before accounts goes to account 1, unclaimed (subject NULL), which the owner's first login
+-- takes over.
+--
+-- Tables that gain a userId or a new key are rebuilt. The old ones are renamed out of the way
+-- first: SQLite then points foreign keys at the renamed tables, so dropping them at the end
+-- cascades nowhere.
+
+CREATE TABLE appUser (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT UNIQUE,
+    username TEXT,
+    displayName TEXT,
+    createdAt TEXT NOT NULL
+);
+
+CREATE TABLE userMeta (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (userId, key)
+);
+
+
+INSERT INTO appUser (id, subject, username, displayName, createdAt)
+VALUES (1, NULL, NULL, NULL, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
+
+INSERT INTO userMeta (userId, key, value)
+SELECT 1, key, value FROM meta WHERE key IN ('profile', 'routines', 'cookingSyncedAt', 'cookingSyncedCommit', 'cookingSyncError');
+
+DELETE FROM meta WHERE key IN ('profile', 'routines', 'cookingSyncedAt', 'cookingSyncedCommit', 'cookingSyncError');
+
+-- Regular prices: keyed by ingredient name instead of one account's ingredient id.
+ALTER TABLE ingredientPrice RENAME TO ingredientPrice_old;
+
+CREATE TABLE ingredientPrice (
+    name TEXT NOT NULL PRIMARY KEY COLLATE NOCASE,
+    store TEXT NOT NULL,
+    product TEXT NOT NULL,
+    packSize TEXT,
+    packPrice REAL,
+    eurosPerKg REAL NOT NULL,
+    fetchedAt TEXT NOT NULL
+);
+
+
+INSERT OR REPLACE INTO ingredientPrice (name, store, product, packSize, packPrice, eurosPerKg, fetchedAt)
+SELECT i.name, p.store, p.product, p.packSize, p.packPrice, p.eurosPerKg, p.fetchedAt
+FROM ingredientPrice_old p JOIN ingredient i ON i.id = p.ingredientId;
+
+DROP TABLE ingredientPrice_old;
+
+-- The ingredient catalogue and what refers to it.
+ALTER TABLE ingredientAlias RENAME TO ingredientAlias_old;
+ALTER TABLE onHand RENAME TO onHand_old;
+ALTER TABLE ingredient RENAME TO ingredient_old;
+
+CREATE TABLE ingredient (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    nevoCode INTEGER,
+    gramsPerPiece REAL,                -- weight of one piece/clove/can, for count lines
+    gramsPerMl REAL,                   -- density, for volume lines
+    category TEXT,
+    pricePerKg REAL,
+    isStaple INTEGER NOT NULL DEFAULT 0,
+    negligible INTEGER NOT NULL DEFAULT 0,  -- herbs, spices, leaveners: left out of nutrition
+    UNIQUE (userId, name)
+);
+
+
+INSERT INTO ingredient (id, userId, name, nevoCode, gramsPerPiece, gramsPerMl, category, pricePerKg, isStaple, negligible)
+SELECT id, 1, name, nevoCode, gramsPerPiece, gramsPerMl, category, pricePerKg, isStaple, negligible FROM ingredient_old;
+
+CREATE TABLE ingredientAlias (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    PRIMARY KEY (userId, text)
+);
+
+
+INSERT INTO ingredientAlias (userId, text, ingredientId) SELECT 1, text, ingredientId FROM ingredientAlias_old;
+
+CREATE TABLE onHand (
+    ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE,
+    addedAt TEXT NOT NULL
+);
+
+
+INSERT INTO onHand (ingredientId, addedAt) SELECT ingredientId, addedAt FROM onHand_old;
+
+DROP TABLE ingredientAlias_old;
+DROP TABLE onHand_old;
+DROP TABLE ingredient_old;
+
+-- Recipes and their lines.
+ALTER TABLE recipeIngredient RENAME TO recipeIngredient_old;
+ALTER TABLE recipe RENAME TO recipe_old;
+
+CREATE TABLE recipe (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,              -- COOKING_SITE | MANUAL | GENERATED
+    sourcePath TEXT,                   -- path under content/ for COOKING_SITE rows
+    contentHash TEXT,
+    section TEXT NOT NULL,
+    title TEXT NOT NULL,
+    tagsJson TEXT NOT NULL,
+    servings INTEGER,
+    instructions TEXT NOT NULL,
+    hasIngredientsBlock INTEGER NOT NULL,
+    problemsJson TEXT NOT NULL,
+    kind TEXT NOT NULL,                -- MEAL | COMPONENT. App-owned: set on insert, kept on sync.
+    mealSlotsJson TEXT,                -- App-owned: slots this recipe suits; NULL means the section's default
+    removedAt TEXT,                    -- set when the file disappears from the cooking repo
+    rating INTEGER,                    -- App-owned: 1 to 5, NULL when not rated
+    UNIQUE (userId, sourcePath)
+);
+
+
+INSERT INTO recipe (id, userId, source, sourcePath, contentHash, section, title, tagsJson, servings, instructions,
+    hasIngredientsBlock, problemsJson, kind, mealSlotsJson, removedAt, rating)
+SELECT id, 1, source, sourcePath, contentHash, section, title, tagsJson, servings, instructions,
+    hasIngredientsBlock, problemsJson, kind, mealSlotsJson, removedAt, rating FROM recipe_old;
+
+CREATE TABLE recipeIngredient (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipeId INTEGER NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    amount REAL,
+    unit TEXT,
+    dimension TEXT,
+    baseAmount REAL,
+    item TEXT NOT NULL,
+    groupName TEXT
+);
+
+
+INSERT INTO recipeIngredient (id, recipeId, position, amount, unit, dimension, baseAmount, item, groupName)
+SELECT id, recipeId, position, amount, unit, dimension, baseAmount, item, groupName FROM recipeIngredient_old;
+
+DROP TABLE recipeIngredient_old;
+DROP TABLE recipe_old;
+
+CREATE INDEX recipeIngredient_recipe ON recipeIngredient(recipeId, position);
+
+-- Plans and shopping lists.
+ALTER TABLE planMeal RENAME TO planMeal_old;
+
+CREATE TABLE planMeal (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    weekStart TEXT NOT NULL,           -- ISO date of the plan's first day
+    day INTEGER NOT NULL,              -- 0-based offset from weekStart
+    slot TEXT NOT NULL,                -- BREAKFAST | LUNCH | DINNER | SNACK
+    recipeId INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    portions REAL NOT NULL,
+    kcal REAL NOT NULL,
+    proteinG REAL NOT NULL,
+    leftover INTEGER NOT NULL,
+    locked INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PLANNED',   -- PLANNED | EATEN | SKIPPED
+    PRIMARY KEY (userId, weekStart, day, slot)
+);
+
+
+INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status)
+SELECT 1, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status FROM planMeal_old;
+
+DROP TABLE planMeal_old;
+
+ALTER TABLE shoppingCheck RENAME TO shoppingCheck_old;
+
+CREATE TABLE shoppingCheck (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    weekStart TEXT NOT NULL,
+    itemKey TEXT NOT NULL,
+    PRIMARY KEY (userId, weekStart, itemKey)
+);
+
+
+INSERT INTO shoppingCheck (userId, weekStart, itemKey) SELECT 1, weekStart, itemKey FROM shoppingCheck_old;
+
+DROP TABLE shoppingCheck_old;
+
+-- What was eaten and weighed.
+ALTER TABLE foodLog RENAME TO foodLog_old;
+
+CREATE TABLE foodLog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    description TEXT NOT NULL,
+    kcal REAL NOT NULL,
+    proteinG REAL NOT NULL
+);
+
+
+INSERT INTO foodLog (id, userId, date, description, kcal, proteinG) SELECT id, 1, date, description, kcal, proteinG FROM foodLog_old;
+
+DROP TABLE foodLog_old;
+
+CREATE INDEX foodLog_date ON foodLog(userId, date);
+
+ALTER TABLE weight RENAME TO weight_old;
+
+CREATE TABLE weight (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    kg REAL NOT NULL,
+    PRIMARY KEY (userId, date)
+);
+
+
+INSERT INTO weight (userId, date, kg) SELECT 1, date, kg FROM weight_old;
+
+DROP TABLE weight_old;

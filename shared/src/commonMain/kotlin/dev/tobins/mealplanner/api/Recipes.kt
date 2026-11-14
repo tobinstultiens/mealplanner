@@ -102,6 +102,8 @@ data class CookingSyncStatus(
     val error: String?,
     /** How often the server syncs on its own; null when it doesn't (no repo URL configured). */
     val everyHours: Int?,
+    /** The account's cooking-site repository; null when none is set. */
+    val repoUrl: String? = null,
 )
 
 /** Outcome of `POST /api/sync/cooking`. */

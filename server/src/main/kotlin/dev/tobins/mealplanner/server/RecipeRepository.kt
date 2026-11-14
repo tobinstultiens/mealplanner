@@ -47,9 +47,11 @@ private const val MANUAL_SECTION = "own"
 /** Sections of the cooking site whose pages are building blocks, not meals. */
 private val componentSections = setOf("sauces", "spices", "templates", "ideas", "fermenting", "baking", "cocktails")
 
+/** One account's recipes. */
 class RecipeRepository(
     private val db: Database,
     private val ingredients: IngredientRepository,
+    private val userId: Long,
     /** Prices with the offers valid between two dates. */
     private val pricing: (LocalDate, LocalDate) -> Pricing = { _, _ -> Pricing.NONE },
 ) {
@@ -64,14 +66,14 @@ class RecipeRepository(
     fun list(): List<RecipeSummary> {
         val resolve = ingredients.resolver()
         val prices = currentPricing()
-        return q.selectActive().executeAsList().map { row ->
+        return q.selectActive(userId).executeAsList().map { row ->
             val lines = linesOf(row.id)
             row.toSummary(nutritionOf(row, lines, resolve), costOf(row, lines, resolve, prices))
         }
     }
 
     fun find(id: Long): RecipeDetail? {
-        val row = q.selectById(id).executeAsOneOrNull() ?: return null
+        val row = q.selectById(userId, id).executeAsOneOrNull() ?: return null
         val resolve = ingredients.resolver()
         val lines = linesOf(id)
         return RecipeDetail(
@@ -100,7 +102,7 @@ class RecipeRepository(
      * puts a recipe in a slot themselves). Null when the recipe has no amounts at all.
      */
     fun candidate(id: Long): PlanCandidate? {
-        val row = q.selectById(id).executeAsOneOrNull() ?: return null
+        val row = q.selectById(userId, id).executeAsOneOrNull() ?: return null
         val resolve = ingredients.resolver()
         val nutrition = nutritionOf(row, linesOf(id), resolve) ?: return null
         return PlanCandidate(
@@ -126,7 +128,7 @@ class RecipeRepository(
         val disliked = dislikes.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
             .map { Regex("\\b${Regex.escape(it)}(s|es|en|n)?\\b", RegexOption.IGNORE_CASE) }
         val onHand = ingredients.pantry().onHand.mapTo(HashSet()) { it.id }
-        return q.selectActive().executeAsList().mapNotNull { row ->
+        return q.selectActive(userId).executeAsList().mapNotNull { row ->
             if (row.kind != RecipeKind.MEAL.name) return@mapNotNull null
             val lines = linesOf(row.id)
             if (disliked.isNotEmpty() && lines.any { line ->
@@ -155,7 +157,7 @@ class RecipeRepository(
 
     /** A recipe's base yield and its lines with the ingredient each one means; null if the recipe is gone. */
     fun linesWithIngredients(recipeId: Long): Pair<Int, List<Pair<IngredientLine, Ingredient?>>>? {
-        val row = q.selectById(recipeId).executeAsOneOrNull() ?: return null
+        val row = q.selectById(userId, recipeId).executeAsOneOrNull() ?: return null
         val resolve = ingredients.resolver()
         return (row.servings?.toInt() ?: 1) to linesOf(recipeId).map { it to resolve(it) }
     }
@@ -165,6 +167,7 @@ class RecipeRepository(
         require(source != RecipeSource.COOKING_SITE) { "cooking site recipes come from the sync" }
         val parsed = parse(input)
         q.insertRecipe(
+            userId = userId,
             source = source.name,
             sourcePath = null,
             contentHash = null,
@@ -178,54 +181,54 @@ class RecipeRepository(
             kind = RecipeKind.MEAL.name,
         )
         val id = q.lastInsertId().executeAsOne()
-        q.updateSettings(RecipeKind.MEAL.name, Json.encodeToString(input.mealSlots), id)
+        q.updateSettings(RecipeKind.MEAL.name, Json.encodeToString(input.mealSlots), userId, id)
         replaceIngredients(id, parsed.ingredients)
         find(id)!!
     }
 
     /** Replaces a recipe of the user's own; imported recipes are edited on the cooking site. */
     fun update(id: Long, input: RecipeInput): RecipeDetail = db.transactionWithResult {
-        val row = q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+        val row = q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
         if (row.source == RecipeSource.COOKING_SITE.name) throw ConflictException("Recipes from the cooking site are edited there")
         val parsed = parse(input)
-        q.updateManual(parsed.title, Json.encodeToString(input.tags), input.servings.toLong(), input.instructions.trim(), "[]", id)
-        q.updateSettings(row.kind, Json.encodeToString(input.mealSlots), id)
+        q.updateManual(parsed.title, Json.encodeToString(input.tags), input.servings.toLong(), input.instructions.trim(), "[]", userId, id)
+        q.updateSettings(row.kind, Json.encodeToString(input.mealSlots), userId, id)
         replaceIngredients(id, parsed.ingredients)
         find(id)!!
     }
 
     fun delete(id: Long) {
-        val row = q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+        val row = q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
         if (row.source == RecipeSource.COOKING_SITE.name) throw ConflictException("Recipes from the cooking site are removed there")
-        q.deleteManual(id)
+        q.deleteManual(userId, id)
     }
 
     fun setRating(id: Long, rating: Int?): RecipeDetail {
         require(rating == null || rating in 1..5) { "rating must be 1 to 5, or null" }
-        q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
-        q.setRating(rating?.toLong(), id)
+        q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+        q.setRating(rating?.toLong(), userId, id)
         return find(id)!!
     }
 
     /** Titles of the most recently planned recipes, newest first; for variety in generation. */
-    fun titles(ids: Collection<Long>): List<String> = ids.mapNotNull { q.selectById(it).executeAsOneOrNull()?.title }
+    fun titles(ids: Collection<Long>): List<String> = ids.mapNotNull { q.selectById(userId, it).executeAsOneOrNull()?.title }
 
-    fun allTitles(): List<String> = q.selectActive().executeAsList().map { it.title }
+    fun allTitles(): List<String> = q.selectActive(userId).executeAsList().map { it.title }
 
     fun routines(): Routines =
-        db.foodQueries.selectMeta(ROUTINES_KEY).executeAsOneOrNull()?.let { Json.decodeFromString<Routines>(it) } ?: Routines()
+        db.userQueries.selectUserMeta(userId, ROUTINES_KEY).executeAsOneOrNull()?.let { Json.decodeFromString<Routines>(it) } ?: Routines()
 
     fun saveRoutines(routines: Routines): Routines {
         listOfNotNull(routines.breakfast, routines.snack).forEach {
-            q.selectById(it).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $it")
+            q.selectById(userId, it).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $it")
         }
-        db.foodQueries.upsertMeta(ROUTINES_KEY, Json.encodeToString(routines))
+        db.userQueries.upsertUserMeta(userId, ROUTINES_KEY, Json.encodeToString(routines))
         return routines
     }
 
     fun updateSettings(id: Long, settings: RecipeSettings): RecipeDetail {
-        q.selectById(id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
-        q.updateSettings(settings.kind.name, Json.encodeToString(settings.mealSlots), id)
+        q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+        q.updateSettings(settings.kind.name, Json.encodeToString(settings.mealSlots), userId, id)
         return find(id)!!
     }
 
@@ -262,7 +265,7 @@ class RecipeRepository(
     /** Null when the recipe has no amounts to compute from. */
     /** Cost per serving of one recipe with [prices]; null when it cannot be priced. */
     fun cost(recipeId: Long, prices: Pricing): RecipeCost? {
-        val row = q.selectById(recipeId).executeAsOneOrNull() ?: return null
+        val row = q.selectById(userId, recipeId).executeAsOneOrNull() ?: return null
         return costOf(row, linesOf(recipeId), ingredients.resolver(), prices)
     }
 
@@ -288,12 +291,13 @@ class RecipeRepository(
         var unchanged = 0
         var removed = 0
         db.transaction {
-            val existing = q.selectSynced().executeAsList().associateBy { it.sourcePath }
+            val existing = q.selectSynced(userId).executeAsList().associateBy { it.sourcePath }
             for ((recipe, hash) in parsed) {
                 val row = existing[recipe.path]
                 when {
                     row == null -> {
                         q.insertRecipe(
+                            userId = userId,
                             source = RecipeSource.COOKING_SITE.name,
                             sourcePath = recipe.path,
                             contentHash = hash,
@@ -320,6 +324,7 @@ class RecipeRepository(
                             instructions = recipe.instructions,
                             hasIngredientsBlock = recipe.hasIngredientsBlock.toLong(),
                             problemsJson = Json.encodeToString(recipe.problems),
+                            userId = userId,
                             id = row.id,
                         )
                         replaceIngredients(row.id, recipe.ingredients)
@@ -330,7 +335,7 @@ class RecipeRepository(
             val present = parsed.mapTo(HashSet()) { it.first.path }
             for (row in existing.values) {
                 if (row.sourcePath !in present && row.removedAt == null) {
-                    q.markRemoved(now.toString(), row.id)
+                    q.markRemoved(now.toString(), userId, row.id)
                     removed++
                 }
             }

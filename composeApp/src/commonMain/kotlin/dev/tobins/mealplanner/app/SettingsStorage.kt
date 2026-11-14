@@ -19,15 +19,12 @@ class MemorySettingsStorage : SettingsStorage {
 }
 
 private const val URL_KEY = "server.url"
-private const val TOKEN_KEY = "server.token"
 
 /** The stored server settings, falling back to [defaults] for what was never saved. */
-fun SettingsStorage.serverSettings(defaults: ServerSettings) =
-    ServerSettings(url = get(URL_KEY) ?: defaults.url, token = get(TOKEN_KEY) ?: defaults.token)
+fun SettingsStorage.serverSettings(defaults: ServerSettings) = ServerSettings(url = get(URL_KEY) ?: defaults.url)
 
 fun SettingsStorage.saveServerSettings(settings: ServerSettings) {
     set(URL_KEY, settings.url.trim().trimEnd('/'))
-    set(TOKEN_KEY, settings.token.trim())
 }
 
 /** Light, dark, or whatever the device uses. */

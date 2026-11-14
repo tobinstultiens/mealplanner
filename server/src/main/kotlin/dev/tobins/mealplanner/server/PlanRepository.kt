@@ -28,6 +28,7 @@ class ConflictException(message: String) : RuntimeException(message)
 /** Week plans: generating them with [WeekPlanner] and storing the result. */
 class PlanRepository(
     private val db: Database,
+    private val userId: Long,
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
     /** Offers valid between two dates, grouped by ingredient id. */
@@ -46,7 +47,7 @@ class PlanRepository(
         val kept = stored(start).filter { it.locked || it.status != MealStatus.PLANNED }
         val planned = WeekPlanner.plan(request(start, locked = kept, seed = seed))
         db.transaction {
-            q.deleteUnlocked(start.toString())
+            q.deleteUnlocked(userId, start.toString())
             planned.filter { new -> kept.none { it.day == new.day && it.slot == new.slot } }.forEach { save(start, it.copy(locked = false)) }
         }
         return view(start)
@@ -70,7 +71,7 @@ class PlanRepository(
         )
         db.transaction {
             for (old in replaced) {
-                q.deleteMeal(start.toString(), old.day.toLong(), old.slot.name)
+                q.deleteMeal(userId, start.toString(), old.day.toLong(), old.slot.name)
                 planned.firstOrNull { it.day == old.day && it.slot == old.slot }
                     ?.let { save(start, it.copy(locked = false, status = MealStatus.PLANNED)) }
             }
@@ -100,7 +101,7 @@ class PlanRepository(
                         kcal = candidate.kcal * lunchPortions, proteinG = candidate.proteinG * lunchPortions))
                 } else {
                     // Nothing left over: the old dinner's leftovers are gone too.
-                    q.deleteMeal(start.toString(), nextLunch.day.toLong(), nextLunch.slot.name)
+                    q.deleteMeal(userId, start.toString(), nextLunch.day.toLong(), nextLunch.slot.name)
                 }
             }
         }
@@ -109,13 +110,13 @@ class PlanRepository(
 
     fun setLocked(weekStart: String, day: Int, slot: MealSlot, locked: Boolean): WeekPlan {
         val start = parse(weekStart)
-        q.setLocked(if (locked) 1 else 0, start.toString(), day.toLong(), slot.name)
+        q.setLocked(if (locked) 1 else 0, userId, start.toString(), day.toLong(), slot.name)
         return view(start)
     }
 
     fun setStatus(weekStart: String, day: Int, slot: MealSlot, status: MealStatus): WeekPlan {
         val start = parse(weekStart)
-        q.setStatus(status.name, start.toString(), day.toLong(), slot.name)
+        q.setStatus(status.name, userId, start.toString(), day.toLong(), slot.name)
         return view(start)
     }
 
@@ -137,7 +138,7 @@ class PlanRepository(
 
     fun remove(weekStart: String, day: Int, slot: MealSlot): WeekPlan {
         val start = parse(weekStart)
-        q.deleteMeal(start.toString(), day.toLong(), slot.name)
+        q.deleteMeal(userId, start.toString(), day.toLong(), slot.name)
         return view(start)
     }
 
@@ -188,7 +189,7 @@ class PlanRepository(
                 if (line.dimension == Dimension.COUNT) need.pieces += amount * factor
             }
         }
-        val checked = q.selectChecks(start.toString()).executeAsList().toSet()
+        val checked = q.selectChecks(userId, start.toString()).executeAsList().toSet()
         val offers = offersByIngredient(start, start.plusDays(DAYS - 1L))
         return ShoppingList(
             weekStart = start.toString(),
@@ -212,7 +213,7 @@ class PlanRepository(
 
     fun setChecked(weekStart: String, check: ShoppingCheck): ShoppingList {
         val start = parse(weekStart)
-        if (check.checked) q.insertCheck(start.toString(), check.key) else q.deleteCheck(start.toString(), check.key)
+        if (check.checked) q.insertCheck(userId, start.toString(), check.key) else q.deleteCheck(userId, start.toString(), check.key)
         return shoppingList(weekStart)
     }
 
@@ -257,7 +258,7 @@ class PlanRepository(
         )
     }
 
-    private fun stored(start: LocalDate): List<PlannedMeal> = q.selectWeek(start.toString()).executeAsList().map {
+    private fun stored(start: LocalDate): List<PlannedMeal> = q.selectWeek(userId, start.toString()).executeAsList().map {
         PlannedMeal(
             day = it.day.toInt(),
             slot = MealSlot.valueOf(it.slot),
@@ -273,7 +274,7 @@ class PlanRepository(
     }
 
     private fun save(start: LocalDate, meal: PlannedMeal) = q.upsertMeal(
-        start.toString(), meal.day.toLong(), meal.slot.name, meal.recipeId, meal.title, meal.portions,
+        userId, start.toString(), meal.day.toLong(), meal.slot.name, meal.recipeId, meal.title, meal.portions,
         meal.kcal, meal.proteinG, if (meal.leftover) 1 else 0, if (meal.locked) 1 else 0, meal.status.name,
     )
 

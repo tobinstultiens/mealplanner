@@ -1,5 +1,6 @@
 -- One planned meal. Nutrition is a snapshot taken when the meal was planned.
 CREATE TABLE planMeal (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
     weekStart TEXT NOT NULL,           -- ISO date of the plan's first day
     day INTEGER NOT NULL,              -- 0-based offset from weekStart
     slot TEXT NOT NULL,                -- BREAKFAST | LUNCH | DINNER | SNACK
@@ -11,44 +12,45 @@ CREATE TABLE planMeal (
     leftover INTEGER NOT NULL,
     locked INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'PLANNED',   -- PLANNED | EATEN | SKIPPED
-    PRIMARY KEY (weekStart, day, slot)
+    PRIMARY KEY (userId, weekStart, day, slot)
 );
 
 selectWeek:
-SELECT * FROM planMeal WHERE weekStart = ? ORDER BY day;
+SELECT * FROM planMeal WHERE userId = ? AND weekStart = ? ORDER BY day;
 
 upsertMeal:
-INSERT OR REPLACE INTO planMeal (weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Replanning leaves alone what is locked or already eaten or skipped.
 deleteUnlocked:
-DELETE FROM planMeal WHERE weekStart = ? AND locked = 0 AND status = 'PLANNED';
+DELETE FROM planMeal WHERE userId = ? AND weekStart = ? AND locked = 0 AND status = 'PLANNED';
 
 setStatus:
-UPDATE planMeal SET status = ? WHERE weekStart = ? AND day = ? AND slot = ?;
+UPDATE planMeal SET status = ? WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?;
 
 deleteMeal:
-DELETE FROM planMeal WHERE weekStart = ? AND day = ? AND slot = ?;
+DELETE FROM planMeal WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?;
 
 setLocked:
-UPDATE planMeal SET locked = ? WHERE weekStart = ? AND day = ? AND slot = ?;
+UPDATE planMeal SET locked = ? WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?;
 
 -- Items ticked off on a week's shopping list.
 CREATE TABLE shoppingCheck (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
     weekStart TEXT NOT NULL,
     itemKey TEXT NOT NULL,
-    PRIMARY KEY (weekStart, itemKey)
+    PRIMARY KEY (userId, weekStart, itemKey)
 );
 
 selectChecks:
-SELECT itemKey FROM shoppingCheck WHERE weekStart = ?;
+SELECT itemKey FROM shoppingCheck WHERE userId = ? AND weekStart = ?;
 
 insertCheck:
-INSERT OR IGNORE INTO shoppingCheck (weekStart, itemKey) VALUES (?, ?);
+INSERT OR IGNORE INTO shoppingCheck (userId, weekStart, itemKey) VALUES (?, ?, ?);
 
 deleteCheck:
-DELETE FROM shoppingCheck WHERE weekStart = ? AND itemKey = ?;
+DELETE FROM shoppingCheck WHERE userId = ? AND weekStart = ? AND itemKey = ?;
 
 -- The latest offers per store, replaced as a whole by each successful fetch.
 CREATE TABLE offer (

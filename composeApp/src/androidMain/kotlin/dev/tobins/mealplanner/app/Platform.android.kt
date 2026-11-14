@@ -21,3 +21,5 @@ actual fun SystemBars(dark: Boolean) {
         onDispose {}
     }
 }
+
+actual fun secureRandomBytes(size: Int): ByteArray = ByteArray(size).also { java.security.SecureRandom().nextBytes(it) }

@@ -27,8 +27,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -40,6 +38,13 @@ import kotlinx.coroutines.launch
 @Composable
 fun ServerSettingsScreen(
     current: ServerSettings,
+    /** Who is logged in, when known. */
+    account: String?,
+    loggedIn: Boolean,
+    loginError: String?,
+    /** Saves [ServerSettings] and opens the login page of that server's identity provider. */
+    onLogin: (ServerSettings) -> Unit,
+    onLogout: () -> Unit,
     updater: UpdateInstaller?,
     theme: ThemeMode,
     onTheme: (ThemeMode) -> Unit,
@@ -47,12 +52,10 @@ fun ServerSettingsScreen(
     onBack: () -> Unit,
 ) {
     var url by remember { mutableStateOf(current.url) }
-    var token by remember { mutableStateOf(current.token) }
-    var showToken by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val draft = ServerSettings(url.trim().trimEnd('/'), token.trim())
+    val draft = ServerSettings(url.trim().trimEnd('/'))
     val urlValid = draft.url.startsWith("http://") || draft.url.startsWith("https://")
 
     Scaffold(
@@ -64,6 +67,19 @@ fun ServerSettingsScreen(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Text("Account", style = MaterialTheme.typography.titleMedium)
+            if (loggedIn) {
+                Text(if (account != null) "Logged in as $account." else "Logged in.", style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(onClick = onLogout) { Text("Log out") }
+            } else {
+                Text(
+                    "Log in with your account on the server's login page (Authelia). Each account has its own recipes, plans and progress.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(enabled = urlValid, onClick = { onLogin(draft) }) { Text("Log in") }
+            }
+            loginError?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+
             Text("Appearance", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ThemeMode.entries.forEach { mode ->
@@ -81,15 +97,6 @@ fun ServerSettingsScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
-                token, { token = it; result = null },
-                label = { Text("Access token") },
-                supportingText = { Text("The server's MEALPLANNER_API_TOKEN") },
-                singleLine = true,
-                visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = { TextButton(onClick = { showToken = !showToken }) { Text(if (showToken) "Hide" else "Show") } },
-                modifier = Modifier.fillMaxWidth(),
-            )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
                     enabled = urlValid && !testing,
@@ -99,11 +106,7 @@ fun ServerSettingsScreen(
                             val client = ApiClient(draft)
                             result = when (val health = load { client.health() }) {
                                 is Load.Failed -> "Cannot reach the server: ${health.message}"
-                                is Load.Ready -> when (val auth = load { client.profile() }) {
-                                    is Load.Ready -> "Connected to server ${health.value.version}; the token is accepted."
-                                    is Load.Failed -> if (auth.status == 401) "The server is reachable, but the token is wrong." else "Server reachable, but: ${auth.message}"
-                                    Load.Loading -> null
-                                }
+                                is Load.Ready -> "Connected to server ${health.value.version}."
                                 Load.Loading -> null
                             }
                             client.close()
@@ -111,7 +114,7 @@ fun ServerSettingsScreen(
                         }
                     },
                 ) { Text(if (testing) "Testing…" else "Test connection") }
-                Button(enabled = urlValid, onClick = { onSave(draft) }) { Text("Save") }
+                Button(enabled = urlValid && draft != current, onClick = { onSave(draft) }) { Text("Save") }
             }
             result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         }

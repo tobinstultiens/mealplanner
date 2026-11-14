@@ -25,6 +25,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import dev.tobins.mealplanner.api.Me
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -35,15 +39,37 @@ import androidx.compose.ui.unit.dp
  * used until the user saves their own in [storage].
  */
 @Composable
-fun App(defaults: ServerSettings, storage: SettingsStorage, updater: UpdateInstaller? = null) {
+fun App(
+    defaults: ServerSettings,
+    storage: SettingsStorage,
+    launcher: LoginLauncher,
+    /** Redirects back from the login page (URLs), as the platform receives them. */
+    loginCallbacks: Flow<String>,
+    updater: UpdateInstaller? = null,
+) {
     var settings by remember { mutableStateOf(storage.serverSettings(defaults)) }
+    val login = remember(storage) { Login(storage) }
+    var session by remember { mutableStateOf(storage.session()) }
+    var account by remember { mutableStateOf<Me?>(null) }
+    var loginError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     var theme by remember { mutableStateOf(storage.themeMode()) }
     // A newer release found on start; "Later" hides it until the next start.
     var update by remember { mutableStateOf<AppUpdate?>(null) }
     LaunchedEffect(updater) {
         if (updater != null) update = runCatching { AppUpdates.check(updater.currentVersion) }.getOrNull()
     }
-    val api = remember(settings) { ApiClient(settings) }
+    // Renewed tokens go to storage only: the client keeps using them, and the screens don't reload.
+    // When renewing fails the session is over, and the app asks to log in again.
+    val api = remember(settings, session) {
+        ApiClient(settings, session) {
+            val current = storage.session() ?: return@ApiClient null
+            login.refresh(settings.url, current) ?: run {
+                if (storage.session() == null) session = null
+                null
+            }
+        }
+    }
     val shoppingCache = remember(storage) { ShoppingCache(storage) }
     DisposableEffect(api) { onDispose { api.close() } }
 
@@ -56,8 +82,25 @@ fun App(defaults: ServerSettings, storage: SettingsStorage, updater: UpdateInsta
     var pantryOpen by rememberSaveable { mutableStateOf(false) }
     var offersOpen by rememberSaveable { mutableStateOf(false) }
     var pricesOpen by rememberSaveable { mutableStateOf(false) }
-    // Without a token nothing works yet, so start on the server settings (the web client's first visit).
-    var serverOpen by rememberSaveable { mutableStateOf(settings.token.isBlank()) }
+    // Not logged in, nothing works yet: start on the settings, where the login is.
+    var serverOpen by rememberSaveable { mutableStateOf(session == null) }
+
+    LaunchedEffect(Unit) {
+        loginCallbacks.collect { url ->
+            if (!login.isCallback(url)) return@collect
+            runCatching { login.finish(url) }
+                .onSuccess {
+                    loginError = null
+                    session = it
+                    serverOpen = false
+                }
+                .onFailure {
+                    loginError = it.message ?: "Logging in failed"
+                    serverOpen = true
+                }
+        }
+    }
+    LaunchedEffect(api) { account = if (session == null) null else runCatching { api.me() }.getOrNull() }
 
     // NEVO must be credited wherever its values are shown.
     var nutritionSource by remember { mutableStateOf<String?>(null) }
@@ -97,6 +140,23 @@ fun App(defaults: ServerSettings, storage: SettingsStorage, updater: UpdateInsta
                 BackHandler(enabled = true) { serverOpen = false }
                 ServerSettingsScreen(
                     current = settings,
+                    account = account?.let { it.displayName ?: it.username ?: "your account" }?.takeIf { session != null },
+                    loggedIn = session != null,
+                    loginError = loginError,
+                    onLogin = { draft ->
+                        storage.saveServerSettings(draft)
+                        settings = draft
+                        loginError = null
+                        scope.launch {
+                            runCatching { login.start(draft.url, launcher.redirectUri(draft.url)) }
+                                .onSuccess(launcher::open)
+                                .onFailure { loginError = "Could not start the login: ${it.message}" }
+                        }
+                    },
+                    onLogout = {
+                        storage.saveSession(null)
+                        session = null
+                    },
                     updater = updater,
                     theme = theme,
                     onTheme = {
@@ -104,9 +164,14 @@ fun App(defaults: ServerSettings, storage: SettingsStorage, updater: UpdateInsta
                         theme = it
                     },
                     onSave = {
+                        // Another server has its own accounts: the session doesn't carry over.
+                        if (it.url != settings.url) {
+                            storage.saveSession(null)
+                            session = null
+                        }
                         storage.saveServerSettings(it)
                         settings = it
-                        serverOpen = false
+                        if (session != null) serverOpen = false
                     },
                     onBack = { serverOpen = false },
                 )

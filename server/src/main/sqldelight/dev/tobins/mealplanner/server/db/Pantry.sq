@@ -1,11 +1,13 @@
 -- Perishables currently at home that should be used up. Presence only, no quantities.
+-- Belongs to the account through the ingredient.
 CREATE TABLE onHand (
     ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE,
     addedAt TEXT NOT NULL
 );
 
 selectOnHand:
-SELECT ingredientId FROM onHand ORDER BY addedAt, ingredientId;
+SELECT o.ingredientId FROM onHand o JOIN ingredient i ON i.id = o.ingredientId
+WHERE i.userId = ? ORDER BY o.addedAt, o.ingredientId;
 
 insertOnHand:
 INSERT OR IGNORE INTO onHand (ingredientId, addedAt) VALUES (?, ?);
@@ -14,4 +16,4 @@ deleteOnHand:
 DELETE FROM onHand WHERE ingredientId = ?;
 
 setStaple:
-UPDATE ingredient SET isStaple = ? WHERE id = ?;
+UPDATE ingredient SET isStaple = ? WHERE userId = ? AND id = ?;

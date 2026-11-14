@@ -1,9 +1,10 @@
--- A recipe from any source. Rows synced from the cooking repo are identified by
--- sourcePath; contentHash tells the sync whether the file changed.
+-- A recipe of one account, from any source. Rows synced from the account's cooking repo
+-- are identified by sourcePath; contentHash tells the sync whether the file changed.
 CREATE TABLE recipe (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
     source TEXT NOT NULL,              -- COOKING_SITE | MANUAL | GENERATED
-    sourcePath TEXT UNIQUE,            -- path under content/ for COOKING_SITE rows
+    sourcePath TEXT,                   -- path under content/ for COOKING_SITE rows
     contentHash TEXT,
     section TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -15,7 +16,8 @@ CREATE TABLE recipe (
     kind TEXT NOT NULL,                -- MEAL | COMPONENT. App-owned: set on insert, kept on sync.
     mealSlotsJson TEXT,                -- App-owned: slots this recipe suits; NULL means the section's default
     removedAt TEXT,                    -- set when the file disappears from the cooking repo
-    rating INTEGER                     -- App-owned: 1 to 5, NULL when not rated (added in version 2)
+    rating INTEGER,                    -- App-owned: 1 to 5, NULL when not rated
+    UNIQUE (userId, sourcePath)
 );
 
 CREATE TABLE recipeIngredient (
@@ -33,17 +35,17 @@ CREATE TABLE recipeIngredient (
 CREATE INDEX recipeIngredient_recipe ON recipeIngredient(recipeId, position);
 
 selectActive:
-SELECT * FROM recipe WHERE removedAt IS NULL ORDER BY title COLLATE NOCASE;
+SELECT * FROM recipe WHERE userId = ? AND removedAt IS NULL ORDER BY title COLLATE NOCASE;
 
 selectById:
-SELECT * FROM recipe WHERE id = ?;
+SELECT * FROM recipe WHERE userId = ? AND id = ?;
 
 selectSynced:
-SELECT id, sourcePath, contentHash, removedAt FROM recipe WHERE source = 'COOKING_SITE';
+SELECT id, sourcePath, contentHash, removedAt FROM recipe WHERE userId = ? AND source = 'COOKING_SITE';
 
 insertRecipe:
-INSERT INTO recipe (source, sourcePath, contentHash, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO recipe (userId, source, sourcePath, contentHash, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 lastInsertId:
 SELECT last_insert_rowid();
@@ -52,22 +54,23 @@ updateSynced:
 UPDATE recipe
 SET contentHash = ?, section = ?, title = ?, tagsJson = ?, servings = ?, instructions = ?,
     hasIngredientsBlock = ?, problemsJson = ?, removedAt = NULL
-WHERE id = ?;
+WHERE userId = ? AND id = ?;
 
 updateSettings:
-UPDATE recipe SET kind = ?, mealSlotsJson = ? WHERE id = ?;
+UPDATE recipe SET kind = ?, mealSlotsJson = ? WHERE userId = ? AND id = ?;
 
 updateManual:
-UPDATE recipe SET title = ?, tagsJson = ?, servings = ?, instructions = ?, problemsJson = ? WHERE id = ? AND source IN ('MANUAL', 'GENERATED');
+UPDATE recipe SET title = ?, tagsJson = ?, servings = ?, instructions = ?, problemsJson = ?
+WHERE userId = ? AND id = ? AND source IN ('MANUAL', 'GENERATED');
 
 deleteManual:
-DELETE FROM recipe WHERE id = ? AND source IN ('MANUAL', 'GENERATED');
+DELETE FROM recipe WHERE userId = ? AND id = ? AND source IN ('MANUAL', 'GENERATED');
 
 setRating:
-UPDATE recipe SET rating = ? WHERE id = ?;
+UPDATE recipe SET rating = ? WHERE userId = ? AND id = ?;
 
 markRemoved:
-UPDATE recipe SET removedAt = ? WHERE id = ?;
+UPDATE recipe SET removedAt = ? WHERE userId = ? AND id = ?;
 
 selectIngredients:
 SELECT * FROM recipeIngredient WHERE recipeId = ? ORDER BY position;

@@ -14,24 +14,24 @@ import dev.tobins.mealplanner.server.db.Ingredient as IngredientRow
 /** Thrown for requests that refer to something that does not exist; mapped to 404. */
 class NotFoundException(message: String) : RuntimeException(message)
 
-/** The ingredient catalogue and the remembered links from recipe line texts to it. */
-class IngredientRepository(private val db: Database, private val foods: FoodRepository) {
+/** One account's ingredient catalogue and the remembered links from its recipe line texts to it. */
+class IngredientRepository(private val db: Database, private val foods: FoodRepository, private val userId: Long) {
     private val q = db.ingredientQueries
 
-    fun list(): List<Ingredient> = q.selectAllIngredients().executeAsList().map { it.toIngredient() }
+    fun list(): List<Ingredient> = q.selectAllIngredients(userId).executeAsList().map { it.toIngredient() }
 
-    fun find(id: Long): Ingredient? = q.selectIngredient(id).executeAsOneOrNull()?.toIngredient()
+    fun find(id: Long): Ingredient? = q.selectIngredient(userId, id).executeAsOneOrNull()?.toIngredient()
 
     fun create(input: IngredientInput): Ingredient = db.transactionWithResult { insert(input) }
 
     fun update(id: Long, input: IngredientInput): Ingredient = db.transactionWithResult {
-        q.selectIngredient(id).executeAsOneOrNull() ?: throw NotFoundException("No ingredient with id $id")
+        q.selectIngredient(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No ingredient with id $id")
         validate(input, selfId = id)
         q.updateIngredient(
             input.name.trim(), input.nevoCode?.toLong(), input.gramsPerPiece, input.gramsPerMl,
-            input.category, input.pricePerKg, if (input.isStaple) 1 else 0, if (input.negligible) 1 else 0, id,
+            input.category, input.pricePerKg, if (input.isStaple) 1 else 0, if (input.negligible) 1 else 0, userId, id,
         )
-        q.selectIngredient(id).executeAsOne().toIngredient()
+        q.selectIngredient(userId, id).executeAsOne().toIngredient()
     }
 
     /**
@@ -40,7 +40,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      */
     fun matchTerms(): Map<Long, List<String>> {
         val ingredients = list().filterNot { it.negligible }.associateBy { it.id }
-        val aliases = q.selectAliases().executeAsList().groupBy({ it.ingredientId }, { it.text })
+        val aliases = q.selectAliases(userId).executeAsList().groupBy({ it.ingredientId }, { it.text })
         return ingredients.mapValues { (id, ingredient) -> listOf(ingredient.name) + aliases[id].orEmpty() }
     }
 
@@ -49,11 +49,11 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         val byId = all.associateBy { it.id }
         return Pantry(
             staples = all.filter { it.isStaple },
-            onHand = db.pantryQueries.selectOnHand().executeAsList().mapNotNull(byId::get),
+            onHand = db.pantryQueries.selectOnHand(userId).executeAsList().mapNotNull(byId::get),
         )
     }
 
-    fun setStaple(id: Long, staple: Boolean) = requireIngredient(id).also { db.pantryQueries.setStaple(if (staple) 1 else 0, id) }
+    fun setStaple(id: Long, staple: Boolean) = requireIngredient(id).also { db.pantryQueries.setStaple(if (staple) 1 else 0, userId, id) }
 
     fun setOnHand(id: Long, onHand: Boolean) {
         requireIngredient(id)
@@ -61,7 +61,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     }
 
     private fun requireIngredient(id: Long) =
-        q.selectIngredient(id).executeAsOneOrNull() ?: throw NotFoundException("No ingredient with id $id")
+        q.selectIngredient(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No ingredient with id $id")
 
     /**
      * Looks up the ingredient each line's text means. In order: a link for the exact
@@ -74,7 +74,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         val all = list()
         val byId = all.associateBy { it.id }
         val byName = all.associateBy { singular(it.name.lowercase()) }
-        val aliases = q.selectAliases().executeAsList().associate { it.text to it.ingredientId }
+        val aliases = q.selectAliases(userId).executeAsList().associate { it.text to it.ingredientId }
         return { line ->
             aliases[normalise(line.ingredientText)]?.let(byId::get)
                 ?: IngredientLine.lookupTexts(line.ingredientText).firstNotNullOfOrNull { text ->
@@ -95,7 +95,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         var added = 0
         for (row in parseDelimited(text.lineSequence().filterNot { it.startsWith("#") }.joinToString("\n"), '|')) {
             val (name, code, gramsPerPiece, gramsPerMl, aliases) = row
-            val existing = q.selectIngredientByName(name).executeAsOneOrNull()
+            val existing = q.selectIngredientByName(userId, name).executeAsOneOrNull()
             val id = existing?.id ?: run {
                 val nevoCode = code.toIntOrNull()
                 if (nevoCode != null && foods.find(nevoCode) == null) return@run null // not in this NEVO release
@@ -104,7 +104,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
                     IngredientInput(name, nevoCode, gramsPerPiece.toDoubleOrNull(), gramsPerMl.toDoubleOrNull(), negligible = nevoCode == null),
                 ).id
             } ?: continue
-            aliases.split(';').map(::normalise).filter { it.isNotEmpty() }.forEach { q.insertAliasIfAbsent(it, id) }
+            aliases.split(';').map(::normalise).filter { it.isNotEmpty() }.forEach { q.insertAliasIfAbsent(userId, it, id) }
         }
         added
     }
@@ -130,18 +130,18 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         var linked = 0
         for (core in cores) {
             val food = foodsByWords[nameWords(core)]?.singleOrNull() ?: continue
-            val ingredient = q.selectIngredientByNevoCode(food.nevoCode.toLong()).executeAsOneOrNull()?.toIngredient()
+            val ingredient = q.selectIngredientByNevoCode(userId, food.nevoCode.toLong()).executeAsOneOrNull()?.toIngredient()
                 ?: insert(IngredientInput(name = uniqueName(food.nameEn), nevoCode = food.nevoCode))
-            q.insertAliasIfAbsent(core, ingredient.id)
+            q.insertAliasIfAbsent(userId, core, ingredient.id)
             linked++
         }
         linked
     }
 
     private fun uniqueName(name: String): String =
-        generateSequence(name) { "$it (NEVO)" }.first { q.selectIngredientByName(it).executeAsOneOrNull() == null }
+        generateSequence(name) { "$it (NEVO)" }.first { q.selectIngredientByName(userId, it).executeAsOneOrNull() == null }
 
-    private fun activeLines(): List<IngredientLine> = q.selectActiveLines().executeAsList().map {
+    private fun activeLines(): List<IngredientLine> = q.selectActiveLines(userId).executeAsList().map {
         IngredientLine(it.amount, it.unit, it.dimension?.let(Dimension::valueOf), it.baseAmount, it.item, it.groupName)
     }
 
@@ -151,11 +151,11 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         require(text.isNotEmpty()) { "text must not be blank" }
         val ingredient = when {
             request.ingredientId != null ->
-                q.selectIngredient(request.ingredientId!!).executeAsOneOrNull()?.toIngredient()
+                q.selectIngredient(userId, request.ingredientId!!).executeAsOneOrNull()?.toIngredient()
                     ?: throw NotFoundException("No ingredient with id ${request.ingredientId}")
             request.nevoCode != null -> {
                 val food = foods.find(request.nevoCode!!) ?: throw NotFoundException("No NEVO food ${request.nevoCode}")
-                q.selectIngredientByNevoCode(food.nevoCode.toLong()).executeAsOneOrNull()?.toIngredient()
+                q.selectIngredientByNevoCode(userId, food.nevoCode.toLong()).executeAsOneOrNull()?.toIngredient()
                     ?: insert(IngredientInput(name = request.name?.takeIf { it.isNotBlank() } ?: food.nameEn, nevoCode = food.nevoCode))
             }
             else -> throw IllegalArgumentException("Either ingredientId or nevoCode is required")
@@ -170,14 +170,14 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
             q.updateIngredient(
                 completed.name, completed.food?.nevoCode?.toLong(), completed.gramsPerPiece, completed.gramsPerMl,
                 completed.category, completed.pricePerKg, if (completed.isStaple) 1 else 0,
-                if (completed.negligible) 1 else 0, completed.id,
+                if (completed.negligible) 1 else 0, userId, completed.id,
             )
         }
-        q.upsertAlias(text, completed.id)
+        q.upsertAlias(userId, text, completed.id)
         completed
     }
 
-    fun unmap(text: String) = q.deleteAlias(normalise(text))
+    fun unmap(text: String) = q.deleteAlias(userId, normalise(text))
 
     /**
      * Line texts of active recipes that need attention, most-used first: texts with an
@@ -190,7 +190,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         data class Use(val text: String, val recipes: MutableSet<String> = linkedSetOf(), var counted: Boolean = false, var ingredient: Ingredient? = null)
 
         val uses = linkedMapOf<String, Use>()
-        for (row in q.selectActiveLines().executeAsList()) {
+        for (row in q.selectActiveLines(userId).executeAsList()) {
             val line = IngredientLine(row.amount, row.unit, row.dimension?.let(Dimension::valueOf), row.baseAmount, row.item, row.groupName)
             if (line.amount == null) continue
             val ingredient = resolve(line)
@@ -231,10 +231,11 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     private fun insert(input: IngredientInput): Ingredient {
         validate(input, selfId = null)
         q.insertIngredient(
+            userId,
             input.name.trim(), input.nevoCode?.toLong(), input.gramsPerPiece, input.gramsPerMl,
             input.category, input.pricePerKg, if (input.isStaple) 1 else 0, if (input.negligible) 1 else 0,
         )
-        return q.selectIngredient(q.lastIngredientId().executeAsOne()).executeAsOne().toIngredient()
+        return q.selectIngredient(userId, q.lastIngredientId().executeAsOne()).executeAsOne().toIngredient()
     }
 
     private fun validate(input: IngredientInput, selfId: Long?) {
@@ -243,7 +244,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
             "gramsPerPiece, gramsPerMl and pricePerKg must be positive"
         }
         input.nevoCode?.let { if (foods.find(it) == null) throw NotFoundException("No NEVO food $it") }
-        q.selectIngredientByName(input.name.trim()).executeAsOneOrNull()?.let {
+        q.selectIngredientByName(userId, input.name.trim()).executeAsOneOrNull()?.let {
             require(it.id == selfId) { "An ingredient named '${it.name}' already exists" }
         }
     }

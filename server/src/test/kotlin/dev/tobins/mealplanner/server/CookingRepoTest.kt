@@ -106,10 +106,10 @@ class CookingRepoTest {
             ),
         )
         val config = ServerConfig(
-            port = 0, apiToken = "t", databaseUrl = "jdbc:sqlite::memory:",
+            port = 0, databaseUrl = "jdbc:sqlite::memory:",
             cookingRepo = File(createTempDirectory("server").toFile(), "cooking"), cookingRepoUrl = upstream.url,
         )
-        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList()) }
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), verifier = TestTokens) }
         val http = createClient {
             install(ContentNegotiation) { json() }
             defaultRequest { bearerAuth("t") }

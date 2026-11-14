@@ -26,3 +26,8 @@ actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
 /** The browser has no system bars to adjust; the page is drawn entirely by the app. */
 @Composable
 actual fun SystemBars(dark: Boolean) {}
+
+@JsFun("(n) => { const a = new Uint8Array(n); crypto.getRandomValues(a); return Array.from(a).join(','); }")
+private external fun randomBytesCsv(size: Int): String
+
+actual fun secureRandomBytes(size: Int): ByteArray = randomBytesCsv(size).split(',').map { it.toInt().toByte() }.toByteArray()

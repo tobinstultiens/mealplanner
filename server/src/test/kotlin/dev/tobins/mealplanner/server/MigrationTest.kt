@@ -40,10 +40,17 @@ class MigrationTest {
         assertEquals(Database.Schema.version.toInt(), version(url))
         val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
         openDatabase(fresh).first.close()
-        for (table in listOf("recipe", "ingredient", "planMeal", "offer", "weight")) {
+        val tables = listOf(
+            "appUser", "userMeta", "recipe", "recipeIngredient", "ingredient", "ingredientAlias", "onHand",
+            "ingredientPrice", "planMeal", "shoppingCheck", "offer", "foodLog", "weight",
+        )
+        for (table in tables) {
             assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
         }
         val (_, reopened) = openDatabase(url)
-        assertTrue(reopened.recipeQueries.selectActive().executeAsList().single().rating == null, "existing rows survive")
+        // Everything from before accounts belongs to account 1, which nobody has claimed yet.
+        val owner = reopened.userQueries.selectUnclaimed().executeAsOne()
+        assertEquals(1L, owner.id)
+        assertTrue(reopened.recipeQueries.selectActive(owner.id).executeAsList().single().rating == null, "existing rows survive")
     }
 }

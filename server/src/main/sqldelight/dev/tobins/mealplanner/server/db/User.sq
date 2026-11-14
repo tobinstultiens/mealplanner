@@ -1,0 +1,55 @@
+-- An account, known by the subject (`sub`) of its Authelia tokens. Data from before
+-- accounts existed belongs to an unclaimed row (subject NULL), which the owner's first
+-- login takes over.
+CREATE TABLE appUser (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT UNIQUE,
+    username TEXT,
+    displayName TEXT,
+    createdAt TEXT NOT NULL
+);
+
+-- Small per-user settings and state: profile, routines, cooking-site repo and its sync status.
+CREATE TABLE userMeta (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (userId, key)
+);
+
+selectUser:
+SELECT * FROM appUser WHERE id = ?;
+
+selectBySubject:
+SELECT * FROM appUser WHERE subject = ?;
+
+selectUnclaimed:
+SELECT * FROM appUser WHERE subject IS NULL ORDER BY id LIMIT 1;
+
+selectAllUsers:
+SELECT * FROM appUser ORDER BY id;
+
+insertUser:
+INSERT INTO appUser (subject, username, displayName, createdAt) VALUES (?, ?, ?, ?);
+
+lastUserId:
+SELECT last_insert_rowid();
+
+claimUser:
+UPDATE appUser SET subject = ?, username = ?, displayName = ? WHERE id = ?;
+
+updateNames:
+UPDATE appUser SET username = ?, displayName = ? WHERE id = ?;
+
+selectUserMeta:
+SELECT value FROM userMeta WHERE userId = ? AND key = ?;
+
+upsertUserMeta:
+INSERT OR REPLACE INTO userMeta (userId, key, value) VALUES (?, ?, ?);
+
+deleteUserMeta:
+DELETE FROM userMeta WHERE userId = ? AND key = ?;
+
+-- Every user that has a value for one key, e.g. the users with a cooking-site repo.
+selectMetaForAll:
+SELECT userId, value FROM userMeta WHERE key = ?;

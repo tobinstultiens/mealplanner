@@ -15,12 +15,13 @@ android {
         versionCode = providers.gradleProperty("appVersionCode").getOrElse("1").toInt()
         versionName = providers.gradleProperty("appVersionName").getOrElse("0.1.0")
 
-        // Server to talk to. Override per machine with -PserverUrl=… -PapiToken=… or in
-        // ~/.gradle/gradle.properties. The default suits an emulator: 10.0.2.2 is the host machine.
+        // Server to talk to. Override per machine with -PserverUrl=… or in ~/.gradle/gradle.properties.
+        // The default suits an emulator: 10.0.2.2 is the host machine.
         val serverUrl = providers.gradleProperty("serverUrl").getOrElse("http://10.0.2.2:8080")
-        val apiToken = providers.gradleProperty("apiToken").getOrElse("dev-token")
         buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
-        buildConfigField("String", "API_TOKEN", "\"$apiToken\"")
+        // The host whose /app/login opens the app after logging in (an App Link).
+        manifestPlaceholders["appLinkHost"] = providers.gradleProperty("releaseServerUrl")
+            .getOrElse("https://mealplanner.tstultiens.com").removePrefix("https://").substringBefore('/')
     }
 
     // Release signing reads its key from Gradle properties kept outside the repo, e.g. in
@@ -41,10 +42,9 @@ android {
     buildTypes {
         release {
             if (keystore != null) signingConfig = signingConfigs.getByName("release")
-            // No token is built into a release: the app asks for it on first launch.
+            // The app opens on the login (Authelia) on first launch.
             val releaseUrl = providers.gradleProperty("releaseServerUrl").getOrElse("https://mealplanner.tstultiens.com")
             buildConfigField("String", "SERVER_URL", "\"$releaseUrl\"")
-            buildConfigField("String", "API_TOKEN", "\"\"")
         }
     }
 

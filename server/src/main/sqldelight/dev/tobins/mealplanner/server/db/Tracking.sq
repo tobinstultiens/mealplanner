@@ -1,37 +1,40 @@
 -- Food eaten outside the plan, with rough numbers.
 CREATE TABLE foodLog (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
     date TEXT NOT NULL,
     description TEXT NOT NULL,
     kcal REAL NOT NULL,
     proteinG REAL NOT NULL
 );
 
-CREATE INDEX foodLog_date ON foodLog(date);
+CREATE INDEX foodLog_date ON foodLog(userId, date);
 
 -- One weighing per day.
 CREATE TABLE weight (
-    date TEXT PRIMARY KEY,
-    kg REAL NOT NULL
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    kg REAL NOT NULL,
+    PRIMARY KEY (userId, date)
 );
 
 selectLogForDate:
-SELECT * FROM foodLog WHERE date = ? ORDER BY id;
+SELECT * FROM foodLog WHERE userId = ? AND date = ? ORDER BY id;
 
 insertLog:
-INSERT INTO foodLog (date, description, kcal, proteinG) VALUES (?, ?, ?, ?);
+INSERT INTO foodLog (userId, date, description, kcal, proteinG) VALUES (?, ?, ?, ?, ?);
 
 lastLogId:
 SELECT last_insert_rowid();
 
 deleteLog:
-DELETE FROM foodLog WHERE id = ?;
+DELETE FROM foodLog WHERE userId = ? AND id = ?;
 
 selectWeights:
-SELECT * FROM weight ORDER BY date;
+SELECT * FROM weight WHERE userId = ? ORDER BY date;
 
 upsertWeight:
-INSERT OR REPLACE INTO weight (date, kg) VALUES (?, ?);
+INSERT OR REPLACE INTO weight (userId, date, kg) VALUES (?, ?, ?);
 
 deleteWeight:
-DELETE FROM weight WHERE date = ?;
+DELETE FROM weight WHERE userId = ? AND date = ?;

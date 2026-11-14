@@ -46,8 +46,8 @@ class OffersApiTest {
         val ah = FakeSource(Store.AH, listOf(offer(Store.AH, "Kipfilet"), offer(Store.AH, "Next week", "2026-11-16", "2026-11-22")))
         val jumbo = FakeSource(Store.JUMBO, listOf(offer(Store.JUMBO, "Zalm")))
         val lidl = FakeSource(Store.LIDL)
-        val config = ServerConfig(port = 0, apiToken = "t", databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
-        application { module(config, openDatabase(config.databaseUrl).second, listOf(ah, jumbo, lidl)) }
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        application { module(config, openDatabase(config.databaseUrl).second, listOf(ah, jumbo, lidl), verifier = TestTokens) }
         val http = createClient {
             install(ContentNegotiation) { json() }
             defaultRequest { bearerAuth("t") }
@@ -101,7 +101,7 @@ class OffersApiTest {
         java.io.File(repo, "content/recipes/chili.md").apply { parentFile.mkdirs() }
             .writeText("---\ntitle: Chili\n---\n```ingredients\nservings: 4\n1200 | g | ground beef\n```")
         val config = ServerConfig(
-            port = 0, apiToken = "t", databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
+            port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
             nevoFile = kotlin.io.path.createTempFile("nevo", ".csv").toFile().apply { writeText(nevo) },
         )
         val ah = FakeSource(Store.AH, listOf(
@@ -109,7 +109,7 @@ class OffersApiTest {
             Offer(Store.AH, "Kwekkeboom gehaktballen", "2 voor 5.99", category = "Diepvries", validFrom = "2026-11-09", validUntil = "2026-11-15"),
         ))
         val lidl = FakeSource(Store.LIDL, listOf(Offer(Store.LIDL, "Rundergehakt", null, price = 4.29, validFrom = "2026-11-17", validUntil = "2026-11-22")))
-        application { module(config, openDatabase(config.databaseUrl).second, listOf(ah, lidl)) }
+        application { module(config, openDatabase(config.databaseUrl).second, listOf(ah, lidl), verifier = TestTokens) }
         val http = createClient {
             install(ContentNegotiation) { json() }
             defaultRequest {

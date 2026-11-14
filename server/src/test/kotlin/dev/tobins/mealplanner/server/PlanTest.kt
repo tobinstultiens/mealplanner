@@ -89,10 +89,10 @@ class PlanTest {
         write("recipes/unlinked.md", "---\ntitle: Unlinked\n---\n```ingredients\nservings: 4\n500 | g | unobtainium\n```")
         write("sauces/sauce.md", "---\ntitle: Sauce\n---\n```ingredients\nservings: 4\n1200 | g | beef\n```")
         val config = ServerConfig(
-            port = 0, apiToken = "t", databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
+            port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
             nevoFile = createTempFile("nevo", ".csv").toFile().apply { writeText(nevo) },
         )
-        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), generator = fake) }
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), generator = fake, verifier = TestTokens) }
         return createClient {
             install(ContentNegotiation) { json() }
             defaultRequest {
@@ -386,8 +386,8 @@ class PlanTest {
 
     @Test
     fun generationIsOffWithoutAGenerator() = testApplication {
-        val config = ServerConfig(port = 0, apiToken = "t", databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
-        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), generator = null) }
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), generator = null, verifier = TestTokens) }
         val http = createClient {
             install(ContentNegotiation) { json() }
             defaultRequest {

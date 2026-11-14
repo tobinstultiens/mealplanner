@@ -53,7 +53,9 @@ class PricesTest {
     @Test
     fun lookupPricesIngredientsAndOffersLowerTheirCost() = runBlocking {
         val db = openDatabase("jdbc:sqlite::memory:").second
-        val ingredients = IngredientRepository(db, FoodRepository(db))
+        val foods = FoodRepository(db)
+        val users = UserRepository(db)
+        val ingredients = IngredientRepository(db, foods, users.resolve(Identity("a", "alice")).id)
         val chicken = ingredients.create(IngredientInput("Chicken fillet"))
         ingredients.map(MappingRequest("kipfilet", ingredientId = chicken.id))
         val onion = ingredients.create(IngredientInput("Onion", gramsPerPiece = 100.0))
@@ -79,9 +81,10 @@ class PricesTest {
             listOf(FixedOffers(listOf(Offer(Store.AH, "AH Kipfilet", "25% korting", validFrom = "2026-11-16", validUntil = "2026-11-22")))),
         )
         offers.refresh()
-        val prices = PriceRepository(db, store, ingredients, offers)
+        val prices = PriceRepository(db, store, foods, offers)
 
-        val state = prices.refresh(pause = Duration.ZERO)
+        prices.refresh(pause = Duration.ZERO)
+        val state = prices.state(ingredients)
 
         // The middle of the three cheapest chicken fillets per kg; one search per name, duplicates once.
         val chickenPrice = state.prices.single { it.ingredientId == chicken.id }
@@ -92,7 +95,7 @@ class PricesTest {
         assertTrue("kipfilet" in store.searched && "chicken fillet" in store.searched)
         assertTrue(state.fetchedAt != null)
 
-        val pricing = prices.pricing(week, week.plusDays(6))
+        val pricing = prices.pricing(ingredients, week, week.plusDays(6))
         assertEquals(0.75, pricing.discounts[chicken.id])
         assertNull(pricing.discounts[onion.id])
 
@@ -100,12 +103,21 @@ class PricesTest {
         store.searched.clear()
         prices.refresh(olderThan = Duration.ofDays(7), pause = Duration.ZERO)
         assertEquals(emptyList(), store.searched)
+
+        // Prices are shared: another account's ingredient of the same name gets the same one,
+        // and its own hand-set price stays its own.
+        val bob = IngredientRepository(db, foods, users.resolve(Identity("b", "bob")).id)
+        val bobsChicken = bob.create(IngredientInput("chicken fillet"))
+        bob.create(IngredientInput("Tofu", pricePerKg = 9.0))
+        assertEquals(12.0, prices.state(bob).prices.single { it.ingredientId == bobsChicken.id }.eurosPerKg)
+        assertEquals(6.0, prices.state(ingredients).prices.single { it.ingredientId == tofu.id }.eurosPerKg, "alice's tofu is unchanged")
     }
 
     @Test
     fun aStoreThatKeepsFailingStopsTheLookup() = runBlocking {
         val db = openDatabase("jdbc:sqlite::memory:").second
-        val ingredients = IngredientRepository(db, FoodRepository(db))
+        val foods = FoodRepository(db)
+        val ingredients = IngredientRepository(db, foods, UserRepository(db).resolve(Identity("a")).id)
         (1..8).forEach { ingredients.create(IngredientInput("Thing $it")) }
         val broken = object : PriceSource {
             override val store = Store.AH
@@ -115,9 +127,10 @@ class PricesTest {
                 error("AH answered 503")
             }
         }
-        val prices = PriceRepository(db, broken, ingredients, OfferRepository(db, emptyList()))
+        val prices = PriceRepository(db, broken, foods, OfferRepository(db, emptyList()))
 
-        val state = prices.refresh(now = Instant.parse("2026-11-13T10:00:00Z"), pause = Duration.ZERO)
+        prices.refresh(now = Instant.parse("2026-11-13T10:00:00Z"), pause = Duration.ZERO)
+        val state = prices.state(ingredients)
 
         assertEquals(5, broken.calls)
         assertNull(state.fetchedAt, "an aborted lookup is not recorded as done")

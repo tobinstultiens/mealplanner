@@ -30,7 +30,6 @@ import kotlin.test.assertTrue
 class ApplicationTest {
     private fun config(cookingRepo: File?, nevoFile: File?) = ServerConfig(
         port = 0,
-        apiToken = "test-token",
         databaseUrl = "jdbc:sqlite::memory:",
         cookingRepo = cookingRepo,
         nevoFile = nevoFile,
@@ -39,7 +38,7 @@ class ApplicationTest {
     /** Starts the app on a fresh in-memory database and returns a client that sends the API token. */
     private fun ApplicationTestBuilder.start(cookingRepo: File? = null, nevoFile: File? = null): HttpClient {
         val config = config(cookingRepo, nevoFile)
-        application { module(config, openDatabase(config.databaseUrl).second) }
+        application { module(config, openDatabase(config.databaseUrl).second, verifier = TestTokens) }
         return createClient {
             install(ContentNegotiation) { json() }
             defaultRequest { bearerAuth("test-token") }

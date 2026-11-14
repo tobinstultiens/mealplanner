@@ -21,27 +21,31 @@ import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Regular prices per ingredient, looked up in a store's product search (AH): the baseline
- * that offers are measured against and that recipes are costed with. A price per kg set
- * by hand in the catalogue wins over a looked-up one.
+ * Regular prices, looked up in a store's product search (AH): the baseline that offers are
+ * measured against and that recipes are costed with. Shared by every account: a price is
+ * stored per ingredient name, and each account's ingredient of that name uses it. A price
+ * per kg set by hand on an account's ingredient wins over the looked-up one.
  */
 class PriceRepository(
     private val db: Database,
     private val source: PriceSource?,
-    private val ingredients: IngredientRepository,
+    private val foods: FoodRepository,
     private val offers: OfferRepository,
 ) {
     private val q = db.priceQueries
     private val log = LoggerFactory.getLogger(PriceRepository::class.java)
     private val refreshing = AtomicBoolean(false)
 
-    fun state(): PricesState {
-        val looked = q.selectPrices().executeAsList().map {
-            IngredientPrice(it.ingredientId, it.ingredientName, Store.valueOf(it.store), it.product, it.packSize, it.packPrice, it.eurosPerKg)
-        }.associateBy { it.ingredientId }
-        val all = priceable()
-        val byHand = all.mapNotNull { i -> i.pricePerKg?.let { IngredientPrice(i.id, i.name, Store.AH, BY_HAND, eurosPerKg = it) } }
-        val prices = (looked + byHand.associateBy { it.ingredientId }).values.sortedBy { it.ingredientName.lowercase() }
+    /** The prices for one account's catalogue. */
+    fun state(ingredients: IngredientRepository): PricesState {
+        val looked = q.selectPrices().executeAsList().associateBy { it.name.lowercase() }
+        val all = ingredients.list().filter(::priceable)
+        val prices = all.mapNotNull { i ->
+            i.pricePerKg?.let { IngredientPrice(i.id, i.name, Store.AH, BY_HAND, eurosPerKg = it) }
+                ?: looked[i.name.lowercase()]?.let {
+                    IngredientPrice(i.id, i.name, Store.valueOf(it.store), it.product, it.packSize, it.packPrice, it.eurosPerKg)
+                }
+        }
         val priced = prices.mapTo(HashSet()) { it.ingredientId }
         return PricesState(
             prices = prices,
@@ -51,14 +55,15 @@ class PriceRepository(
         )
     }
 
-    /** Euros per kg by ingredient id. */
-    fun perKg(): Map<Long, Double> =
-        q.selectPrices().executeAsList().associate { it.ingredientId to it.eurosPerKg } +
-            ingredients.list().mapNotNull { i -> i.pricePerKg?.let { i.id to it } }
+    /** Euros per kg by the account's ingredient id. */
+    fun perKg(ingredients: IngredientRepository): Map<Long, Double> {
+        val looked = q.selectPrices().executeAsList().associate { it.name.lowercase() to it.eurosPerKg }
+        return ingredients.list().mapNotNull { i -> (i.pricePerKg ?: looked[i.name.lowercase()])?.let { i.id to it } }.toMap()
+    }
 
-    /** Prices with the discounts of offers valid at some point between [from] and [until]. */
-    fun pricing(from: LocalDate, until: LocalDate): Pricing {
-        val perKg = perKg()
+    /** One account's prices with the discounts of offers valid at some point between [from] and [until]. */
+    fun pricing(ingredients: IngredientRepository, from: LocalDate, until: LocalDate): Pricing {
+        val perKg = perKg(ingredients)
         val byId = ingredients.list().associateBy { it.id }
         val discounts = offers.byIngredient(from, until, ingredients.matchTerms()).mapNotNull { (id, onOffer) ->
             val ingredient = byId[id] ?: return@mapNotNull null
@@ -72,23 +77,50 @@ class PriceRepository(
     }
 
     /**
-     * Looks up every ingredient, or nothing when the last lookup is younger than [olderThan].
+     * The names to look up: one entry per ingredient name across all accounts, known by the
+     * names and aliases any account gave it. Ids are positions in the list, for the matcher.
+     */
+    private fun catalogue(): List<Pair<Ingredient, List<String>>> {
+        val iq = db.ingredientQueries
+        val aliases = iq.selectEveryAlias().executeAsList().groupBy({ it.ingredientId }, { it.text })
+        return iq.selectEveryIngredient().executeAsList()
+            .filter { it.negligible == 0L && it.name !in FREE }
+            .groupBy { it.name.lowercase() }.values
+            .mapIndexed { index, rows ->
+                val first = rows.first()
+                val ingredient = Ingredient(
+                    id = index.toLong(),
+                    name = first.name,
+                    food = first.nevoCode?.let { foods.find(it.toInt()) },
+                    gramsPerPiece = rows.firstNotNullOfOrNull { it.gramsPerPiece },
+                    gramsPerMl = rows.firstNotNullOfOrNull { it.gramsPerMl },
+                    category = first.category,
+                    pricePerKg = null,
+                    isStaple = false,
+                )
+                ingredient to (listOf(first.name) + rows.flatMap { aliases[it.id].orEmpty() }).distinct()
+            }
+    }
+
+    /**
+     * Looks up every ingredient name of every account, or nothing when the last lookup is
+     * younger than [olderThan].
      * One lookup at a time; a second call while one runs returns at once. An ingredient
      * whose search fails keeps its previous price.
      */
-    suspend fun refresh(olderThan: Duration? = null, now: Instant = Instant.now(), pause: Duration = Duration.ofMillis(300)): PricesState {
-        val source = source ?: return state()
+    suspend fun refresh(olderThan: Duration? = null, now: Instant = Instant.now(), pause: Duration = Duration.ofMillis(300)) {
+        val source = source ?: return
         val last = db.foodQueries.selectMeta(FETCHED_KEY).executeAsOneOrNull()?.let(Instant::parse)
-        if (olderThan != null && last != null && Duration.between(last, now) < olderThan) return state()
-        if (!refreshing.compareAndSet(false, true)) return state()
+        if (olderThan != null && last != null && Duration.between(last, now) < olderThan) return
+        if (!refreshing.compareAndSet(false, true)) return
         try {
-            val terms = ingredients.matchTerms()
-            val matcher = OfferMatcher(terms)
+            val catalogue = catalogue()
+            val matcher = OfferMatcher(catalogue.associate { (ingredient, names) -> ingredient.id to names })
             var found = 0
             var failures = 0
-            for (ingredient in priceable()) {
+            for ((ingredient, names) in catalogue) {
                 val price = try {
-                    lookUp(source, ingredient, terms[ingredient.id].orEmpty(), matcher, pause)
+                    lookUp(source, ingredient, names, matcher, pause)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -96,15 +128,15 @@ class PriceRepository(
                     // The store is down or blocking us: stop rather than fail a hundred times.
                     if (++failures >= 5) {
                         log.warn("Stopped looking up prices after $failures failures")
-                        return state()
+                        return
                     }
                     continue
                 }
                 if (price == null) {
-                    q.deletePrice(ingredient.id)
+                    q.deletePrice(ingredient.name)
                 } else {
                     val (product, perKg) = price
-                    q.upsertPrice(ingredient.id, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString())
+                    q.upsertPrice(ingredient.name, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString())
                     found++
                 }
             }
@@ -113,7 +145,6 @@ class PriceRepository(
         } finally {
             refreshing.set(false)
         }
-        return state()
     }
 
     /**
@@ -159,12 +190,13 @@ class PriceRepository(
     }
 
     /** Ingredients worth a price: not negligible, and not tap water or salt. */
-    private fun priceable() = ingredients.list().filter { !it.negligible && it.name !in setOf("Water", "Salt") }
+    private fun priceable(ingredient: Ingredient) = !ingredient.negligible && ingredient.name !in FREE
 
     private companion object {
         const val FETCHED_KEY = "pricesFetchedAt"
         const val BY_HAND = "Set by hand"
         const val MAX_SEARCHES = 4
+        val FREE = setOf("Water", "Salt")
         val unitPrice = Regex("""per\s*(kg|kilo|liter|l)\s*€\s*(\d+(?:[.,]\d+)?)""")
     }
 }

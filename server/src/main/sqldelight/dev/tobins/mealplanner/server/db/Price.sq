@@ -1,7 +1,8 @@
--- Regular store prices found for catalogue ingredients: the baseline offers are measured
--- against. Replaced per ingredient by each lookup.
+-- Regular store prices, shared by every account: keyed by ingredient name, so each
+-- account's catalogue finds the price for its own ingredient of that name. Replaced
+-- per name by each lookup.
 CREATE TABLE ingredientPrice (
-    ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE,
+    name TEXT NOT NULL PRIMARY KEY COLLATE NOCASE,
     store TEXT NOT NULL,
     product TEXT NOT NULL,
     packSize TEXT,
@@ -11,12 +12,11 @@ CREATE TABLE ingredientPrice (
 );
 
 selectPrices:
-SELECT p.*, i.name AS ingredientName FROM ingredientPrice p JOIN ingredient i ON i.id = p.ingredientId
-ORDER BY i.name COLLATE NOCASE;
+SELECT * FROM ingredientPrice ORDER BY name COLLATE NOCASE;
 
 upsertPrice:
-INSERT OR REPLACE INTO ingredientPrice (ingredientId, store, product, packSize, packPrice, eurosPerKg, fetchedAt)
+INSERT OR REPLACE INTO ingredientPrice (name, store, product, packSize, packPrice, eurosPerKg, fetchedAt)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
 deletePrice:
-DELETE FROM ingredientPrice WHERE ingredientId = ?;
+DELETE FROM ingredientPrice WHERE name = ?;

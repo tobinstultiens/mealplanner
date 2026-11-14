@@ -6,12 +6,12 @@ import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.targets.TargetCalculator
 import kotlinx.serialization.json.Json
 
-/** The single user's profile, stored as one JSON value. */
-class ProfileRepository(private val db: Database) {
+/** One account's profile, stored as one JSON value. */
+class ProfileRepository(private val db: Database, private val userId: Long) {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun profile(): Profile? =
-        db.foodQueries.selectMeta(KEY).executeAsOneOrNull()?.let { json.decodeFromString<Profile>(it) }
+        db.userQueries.selectUserMeta(userId, KEY).executeAsOneOrNull()?.let { json.decodeFromString<Profile>(it) }
 
     fun state(): ProfileState = profile().let { profile ->
         ProfileState(
@@ -25,7 +25,7 @@ class ProfileRepository(private val db: Database) {
     fun save(profile: Profile): ProfileState {
         val problems = TargetCalculator.problems(profile)
         require(problems.isEmpty()) { problems.joinToString("; ") }
-        db.foodQueries.upsertMeta(KEY, json.encodeToString(profile))
+        db.userQueries.upsertUserMeta(userId, KEY, json.encodeToString(profile))
         return state()
     }
 
