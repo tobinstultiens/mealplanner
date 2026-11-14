@@ -23,6 +23,8 @@ class UserRepository(private val db: Database) {
      * existed (an unclaimed account) goes to [owner] if that username is set, otherwise to
      * whoever logs in first. [onCreated] runs once for a new account, e.g. to seed its catalogue.
      */
+    // One at a time: an app's first requests arrive together, and must not claim or create twice.
+    @Synchronized
     fun resolve(identity: Identity, owner: String? = null, onCreated: (Long) -> Unit = {}): Account = db.transactionWithResult {
         q.selectBySubject(identity.subject).executeAsOneOrNull()?.let { row ->
             if (identity.username != null && (row.username != identity.username || row.displayName != identity.displayName)) {

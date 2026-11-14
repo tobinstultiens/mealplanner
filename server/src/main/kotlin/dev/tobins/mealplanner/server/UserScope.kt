@@ -106,7 +106,8 @@ class CookingSync(
         return CookingSyncStatus(
             syncedAt = users.meta(accountId, SYNCED_AT_KEY),
             commit = users.meta(accountId, SYNCED_COMMIT_KEY),
-            error = users.meta(accountId, SYNC_ERROR_KEY),
+            // Older versions stored "no error" as an empty value.
+            error = users.meta(accountId, SYNC_ERROR_KEY)?.takeIf { it.isNotBlank() },
             everyHours = if (repo?.url != null) EVERY_HOURS else null,
             repoUrl = repo?.url,
         )

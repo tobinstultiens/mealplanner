@@ -35,7 +35,14 @@ import java.util.Properties
 fun openDatabase(url: String): Pair<SqlDriver, Database> {
     url.removePrefix("jdbc:sqlite:").takeIf { it.isNotEmpty() && !it.startsWith(":") }
         ?.let { File(it).absoluteFile.parentFile?.mkdirs() }
-    val driver = JdbcSqliteDriver(url, Properties().apply { put("foreign_keys", "true") }, Database.Schema)
+    val properties = Properties().apply {
+        put("foreign_keys", "true")
+        // Requests run in parallel: wait for a lock instead of failing with SQLITE_BUSY, and let
+        // readers go on while one request writes (WAL).
+        put("busy_timeout", "10000")
+        put("journal_mode", "WAL")
+    }
+    val driver = JdbcSqliteDriver(url, properties, Database.Schema)
     return driver to Database(driver)
 }
 

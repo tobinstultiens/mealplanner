@@ -112,9 +112,15 @@ class AccountsTest {
         assertTrue("offline_access" in config.scopes)
         assertEquals(HttpStatusCode.Unauthorized, clientFor("nope").get("/api/me").status)
 
-        // The Android login redirect bounces into the app with the code and state.
-        val page = createClient {}.get("/app/login?code=abc&state=x%2By").bodyAsText()
-        assertTrue("dev.tobins.mealplanner://login?code=abc&amp;state=x%2By" in page, page)
+        // The Android login redirect goes on into the app with the code and state: a redirect for
+        // Android browsers, a page with a link for others.
+        val intent = "intent://login?code=abc&state=x%2By#Intent;scheme=dev.tobins.mealplanner;package=dev.tobins.mealplanner;end"
+        val plain = createClient { followRedirects = false }
+        val android = plain.get("/app/login?code=abc&state=x%2By") { headers.append("User-Agent", "Mozilla/5.0 (Linux; Android 16) Chrome/157") }
+        assertEquals(HttpStatusCode.Found, android.status)
+        assertEquals(intent, android.headers["Location"])
+        val page = plain.get("/app/login?code=abc&state=x%2By").bodyAsText()
+        assertTrue(intent.replace("&", "&amp;") in page, page)
     }
 
     @Test

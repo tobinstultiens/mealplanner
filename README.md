@@ -29,10 +29,15 @@ docker build -t mealplanner:dev .    # needs the fat jar built first
 Run the server locally:
 
 ```bash
-MEALPLANNER_OIDC_ISSUER=https://authelia.example.nl COOKING_REPO_PATH=../cooking \
+python3 scripts/dev-oidc-provider.py &   # a stand-in for Authelia on localhost:8090, username only
+MEALPLANNER_OIDC_ISSUER=http://localhost:8090 COOKING_REPO_PATH=../cooking \
   NEVO_CSV_PATH=data/nevo/NEVO2025_v9.0.csv \
   java -jar server/build/libs/server-all.jar
 ```
+
+For the app on an emulator, `adb reverse tcp:8080 tcp:8080` and `adb reverse tcp:8090 tcp:8090`
+make both reachable as `localhost`, so the app and the server agree on the issuer; set the server
+address to `http://localhost:8080` in the app's settings.
 
 ## Accounts and login
 

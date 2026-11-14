@@ -40,6 +40,7 @@ import io.ktor.server.plugins.compression.minimumSize
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
+import io.ktor.server.response.respondRedirect
 import io.ktor.server.request.queryString
 import io.ktor.http.ContentType
 import io.ktor.server.routing.get
@@ -244,10 +245,16 @@ fun Application.module(
 
         // The Android app's login redirect (Authelia only allows http(s) redirects). Android opens
         // the app for it directly once assetlinks.json vouches for the app; otherwise the browser
-        // lands here and is sent on to the app's own scheme.
+        // lands here. Chrome only opens apps through intent:// URLs, and only without a tap when
+        // that is a redirect within the login's own navigation, so Android browsers get one;
+        // the page with a link is for anything else.
         get("/app/login") {
             val query = call.request.queryString()
-            call.respondText(appReturnPage(query), ContentType.Text.Html)
+            if (call.request.headers["User-Agent"].orEmpty().contains("Android")) {
+                call.respondRedirect(appIntentUrl(query))
+            } else {
+                call.respondText(appReturnPage(query), ContentType.Text.Html)
+            }
         }
         get("/.well-known/assetlinks.json") {
             call.respondText(assetLinks(config.androidCertificates), ContentType.Application.Json)
@@ -491,9 +498,13 @@ val io.ktor.server.application.ApplicationCall.accountId: Long get() = principal
 val io.ktor.server.application.ApplicationCall.user: UserScope
     get() = attributes.computeIfAbsent(CallScope) { application.attributes[ScopeFactory](accountId) }
 
+/** The app's login return as an Android intent URL, the form Chrome opens apps from. */
+internal fun appIntentUrl(query: String): String =
+    "intent://login" + (if (query.isEmpty()) "" else "?$query") + "#Intent;scheme=dev.tobins.mealplanner;package=dev.tobins.mealplanner;end"
+
 /** HTML that sends the browser on to the app with the login answer; with a link in case it doesn't go by itself. */
 internal fun appReturnPage(query: String): String {
-    val target = "dev.tobins.mealplanner://login" + if (query.isEmpty()) "" else "?$query"
+    val target = appIntentUrl(query)
     val href = target.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
     return """
         <!doctype html>
