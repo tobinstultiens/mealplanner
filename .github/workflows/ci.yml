@@ -1,54 +1,105 @@
 name: CI
 
+# Three jobs run side by side; the server image is pushed only when all of them pass on main.
 on:
   push:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
-  build:
+  # Shared logic, server and app tests (JVM, Android host and the browser), and the migration check.
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-
       - uses: gradle/actions/setup-gradle@v4
+      - name: Test
+        run: ./gradlew :shared:allTests :server:test :server:verifyMainDatabaseMigration :composeApp:allTests --profile
+      - name: Upload build profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-test
+          path: build/reports/profile/
 
-      - name: Build and test
-        run: ./gradlew build
-
+  # The debug APK and lint. Release APKs are built by the Release workflow.
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build and lint
+        run: ./gradlew :androidApp:assembleDebug :androidApp:lintDebug --profile
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: androidApp-debug
           path: androidApp/build/outputs/apk/debug/androidApp-debug.apk
+      - name: Upload build profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-android
+          path: build/reports/profile/
 
-      # Same registry and secrets as the cooking site.
-      - name: Set up QEMU
-        if: github.ref == 'refs/heads/main'
-        uses: docker/setup-qemu-action@v3
+  # The server jar with the web client (Wasm production build) inside.
+  server-jar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the server jar
+        run: ./gradlew :server:shadowJar --profile
+      - name: Upload server jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-jar
+          path: server/build/libs/server-all.jar
+          retention-days: 3
+      - name: Upload build profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-server-jar
+          path: build/reports/profile/
 
-      - name: Set up Docker Buildx
-        if: github.ref == 'refs/heads/main'
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        if: github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
+  # Same registry and secrets as the cooking site. The homelab is amd64 only.
+  image:
+    if: github.ref == 'refs/heads/main'
+    needs: [test, android, server-jar]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-jar
+          path: server/build/libs
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-
       - name: Build and push server image
-        if: github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: |
             kick1999/mealplanner:latest
