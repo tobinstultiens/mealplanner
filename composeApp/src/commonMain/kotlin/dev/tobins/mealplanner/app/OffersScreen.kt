@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
+    val t = LocalStrings.current
     val today = remember { todayIso() }
     var state by remember { mutableStateOf<Load<OffersState>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
@@ -55,21 +56,21 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
         state = load { api.offers(today) }
     }
 
-    SubScreen("Offers", onBack, snackbar, actions = {
-        BarAction(AppIcons.Refresh, if (refreshing) "Fetching the offers" else "Refresh the offers", busy = refreshing, onClick = {
+    SubScreen(t(Msg.OFFERS), onBack, snackbar, actions = {
+        BarAction(AppIcons.Refresh, if (refreshing) t(Msg.FETCHING_OFFERS) else t(Msg.REFRESH_OFFERS), busy = refreshing, onClick = {
             refreshing = true
             scope.launch {
-                (load { api.refreshOffers() } as? Load.Failed)?.let { snackbar.showSnackbar("Could not refresh: ${it.message}") }
+                (load { api.refreshOffers() } as? Load.Failed)?.let { snackbar.showSnackbar(t(Msg.REFRESH_FAILED, it.message)) }
                 refreshing = false
                 reload++
             }
         })
-        OverflowMenu(MenuAction(AppIcons.Price, "Regular prices", onOpenPrices))
+        OverflowMenu(MenuAction(AppIcons.Price, t(Msg.REGULAR_PRICES), onOpenPrices))
     }) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage("Could not load the offers", current.message) { reload++ }
+                ErrorMessage(t(Msg.OFFERS_LOAD_FAILED), current.message) { reload++ }
             }
             is Load.Ready -> {
                 val all = current.value.offers
@@ -85,7 +86,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
                                 FilterChip(
                                     selected = onlyMatched,
                                     onClick = { onlyMatched = !onlyMatched },
-                                    label = { Text("My ingredients (${all.count { it.ingredientName != null }})") },
+                                    label = { Text(t(Msg.MY_INGREDIENTS, all.count { it.ingredientName != null })) },
                                 )
                                 Store.entries.forEach { s ->
                                     FilterChip(
@@ -99,8 +100,8 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
                     }
                     if (shown.isEmpty()) {
                         item {
-                            if (all.isEmpty()) EmptyState(Spot.NoOffers, "No offers fetched yet. Tap Refresh.")
-                            else EmptyState(AppIcons.Offer, "No offers match these filters.")
+                            if (all.isEmpty()) EmptyState(Spot.NoOffers, t(Msg.NO_OFFERS_YET))
+                            else EmptyState(AppIcons.Offer, t(Msg.NO_OFFERS_MATCH))
                         }
                     }
                     items(shown, key = { "${it.store}|${it.url ?: it.title}|${it.validFrom}" }) { offer ->
@@ -115,20 +116,21 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
 
 @Composable
 private fun SourceLine(status: OfferSourceStatus) {
-    val fetched = status.fetchedAt?.let { dayMonthLabel(it.take(10)) }
+    val t = LocalStrings.current
+    val fetched = status.fetchedAt?.let { dayMonthLabel(it.take(10), t.locale) }
     val error = status.error
     when {
         error != null -> ErrorBanner(
-            if (fetched == null) "${status.store.label}: could not fetch" else "${status.store.label}: last fetch failed, offers from $fetched",
+            if (fetched == null) t(Msg.SOURCE_COULD_NOT_FETCH, status.store.label) else t(Msg.SOURCE_LAST_FAILED, status.store.label, fetched),
             error,
         )
         fetched != null -> Text(
-            "${status.store.label}: ${status.offerCount} offers, fetched $fetched",
+            t.plural(Plural.SOURCE_FETCHED, status.offerCount, status.store.label, fetched),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         else -> Text(
-            "${status.store.label}: not fetched yet",
+            t(Msg.SOURCE_NOT_FETCHED, status.store.label),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -137,13 +139,14 @@ private fun SourceLine(status: OfferSourceStatus) {
 
 @Composable
 private fun OfferRow(offer: Offer) {
+    val t = LocalStrings.current
     Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp)) {
         offer.ingredientName?.let {
             Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         }
         Text(offer.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(
-            listOfNotNull(offer.shortText(), offer.packSize, "until ${dayMonthLabel(offer.validUntil)}").joinToString(" · "),
+            listOfNotNull(offer.shortText(t), offer.packSize, t(Msg.UNTIL, dayMonthLabel(offer.validUntil, t.locale))).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

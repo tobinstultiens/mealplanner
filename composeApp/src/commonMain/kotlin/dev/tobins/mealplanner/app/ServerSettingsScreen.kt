@@ -56,12 +56,15 @@ fun ServerSettingsScreen(
     updater: UpdateInstaller?,
     theme: ThemeMode,
     onTheme: (ThemeMode) -> Unit,
+    language: AppLanguage,
+    onLanguage: (AppLanguage) -> Unit,
     /** Whether the colours come from the wallpaper; the switch shows only where the device has them. */
     systemColors: Boolean,
     onSystemColors: (Boolean) -> Unit,
     onSave: (ServerSettings) -> Unit,
     onBack: () -> Unit,
 ) {
+    val t = LocalStrings.current
     var url by remember { mutableStateOf(current.url) }
     var result by remember { mutableStateOf<ConnectionResult?>(null) }
     var testing by remember { mutableStateOf(false) }
@@ -69,14 +72,14 @@ fun ServerSettingsScreen(
     val draft = ServerSettings(url.trim().trimEnd('/'))
     val urlValid = draft.url.startsWith("http://") || draft.url.startsWith("https://")
 
-    SubScreen("Settings", onBack) { padding ->
+    SubScreen(t(Msg.SETTINGS), onBack) { padding ->
         // Without an account the server comes first: nothing else works until it is set.
         val server: @Composable () -> Unit = {
-            SettingsCard("Server") {
+            SettingsCard(t(Msg.CARD_SERVER)) {
                 OutlinedTextField(
                     url, { url = it; result = null },
-                    label = { Text("Server address") },
-                    supportingText = { Text("For example https://mealplanner.example.nl") },
+                    label = { Text(t(Msg.SERVER_ADDRESS)) },
+                    supportingText = { Text(t(Msg.SERVER_ADDRESS_HINT)) },
                     isError = url.isNotBlank() && !urlValid,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -91,19 +94,19 @@ fun ServerSettingsScreen(
                                 val client = ApiClient(draft)
                                 result = when (val health = load { client.health() }) {
                                     is Load.Failed -> ConnectionResult(false, health.message)
-                                    is Load.Ready -> ConnectionResult(true, "Connected to server ${health.value.version}.")
+                                    is Load.Ready -> ConnectionResult(true, t(Msg.CONNECTED, health.value.version))
                                     Load.Loading -> null
                                 }
                                 client.close()
                                 testing = false
                             }
                         },
-                    ) { Text(if (testing) "Testing…" else "Test connection") }
-                    Button(enabled = urlValid && draft != current, onClick = { onSave(draft) }) { Text("Save") }
+                    ) { Text(if (testing) t(Msg.TESTING) else t(Msg.TEST_CONNECTION)) }
+                    Button(enabled = urlValid && draft != current, onClick = { onSave(draft) }) { Text(t(Msg.SAVE)) }
                 }
                 result?.let {
                     if (it.ok) Text(it.text, style = MaterialTheme.typography.bodyMedium)
-                    else ErrorBanner("Cannot reach the server", it.text)
+                    else ErrorBanner(t(Msg.CANNOT_REACH), it.text)
                 }
             }
         }
@@ -116,23 +119,29 @@ fun ServerSettingsScreen(
                 Image(Illustrations.Mark, contentDescription = null, Modifier.align(Alignment.CenterHorizontally).size(96.dp))
                 server()
             }
-            SettingsCard("Account") {
+            SettingsCard(t(Msg.CARD_ACCOUNT)) {
                 if (loggedIn) {
-                    Text(if (account != null) "Logged in as $account." else "Logged in.", style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(onClick = onLogout) { Text("Log out") }
+                    Text(if (account != null) t(Msg.LOGGED_IN_AS, account) else t(Msg.LOGGED_IN), style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = onLogout) { Text(t(Msg.LOG_OUT)) }
                 } else {
                     Text(
-                        "Log in with your account on the server's login page (Authelia). Each account has its own recipes, plans and progress.",
+                        t(Msg.LOGIN_EXPLAIN),
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Button(enabled = urlValid, onClick = { onLogin(draft) }) { Text("Log in") }
+                    Button(enabled = urlValid, onClick = { onLogin(draft) }) { Text(t(Msg.LOG_IN)) }
                 }
-                loginError?.let { ErrorBanner("Could not log in", it) }
+                loginError?.let { ErrorBanner(t(Msg.COULD_NOT_LOG_IN), it) }
             }
-            SettingsCard("Appearance") {
+            SettingsCard(t(Msg.CARD_APPEARANCE)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     ThemeMode.entries.forEach { mode ->
-                        FilterChip(selected = theme == mode, onClick = { onTheme(mode) }, label = { Text(mode.label) })
+                        FilterChip(selected = theme == mode, onClick = { onTheme(mode) }, label = { Text(t(mode.msg())) })
+                    }
+                }
+                Text(t(Msg.LANGUAGE), style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                    AppLanguage.entries.forEach { option ->
+                        FilterChip(selected = language == option, onClick = { onLanguage(option) }, label = { Text(t(option.msg())) })
                     }
                 }
                 if (systemColorsAvailable()) {
@@ -143,8 +152,8 @@ fun ServerSettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Use system colours", style = MaterialTheme.typography.bodyMedium)
-                            Text("Take the colours from your wallpaper.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(t(Msg.SYSTEM_COLORS), style = MaterialTheme.typography.bodyMedium)
+                            Text(t(Msg.SYSTEM_COLORS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = systemColors, onCheckedChange = null)
                     }
@@ -173,22 +182,23 @@ private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> U
 /** The installed version and a manual "Check for updates". */
 @Composable
 private fun AppVersionSection(updater: UpdateInstaller) {
+    val t = LocalStrings.current
     var checking by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var found by remember { mutableStateOf<AppUpdate?>(null) }
     val scope = rememberCoroutineScope()
-    SettingsCard("App") {
-        Text("Version ${updater.currentVersion}", style = MaterialTheme.typography.bodyMedium)
+    SettingsCard(t(Msg.CARD_APP)) {
+        Text(t(Msg.VERSION, updater.currentVersion), style = MaterialTheme.typography.bodyMedium)
         OutlinedButton(enabled = !checking, onClick = {
             checking = true
             message = null
             scope.launch {
                 runCatching { AppUpdates.check(updater.currentVersion) }
-                    .onSuccess { if (it == null) message = "You have the latest version." else found = it }
-                    .onFailure { message = "Could not check: ${it.message}" }
+                    .onSuccess { if (it == null) message = t(Msg.LATEST_VERSION) else found = it }
+                    .onFailure { message = t(Msg.CHECK_FAILED, it.message) }
                 checking = false
             }
-        }) { Text(if (checking) "Checking…" else "Check for updates") }
+        }) { Text(if (checking) t(Msg.CHECKING) else t(Msg.CHECK_UPDATES)) }
         message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
     found?.let { update ->

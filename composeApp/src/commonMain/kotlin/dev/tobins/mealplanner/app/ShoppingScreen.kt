@@ -59,7 +59,7 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /** `3 × · 330 g`, `450 g`, `2 ×`, or empty when the recipes give no quantity. */
-fun ShoppingItem.quantityText(locale: FormatLocale = FormatLocale.device): String = listOfNotNull(
+fun ShoppingItem.quantityText(locale: FormatLocale): String = listOfNotNull(
     // Pieces are rounded up: nobody buys 1.5 onions.
     pieces?.let { "${ceil(it - 1e-9).toInt()} ×" },
     grams?.let { if (it >= 1000) "${formatAmount(it / 1000, locale)} kg" else "${it.roundToInt()} g" },
@@ -73,6 +73,7 @@ fun ShoppingItem.quantityText(locale: FormatLocale = FormatLocale.device): Strin
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStorage, onOpenPantry: () -> Unit, onOpenOffers: () -> Unit) {
+    val t = LocalStrings.current
     var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
     var state by remember { mutableStateOf<Load<ShoppingList>>(Load.Loading) }
     // Set when showing the stored copy because the server could not be reached.
@@ -110,7 +111,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                     offlineSince = nowIso()
                 } else {
                     state = Load.Ready(list)
-                    snackbar.showSnackbar("Could not save the tick: ${result.message}")
+                    snackbar.showSnackbar(t(Msg.TICK_FAILED, result.message))
                 }
                 Load.Loading -> Unit
             }
@@ -123,8 +124,8 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
         scope.launch {
             snackbar.currentSnackbarData?.dismiss()
             val answer = snackbar.showSnackbar(
-                "${item.name} ${if (item.checked) "back on the list" else "ticked off"}",
-                actionLabel = "Undo",
+                if (item.checked) t(Msg.BACK_ON_LIST, item.name) else t(Msg.TICKED_OFF, item.name),
+                actionLabel = t(Msg.UNDO),
                 duration = SnackbarDuration.Short,
             )
             if (answer == SnackbarResult.ActionPerformed) tick(item.key, item.checked)
@@ -194,16 +195,16 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
             TopAppBar(
                 title = {
                     PeriodStepper(
-                        label = "Week of ${dayMonthLabel(weekStart)}",
-                        previous = "Previous week",
-                        next = "Next week",
+                        label = t(Msg.WEEK_OF, dayMonthLabel(weekStart, t.locale)),
+                        previous = t(Msg.PREVIOUS_WEEK),
+                        next = t(Msg.NEXT_WEEK),
                         onPrevious = { weekStart = plusDays(weekStart, -7) },
                         onNext = { weekStart = plusDays(weekStart, 7) },
                     )
                 },
                 actions = {
-                    BarAction(AppIcons.Offer, "Offers", onOpenOffers)
-                    BarAction(AppIcons.Pantry, "Pantry", onOpenPantry)
+                    BarAction(AppIcons.Offer, t(Msg.OFFERS), onOpenOffers)
+                    BarAction(AppIcons.Pantry, t(Msg.PANTRY), onOpenPantry)
                 },
             )
         },
@@ -212,7 +213,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage("Could not load the shopping list", current.message) { reload++ }
+                ErrorMessage(t(Msg.SHOPPING_LOAD_FAILED), current.message) { reload++ }
             }
             is Load.Ready -> {
                 val list = current.value
@@ -225,12 +226,12 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                     onOfferClick = {
                         scope.launch {
                             snackbar.currentSnackbarData?.dismiss()
-                            snackbar.showSnackbar(item.offers.distinctBy { it.store to it.deal }.joinToString("\n") { "${it.shortText()} (${it.title})" })
+                            snackbar.showSnackbar(item.offers.distinctBy { it.store to it.deal }.joinToString("\n") { "${it.shortText(t)} (${it.title})" })
                         }
                     },
                 )
                 if (list.items.isEmpty()) {
-                    EmptyState(Spot.NothingToBuy, "Nothing to buy: no meals are planned for this week.", Modifier.padding(padding))
+                    EmptyState(Spot.NothingToBuy, t(Msg.NOTHING_TO_BUY), Modifier.padding(padding))
                     return@Scaffold
                 }
                 LazyColumn(Modifier.padding(padding).fillMaxSize(), listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
@@ -246,18 +247,18 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                             Row(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     // Lists saved by older versions hold the time as text, not as an instant.
-                                    "Offline: the list as of ${runCatching { instantLabel(since) }.getOrDefault(since)}. Ticks are saved and sent later.",
+                                    t(Msg.OFFLINE_LIST, runCatching { instantLabel(since, t) }.getOrDefault(since)),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.weight(1f),
                                 )
-                                TextButton(onClick = { reload++ }) { Text("Retry") }
+                                TextButton(onClick = { reload++ }) { Text(t(Msg.RETRY)) }
                             }
                         }
                     }
                     item {
                         Text(
-                            shoppingProgress(list.items),
+                            shoppingProgress(list.items, t),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                         )
@@ -270,15 +271,15 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                             item { ShopsInUse(shops) { shops = it; settings.saveShops(it) } }
                             overview.stores.forEach { group ->
                                 item(key = "s:${group.store.name}") {
-                                    GroupHeader(group.title, "Tap to shop here", onClick = { chooseStore(group.store) })
+                                    GroupHeader(group.title(t), t(Msg.TAP_TO_SHOP), onClick = { chooseStore(group.store) })
                                 }
                                 groupItems(group.store.name, group.items) { row(it, it.bestOffer(shops)) }
                             }
                             if (overview.anyStore.isNotEmpty()) {
                                 item(key = "s:any") {
                                     GroupHeader(
-                                        "Any store · ${overview.anyStore.size} ${if (overview.anyStore.size == 1) "item" else "items"}",
-                                        "Free to buy wherever you go",
+                                        t.plural(Plural.ANY_STORE_ITEMS, overview.anyStore.size),
+                                        t(Msg.FREE_TO_BUY),
                                         onClick = null,
                                     )
                                 }
@@ -292,7 +293,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                             if (visit.elsewhere.isNotEmpty()) {
                                 val open = "elsewhere" in expanded
                                 item(key = "elsewhere") {
-                                    ToggleHeader("Cheaper elsewhere (${visit.elsewhere.size})", open) { expanded = expanded.toggled("elsewhere") }
+                                    ToggleHeader(t(Msg.CHEAPER_ELSEWHERE, visit.elsewhere.size), open) { expanded = expanded.toggled("elsewhere") }
                                 }
                                 if (open) items(visit.elsewhere, key = { it.item.key }) { row(it.item, it.offer) }
                             }
@@ -301,7 +302,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                     if (list.toTaste.isNotEmpty()) {
                         item {
                             Text(
-                                "To taste (check you have them): ${list.toTaste.joinToString()}",
+                                t(Msg.TO_TASTE, list.toTaste.joinToString()),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
@@ -311,7 +312,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                     if (list.staples.isNotEmpty()) {
                         item {
                             Text(
-                                "Staples this plan uses (not on the list): ${list.staples.joinToString()}",
+                                t(Msg.STAPLES_NOTE, list.staples.joinToString()),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(Spacing.InsideCard),
@@ -328,14 +329,15 @@ private fun Set<String>.toggled(entry: String) = if (entry in this) this - entry
 
 @Composable
 private fun ShoppingModeSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
+    val t = LocalStrings.current
     Row(
         Modifier.fillMaxWidth().toggleable(on, role = Role.Switch, onValueChange = onChange).heightIn(min = 56.dp).padding(horizontal = Spacing.ScreenEdge),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Shopping mode", style = MaterialTheme.typography.titleSmall)
+            Text(t(Msg.SHOPPING_MODE), style = MaterialTheme.typography.titleSmall)
             Text(
-                "Big rows, the screen stays on, ticked items step aside",
+                t(Msg.SHOPPING_MODE_HINT),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -347,6 +349,7 @@ private fun ShoppingModeSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
 /** The section's title with its icon; a finished section shows a tick and opens or closes on tap. */
 @Composable
 private fun SectionHeaderRow(title: String, section: ShoppingSectionView, open: Boolean, onToggle: () -> Unit) {
+    val t = LocalStrings.current
     // The icon is decoration: the title next to it is what a screen reader reads.
     Row(
         Modifier.fillMaxWidth()
@@ -356,10 +359,10 @@ private fun SectionHeaderRow(title: String, section: ShoppingSectionView, open: 
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(sectionIcon(title), contentDescription = null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-        SectionHeader(title, Modifier.weight(1f, fill = false))
+        SectionHeader(t.sectionTitle(title), Modifier.weight(1f, fill = false))
         if (section.finished) {
             Text(
-                "✓ ${section.done.size} ticked",
+                t(Msg.TICKED_COUNT, section.done.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -370,6 +373,7 @@ private fun SectionHeaderRow(title: String, section: ShoppingSectionView, open: 
 /** The collapsed "Done (n)" line at the end of a section. */
 @Composable
 private fun DoneGroupHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
+    val t = LocalStrings.current
     Row(
         Modifier.fillMaxWidth().toggleable(open, role = Role.Button, onValueChange = { onToggle() }).heightIn(min = 56.dp).padding(horizontal = Spacing.ScreenEdge),
         verticalAlignment = Alignment.CenterVertically,
@@ -381,16 +385,17 @@ private fun DoneGroupHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
             Modifier.size(20.dp).rotate(if (open) 90f else 0f),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text("Done ($count)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(Msg.DONE_COUNT, count), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 /** "By section" or "Per store": how the list is grouped. */
 @Composable
 private fun ViewSwitch(view: ShoppingView, onChange: (ShoppingView) -> Unit) {
+    val t = LocalStrings.current
     Row(Modifier.padding(horizontal = Spacing.ScreenEdge), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ShoppingView.entries.forEach { option ->
-            FilterChip(selected = view == option, onClick = { onChange(option) }, label = { Text(option.label) })
+            FilterChip(selected = view == option, onClick = { onChange(option) }, label = { Text(t(option.msg())) })
         }
     }
 }
@@ -398,8 +403,9 @@ private fun ViewSwitch(view: ShoppingView, onChange: (ShoppingView) -> Unit) {
 /** The stores this device shops at; the last one stays on, as the list needs at least one. */
 @Composable
 private fun ShopsInUse(shops: Set<Store>, onChange: (Set<Store>) -> Unit) {
+    val t = LocalStrings.current
     Column(Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = Spacing.Tight)) {
-        Text("Stores I shop at", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(Msg.STORES_I_SHOP_AT), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Store.entries.forEach { store ->
                 FilterChip(
@@ -433,16 +439,17 @@ private fun GroupHeader(title: String, hint: String, onClick: (() -> Unit)?) {
 /** Which shop the list is for, with the way back to all stores. */
 @Composable
 private fun ShopIAmIn(store: Store, onAllStores: () -> Unit) {
+    val t = LocalStrings.current
     Row(Modifier.fillMaxWidth().padding(start = Spacing.ScreenEdge, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Shopping at ${store.shortName()}", style = MaterialTheme.typography.titleSmall)
+            Text(t(Msg.SHOPPING_AT, store.shortName()), style = MaterialTheme.typography.titleSmall)
             Text(
-                "Its offers and everything without one",
+                t(Msg.ITS_OFFERS),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onAllStores) { Text("All stores") }
+        TextButton(onClick = onAllStores) { Text(t(Msg.ALL_STORES)) }
     }
 }
 
@@ -461,6 +468,7 @@ private fun ToggleHeader(title: String, open: Boolean, onToggle: () -> Unit) {
 
 @Composable
 private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shoppingMode: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
+    val t = LocalStrings.current
     Row(
         Modifier.fillMaxWidth()
             .toggleable(item.checked, role = Role.Checkbox, onValueChange = { onToggle() })
@@ -471,7 +479,7 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shoppingMode: Boolean
         Checkbox(checked = item.checked, onCheckedChange = null, modifier = Modifier.padding(12.dp))
         Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
             Text(
-                item.name + if (item.onHand) "  (on hand?)" else "",
+                if (item.onHand) t(Msg.ON_HAND_MAYBE, item.name) else item.name,
                 style = if (shoppingMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
                 textDecoration = if (item.checked) TextDecoration.LineThrough else null,
                 maxLines = 2,
@@ -486,17 +494,17 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shoppingMode: Boolean
             )
         }
         Column(Modifier.padding(horizontal = 12.dp), horizontalAlignment = Alignment.End) {
-            Text(item.quantityText(), style = MaterialTheme.typography.bodyMedium.numeric(), softWrap = false)
+            Text(item.quantityText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), softWrap = false)
             if (offer != null) {
                 // A tap shows the full deal; the rest of the row keeps ticking. The badge looks small
                 // but its touch area is 48 dp, as Material asks.
                 Box(
                     Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                        .clickable(role = Role.Button, onClickLabel = "Show the deal", onClick = onOfferClick),
+                        .clickable(role = Role.Button, onClickLabel = t(Msg.SHOW_DEAL), onClick = onOfferClick),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        offer.badgeText(),
+                        offer.badgeText(t),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         softWrap = false,

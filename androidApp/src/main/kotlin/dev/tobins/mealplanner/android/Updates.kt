@@ -22,6 +22,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dev.tobins.mealplanner.app.AppUpdate
 import dev.tobins.mealplanner.app.AppUpdates
+import dev.tobins.mealplanner.app.Msg
+import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.UpdateInstaller
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -48,7 +50,7 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
                 .setDestinationInExternalFilesDir(app, Environment.DIRECTORY_DOWNLOADS, name)
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE),
         )
-        Toast.makeText(app, "Downloading version ${update.version}…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(app, Strings.current(Msg.DOWNLOADING_VERSION, update.version), Toast.LENGTH_SHORT).show()
 
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -56,7 +58,7 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
                 app.unregisterReceiver(this)
                 val uri = downloads.getUriForDownloadedFile(id)
                 if (uri == null) {
-                    Toast.makeText(app, "The download failed; try again from Settings.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(app, Strings.current(Msg.DOWNLOAD_FAILED), Toast.LENGTH_LONG).show()
                     return
                 }
                 app.startActivity(
@@ -109,7 +111,7 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineW
                 context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
             ) return false
             val manager = context.getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(CHANNEL, "App updates", NotificationManager.IMPORTANCE_DEFAULT))
+            manager.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.update_channel_name), NotificationManager.IMPORTANCE_DEFAULT))
             val open = PendingIntent.getActivity(
                 context, 0,
                 Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
@@ -117,8 +119,8 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineW
             )
             val notification = android.app.Notification.Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_stat_update)
-                .setContentTitle("Meal planner ${update.version} is available")
-                .setContentText("Tap to update.")
+                .setContentTitle(context.getString(R.string.update_notification_title, update.version))
+                .setContentText(context.getString(R.string.update_notification_text))
                 .setContentIntent(open)
                 .setAutoCancel(true)
                 .build()

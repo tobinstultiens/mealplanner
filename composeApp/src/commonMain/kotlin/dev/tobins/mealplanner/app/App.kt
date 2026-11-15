@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.TextAutoSize
 
 /**
  * Root of the app: five tabs (Today, Plan, Shopping, Recipes, Progress) and the
@@ -56,6 +59,10 @@ fun App(
     var loginError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     var theme by remember { mutableStateOf(storage.themeMode()) }
+    var language by remember { mutableStateOf(storage.appLanguage()) }
+    // Changing the language in Settings applies at once: everything below reads its texts from here.
+    val strings = remember(language) { Strings.of(language, deviceLocaleTag()) }
+    SideEffect { Strings.current = strings }
     var systemColors by remember { mutableStateOf(storage.systemColors()) }
     // A newer release found on start; "Later" hides it until the next start.
     var update by remember { mutableStateOf<AppUpdate?>(null) }
@@ -98,7 +105,7 @@ fun App(
                     serverOpen = false
                 }
                 .onFailure {
-                    loginError = it.message ?: "Logging in failed"
+                    loginError = it.message ?: Strings.current(Msg.LOGIN_FAILED)
                     serverOpen = true
                 }
         }
@@ -121,6 +128,7 @@ fun App(
         ThemeMode.DARK -> true
     }
     SystemBars(dark)
+    CompositionLocalProvider(LocalStrings provides strings) {
     MealPlannerTheme(dark, systemColors) {
       // On a wide browser window the app keeps a phone-like column in the middle.
       Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
@@ -143,7 +151,7 @@ fun App(
                 BackHandler(enabled = true) { serverOpen = false }
                 ServerSettingsScreen(
                     current = settings,
-                    account = account?.let { it.displayName ?: it.username ?: "your account" }?.takeIf { session != null },
+                    account = account?.let { it.displayName ?: it.username ?: strings(Msg.YOUR_ACCOUNT) }?.takeIf { session != null },
                     loggedIn = session != null,
                     loginError = loginError,
                     onLogin = { draft ->
@@ -153,7 +161,7 @@ fun App(
                         scope.launch {
                             runCatching { login.start(draft.url, launcher.redirectUri(draft.url)) }
                                 .onSuccess(launcher::open)
-                                .onFailure { loginError = "Could not start the login: ${it.message}" }
+                                .onFailure { loginError = strings(Msg.LOGIN_START_FAILED, it.message) }
                         }
                     },
                     onLogout = {
@@ -165,6 +173,11 @@ fun App(
                     onTheme = {
                         storage.saveThemeMode(it)
                         theme = it
+                    },
+                    language = language,
+                    onLanguage = {
+                        storage.saveAppLanguage(it)
+                        language = it
                     },
                     systemColors = systemColors,
                     onSystemColors = {
@@ -234,7 +247,7 @@ fun App(
                                         selected = tab == entry,
                                         onClick = { tab = entry },
                                         icon = { Icon(if (tab == entry) entry.selectedIcon else entry.icon, contentDescription = null) },
-                                        label = { NavigationLabel(entry.label) },
+                                        label = { NavigationLabel(strings(entry.label)) },
                                     )
                                 }
                             }
@@ -268,15 +281,16 @@ fun App(
        }
       }
     }
+    }
 }
 
 /** The five tabs; the icon is filled in for the one that is open. */
-private enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
-    TODAY("Today", AppIcons.Today, AppIcons.TodayFilled),
-    PLAN("Plan", AppIcons.Plan, AppIcons.PlanFilled),
-    SHOPPING("Shopping", AppIcons.Shopping, AppIcons.ShoppingFilled),
-    RECIPES("Recipes", AppIcons.Recipes, AppIcons.RecipesFilled),
-    PROGRESS("Progress", AppIcons.Progress, AppIcons.ProgressFilled),
+private enum class Tab(val label: Msg, val icon: ImageVector, val selectedIcon: ImageVector) {
+    TODAY(Msg.TAB_TODAY, AppIcons.Today, AppIcons.TodayFilled),
+    PLAN(Msg.TAB_PLAN, AppIcons.Plan, AppIcons.PlanFilled),
+    SHOPPING(Msg.TAB_SHOPPING, AppIcons.Shopping, AppIcons.ShoppingFilled),
+    RECIPES(Msg.TAB_RECIPES, AppIcons.Recipes, AppIcons.RecipesFilled),
+    PROGRESS(Msg.TAB_PROGRESS, AppIcons.Progress, AppIcons.ProgressFilled),
 }
 
 /**
@@ -288,7 +302,9 @@ private enum class Tab(val label: String, val icon: ImageVector, val selectedIco
 private fun NavigationLabel(text: String) {
     val density = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, MaxLabelFontScale))) {
-        Text(text, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall)
+        val style = MaterialTheme.typography.labelSmall
+        // A longer word ("Boodschappen") shrinks to fit its tab instead of being cut off.
+        Text(text, maxLines = 1, softWrap = false, style = style, autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = style.fontSize))
     }
 }
 

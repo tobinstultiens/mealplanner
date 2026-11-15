@@ -48,6 +48,7 @@ private fun IngredientLine.asInputLine(): String =
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit, onCancel: () -> Unit) {
+    val t = LocalStrings.current
     var loading by remember { mutableStateOf(recipeId != null) }
     var title by remember { mutableStateOf("") }
     var servings by remember { mutableStateOf("1") }
@@ -68,7 +69,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                 instructions = this.instructions
                 slots = summary.mealSlots.toSet()
             }
-            is Load.Failed -> snackbar.showSnackbar("Could not load the recipe: ${result.message}")
+            is Load.Failed -> snackbar.showSnackbar(t(Msg.EDITOR_LOAD_FAILED, result.message))
             Load.Loading -> Unit
         }
         loading = false
@@ -80,8 +81,8 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (recipeId == null) "New recipe" else "Edit recipe") },
-                navigationIcon = { BarAction(AppIcons.Close, "Cancel", onCancel) },
+                title = { Text(if (recipeId == null) t(Msg.NEW_RECIPE) else t(Msg.EDIT_RECIPE)) },
+                navigationIcon = { BarAction(AppIcons.Close, t(Msg.CANCEL), onCancel) },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -94,34 +95,34 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
             verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
         ) {
-            OutlinedTextField(title, { title = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(title, { title = it }, label = { Text(t(Msg.NAME)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(
                 servings, { servings = it },
-                label = { Text("Servings") },
+                label = { Text(t(Msg.SERVINGS)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text("Plan as", style = MaterialTheme.typography.labelLarge)
+            Text(t(Msg.PLAN_AS), style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 MealSlot.entries.forEach { slot ->
                     FilterChip(
                         selected = slot in slots,
                         onClick = { slots = if (slot in slots) slots - slot else slots + slot },
-                        label = { Text(slot.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                        label = { Text(t.slot(slot, capitalised = true)) },
                     )
                 }
             }
             OutlinedTextField(
                 ingredients, { ingredients = it },
-                label = { Text("Ingredients") },
-                supportingText = { Text("One per line: amount | unit | item, for example\n200 | g | low-fat quark\n1 | banana |") },
+                label = { Text(t(Msg.INGREDIENTS)) },
+                supportingText = { Text(t(Msg.INGREDIENTS_HINT)) },
                 minLines = 4,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 instructions, { instructions = it },
-                label = { Text("Steps (optional)") },
+                label = { Text(t(Msg.STEPS_OPTIONAL)) },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -137,15 +138,14 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                                 is Load.Failed -> {
                                     saving = false
                                     snackbar.showSnackbar(
-                                        if (result.status == 400) "Check the ingredient lines: each needs the form amount | unit | item"
-                                        else "Could not save: ${result.message}",
+                                        if (result.status == 400) t(Msg.CHECK_LINES) else t(Msg.SAVE_FAILED, result.message),
                                     )
                                 }
                                 Load.Loading -> Unit
                             }
                         }
                     },
-                ) { Text("Save") }
+                ) { Text(t(Msg.SAVE)) }
                 if (recipeId != null) {
                     TextButton(
                         enabled = !saving,
@@ -156,13 +156,13 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                                     is Load.Ready -> onDone(null)
                                     is Load.Failed -> {
                                         saving = false
-                                        snackbar.showSnackbar("Could not delete: ${result.message}")
+                                        snackbar.showSnackbar(t(Msg.DELETE_FAILED, result.message))
                                     }
                                     Load.Loading -> Unit
                                 }
                             }
                         },
-                    ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    ) { Text(t(Msg.DELETE), color = MaterialTheme.colorScheme.error) }
                 }
             }
         }

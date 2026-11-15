@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
+    val t = LocalStrings.current
     var state by remember { mutableStateOf<Load<PricesState>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
@@ -50,15 +51,15 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
     }
     val refreshing = (state as? Load.Ready)?.value?.refreshing == true
 
-    SubScreen("Regular prices", onBack, snackbar, actions = {
-        BarAction(AppIcons.Refresh, if (refreshing) "Looking up prices" else "Refresh the prices", busy = refreshing, onClick = {
+    SubScreen(t(Msg.REGULAR_PRICES), onBack, snackbar, actions = {
+        BarAction(AppIcons.Refresh, if (refreshing) t(Msg.LOOKING_UP_PRICES) else t(Msg.REFRESH_PRICES), busy = refreshing, onClick = {
             scope.launch {
                 when (val started = load { api.refreshPrices() }) {
                     is Load.Ready -> {
                         state = started
                         reload++
                     }
-                    is Load.Failed -> snackbar.showSnackbar("Could not start: ${started.message}")
+                    is Load.Failed -> snackbar.showSnackbar(t(Msg.PRICES_START_FAILED, started.message))
                     Load.Loading -> {}
                 }
             }
@@ -67,7 +68,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage("Could not load the prices", current.message) { reload++ }
+                ErrorMessage(t(Msg.PRICES_LOAD_FAILED), current.message) { reload++ }
             }
             is Load.Ready -> {
                 val prices = current.value
@@ -76,15 +77,14 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                         Column(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
                             Text(
                                 when {
-                                    prices.refreshing -> "Looking up prices at Albert Heijn; this takes a few minutes."
-                                    prices.fetchedAt == null -> "No prices looked up yet. Tap Refresh."
-                                    else -> "${prices.prices.size} ingredients priced from Albert Heijn, looked up ${dayMonthLabel(prices.fetchedAt!!.take(10))}."
+                                    prices.refreshing -> t(Msg.PRICES_LOOKING)
+                                    prices.fetchedAt == null -> t(Msg.PRICES_NONE)
+                                    else -> t.plural(Plural.PRICES_SUMMARY, prices.prices.size, dayMonthLabel(prices.fetchedAt!!.take(10), t.locale))
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                "The cheapest few products that match each ingredient set its price per kg. " +
-                                    "Offers are taken off this when costing recipes and choosing meals.",
+                                t(Msg.PRICES_EXPLAIN),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -92,13 +92,13 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                     }
                     items(prices.prices, key = { it.ingredientId }) { price ->
                         ListItem(
-                            headlineContent = { Text("${price.ingredientName}: ${formatEuro(price.eurosPerKg)}/kg") },
+                            headlineContent = { Text(t(Msg.PRICE_PER_KG, price.ingredientName, formatEuro(price.eurosPerKg, t.locale))) },
                             supportingContent = {
                                 Text(
                                     listOfNotNull(
                                         price.product,
                                         price.packSize,
-                                        price.packPrice?.let { formatEuro(it) },
+                                        price.packPrice?.let { formatEuro(it, t.locale) },
                                     ).joinToString(" · "),
                                 )
                             },
@@ -108,7 +108,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                     if (prices.unpriced.isNotEmpty()) {
                         item {
                             Text(
-                                "No product found, costed at a typical price: ${prices.unpriced.joinToString("; ")}.",
+                                t(Msg.PRICES_UNPRICED, prices.unpriced.joinToString("; ")),
                                 modifier = Modifier.padding(Spacing.InsideCard),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

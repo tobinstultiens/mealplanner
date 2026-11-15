@@ -36,9 +36,10 @@ import kotlinx.coroutines.launch
 fun GenerateDialog(
     onDismiss: () -> Unit,
     fixedSlot: MealSlot? = null,
-    title: String = "Generate a recipe",
+    title: String? = null,
     submit: suspend (GenerateRequest) -> Unit,
 ) {
+    val t = LocalStrings.current
     var mode by remember { mutableStateOf(GenerationMode.PREFERENCE) }
     var slot by remember { mutableStateOf(fixedSlot ?: MealSlot.DINNER) }
     var wish by remember { mutableStateOf("") }
@@ -48,33 +49,32 @@ fun GenerateDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(title) },
+        title = { Text(title ?: t(Msg.GENERATE_RECIPE)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                    FilterChip(selected = mode == GenerationMode.PREFERENCE, onClick = { mode = GenerationMode.PREFERENCE }, label = { Text("To my wish") })
-                    FilterChip(selected = mode == GenerationMode.TASTE_BREAKER, onClick = { mode = GenerationMode.TASTE_BREAKER }, label = { Text("Surprise me") })
+                    FilterChip(selected = mode == GenerationMode.PREFERENCE, onClick = { mode = GenerationMode.PREFERENCE }, label = { Text(t(Msg.TO_MY_WISH)) })
+                    FilterChip(selected = mode == GenerationMode.TASTE_BREAKER, onClick = { mode = GenerationMode.TASTE_BREAKER }, label = { Text(t(Msg.SURPRISE_ME)) })
                 }
                 Text(
-                    if (mode == GenerationMode.PREFERENCE) "A recipe that fits your targets and what you ask for."
-                    else "Something unlike your recent meals, using what is at home and on offer.",
+                    if (mode == GenerationMode.PREFERENCE) t(Msg.GEN_HINT_WISH) else t(Msg.GEN_HINT_SURPRISE),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (fixedSlot == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     MealSlot.entries.forEach { s ->
-                        FilterChip(selected = slot == s, onClick = { slot = s }, label = { Text(s.name.lowercase().replaceFirstChar { it.uppercase() }) })
+                        FilterChip(selected = slot == s, onClick = { slot = s }, label = { Text(t.slot(s, capitalised = true)) })
                     }
                 }
                 OutlinedTextField(
                     wish, { wish = it },
-                    label = { Text(if (mode == GenerationMode.PREFERENCE) "Wish (e.g. Korean, spicy, quick)" else "Wish (optional)") },
+                    label = { Text(if (mode == GenerationMode.PREFERENCE) t(Msg.WISH_EXAMPLE) else t(Msg.WISH_OPTIONAL)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (busy) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator()
-                        Text("Writing the recipe; this can take a minute.")
+                        Text(t(Msg.WRITING_RECIPE))
                     }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -90,16 +90,16 @@ fun GenerateDialog(
                         is Load.Failed -> {
                             busy = false
                             error = when (result.status) {
-                                503 -> "Recipe generation is off on the server: it needs an ANTHROPIC_API_KEY."
-                                409 -> "Set up your profile first; recipes are sized to your targets."
-                                else -> "Could not generate: ${result.message}"
+                                503 -> t(Msg.GEN_OFF)
+                                409 -> t(Msg.GEN_NEEDS_PROFILE)
+                                else -> t(Msg.GEN_FAILED, result.message)
                             }
                         }
                         Load.Loading -> Unit
                     }
                 }
-            }) { Text("Generate") }
+            }) { Text(t(Msg.GENERATE)) }
         },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )
 }

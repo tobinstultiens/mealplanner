@@ -4,8 +4,8 @@ package dev.tobins.mealplanner.app
  * How numbers, money and dates are written for one locale. `commonMain` has no locale API, so
  * the platform only says which locale the device uses ([deviceLocaleTag]) and this class holds
  * what the app needs from it: the decimal separator, short day and month names and whether
- * the month comes first. Only the number, money and date formats follow the locale; the
- * app's own texts stay English. Languages without names here show English ones.
+ * the month comes first. Which locale the app uses follows its language setting (see
+ * [Strings.of]); the texts themselves are in Messages.kt. Languages without names here show English ones.
  */
 class FormatLocale(
     val decimalSeparator: Char,
@@ -74,8 +74,5 @@ class FormatLocale(
                 base
             }
         }
-
-        /** The device's locale, read once when first needed. */
-        val device: FormatLocale by lazy { of(deviceLocaleTag()) }
     }
 }

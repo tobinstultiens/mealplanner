@@ -49,9 +49,9 @@ class ShoppingModeTest {
 
     @Test
     fun progressCountsTickedItemsAndSectionsLeft() {
-        assertEquals("3 of 5 · 2 sections to go", shoppingProgress(items))
-        assertEquals("4 of 5 · 1 section to go", shoppingProgress(items.map { if (it.key == "leek") it.copy(checked = true) else it }))
-        assertEquals("All 5 ticked off", shoppingProgress(items.map { it.copy(checked = true) }))
+        assertEquals("3 of 5 · 2 sections to go", shoppingProgress(items, Strings.English))
+        assertEquals("4 of 5 · 1 section to go", shoppingProgress(items.map { if (it.key == "leek") it.copy(checked = true) else it }, Strings.English))
+        assertEquals("All 5 ticked off", shoppingProgress(items.map { it.copy(checked = true) }, Strings.English))
     }
 
     @Test
@@ -65,10 +65,10 @@ class ShoppingModeTest {
 
     @Test
     fun theBadgeNamesTheStoreAndThePriceOrTheDeal() {
-        assertEquals("AH €1.99", offer(Store.AH, 1.99).badgeText(FormatLocale.English))
-        assertEquals("AH €1,99", offer(Store.AH, 1.99).badgeText(FormatLocale.Dutch))
-        assertEquals("Jumbo 1+1 gratis", offer(Store.JUMBO, null, "1+1 gratis").badgeText())
-        assertEquals("AH 2 voor 2.49", offer(Store.AH, null, "2 VOOR 2.49").badgeText())
-        assertEquals("Lidl offer", offer(Store.LIDL, null).badgeText())
+        assertEquals("AH €1.99", offer(Store.AH, 1.99).badgeText(Strings.English))
+        assertEquals("AH €1,99", offer(Store.AH, 1.99).badgeText(Strings.Dutch))
+        assertEquals("Jumbo 1+1 gratis", offer(Store.JUMBO, null, "1+1 gratis").badgeText(Strings.English))
+        assertEquals("AH 2 voor 2.49", offer(Store.AH, null, "2 VOOR 2.49").badgeText(Strings.English))
+        assertEquals("Lidl offer", offer(Store.LIDL, null).badgeText(Strings.English))
     }
 }

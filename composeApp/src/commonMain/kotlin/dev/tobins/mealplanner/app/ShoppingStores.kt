@@ -23,7 +23,7 @@ fun ShoppingItem.bestOffer(shops: Set<Store> = Store.entries.toSet()): Offer? =
 /** The items whose preferred offer is at [store]. */
 data class StoreGroup(val store: Store, val items: List<ShoppingItem>) {
     /** `Jumbo · 5 items on offer`. */
-    val title: String get() = "${store.shortName()} · ${items.size} ${if (items.size == 1) "item" else "items"} on offer"
+    fun title(strings: Strings): String = strings.plural(Plural.STORE_ITEMS_ON_OFFER, items.size, store.shortName())
 }
 
 /**
@@ -68,4 +68,4 @@ fun storeVisit(items: List<ShoppingItem>, store: Store, shops: Set<Store>, shopp
 }
 
 /** `Jumbo €1,99`: where an item is cheaper and for how much. */
-fun CheaperElsewhere.where(locale: FormatLocale = FormatLocale.device): String = offer.badgeText(locale)
+fun CheaperElsewhere.where(strings: Strings): String = offer.badgeText(strings)

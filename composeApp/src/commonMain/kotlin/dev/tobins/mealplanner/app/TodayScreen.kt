@@ -50,6 +50,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> Unit) {
+    val t = LocalStrings.current
     val today = remember { todayIso() }
     var date by rememberSaveable { mutableStateOf(today) }
     var state by remember { mutableStateOf<Load<DayView>>(Load.Loading) }
@@ -76,15 +77,15 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
             TopAppBar(
                 title = {
                     PeriodStepper(
-                        label = if (date == today) "Today" else dayLabel(date),
-                        previous = "Previous day",
-                        next = "Next day",
+                        label = if (date == today) t(Msg.TAB_TODAY) else dayLabel(date, t.locale),
+                        previous = t(Msg.PREVIOUS_DAY),
+                        next = t(Msg.NEXT_DAY),
                         onPrevious = { date = plusDays(date, -1) },
                         onNext = { date = plusDays(date, 1) },
                     )
                 },
                 actions = {
-                    if (date != today) BarAction(AppIcons.Today, "Back to today", onClick = { date = today })
+                    if (date != today) BarAction(AppIcons.Today, t(Msg.BACK_TO_TODAY), onClick = { date = today })
                 },
             )
         },
@@ -93,7 +94,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage("Could not load the day", current.message) { reload++ }
+                ErrorMessage(t(Msg.DAY_LOAD_FAILED), current.message) { reload++ }
             }
             is Load.Ready -> {
                 val day = current.value
@@ -103,8 +104,8 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
                 ) {
                     TotalsCard(day)
                     if (day.meals.isEmpty()) {
-                        Text("Nothing is planned for this day.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedButton(onClick = onOpenPlan) { Text("Open the plan") }
+                        Text(t(Msg.NOTHING_PLANNED_DAY), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = onOpenPlan) { Text(t(Msg.OPEN_PLAN)) }
                     }
                     for (meal in day.meals) {
                         MealCard(
@@ -113,21 +114,21 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
                             onStatus = { status -> change { api.setMealStatus(day.weekStart, day.dayIndex, meal.slot, status) } },
                         )
                     }
-                    if (day.extras.isNotEmpty()) SectionHeader("Also eaten")
+                    if (day.extras.isNotEmpty()) SectionHeader(t(Msg.ALSO_EATEN))
                     for (extra in day.extras) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(extra.description, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    "${extra.kcal.roundToInt()} kcal · ${extra.proteinG.roundToInt()} g protein",
+                                    t(Msg.KCAL_PROTEIN, extra.kcal.roundToInt(), extra.proteinG.roundToInt()),
                                     style = MaterialTheme.typography.bodySmall.numeric(),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            TextButton(onClick = { change { api.deleteLog(extra.id) } }) { Text("Remove") }
+                            TextButton(onClick = { change { api.deleteLog(extra.id) } }) { Text(t(Msg.REMOVE)) }
                         }
                     }
-                    OutlinedButton(onClick = { adding = true }) { Text("Add something else you ate") }
+                    OutlinedButton(onClick = { adding = true }) { Text(t(Msg.ADD_EXTRA)) }
                 }
             }
         }
@@ -146,32 +147,32 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
 
 @Composable
 private fun TotalsCard(day: DayView) {
+    val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             val targets = day.targets
             if (targets == null) {
-                Text("Eaten: ${day.eatenKcal.roundToInt()} kcal · ${day.eatenProteinG.roundToInt()} g protein", style = MaterialTheme.typography.titleMedium.numeric())
-                Text("Set up your profile under Progress to see targets.", style = MaterialTheme.typography.bodySmall)
+                Text(t(Msg.EATEN_TOTAL, day.eatenKcal.roundToInt(), day.eatenProteinG.roundToInt()), style = MaterialTheme.typography.titleMedium.numeric())
+                Text(t(Msg.SET_UP_PROFILE_HINT), style = MaterialTheme.typography.bodySmall)
             } else {
-                Text("Eaten so far", style = MaterialTheme.typography.labelLarge)
-                Text("${day.eatenKcal.roundToInt()} of ${targets.kcal} kcal", style = MaterialTheme.typography.titleLarge.numeric())
+                Text(t(Msg.EATEN_SO_FAR), style = MaterialTheme.typography.labelLarge)
+                Text(t(Msg.KCAL_OF, day.eatenKcal.roundToInt(), targets.kcal), style = MaterialTheme.typography.titleLarge.numeric())
                 LinearProgressIndicator(
                     progress = { (day.eatenKcal / targets.kcal).toFloat().coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text("${day.eatenProteinG.roundToInt()} of ${targets.proteinG} g protein", style = MaterialTheme.typography.bodyLarge.numeric())
+                Text(t(Msg.PROTEIN_OF, day.eatenProteinG.roundToInt(), targets.proteinG), style = MaterialTheme.typography.bodyLarge.numeric())
                 LinearProgressIndicator(
                     progress = { (day.eatenProteinG / targets.proteinG).toFloat().coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 val difference = (day.expectedKcal - targets.kcal).roundToInt()
                 Text(
-                    "Following the rest of the plan ends the day at ${day.expectedKcal.roundToInt()} kcal" +
-                        when {
-                            difference > 0 -> ", $difference over the target."
-                            difference < 0 -> ", ${-difference} under the target."
-                            else -> ", exactly on target."
-                        },
+                    when {
+                        difference > 0 -> t(Msg.FORECAST_OVER, day.expectedKcal.roundToInt(), difference)
+                        difference < 0 -> t(Msg.FORECAST_UNDER, day.expectedKcal.roundToInt(), -difference)
+                        else -> t(Msg.FORECAST_ON, day.expectedKcal.roundToInt())
+                    },
                     style = MaterialTheme.typography.bodySmall.numeric(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -182,11 +183,12 @@ private fun TotalsCard(day: DayView) {
 
 @Composable
 private fun MealCard(meal: PlannedMeal, onOpen: () -> Unit, onStatus: (MealStatus) -> Unit) {
+    val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Column(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
                 Text(
-                    meal.slot.name.lowercase().replaceFirstChar { it.uppercase() } + if (meal.leftover) " · leftovers" else "",
+                    t.mealLabel(meal),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -195,21 +197,21 @@ private fun MealCard(meal: PlannedMeal, onOpen: () -> Unit, onStatus: (MealStatu
                     style = MaterialTheme.typography.titleMedium,
                     textDecoration = if (meal.status == MealStatus.SKIPPED) TextDecoration.LineThrough else null,
                 )
-                MealNumbers(meal.macrosText(), meal.cost?.let { "≈ ${formatEuro(it)}" })
+                MealNumbers(meal.macrosText(t), meal.cost?.let { "≈ ${formatEuro(it, t.locale)}" })
             }
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalAlignment = Alignment.CenterVertically) {
                 when (meal.status) {
                     MealStatus.PLANNED -> {
-                        Button(onClick = { onStatus(MealStatus.EATEN) }) { Text("Eaten") }
-                        OutlinedButton(onClick = { onStatus(MealStatus.SKIPPED) }) { Text("Skipped") }
+                        Button(onClick = { onStatus(MealStatus.EATEN) }) { Text(t(Msg.STATUS_EATEN)) }
+                        OutlinedButton(onClick = { onStatus(MealStatus.SKIPPED) }) { Text(t(Msg.STATUS_SKIPPED)) }
                     }
                     MealStatus.EATEN -> {
-                        Text("✓ Eaten", color = MaterialTheme.colorScheme.primary)
-                        TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text("Undo") }
+                        Text(t(Msg.STATUS_EATEN_MARK), color = MaterialTheme.colorScheme.primary)
+                        TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text(t(Msg.UNDO)) }
                     }
                     MealStatus.SKIPPED -> {
-                        Text("Skipped", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text("Undo") }
+                        Text(t(Msg.STATUS_SKIPPED), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text(t(Msg.UNDO)) }
                     }
                 }
             }
@@ -219,6 +221,7 @@ private fun MealCard(meal: PlannedMeal, onOpen: () -> Unit, onStatus: (MealStatu
 
 @Composable
 private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Double) -> Unit) {
+    val t = LocalStrings.current
     var description by remember { mutableStateOf("") }
     var kcal by remember { mutableStateOf("") }
     var protein by remember { mutableStateOf("") }
@@ -227,20 +230,20 @@ private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Doubl
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Something else you ate") },
+        title = { Text(t(Msg.EXTRA_TITLE)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                OutlinedTextField(description, { description = it }, label = { Text("What") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(description, { description = it }, label = { Text(t(Msg.EXTRA_WHAT)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     kcal, { kcal = it },
-                    label = { Text("Calories (a rough number is fine)") },
+                    label = { Text(t(Msg.EXTRA_CALORIES)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     protein, { protein = it },
-                    label = { Text("Protein in grams (optional)") },
+                    label = { Text(t(Msg.EXTRA_PROTEIN)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -251,8 +254,8 @@ private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Doubl
             TextButton(
                 enabled = description.isNotBlank() && kcalValue != null && proteinValue != null,
                 onClick = { onConfirm(description.trim(), kcalValue!!, proteinValue!!) },
-            ) { Text("Add") }
+            ) { Text(t(Msg.ADD)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )
 }
