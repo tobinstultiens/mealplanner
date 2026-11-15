@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -98,22 +97,20 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         when (val current = state) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 ErrorMessage("Could not load the shopping list", current.message) { reload++ }
             }
             is Load.Ready -> {
                 val list = current.value
                 if (list.items.isEmpty()) {
-                    CenteredBox(Modifier.padding(padding)) {
-                        Text("Nothing to buy: no meals are planned for this week.", modifier = Modifier.padding(24.dp))
-                    }
+                    EmptyState(AppIcons.Shopping, "Nothing to buy: no meals are planned for this week.", Modifier.padding(padding))
                     return@Scaffold
                 }
-                LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+                LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                     offlineSince?.let { since ->
                         item {
-                            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     // Lists saved by older versions hold the time as text, not as an instant.
                                     "Offline: the list as of ${runCatching { instantLabel(since) }.getOrDefault(since)}. Ticks are saved and sent later.",
@@ -132,16 +129,14 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
                             (if (left == 0) "All ${list.items.size} items ticked off" else "$left of ${list.items.size} items left") +
                                 if (onOffer > 0) " · $onOffer on offer this week" else "",
                             style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                         )
                     }
                     list.items.groupBy { it.category }.forEach { (category, items) ->
                         item(key = "h:$category") {
-                            Text(
+                            SectionHeader(
                                 category,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
+                                Modifier.padding(start = Spacing.ScreenEdge, top = Spacing.InsideCard, bottom = Spacing.Tight),
                             )
                         }
                         items(items, key = { it.key }) { item ->
@@ -190,7 +185,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
                                 "Staples this plan uses (not on the list): ${list.staples.joinToString()}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(16.dp),
+                                modifier = Modifier.padding(Spacing.InsideCard),
                             )
                         }
                     }
@@ -229,6 +224,6 @@ private fun ShoppingRow(item: ShoppingItem, onToggle: () -> Unit) {
                 )
             }
         }
-        Text(item.quantityText(), style = MaterialTheme.typography.bodyMedium, softWrap = false, modifier = Modifier.padding(horizontal = 12.dp))
+        Text(item.quantityText(), style = MaterialTheme.typography.bodyMedium.numeric(), softWrap = false, modifier = Modifier.padding(horizontal = 12.dp))
     }
 }

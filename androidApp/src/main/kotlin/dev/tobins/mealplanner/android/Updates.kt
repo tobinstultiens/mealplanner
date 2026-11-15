@@ -116,7 +116,7 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineW
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             val notification = android.app.Notification.Builder(context, CHANNEL)
-                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setSmallIcon(R.drawable.ic_stat_update)
                 .setContentTitle("Meal planner ${update.version} is available")
                 .setContentText("Tap to update.")
                 .setContentIntent(open)

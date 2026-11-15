@@ -9,16 +9,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,14 +50,9 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
         state = load { api.ingredients() to api.pantry() }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Pantry") }, navigationIcon = { BackButton(onBack) })
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
+    SubScreen("Pantry", onBack, snackbar) { padding ->
         when (val current = state) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 ErrorMessage("Could not load the pantry", current.message) { reload++ }
             }
@@ -90,20 +81,20 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
                             "On hand: ${onHand.size} (to use up; the planner favours them)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp),
+                        modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
                     )
                     OutlinedTextField(
                         query, { query = it },
                         label = { Text("Search ingredients") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                     )
-                    LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
+                    LazyColumn(contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                         items(shown, key = { it.id }) { ingredient ->
                             Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                                Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
                             ) {
                                 Text(ingredient.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 FilterChip(

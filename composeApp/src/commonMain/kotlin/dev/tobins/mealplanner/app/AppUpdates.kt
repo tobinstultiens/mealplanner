@@ -102,7 +102,7 @@ fun UpdateDialog(update: AppUpdate, currentVersion: String, onUpdate: () -> Unit
         text = {
             androidx.compose.foundation.layout.Column(
                 androidx.compose.ui.Modifier.heightIn(max = 360.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.Related),
             ) {
                 androidx.compose.material3.Text("You have $currentVersion. The update downloads and then asks Android to install it.")
                 if (update.notes.isNotBlank()) MarkdownText(update.notes)
