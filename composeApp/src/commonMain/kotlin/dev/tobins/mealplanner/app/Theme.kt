@@ -6,6 +6,9 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -22,7 +25,7 @@ import androidx.compose.ui.unit.sp
  * contrast 0) with the seed #2E7D32, a fresh green. The values are written out so the app
  * needs no colour library and the palette is reviewable. Every text/background pair the
  * components use (on-primary on primary, on-surface on surface, and so on) has a contrast
- * ratio of at least 6:1 in both schemes, above WCAG AA's 4.5:1.
+ * ratio of at least 4.5:1 in both schemes (WCAG AA); ThemeTest enforces it.
  */
 
 private val LightColors = lightColorScheme(
@@ -107,6 +110,20 @@ private val DarkColors = darkColorScheme(
 fun appColorScheme(dark: Boolean): ColorScheme = if (dark) DarkColors else LightColors
 
 /**
+ * The colour of warnings (text and icon on the screen's surfaces): an amber, since no slot of
+ * the Material scheme reads as "careful" (tertiary is teal here, and wallpaper colours would
+ * make it anything). It keeps at least 4.5:1 on the surfaces in both schemes, and stays ours
+ * when the scheme comes from the wallpaper.
+ */
+fun warningColor(dark: Boolean): Color = if (dark) Color(0xFFFFB95C) else Color(0xFF8A5100)
+
+private val LocalWarningColor = staticCompositionLocalOf { warningColor(dark = false) }
+
+/** The colour of warnings in the current theme; see [warningColor]. */
+val MaterialTheme.warning: Color
+    @Composable @ReadOnlyComposable get() = LocalWarningColor.current
+
+/**
  * The type scale: Material's sizes with firmer weights on titles and labels, so a screen's
  * hierarchy reads at a glance. It keeps the platform's own typeface; a font file would add
  * to the web bundle.
@@ -152,8 +169,15 @@ object Spacing {
     val Message = 24.dp
 }
 
-/** Applies the app's colours and type scale to [content]. */
+/**
+ * Applies the app's colours and type scale to [content]. With [systemColors] (where the
+ * device offers them, see [systemColorScheme]) the colour scheme comes from the wallpaper;
+ * the type scale stays the app's own.
+ */
 @Composable
-fun MealPlannerTheme(dark: Boolean, content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = appColorScheme(dark), typography = AppTypography, content = content)
+fun MealPlannerTheme(dark: Boolean, systemColors: Boolean = false, content: @Composable () -> Unit) {
+    val scheme = (if (systemColors) systemColorScheme(dark) else null) ?: appColorScheme(dark)
+    CompositionLocalProvider(LocalWarningColor provides warningColor(dark)) {
+        MaterialTheme(colorScheme = scheme, typography = AppTypography, content = content)
+    }
 }

@@ -23,6 +23,7 @@ import dev.tobins.mealplanner.api.ActivityLevel
 import kotlinx.coroutines.runBlocking
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -73,6 +74,19 @@ class OffersApiTest {
         assertEquals("Jumbo is down", state.sources[1].error)
         assertEquals(listOf("Next week"), http.get("/api/offers?date=2026-11-20").body<OffersState>().offers.map { it.title })
         assertEquals(HttpStatusCode.BadRequest, http.get("/api/offers?date=soon").status)
+    }
+
+    @Test
+    fun warnsAboutLidlOffersThatStoppedBeingRenewed() = runBlocking {
+        val ah = FakeSource(Store.AH, listOf(offer(Store.AH, "Kipfilet", "2026-11-16", "2026-11-22")))
+        val lidl = FakeSource(Store.LIDL, listOf(offer(Store.LIDL, "Rundergehakt", "2026-11-16", "2026-11-22")))
+        val repository = OfferRepository(openDatabase("jdbc:sqlite::memory:").second, listOf(ah, lidl))
+        repository.refresh(now = Instant.parse("2026-11-18T10:00:00Z"))
+
+        assertEquals(emptyList(), repository.warnings(LocalDate.parse("2026-11-18")), "Wednesday: current")
+        assertEquals(1, repository.warnings(LocalDate.parse("2026-11-20")).size, "Friday, nothing runs into next week")
+        assertEquals(1, repository.warnings(LocalDate.parse("2026-11-23")).size, "everything has ended")
+        assertEquals(1, repository.state(LocalDate.parse("2026-11-23")).sources.single { it.store == Store.LIDL }.offerCount, "the offers are kept")
     }
 
     @Test

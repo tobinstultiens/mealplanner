@@ -128,8 +128,8 @@ fun ErrorBanner(summary: String, details: String, modifier: Modifier = Modifier)
 @Composable
 fun WarningBadge(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Icon(AppIcons.Warning, contentDescription = null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary)
-        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
+        Icon(AppIcons.Warning, contentDescription = null, Modifier.size(16.dp), tint = MaterialTheme.warning)
+        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.warning)
     }
 }
 

@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.OfferSourceStatus
 import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.offers.LidlGuard
 import dev.tobins.mealplanner.server.offers.OfferMatcher
 import dev.tobins.mealplanner.server.offers.OfferSource
 import kotlinx.coroutines.CancellationException
@@ -45,6 +46,18 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
         )
     }
 
+    /**
+     * Warnings about the stored offers as of [date], for the server log: they are not part of
+     * the API, since apps released before this check fail on fields they do not know. Only
+     * Lidl's page needs one so far.
+     */
+    fun warnings(date: LocalDate): List<String> {
+        // The widest range: the guard needs the ended offers too.
+        val ends = q.selectOffersOverlapping(until = "9999-12-31", from = "0000-01-01").executeAsList()
+            .filter { it.store == Store.LIDL.name }.map { LocalDate.parse(it.validUntil) }
+        return listOfNotNull(LidlGuard.warning(ends, date))
+    }
+
     private fun dev.tobins.mealplanner.server.db.Offer.toOffer() =
         Offer(Store.valueOf(store), title, deal, price, originalPrice, packSize, category, validFrom, validUntil, url)
 
@@ -77,6 +90,8 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                 q.recordFailure(e.message ?: e::class.simpleName ?: "unknown error", source.store.name)
             }
         }
-        return state(LocalDate.ofInstant(now, java.time.ZoneId.of("Europe/Amsterdam")))
+        val today = LocalDate.ofInstant(now, java.time.ZoneId.of("Europe/Amsterdam"))
+        warnings(today).forEach { log.warn(it) }
+        return state(today)
     }
 }

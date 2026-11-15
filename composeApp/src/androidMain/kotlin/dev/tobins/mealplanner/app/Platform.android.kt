@@ -25,3 +25,12 @@ actual fun SystemBars(dark: Boolean) {
 actual fun secureRandomBytes(size: Int): ByteArray = ByteArray(size).also { java.security.SecureRandom().nextBytes(it) }
 
 actual fun deviceLocaleTag(): String = java.util.Locale.getDefault().toLanguageTag()
+
+actual fun systemColorsAvailable(): Boolean = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+
+@Composable
+actual fun systemColorScheme(dark: Boolean): androidx.compose.material3.ColorScheme? {
+    if (!systemColorsAvailable()) return null
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return if (dark) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context)
+}

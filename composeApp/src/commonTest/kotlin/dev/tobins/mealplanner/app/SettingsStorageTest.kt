@@ -13,4 +13,15 @@ class SettingsStorageTest {
         storage.saveServerSettings(ServerSettings(" https://meals.example.nl/ "))
         assertEquals(ServerSettings("https://meals.example.nl"), storage.serverSettings(defaults))
     }
+
+    @Test
+    fun systemColoursAreOffUntilSwitchedOn() {
+        val storage = MemorySettingsStorage()
+        assertEquals(false, storage.systemColors())
+
+        storage.saveSystemColors(true)
+        assertEquals(true, storage.systemColors())
+        storage.saveSystemColors(false)
+        assertEquals(false, storage.systemColors())
+    }
 }
