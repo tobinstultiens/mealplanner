@@ -90,11 +90,56 @@ cheap, the server keeps a regular price per kg for each ingredient (`PriceReposi
 - A price set by hand on the ingredient (`pricePerKg`) wins. Ingredients without a price are
   costed at the median price per kg and named in the recipe's cost.
 
+With each price the lookup keeps the product's `mainCategory` and `subCategory`; they also give the
+ingredient's shop section (below).
+
 An offer becomes a share of the regular price (`Discounts`): "25% korting" pays 0.75, "1+1 gratis"
 0.5, "2e halve prijs" 0.75; stated prices ("2 voor 3,99", "voor 4,49", Lidl's plain prices) are
 compared with the regular price of a pack of the offer's size. Online-only deals are ignored. The
 best offer per ingredient in the plan's week applies. The planner then prefers meals whose
 calories cost less than the median (`WeekPlanner.savings`), so offers pull those meals in.
+
+## Shop sections
+
+The shopping list is sorted in the order you walk a Dutch supermarket, modelled on Albert Heijn:
+fruit and vegetables, bread, cold meats and cheese, sauces, the chilled wall (meat, fish,
+vegetarian, dairy and eggs, ready meals), the aisles (pasta, rice and world foods; tins and jars;
+breakfast and spreads; baking; snacks and sweets; drinks), frozen, household and non-food, and
+"Other" last. The list of sections is `ShopSection` in `shared`; within a section items are sorted
+by name, and ticking an item off does not move it. One route serves every store: Jumbo is laid
+out much the same, Lidl a little differently (bakery at the entrance, a non-food middle aisle).
+
+An ingredient's section comes from, best first:
+1. **A section set by hand** in the app (Recipes → Link ingredients → Shop sections, or
+   `PUT /api/ingredients/{id}/section`). Per account, like the rest of the catalogue; it stays until
+   cleared, whatever later lookups find.
+2. **AH's category for the product its regular price comes from** (`StoreSections`). Shared, like
+   the price, because both are kept per ingredient name. Main categories map to sections one to one
+   ("Kaas" to cold meats and cheese, "Diepvries" to frozen). AH files a few things where its shops
+   don't put them, so these sub-categories override the main one: "Tarwebloem" and "Bindmiddel"
+   (under "Bakkerij") and "Suiker, poedersuiker" (under "Koffie, thee") go to baking,
+   "Tomatenblokjes" and "Kidney bonen" (canned, under "Groente, aardappelen") to tins and jars,
+   "Kokosmelk" (under "Zuivel, eieren") to world foods. A category not in the list falls through.
+   Prices looked up before categories were kept have none; the database migration that added them
+   makes the next scheduled check look all prices up again.
+3. **The NEVO food group** of the linked food (`FoodSections`). Groups are a nutrition grouping,
+   so words of the food's English name refine them: "tinned", "canned" or "pickled" vegetables,
+   fruit, legumes and fish go to tins and jars, "frozen" anything to frozen, "fresh" herbs and
+   ginger "root" to produce, "flour" and "starch" to baking, "muesli" to breakfast, "oil" to
+   sauces and oil (butter stays with dairy).
+4. **Other**, at the end of the list.
+
+Negligible ingredients (spices and the like) are never on the list, so they have no section to set.
+
+What AH's app API offers here, checked on 2026-11-15 with the anonymous token and eleven requests:
+- The product search (`/mobile-services/product/search/v2`) gives every product a `mainCategory`
+  and a `subCategory` (e.g. "Koffie, thee" › "Suiker, poedersuiker"); nothing finer, and no field
+  saying where in a store a product is (no aisle, shelf or route position).
+- The product detail (`/mobile-services/product/detail/v4/fir/{webshopId}`) and the category list
+  (`/mobile-services/v1/product-shelves/categories`) that older third-party clients used both
+  answer 404 now.
+- The AH app sorts "Mijn lijst" in a chosen store's walking order, but that lives in the logged-in
+  shopping list; no anonymous endpoint for a store's route was found, so the route is fixed here.
 
 ## Nutrition: NEVO
 

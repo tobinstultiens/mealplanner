@@ -100,6 +100,27 @@ data class RecipeNutrition(
     val unquantified: List<String> = emptyList(),
 )
 
+/**
+ * Where in the shop an ingredient is, and why. Section keys are
+ * [dev.tobins.mealplanner.shopping.ShopSection] names.
+ */
+@Serializable
+data class IngredientSection(
+    val ingredientId: Long,
+    val name: String,
+    /** The section the shopping list uses: the one set by hand, else [automatic]. */
+    val section: String,
+    /** The section the store's or the food's data gives. */
+    val automatic: String,
+    /** Where [automatic] comes from, e.g. "Albert Heijn: Kaas" or "NEVO food group: Cheese". */
+    val source: String,
+    val byHand: Boolean,
+)
+
+/** Body for setting an ingredient's section by hand; a null section goes back to the automatic one. */
+@Serializable
+data class SectionChoice(val section: String?)
+
 /** What is at home: [staples] are always there, [onHand] are perishables to use up. */
 @Serializable
 data class Pantry(val staples: List<Ingredient>, val onHand: List<Ingredient>)

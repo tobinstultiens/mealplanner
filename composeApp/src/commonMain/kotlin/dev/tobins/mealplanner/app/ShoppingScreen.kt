@@ -45,7 +45,10 @@ fun ShoppingItem.quantityText(locale: FormatLocale = FormatLocale.device): Strin
     grams?.let { if (it >= 1000) "${formatAmount(it / 1000, locale)} kg" else "${it.roundToInt()} g" },
 ).joinToString(" · ")
 
-/** What to buy for a week's plan, grouped by shop section, with items to tick off. */
+/**
+ * What to buy for a week's plan, grouped by shop section in the order you walk the shop, with
+ * items to tick off. The server sends the items in that order, so grouping keeps it.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Unit, onOpenOffers: () -> Unit) {
@@ -132,6 +135,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
                             modifier = Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                         )
                     }
+                    // Groups come in the order of their first item: the route through the shop.
                     list.items.groupBy { it.category }.forEach { (category, items) ->
                         item(key = "h:$category") {
                             SectionHeader(

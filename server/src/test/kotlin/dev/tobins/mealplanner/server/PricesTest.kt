@@ -30,6 +30,13 @@ class PricesTest {
         assertEquals("4 stuks", onOffer.packSize)
         assertEquals("Vleeswaren", onOffer.category)
         assertEquals("prijs per kg €16.60", products.first().unitPrice)
+
+        // Fields as AH's search gave them on 2026-11-15; the sub-category places flour on the baking shelf.
+        val flour = AhProductParser.products(
+            """{"products":[{"title":"AH Tarwebloem","salesUnitSize":"1 kg","priceBeforeBonus":0.99,"mainCategory":"Bakkerij","subCategory":"Tarwebloem"}]}""",
+        ).single()
+        assertEquals("Bakkerij", flour.category)
+        assertEquals("Tarwebloem", flour.subCategory)
     }
 
     private class FakeStore(val products: Map<String, List<StoreProduct>>) : PriceSource {

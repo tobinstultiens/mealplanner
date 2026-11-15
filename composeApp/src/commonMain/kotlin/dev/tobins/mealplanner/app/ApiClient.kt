@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodDataset
 import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
@@ -21,6 +22,7 @@ import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.SyncResult
@@ -205,6 +207,14 @@ class ApiClient(
     suspend fun map(request: MappingRequest): Ingredient = http.put("api/mappings") {
         contentType(ContentType.Application.Json)
         setBody(request)
+    }.body()
+
+    suspend fun ingredientSections(): List<IngredientSection> = http.get("api/ingredients/sections").body()
+
+    /** Sets an ingredient's shop section by hand; null goes back to the automatic one. */
+    suspend fun setSection(ingredientId: Long, section: String?): IngredientSection = http.put("api/ingredients/$ingredientId/section") {
+        contentType(ContentType.Application.Json)
+        setBody(SectionChoice(section))
     }.body()
 
     suspend fun searchFoods(query: String): List<Food> = http.get("api/foods") { parameter("q", query) }.body()

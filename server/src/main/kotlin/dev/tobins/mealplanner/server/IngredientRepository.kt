@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.shopping.ShopSection
 import dev.tobins.mealplanner.units.Dimension
 import dev.tobins.mealplanner.server.db.Ingredient as IngredientRow
 
@@ -58,6 +59,16 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     fun setOnHand(id: Long, onHand: Boolean) {
         requireIngredient(id)
         if (onHand) db.pantryQueries.insertOnHand(id, java.time.Instant.now().toString()) else db.pantryQueries.deleteOnHand(id)
+    }
+
+    /** Shop sections the account set by hand, by ingredient id. Keys this version does not know are skipped. */
+    fun sectionsByHand(): Map<Long, ShopSection> = q.selectSectionsByHand(userId).executeAsList()
+        .mapNotNull { row -> ShopSection.fromKey(row.section)?.let { row.id to it } }.toMap()
+
+    /** Sets an ingredient's shop section by hand; null goes back to the automatic one. */
+    fun setSection(id: Long, section: ShopSection?) {
+        requireIngredient(id)
+        q.setSection(section?.name, userId, id)
     }
 
     private fun requireIngredient(id: Long) =

@@ -11,6 +11,7 @@ import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.OfferMatcher
 import dev.tobins.mealplanner.server.prices.AhAisles
 import dev.tobins.mealplanner.server.prices.PriceSource
+import dev.tobins.mealplanner.server.prices.StoreAisle
 import dev.tobins.mealplanner.server.prices.StoreProduct
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -60,6 +61,14 @@ class PriceRepository(
         val looked = q.selectPrices().executeAsList().associate { it.name.lowercase() to it.eurosPerKg }
         return ingredients.list().mapNotNull { i -> (i.pricePerKg ?: looked[i.name.lowercase()])?.let { i.id to it } }.toMap()
     }
+
+    /**
+     * Where the store files the product priced for each ingredient name (lower case), for the
+     * ingredient's shop section. Shared like the prices; names without a category are left out.
+     */
+    fun aisles(): Map<String, StoreAisle> = q.selectPrices().executeAsList().mapNotNull { row ->
+        row.category?.let { row.name.lowercase() to StoreAisle(Store.valueOf(row.store), it, row.subCategory) }
+    }.toMap()
 
     /** One account's prices with the discounts of offers valid at some point between [from] and [until]. */
     fun pricing(ingredients: IngredientRepository, from: LocalDate, until: LocalDate): Pricing {
@@ -136,7 +145,10 @@ class PriceRepository(
                     q.deletePrice(ingredient.name)
                 } else {
                     val (product, perKg) = price
-                    q.upsertPrice(ingredient.name, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString())
+                    q.upsertPrice(
+                        ingredient.name, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString(),
+                        product.category, product.subCategory,
+                    )
                     found++
                 }
             }

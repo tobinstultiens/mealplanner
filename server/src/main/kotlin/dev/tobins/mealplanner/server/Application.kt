@@ -13,6 +13,7 @@ import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeSettings
+import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.SyncResult
@@ -291,6 +292,16 @@ fun Application.module(
                 val id = call.parameters["id"]?.toLongOrNull()
                     ?: throw IllegalArgumentException("Ingredient id must be a number")
                 call.respond(call.user.ingredients.update(id, call.receive<IngredientInput>()))
+            }
+
+            // Where each ingredient is in the shop, which orders the shopping list.
+            get("/api/ingredients/sections") { call.respond(call.user.sections.list()) }
+
+            // Sets an ingredient's section by hand; a null section goes back to the automatic one.
+            put("/api/ingredients/{id}/section") {
+                val id = call.parameters["id"]?.toLongOrNull()
+                    ?: throw IllegalArgumentException("Ingredient id must be a number")
+                call.respond(call.user.sections.set(id, call.receive<SectionChoice>()))
             }
 
             get("/api/profile") { call.respond(call.user.profiles.state()) }

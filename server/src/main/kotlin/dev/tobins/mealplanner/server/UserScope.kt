@@ -28,11 +28,13 @@ class UserScope(
     val ingredients = IngredientRepository(db, foods, accountId)
     val recipes = RecipeRepository(db, ingredients, accountId) { from, until -> prices.pricing(ingredients, from, until) }
     val profiles = ProfileRepository(db, accountId)
+    val sections = ShopSections(ingredients, prices)
     val plans by lazy {
         PlanRepository(
             db, accountId, recipes, profiles,
             offersByIngredient = { from, until -> offers.byIngredient(from, until, ingredients.matchTerms()) },
             pricing = { from, until -> prices.pricing(ingredients, from, until) },
+            sections = sections::byIngredient,
         )
     }
     val tracking by lazy { TrackingRepository(db, accountId, plans, profiles) }

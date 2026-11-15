@@ -57,7 +57,7 @@ import kotlin.test.assertTrue
 class PlanTest {
     private val nevo = listOf(
         "\"NEVO-versie/NEVO-version\"|\"Voedingsmiddelgroep\"|\"Food group\"|\"NEVO-code\"|\"Voedingsmiddelnaam/Dutch food name\"|\"Engelse naam/Food name\"|\"Synoniem\"|\"Hoeveelheid/Quantity\"|\"ENERCC (kcal)\"|\"PROT (g)\"|\"FAT (g)\"|\"FASAT (g)\"|\"CHO (g)\"|\"SUGAR (g)\"|\"FIBT (g)\"|\"NA (mg)\"",
-        "NEVO-Online 2025 9.0|Vlees|Meat|10|Rundvlees rauw|Beef raw||per 100g|150|20|4|2|0|0|0|50",
+        "NEVO-Online 2025 9.0|Vlees|Meat and poultry|10|Rundvlees rauw|Beef raw||per 100g|150|20|4|2|0|0|0|50",
     ).joinToString("\r\n")
 
     /** Ten four-serving dinners of 450 to 720 kcal per serving, one unlinked recipe and one sauce. */
@@ -278,7 +278,7 @@ class PlanTest {
             gramsPerServing * meal.portions
         }
         assertEquals(expected, beef.grams!!, absoluteTolerance = 1e-6)
-        assertEquals("Meat", beef.category)
+        assertEquals("Meat", beef.category, "the shop section of NEVO's meat group")
         assertTrue("Snack plate" in beef.recipes)
 
         // "To taste" lines are a reminder, not something to buy.
