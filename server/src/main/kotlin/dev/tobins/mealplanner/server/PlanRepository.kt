@@ -267,7 +267,7 @@ class PlanRepository(
 
         /**
          * The meals of [week] whose portions are still to be cooked, which is what is still to buy
-         * for: the shopping list's [dev.tobins.mealplanner.api.ShoppingItem.toBuyGrams]. It goes by
+         * for: the shopping list's [dev.tobins.mealplanner.api.ShoppingItem.toComeGrams]. It goes by
          * the rules of [eatFromStock], so the list never counts a share the stock went down for: an
          * eaten meal is cooked, and so is a leftover lunch whose dinner was eaten; a skipped meal is
          * not cooked, unless it is a leftover lunch whose dinner still is, as that dinner is cooked

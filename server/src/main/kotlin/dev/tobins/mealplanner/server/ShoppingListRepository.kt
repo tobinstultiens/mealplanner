@@ -54,8 +54,8 @@ class ShoppingListRepository(
      * leftovers included; staples are left out and only named as a reminder. Items come in
      * the order of the walk through the shop, by section and then by name; whether an item
      * is ticked or on hand does not move it; one on hand says how much is left of it when that is
-     * known ([ShoppingItem.onHandGrams]), and each says how much is still to buy for the meals still
-     * to cook ([ShoppingItem.toBuyGrams]). The account's own items ([addExtra]) are among them,
+     * known ([ShoppingItem.onHandGrams]), and each says what the meals still to cook need of it
+     * ([ShoppingItem.toComeGrams]). The account's own items ([addExtra]) are among them,
      * also when the week has no meals. Next to it, the advice of [ShoppingList.buyAhead] and
      * [ShoppingList.stockUp], unless switched off or dismissed for the week, and what was bought
      * that the meals no longer need ([ShoppingList.noLongerNeeded]).
@@ -66,7 +66,7 @@ class ShoppingListRepository(
         val sectionOf = sections()
         val lines = recipes.linesWithIngredients(meals.map { it.recipeId })
         val week = needsOf(meals, sectionOf, lines)
-        // The stock went down for the meals eaten, so what is still to buy goes by the meals still to cook.
+        // The stock went down for the meals eaten, so what is still needed goes by the meals still to cook.
         val toCook = needsOf(PlanRepository.toCook(meals), sectionOf, lines).needs.associateBy { it.key }
         val ownRows = q.selectExtrasForWeek(userId, start.toString()).executeAsList()
         val own = ownNeeds(ownRows, sectionOf)
@@ -86,7 +86,7 @@ class ShoppingListRepository(
             need.toItem(need.key, need.key in ticked, id in onHand, id?.let { offers[it] }.orEmpty(), id?.let { images[it] }, id?.let { perKg[it] })
                 .withBought(ticks[need.key])
                 .withStock(id, stock)
-                .copy(toBuyGrams = toBuyGrams(need, toCook[need.key], id, stock))
+                .copy(toComeGrams = toComeGrams(need, toCook[need.key]))
         }
 
         val wanted = advice()
@@ -138,17 +138,17 @@ class ShoppingListRepository(
     ): ShoppingNeeds = shoppingNeeds(planned(meals), lines, sectionOf)
 
     /**
-     * What is still to buy of [need], the week's row of ingredient [id] (null for one without): what
-     * the meals still to cook need of it ([toCook], null when none uses it, so nothing), less the grams
-     * left of it in [stock], at least 0. Null when that can't be told: the week's need has no total
-     * weight, the stock's amount is not known, or the meals still to cook use it only without an
-     * amount ("salt to taste"), which says nothing about how much is enough.
+     * The weight the meals still to cook need of [need], a row of the list: what [toCook], their row
+     * for it, says. 0 when none of them uses it ([toCook] null), whatever its unit, so a row counted in
+     * pieces or without an amount is done with too once its meals are. Null when it can't be told:
+     * the week's need has no total weight, or the meals still to cook use it only without an amount
+     * ("a bit of pesto"), which says nothing about how much. Null for an own item, which is for no meal.
      */
-    private fun toBuyGrams(need: ShoppingNeed, toCook: ShoppingNeed?, id: Long?, stock: Map<Long, Double?>): Double? {
-        if (need.totalGrams == null) return null
-        val left = if (id != null && id in stock) stock[id] ?: return null else 0.0
-        val needed = if (toCook == null) 0.0 else toCook.totalGrams ?: return null
-        return (needed - left).coerceAtLeast(0.0)
+    private fun toComeGrams(need: ShoppingNeed, toCook: ShoppingNeed?): Double? = when {
+        need.key !is ShoppingKey.Ingredient && need.key !is ShoppingKey.Text -> null
+        toCook == null -> 0.0
+        need.totalGrams == null -> null
+        else -> toCook.totalGrams
     }
 
     /**

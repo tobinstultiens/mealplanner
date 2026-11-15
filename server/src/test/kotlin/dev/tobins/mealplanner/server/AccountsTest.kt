@@ -500,23 +500,26 @@ class AccountsTest {
             if (name == "alice") IngredientRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 500.0)
             client
         }
-        suspend fun toBuy(name: String) =
-            clients.getValue(name).get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef" }.toBuyGrams
+        // What each is told the meals to come need, and what is at home: their own amounts only.
+        suspend fun shown(name: String) =
+            clients.getValue(name).get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef" }
+                .let { it.toComeGrams to it.onHandGrams }
         suspend fun eat(name: String, day: Int) = assertEquals(
             HttpStatusCode.OK,
             clients.getValue(name).put("/api/plans/$week/meals/$day/dinner/status") { setBody(MealStatus.EATEN) }.status,
         )
-        assertEquals(300.0, toBuy("alice"))
-        assertEquals(800.0, toBuy("bob"))
+        assertEquals(800.0 to 500.0, shown("alice"))
+        assertEquals(800.0 to null, shown("bob"))
 
-        // Alice's Monday stew eaten from her beef: still 300 g for her, and Bob's list is as it was.
+        // Alice's Monday stew eaten from her beef: 400 g to come for her, and Bob's list is as it was.
         eat("alice", 0)
-        assertEquals(300.0, toBuy("alice"))
-        assertEquals(800.0, toBuy("bob"), "Alice's meal is not his")
-        // Bob's meal eaten, without any stock: less for him, nothing changes for her.
+        assertEquals(400.0 to 100.0, shown("alice"))
+        assertEquals(800.0 to null, shown("bob"), "Alice's meal is not his")
+        // Bob eats both of his, without any stock: nothing to come for him, nothing changes for her.
+        eat("bob", 0)
         eat("bob", 1)
-        assertEquals(400.0, toBuy("bob"))
-        assertEquals(300.0, toBuy("alice"))
+        assertEquals(0.0 to null, shown("bob"))
+        assertEquals(400.0 to 100.0, shown("alice"))
     }
 
     @Test

@@ -20,21 +20,19 @@ private const val MIN_MORE_GRAMS = 25.0
 /**
  * Whether the meals need more of this ticked row than was bought: the weight grew by more than 5 %
  * and at least 25 g, or the pieces (counted rounded up, as the list shows them) by at least one.
- * Never more than the meals still to cook need less the stock ([ShoppingItem.toBuyGrams]): a meal
- * eaten since was made with what was at home, so once its meals are done a row needs nothing more.
- * Null for a row that is not ticked, one that remembers no bought amount (a tick from before the
- * server kept it: no claim) and one whose amount is within a rounding step. The one rule behind
- * the row, the progress line and the sections, so they never disagree.
+ * Never more than the meals still to cook need less the stock ([leftToBuyGrams]): a meal eaten since
+ * was made with what was at home, so once its meals are done a row needs nothing more, whatever its
+ * unit ([nothingToBuy]). Null for a row that is not ticked, one that remembers no bought amount (a
+ * tick from before the server kept it: no claim) and one whose amount is within a rounding step.
+ * The one rule behind the row, the progress line and the sections, so they never disagree.
  */
 fun ShoppingItem.moreNeeded(): MoreNeeded? {
     // An own item has no amounts to compare.
-    if (!checked || extraId != null) return null
-    val left = toBuyGrams ?: Double.MAX_VALUE
-    if (left < SCRAP_GRAMS) return null
+    if (!checked || extraId != null || nothingToBuy()) return null
     val needed = grams ?: knownGrams
     val boughtWeight = boughtGrams
     if (needed != null && boughtWeight != null) {
-        val more = minOf(needed - boughtWeight, left)
+        val more = minOf(needed - boughtWeight, leftToBuyGrams() ?: Double.MAX_VALUE)
         if (more >= MIN_MORE_GRAMS && more > MORE_SHARE * boughtWeight) return MoreNeeded(grams = more, boughtGrams = boughtWeight)
     }
     val boughtCount = boughtPieces

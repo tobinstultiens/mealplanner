@@ -119,7 +119,7 @@ class ShoppingModeTest {
     @Test
     fun aRowWithNothingLeftToBuyIsNoOpenItem() {
         // The stock covers what the meals still to cook need: not ticked, but nothing to buy.
-        val covered = ShoppingItem("yoghurt", "yoghurt", 500.0, null, "Dairy", emptyList(), onHand = true, checked = false, onHandGrams = 650.0, toBuyGrams = 0.0)
+        val covered = ShoppingItem("yoghurt", "yoghurt", 500.0, null, "Dairy", emptyList(), onHand = true, checked = false, onHandGrams = 650.0, toComeGrams = 500.0)
         val withIt = items + covered
         assertEquals("3 of 5 · 2 sections to go", shoppingProgress(withIt, Strings.English), "neither ticked nor to go")
         assertEquals("All 5 ticked off", shoppingProgress(withIt.map { if (it.key == "yoghurt") it else it.copy(checked = true) }, Strings.English))
@@ -139,14 +139,16 @@ class ShoppingModeTest {
     @Test
     fun aTickedRowNeedsNoMoreThanTheMealsStillToCook() {
         // Bought 800 g, the plan needs 1.4 kg since: 600 g more, unless meals were eaten since.
-        assertEquals(600.0, bought(grams = 1400.0, boughtGrams = 800.0).copy(toBuyGrams = 1100.0).moreNeeded()?.grams)
-        assertEquals(200.0, bought(grams = 1400.0, boughtGrams = 800.0).copy(toBuyGrams = 200.0).moreNeeded()?.grams)
+        assertEquals(600.0, bought(grams = 1400.0, boughtGrams = 800.0).copy(toComeGrams = 1100.0).moreNeeded()?.grams)
+        assertEquals(200.0, bought(grams = 1400.0, boughtGrams = 800.0).copy(toComeGrams = 200.0).moreNeeded()?.grams)
+        // The ceiling takes off the stock too: 500 g to come, 400 g at home.
+        assertEquals(100.0, bought(grams = 1400.0, boughtGrams = 800.0).copy(toComeGrams = 500.0, onHand = true, onHandGrams = 400.0).moreNeeded()?.grams)
         // Every meal that needs it eaten: nothing more, and done.
-        val eaten = bought(grams = 1400.0, boughtGrams = 800.0, pieces = 7.0, boughtPieces = 4.0).copy(toBuyGrams = 0.0)
+        val eaten = bought(grams = 1400.0, boughtGrams = 800.0, pieces = 7.0, boughtPieces = 4.0).copy(toComeGrams = 0.0)
         assertNull(eaten.moreNeeded())
         assertTrue(eaten.done)
         // A meal eaten while the need stays as bought changes nothing.
-        assertNull(bought(grams = 800.0, boughtGrams = 800.0).copy(toBuyGrams = 400.0).moreNeeded())
+        assertNull(bought(grams = 800.0, boughtGrams = 800.0).copy(toComeGrams = 400.0).moreNeeded())
     }
 
     @Test

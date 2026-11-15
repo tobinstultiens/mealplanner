@@ -404,7 +404,8 @@ enum class Msg(private val english: String, private val dutch: String) {
     ON_HAND_ENOUGH("{0} on hand: enough", "{0} in huis: genoeg"),
     ON_HAND_BUY_TO_COME("{0} on hand, buy {1} for the meals to come", "{0} in huis, koop {1} voor de maaltijden die nog komen"),
     ON_HAND_ENOUGH_TO_COME("{0} on hand: enough for the meals to come", "{0} in huis: genoeg voor de maaltijden die nog komen"),
-    BUY_TO_COME("Buy {0} for the meals to come", "Koop {0} voor de maaltijden die nog komen"),
+    FOR_MEALS_TO_COME("For the meals to come", "Voor de maaltijden die nog komen"),
+    NOTHING_LEFT_HINT("On hand, or the meals that need it are done", "In huis, of de maaltijden die het nodig hebben zijn klaar"),
     NOTHING_TO_COME("Nothing to buy: the meals that need it are done", "Niets te kopen: de maaltijden die het nodig hebben zijn klaar"),
     NOTHING_LEFT_TO_BUY("Nothing left to buy", "Niets meer te kopen"),
     SHOW_DEAL("Show the deal", "Toon de aanbieding"),
@@ -621,6 +622,10 @@ enum class Plural(
         "Onvolledig: {0} ingrediënt is nog niet meegeteld ({1}).", "Onvolledig: {0} ingrediënten zijn nog niet meegeteld ({1}).",
     ),
     ANY_STORE_ITEMS("Any store · {0} item", "Any store · {0} items", "Elke winkel · {0} product", "Elke winkel · {0} producten"),
+    NOTHING_LEFT_ITEMS(
+        "Nothing left to buy · {0} item", "Nothing left to buy · {0} items",
+        "Niets meer te kopen · {0} product", "Niets meer te kopen · {0} producten",
+    ),
     USED_IN_RECIPES("Used in {0} recipe, e.g. {1}", "Used in {0} recipes, e.g. {1}", "Gebruikt in {0} recept, bijv. {1}", "Gebruikt in {0} recepten, bijv. {1}"),
     // --- end of plurals
     ;

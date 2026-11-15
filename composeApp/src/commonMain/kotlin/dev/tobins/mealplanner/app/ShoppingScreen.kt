@@ -104,54 +104,77 @@ fun ShoppingItem.quantityText(locale: FormatLocale): String {
 /** Less than a gram still to buy is nothing to buy, as the server drops a stock once less than a gram is left. */
 internal const val SCRAP_GRAMS = 1.0
 
-/**
- * The weight still to buy of a row not ticked yet: the server's [ShoppingItem.toBuyGrams], what the
- * meals still to cook need less what is on hand. Null when the server can't tell. Null too for a
- * ticked row: what it said when ticked already counted the stock there was, so what is still to buy
- * is [moreNeeded]'s one number, and subtracting the stock again would count it twice.
- */
-internal fun ShoppingItem.gramsToBuy(): Double? = if (checked) null else toBuyGrams
+/** No meal still to cook needs this row, whatever its unit: the server says the meals to come need exactly 0 ([ShoppingItem.toComeGrams]). */
+internal val ShoppingItem.mealsDone: Boolean get() = toComeGrams == 0.0
+
+/** Some of the row's meals are done, so the meals to come need less weight than the week ([ShoppingItem.grams]). */
+private val ShoppingItem.partlyDone: Boolean
+    get() = toComeGrams.let { toCome -> toCome != null && grams.let { it != null && it - toCome >= SCRAP_GRAMS } }
 
 /**
- * Not ticked, and nothing of it is left to buy: what is on hand covers what the meals still to cook
- * need, or none of them needs it any more (eaten or skipped). Such a row is no item to buy: the
- * progress line, the store groups and the savings leave it out, and shopping mode puts it with the
- * done ones. It stays on the list, so it can still be ticked.
+ * The weight still to buy of this row, ticked or not: what the meals to come need
+ * ([ShoppingItem.toComeGrams]) less what is on hand ([ShoppingItem.onHandGrams]), at least 0; 0 when
+ * no meal to come needs it. Null when either is not known. On a ticked row it doesn't count what
+ * was bought, which only the tick knows: there it is only a ceiling ([moreNeeded]) and the saving's share.
  */
-internal val ShoppingItem.covered: Boolean get() = (gramsToBuy() ?: return false) < SCRAP_GRAMS
+internal fun ShoppingItem.leftToBuyGrams(): Double? {
+    val toCome = toComeGrams ?: return null
+    if (toCome == 0.0) return 0.0
+    val left = if (onHand) onHandGrams ?: return null else 0.0
+    return (toCome - left).coerceAtLeast(0.0)
+}
 
 /**
- * [ShoppingItem.toBuyGrams], ticked or not, when it is less than the whole need: part of it is on
- * hand, or some of its meals are done. Null when it is all of the need, or not known.
+ * Nothing of this row is left to buy, ticked or not: no meal to come needs it ([mealsDone]), or the
+ * stock covers what they need to within [SCRAP_GRAMS]. The scrap only forgives what the stock leaves
+ * over: a need of under a gram with nothing at home (a pinch of oregano) is still to buy.
  */
-private fun ShoppingItem.lessToBuy(): Double? {
-    val toBuy = toBuyGrams ?: return null
-    return toBuy.takeIf { grams.let { need -> need != null && need - toBuy >= SCRAP_GRAMS } }
+internal fun ShoppingItem.nothingToBuy(): Boolean {
+    if (mealsDone) return true
+    val toBuy = leftToBuyGrams() ?: return false
+    return onHand && toBuy < SCRAP_GRAMS
+}
+
+/**
+ * Not ticked, and nothing of it is left to buy ([nothingToBuy]). Such a row is no item to buy: the
+ * progress line, the store groups and their counts and the savings leave it out, and shopping mode
+ * puts it with the done ones. It stays on the list, so it can still be ticked.
+ */
+internal val ShoppingItem.covered: Boolean get() = !checked && nothingToBuy()
+
+/**
+ * The row's amount column: the week's need ([quantityText]), but on a row not ticked yet whose meals
+ * are partly done what the meals to come need, so it adds up with the line under the name
+ * ([toBuyText]), and nothing once no meal to come needs it. A ticked row keeps the week's need, which
+ * its "more" line ([moreNeeded]) counts from. Pieces are left out with the meals to come, as the
+ * server weighs them only.
+ */
+internal fun ShoppingItem.amountText(locale: FormatLocale): String = when {
+    checked -> quantityText(locale)
+    mealsDone -> ""
+    partlyDone -> weightText(toComeGrams ?: 0.0, locale)
+    else -> quantityText(locale)
 }
 
 /**
  * What a row not ticked yet says under its name of what is at home and still to buy: `300 g on
  * hand, buy 200 g`, `600 g on hand: enough` when that covers it, or `300 g on hand` when the need's
- * weight is not known. When meals were eaten or skipped too, it says the amount is for the meals to
- * come (`300 g on hand, buy 200 g for the meals to come`, `Buy 400 g for the meals to come`), as it
- * no longer adds up with the week's need next to the name. Null when nothing lessens the need, and
- * when on hand in an amount nobody knows (put there by hand): the name then asks "(on hand?)"
- * ([nameText]), never saying none is there. Null on a ticked row too: its buying is done, or its
- * "more" line ([moreNeeded]) says the one amount still to buy, which a second amount next to it
- * would only make the reader subtract from again.
+ * weight is not known. Once meals are done, the amount column is what the meals to come need
+ * ([amountText]), and the line says so: `176 g on hand, buy 504 g for the meals to come` (next to
+ * 680 g), `For the meals to come` without a stock, and `Nothing to buy: the meals that need it are
+ * done` only when none of them is still to come. Null when nothing lessens the need, and when on
+ * hand in an amount nobody knows with no meal done (the name then asks "(on hand?)", [nameText],
+ * never saying none is there). Null on a ticked row too: its buying is done, or its "more" line
+ * ([moreNeeded]) says the one amount still to buy, which a second amount would only make the reader
+ * subtract from again.
  */
 internal fun ShoppingItem.toBuyText(strings: Strings): String? {
     if (checked) return null
-    val left = onHandGrams?.takeIf { onHand }
-    if (left == null) {
-        // Nothing at home to count: only meals done lessen the need.
-        val less = lessToBuy() ?: return null
-        return if (less < SCRAP_GRAMS) strings(Msg.NOTHING_TO_COME) else strings(Msg.BUY_TO_COME, weightText(less, strings.locale))
-    }
+    if (mealsDone) return strings(Msg.NOTHING_TO_COME)
+    val toCome = partlyDone
+    val left = onHandGrams?.takeIf { onHand } ?: return if (toCome) strings(Msg.FOR_MEALS_TO_COME) else null
     val amount = weightText(left, strings.locale)
-    val toBuy = gramsToBuy() ?: return strings(Msg.ON_HAND_AMOUNT, amount)
-    // What is at home and what is to buy fall short of the week's need: meals are done.
-    val toCome = grams.let { it != null && it - (left + toBuy) >= SCRAP_GRAMS }
+    val toBuy = leftToBuyGrams() ?: return strings(Msg.ON_HAND_AMOUNT, amount)
     return if (toBuy < SCRAP_GRAMS) {
         strings(if (toCome) Msg.ON_HAND_ENOUGH_TO_COME else Msg.ON_HAND_ENOUGH, amount)
     } else {
@@ -164,13 +187,16 @@ internal fun ShoppingItem.nameText(strings: Strings): String =
     if (onHand && onHandGrams == null) strings(Msg.ON_HAND_MAYBE, name) else name
 
 /**
- * [packsToBuy] for what is left to buy, ticked or not: for [lessToBuy] when part of the need is on
- * hand or its meals are done, none when nothing is left. Packs counted in pieces are then left out,
- * as a weight says nothing about pieces. What the savings check a deal against ([savingOf]).
+ * [packsToBuy] for what is left to buy ([leftToBuyGrams]), ticked or not: none when nothing is
+ * ([nothingToBuy]); for that weight alone when it is less than the whole need, pieces then left out
+ * as a weight says nothing about them; else for the whole need. What the savings check a deal
+ * against ([savingOf]).
  */
 internal fun ShoppingItem.packsLeftToBuy(offer: Offer): PacksToBuy? {
-    val less = lessToBuy() ?: return packsToBuy(offer)
-    return if (less < SCRAP_GRAMS) null else PackSize.toBuy(offer, less, null)
+    if (nothingToBuy()) return null
+    val toBuy = leftToBuyGrams()
+    if (toBuy == null || grams.let { it == null || it - toBuy < SCRAP_GRAMS }) return packsToBuy(offer)
+    return PackSize.toBuy(offer, toBuy, null)
 }
 
 /**
@@ -450,6 +476,13 @@ internal fun ShoppingScreen(
                                     )
                                 }
                                 groupItems("any", overview.anyStore) { row(it, it.bestOffer(shops, today)) }
+                            }
+                            // Last, under a count of their own: the headers above count what the progress line counts.
+                            if (overview.covered.isNotEmpty()) {
+                                item(key = "s:covered") {
+                                    GroupHeader(t.plural(Plural.NOTHING_LEFT_ITEMS, overview.covered.size), t(Msg.NOTHING_LEFT_HINT), onClick = null)
+                                }
+                                groupItems("covered", overview.covered) { row(it, it.bestOffer(shops, today)) }
                             }
                         }
                         else -> {
@@ -822,7 +855,7 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, to
         }
         Column(Modifier.padding(horizontal = 12.dp).widthIn(max = 128.dp), horizontalAlignment = Alignment.End) {
             // Long amounts such as "200 g + 1 bag" wrap rather than squeeze the name.
-            Text(item.quantityText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), textAlign = TextAlign.End)
+            Text(item.amountText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), textAlign = TextAlign.End)
             if (offer != null) {
                 // Packs for what is still to buy; a ticked row has none, as what was bought is not known in packs.
                 item.packsStillToBuy(offer)?.let {
