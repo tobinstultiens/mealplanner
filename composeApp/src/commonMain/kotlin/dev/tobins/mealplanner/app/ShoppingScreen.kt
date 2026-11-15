@@ -201,10 +201,11 @@ fun ShoppingScreen(
 
     /**
      * One advice group below this week's list: its title with what it is for and saves, a way to
-     * hide it, and its items by section; while hidden, a line to show it again. At a chosen [store]
-     * only the items on offer there.
+     * hide it, and its items; while hidden, a line to show it again. At a chosen [store] only the
+     * items on offer there, by section. Across the stores, [byStore] groups them like this week's
+     * items: under the store whose offer they are, otherwise by section.
      */
-    fun LazyListScope.adviceGroup(texts: AdviceTexts, list: ShoppingList, store: Store?, row: @Composable (ShoppingItem) -> Unit) {
+    fun LazyListScope.adviceGroup(texts: AdviceTexts, list: ShoppingList, store: Store?, byStore: Boolean, row: @Composable (ShoppingItem) -> Unit) {
         val key = "a:${texts.group.path}"
         if (texts.dismissed(list)) {
             item(key = key) { HiddenAdvice(t(texts.hidden)) { dismiss(texts.group, false) } }
@@ -213,7 +214,17 @@ fun ShoppingScreen(
         val shown = adviceAt(texts.items(list), store, shops)
         if (shown.isEmpty()) return
         item(key = key) { AdviceHeader(t(texts.title), adviceHint(texts, shown, shops, t)) { dismiss(texts.group, true) } }
-        sectionItems(shoppingSections(shown, shoppingMode), group = "${texts.group.path}:", row = row)
+        val id = "${texts.group.path}:"
+        if (byStore) {
+            storeOverview(shown, shops).stores.forEach { group ->
+                item(key = "$id${group.store.name}") {
+                    GroupHeader(group.title(t), group.saving?.let { t(Msg.ADVICE_SAVING, formatEuro(it, t.locale)) }.orEmpty(), onClick = null)
+                }
+                groupItems(id + group.store.name, group.items, row)
+            }
+        } else {
+            sectionItems(shoppingSections(shown, shoppingMode), group = id, row = row)
+        }
     }
 
     // Another device may have changed the stores; without a connection the last known ones stay.
@@ -320,7 +331,7 @@ fun ShoppingScreen(
                         )
                     }
                     val store = chosenStore?.takeIf { view == ShoppingView.STORE && it in shops }
-                    if (list.hasAdvice()) item(key = "this-week") { PartTitle(t(Msg.FOR_THIS_WEEK)) }
+                    if (list.hasAdvice(store, shops)) item(key = "this-week") { PartTitle(t(Msg.FOR_THIS_WEEK)) }
                     when {
                         view == ShoppingView.SECTION -> sectionItems(shoppingSections(list.items, shoppingMode)) { row(it) }
                         store == null -> {
@@ -377,7 +388,7 @@ fun ShoppingScreen(
                             )
                         }
                     }
-                    AdviceTexts.entries.forEach { adviceGroup(it, list, store) { item -> row(item) } }
+                    AdviceTexts.entries.forEach { adviceGroup(it, list, store, byStore = view == ShoppingView.STORE && store == null) { item -> row(item) } }
                 }
             }
         }

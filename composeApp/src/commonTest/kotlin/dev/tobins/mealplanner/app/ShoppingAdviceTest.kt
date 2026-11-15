@@ -25,12 +25,20 @@ class ShoppingAdviceTest {
     private val all = Store.entries.toSet()
 
     @Test
-    fun thisWeeksPartGetsATitleOnlyWhenThereIsAdvice() {
-        assertFalse(week.hasAdvice(), "a list as before stays as before")
-        assertTrue(week.copy(buyAhead = listOf(beef)).hasAdvice())
-        assertTrue(week.copy(stockUpDismissed = true).hasAdvice(), "the line that shows it again")
+    fun thisWeeksPartGetsATitleOnlyWhenAnAdviceGroupFollows() {
+        assertFalse(week.hasAdvice(null, all), "a list as before stays as before")
+        assertTrue(week.copy(buyAhead = listOf(beef)).hasAdvice(null, all))
+        assertTrue(week.copy(stockUpDismissed = true).hasAdvice(null, all), "the line that shows it again")
         assertEquals(listOf(beef), AdviceTexts.BUY_AHEAD.items(week.copy(buyAhead = listOf(beef), stockUp = listOf(rice))))
         assertEquals(listOf(rice), AdviceTexts.STOCK_UP.items(week.copy(buyAhead = listOf(beef), stockUp = listOf(rice))))
+    }
+
+    @Test
+    fun atAStoreWithNoAdviceOnOfferThereThereIsNoTitle() {
+        val list = week.copy(buyAhead = listOf(beef))
+        assertTrue(list.hasAdvice(Store.JUMBO, all))
+        assertFalse(list.hasAdvice(Store.AH, all), "the beef is on offer at Jumbo only")
+        assertTrue(list.copy(buyAhead = listOf(beef), buyAheadDismissed = true).hasAdvice(Store.AH, all), "a hidden group still has its line")
     }
 
     @Test
@@ -38,6 +46,23 @@ class ShoppingAdviceTest {
         assertEquals(listOf(beef, spinach), adviceAt(listOf(beef, spinach), store = null, all))
         assertEquals(listOf(beef), adviceAt(listOf(beef, spinach), Store.JUMBO, all))
         assertEquals(emptyList(), adviceAt(listOf(beef, spinach), Store.LIDL, all))
+    }
+
+    @Test
+    fun adviceWithoutAnOfferAtTheStoresInUseIsLeftOutInEveryView() {
+        val withoutJumbo = all - Store.JUMBO
+        assertEquals(listOf(spinach), adviceAt(listOf(beef, spinach), store = null, withoutJumbo))
+        assertEquals(emptyList(), adviceAt(listOf(beef, spinach), Store.JUMBO, withoutJumbo))
+        assertEquals(emptyList(), adviceAt(listOf(item("ahead:i9")), store = null, all), "no offer at all")
+        assertFalse(week.copy(buyAhead = listOf(beef)).hasAdvice(null, withoutJumbo), "so no title for it either")
+    }
+
+    @Test
+    fun theAdviceIsSplitByStoreLikeTheRestOfTheStoreView() {
+        val overview = storeOverview(listOf(beef, spinach, rice), all)
+        assertEquals(listOf(Store.AH, Store.JUMBO, Store.LIDL), overview.stores.map { it.store })
+        assertEquals(listOf(listOf(spinach), listOf(beef), listOf(rice)), overview.stores.map { it.items })
+        assertEquals(emptyList(), overview.anyStore)
     }
 
     @Test

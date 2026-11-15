@@ -22,16 +22,21 @@ enum class AdviceTexts(val group: ShoppingAdviceGroup, val title: Msg, val hint:
     }
 }
 
-/** True when the list shows any advice, or a line saying it was hidden: then this week's part gets a title too. */
-fun ShoppingList.hasAdvice(): Boolean = AdviceTexts.entries.any { it.items(this).isNotEmpty() || it.dismissed(this) }
-
 /**
- * The advice items to show: all of them across the stores, or with a chosen [store] only those
- * whose preferred offer (among [shops]) is there. Advice is only worth following on offer, so
- * at another store it is left out rather than set apart like this week's items.
+ * The advice items to show: those with a preferred offer among [shops], or with a chosen [store]
+ * only those whose offer is there. Advice is only worth following on offer, so an item without
+ * one (say its store was switched off since the list was made) is left out in every view, and at
+ * another store it is left out rather than set apart like this week's items.
  */
 fun adviceAt(items: List<ShoppingItem>, store: Store?, shops: Set<Store>): List<ShoppingItem> =
-    if (store == null) items else items.filter { it.bestOffer(shops)?.store == store }
+    items.filter { item -> item.bestOffer(shops)?.let { store == null || it.store == store } == true }
+
+/**
+ * True when an advice group follows this week's part in the view for [store]: one with items to
+ * show, or a line saying it was hidden. Only then does this week's part get a title.
+ */
+fun ShoppingList.hasAdvice(store: Store?, shops: Set<Store>): Boolean =
+    AdviceTexts.entries.any { it.dismissed(this) || adviceAt(it.items(this), store, shops).isNotEmpty() }
 
 /** The hint under an advice group's title: what it is for, and what its offers save when that is known. */
 fun adviceHint(texts: AdviceTexts, items: List<ShoppingItem>, shops: Set<Store>, strings: Strings): String =

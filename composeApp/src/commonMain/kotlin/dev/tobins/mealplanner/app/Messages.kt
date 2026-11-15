@@ -501,6 +501,10 @@ enum class Msg(private val english: String, private val dutch: String) {
     NUTRITION_DATA("Nutrition data: {0}", "Voedingsgegevens: {0}"),
     SECTION_CHANGED("{0} is now under {1}", "{0} staat nu bij {1}"),
     SECTION_CHANGE_FAILED("Could not change the section: {0}", "De afdeling kon niet worden aangepast: {0}"),
+    KEEPS_CHANGE_FAILED(
+        "{0} was moved, but whether it keeps could not be saved: {1}",
+        "{0} is verplaatst, maar of het goed blijft kon niet worden opgeslagen: {1}",
+    ),
     LINKED("Linked “{0}” to {1}", "“{0}” gekoppeld aan {1}"),
     LINK_FAILED("Could not link: {0}", "Koppelen is niet gelukt: {0}"),
     LINKED_NO_WEIGHT("Linked to {0}, but its weight per piece is unknown.", "Gekoppeld aan {0}, maar het gewicht per stuk is onbekend."),

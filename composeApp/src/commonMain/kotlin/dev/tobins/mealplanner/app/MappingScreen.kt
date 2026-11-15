@@ -141,18 +141,9 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
             onConfirm = { choice, keeps ->
                 placing = null
                 scope.launch {
-                    val result = load {
-                        val placed = api.setSection(entry.ingredientId, choice)
-                        if (keeps == entry.keepsChoice()) placed else api.setKeeps(entry.ingredientId, keeps)
-                    }
-                    when (result) {
-                        is Load.Ready -> {
-                            sections = sections?.map { if (it.ingredientId == entry.ingredientId) result.value else it }
-                            snackbar.showSnackbar(t(Msg.SECTION_CHANGED, entry.name, t.sectionTitleOfKey(result.value.section)))
-                        }
-                        is Load.Failed -> snackbar.showSnackbar(t(Msg.SECTION_CHANGE_FAILED, result.message))
-                        Load.Loading -> Unit
-                    }
+                    val placement = place(entry, choice, keeps, api::setSection, api::setKeeps)
+                    placement.saved?.let { saved -> sections = sections?.map { if (it.ingredientId == saved.ingredientId) saved else it } }
+                    snackbar.showSnackbar(placement.message(t, entry))
                 }
             },
         )
@@ -325,6 +316,42 @@ private fun SectionRow(entry: IngredientSection, onClick: () -> Unit) {
     }
 }
 
+/**
+ * What came of saving the section and "keeps" of one ingredient: [saved] is what the server has
+ * now (null when nothing could be saved), [failure] what went wrong, and [keepsFailed] says it was
+ * the second step: the section is saved then, and only "keeps" is not.
+ */
+internal class Placement(val saved: IngredientSection?, val failure: String? = null, val keepsFailed: Boolean = false) {
+    /** The snackbar line: what was saved, or only what failed. */
+    fun message(t: Strings, entry: IngredientSection): String = when {
+        failure == null -> t(Msg.SECTION_CHANGED, entry.name, t.sectionTitleOfKey(saved!!.section))
+        keepsFailed -> t(Msg.KEEPS_CHANGE_FAILED, entry.name, failure)
+        else -> t(Msg.SECTION_CHANGE_FAILED, failure)
+    }
+}
+
+/**
+ * Saves the section, then "keeps" when it was changed. The second is a call of its own, so it can
+ * fail after the first went through: the result then still carries the saved section.
+ */
+internal suspend fun place(
+    entry: IngredientSection,
+    section: String?,
+    keeps: Boolean?,
+    setSection: suspend (Long, String?) -> IngredientSection,
+    setKeeps: suspend (Long, Boolean?) -> IngredientSection,
+): Placement {
+    val placed = when (val result = load { setSection(entry.ingredientId, section) }) {
+        is Load.Ready -> result.value
+        else -> return Placement(null, (result as Load.Failed).message)
+    }
+    if (keeps == entry.keepsChoice()) return Placement(placed)
+    return when (val result = load { setKeeps(entry.ingredientId, keeps) }) {
+        is Load.Ready -> Placement(result.value)
+        else -> Placement(placed, (result as Load.Failed).message, keepsFailed = true)
+    }
+}
+
 /** Whether the ingredient keeps until next week as set by hand; null when it follows its section. */
 private fun IngredientSection.keepsChoice(): Boolean? = keeps.takeIf { keepsByHand }
 
@@ -341,23 +368,30 @@ private fun SectionDialog(entry: IngredientSection, onDismiss: () -> Unit, onCon
         onDismissRequest = onDismiss,
         title = { Text(t(Msg.SECTION_FOR, entry.name)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                SectionOption(t(Msg.AUTOMATIC, t.sectionTitleOfKey(entry.automatic)), entry.source, selected = choice == null) { choice = null }
-                ShopSection.entries.forEach { section ->
-                    SectionOption(t(section.msg()), null, selected = choice == section.name) { choice = section.name }
-                }
-                Text(t(Msg.KEEPS_TITLE), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Spacing.InsideCard))
-                Text(t(Msg.KEEPS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                // The automatic answer follows the section chosen above.
-                val section = ShopSection.fromKey(choice ?: entry.automatic) ?: ShopSection.OTHER
-                SectionOption(t(Msg.AUTOMATIC, t(if (section.shelfLife.keepsUntilNextWeek) Msg.KEEPS_YES else Msg.KEEPS_NO)), null, selected = keeps == null) { keeps = null }
-                SectionOption(t(Msg.KEEPS_YES), null, selected = keeps == true) { keeps = true }
-                SectionOption(t(Msg.KEEPS_NO), null, selected = keeps == false) { keeps = false }
-            }
+            SectionChoices(entry, choice, { choice = it }, keeps, { keeps = it })
         },
         confirmButton = { TextButton(onClick = { onConfirm(choice, keeps) }) { Text(t(Msg.SAVE)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )
+}
+
+/** The dialog's body: the sections to pick from and below them whether the ingredient keeps. */
+@Composable
+internal fun SectionChoices(entry: IngredientSection, choice: String?, onChoice: (String?) -> Unit, keeps: Boolean?, onKeeps: (Boolean?) -> Unit) {
+    val t = LocalStrings.current
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        SectionOption(t(Msg.AUTOMATIC, t.sectionTitleOfKey(entry.automatic)), entry.source, selected = choice == null) { onChoice(null) }
+        ShopSection.entries.forEach { section ->
+            SectionOption(t(section.msg()), null, selected = choice == section.name) { onChoice(section.name) }
+        }
+        Text(t(Msg.KEEPS_TITLE), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Spacing.InsideCard))
+        Text(t(Msg.KEEPS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // The automatic answer follows the section chosen above.
+        val section = ShopSection.fromKey(choice ?: entry.automatic) ?: ShopSection.OTHER
+        SectionOption(t(Msg.AUTOMATIC, t(if (section.shelfLife.keepsUntilNextWeek) Msg.KEEPS_YES else Msg.KEEPS_NO)), null, selected = keeps == null) { onKeeps(null) }
+        SectionOption(t(Msg.KEEPS_YES), null, selected = keeps == true) { onKeeps(true) }
+        SectionOption(t(Msg.KEEPS_NO), null, selected = keeps == false) { onKeeps(false) }
+    }
 }
 
 @Composable
