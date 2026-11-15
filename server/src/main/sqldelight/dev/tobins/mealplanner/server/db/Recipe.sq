@@ -17,6 +17,8 @@ CREATE TABLE recipe (
     mealSlotsJson TEXT,                -- App-owned: slots this recipe suits; NULL means the section's default
     removedAt TEXT,                    -- set when the file disappears from the cooking repo
     rating INTEGER,                    -- App-owned: 1 to 5, NULL when not rated
+    imageSourceHash TEXT,              -- SHA-256 of the picture file the page shows, as last read; NULL when none
+    imageVersion TEXT,                 -- version of the web-sized copy kept for it; NULL when there is none
     UNIQUE (userId, sourcePath)
 );
 
@@ -69,8 +71,20 @@ DELETE FROM recipe WHERE userId = ? AND id = ? AND source IN ('MANUAL', 'GENERAT
 setRating:
 UPDATE recipe SET rating = ? WHERE userId = ? AND id = ?;
 
+-- A removed recipe loses its picture with it; the sync deletes the copy.
 markRemoved:
-UPDATE recipe SET removedAt = ? WHERE userId = ? AND id = ?;
+UPDATE recipe SET removedAt = ?, imageSourceHash = NULL, imageVersion = NULL WHERE userId = ? AND id = ?;
+
+-- The account's current cooking-site recipes, with what the last sync made of their pictures.
+selectPictures:
+SELECT id, sourcePath, imageSourceHash, imageVersion FROM recipe
+WHERE userId = ? AND source = 'COOKING_SITE' AND removedAt IS NULL;
+
+setPicture:
+UPDATE recipe SET imageSourceHash = ?, imageVersion = ? WHERE userId = ? AND id = ?;
+
+clearPictures:
+UPDATE recipe SET imageSourceHash = NULL, imageVersion = NULL WHERE userId = ?;
 
 selectIngredients:
 SELECT * FROM recipeIngredient WHERE recipeId = ? ORDER BY position;

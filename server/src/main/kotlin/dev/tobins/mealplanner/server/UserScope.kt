@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.generation.RecipeGenerator
+import org.slf4j.LoggerFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -24,10 +25,13 @@ class UserScope(
     offers: OfferRepository,
     prices: PriceRepository,
     generator: RecipeGenerator?,
+    /** Where recipe pictures are kept, for every account (see [RecipePictures]). */
+    imageDir: File,
 ) {
     val ingredients = IngredientRepository(db, foods, accountId)
     val recipes = RecipeRepository(db, ingredients, accountId) { from, until -> prices.pricing(ingredients, from, until) }
     val profiles = ProfileRepository(db, accountId)
+    val pictures = RecipePictures(db, imageDir, accountId)
     val sections = ShopSections(ingredients, prices)
     val plans by lazy {
         PlanRepository(
@@ -80,7 +84,11 @@ class CookingSync(
         require(clean == null || clean.startsWith("https://") || clean.startsWith("http://") || clean.startsWith("git@")) {
             "The repository must be a git URL such as https://github.com/you/cooking.git"
         }
-        if (clean != users.meta(accountId, REPO_KEY)) cloneDir(accountId).deleteRecursively()
+        if (clean != users.meta(accountId, REPO_KEY)) {
+            cloneDir(accountId).deleteRecursively()
+            // The pictures came from the old site; the next sync brings the new site's.
+            scope(accountId).pictures.removeAll()
+        }
         users.setMeta(accountId, REPO_KEY, clean)
     }
 
@@ -90,17 +98,30 @@ class CookingSync(
             val repo = repoFor(accountId) ?: return@withContext null
             try {
                 val commit = repo.update()
-                val parsed = CookingSiteReader(repo).readAll() ?: return@withContext null
+                val pages = CookingSiteReader(repo).readAll() ?: return@withContext null
                 val user = scope(accountId)
-                user.recipes.syncCookingSite(parsed).copy(autoLinked = user.ingredients.autoLink(), commit = commit).also {
+                user.recipes.syncCookingSite(pages).copy(autoLinked = user.ingredients.autoLink(), commit = commit).also {
                     users.setMeta(accountId, SYNCED_AT_KEY, Instant.now().toString())
                     users.setMeta(accountId, SYNCED_COMMIT_KEY, it.commit)
                     users.setMeta(accountId, SYNC_ERROR_KEY, null)
+                    syncPictures(accountId, user, pages)
                 }
             } catch (e: Exception) {
                 users.setMeta(accountId, SYNC_ERROR_KEY, e.message ?: e::class.simpleName ?: "unknown error")
                 throw e
             }
+        }
+    }
+
+    /** Pictures are extras: a problem with them is logged, and never fails the sync of the recipes. */
+    private fun syncPictures(accountId: Long, user: UserScope, pages: List<SitePage>) {
+        try {
+            val outcome = user.pictures.sync(pages)
+            if (outcome.stored + outcome.removed + outcome.skipped > 0) {
+                log.info("Recipe pictures of account $accountId: ${outcome.stored} stored, ${outcome.removed} removed, ${outcome.skipped} skipped, ${outcome.unchanged} unchanged")
+            }
+        } catch (e: Exception) {
+            log.warn("Recipe pictures of account $accountId could not be stored: ${e.message}")
         }
     }
 
@@ -117,6 +138,8 @@ class CookingSync(
     }
 
     companion object {
+        private val log = LoggerFactory.getLogger(CookingSync::class.java)
+
         /** The account that holds the data from before accounts existed. */
         const val OWNER_ID = 1L
 

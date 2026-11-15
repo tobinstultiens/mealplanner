@@ -218,6 +218,41 @@ What the apps do (Coil 3 with the Ktor network fetcher, `ProductPictures.kt`, `p
   the product on it until the picture has loaded, when it fails and when there is none, so rows do
   not change height. Ticked-off shopping items show it dimmed.
 
+## Recipe pictures
+
+A recipe from an account's cooking site carries the picture its page shows (`RecipeSummary.imageUrl`,
+for example `/api/recipes/12/image?v=3f2a9c0d1e2b4a5f`); recipes made or generated in the app have
+none. The cooking site is a Hugo site, and the sync takes the first of:
+
+1. the front matter's featured picture: `featured_image`, `image`, `cover` (or `cover.image`), or the
+   first of `images`;
+2. the first picture in the page's text: the geekdoc theme's `{{< img name="…" >}}`, Hugo's
+   `{{< figure src="…" >}}`, or Markdown's `![…](…)`;
+3. the first picture file, by name, in the page's bundle (the folder of an `index.md` page).
+
+A reference is the name of one of the front matter's `resources` (what `img` refers to), a path
+relative to the page's folder, or a path from the site's root, looked up in `static/` and then
+`assets/`. The owner's site uses the second form in one page bundle (`recipes/ala_mario`: two
+`resources`, shown with `img`); the others have no pictures yet. Pictures on other websites are not
+fetched, and nothing outside the account's checkout is read, also not through `..` or a symbolic link.
+
+The server keeps a copy at most 800 pixels on its longest side (smaller ones keep their size), turned
+upright as its EXIF orientation says, as a JPEG (quality 0.82, typically 50 to 150 KB), in
+`<MEALPLANNER_IMAGE_DIR>/<account>/<recipe>.jpg`. The picture is not cropped: its aspect ratio is the
+photo's. It uses only the JDK's `javax.imageio`, which reads JPEG, PNG, GIF and BMP; WebP, HEIC and CMYK
+JPEGs, files over 20 MB and pictures over 60 megapixels are skipped, with one warning in the log per
+version of the file, and the recipe imports without a picture. A sync never fails because of a
+picture.
+
+Each sync compares the SHA-256 of every picture file with the one it last read: a changed picture is
+copied again (and gets a new `v`), an unchanged one is left alone, and the copy of a recipe that is
+gone, or whose page no longer shows a picture, is deleted. Setting another cooking site deletes all of
+the account's copies until the new site is synced. `GET /api/recipes/{id}/image` serves the copy to the
+account that owns the recipe (404 to any other), with
+`Cache-Control: private, max-age=31536000, immutable`: the URL changes when the picture does. It needs
+the login like every other call, so the apps fetch it with their access token rather than handing the
+URL to an `<img>` or an image loader that does not send it.
+
 ## Nutrition: NEVO
 
 NEVO-online 2025/9.0 (RIVM) can be downloaded free of charge from

@@ -19,6 +19,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.time.Duration
+import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -68,7 +69,7 @@ class ShopSectionsTest {
         val offers = OfferRepository(db, emptyList())
         val prices = PriceRepository(db, null, foodRepo, offers)
         val accountId = UserRepository(db).resolve(Identity("a", "alice")).id
-        val user = UserScope(accountId, db, foodRepo, offers, prices, null)
+        val user = UserScope(accountId, db, foodRepo, offers, prices, null, createTempDirectory("pictures").toFile())
 
         val names = listOf(
             "Banana", "Onion", "Bread", "Gouda", "Ham", "Pesto", "Chicken", "Salmon", "Milk", "Eggs",

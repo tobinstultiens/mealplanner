@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.server.db.Database
 import java.sql.DriverManager
+import java.sql.Statement
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,6 +17,12 @@ class MigrationTest {
 
     private fun version(url: String): Int = DriverManager.getConnection(url).use { connection ->
         connection.createStatement().executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
+    }
+
+    /** Version 7 added the recipe pictures' columns (6.sqm); older versions are made from today's schema without them. */
+    private fun dropRecipePictureColumns(statement: Statement) {
+        statement.execute("ALTER TABLE recipe DROP COLUMN imageSourceHash")
+        statement.execute("ALTER TABLE recipe DROP COLUMN imageVersion")
     }
 
     @Test
@@ -62,6 +69,7 @@ class MigrationTest {
         // Version 4 is today's schema without the shop section and picture columns.
         DriverManager.getConnection(url).use { connection ->
             connection.createStatement().use { statement ->
+                dropRecipePictureColumns(statement)
                 statement.execute("ALTER TABLE offer DROP COLUMN imageUrl")
                 statement.execute("ALTER TABLE ingredientPrice DROP COLUMN imageUrl")
                 statement.execute("ALTER TABLE ingredient DROP COLUMN section")
@@ -104,6 +112,7 @@ class MigrationTest {
         // Version 5 is today's schema without the picture columns.
         DriverManager.getConnection(url).use { connection ->
             connection.createStatement().use { statement ->
+                dropRecipePictureColumns(statement)
                 statement.execute("ALTER TABLE offer DROP COLUMN imageUrl")
                 statement.execute("ALTER TABLE ingredientPrice DROP COLUMN imageUrl")
                 statement.execute(
@@ -136,6 +145,38 @@ class MigrationTest {
         assertEquals(Triple(12.0, "Kaas", "Goudse kaas"), Triple(price.eurosPerKg, price.category, price.subCategory))
         assertEquals(null, price.imageUrl, "until the next weekly lookup")
         assertEquals("2026-11-14T00:00:00Z", db.foodQueries.selectMeta("pricesFetchedAt").executeAsOneOrNull(), "no early lookup for pictures")
+        driver.close()
+    }
+
+    @Test
+    fun aVersionSixDatabaseKeepsItsRecipesWithoutPicturesUntilTheNextSync() {
+        val file = createTempFile("v6", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        // Version 6 is today's schema without the recipe picture columns.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropRecipePictureColumns(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'sub', '2026-11-01T00:00:00Z')")
+                statement.execute(
+                    "INSERT INTO recipe (userId, source, sourcePath, contentHash, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, rating) " +
+                        "VALUES (1, 'COOKING_SITE', 'recipes/ala_mario/index.md', 'abc', 'recipes', 'Ala Mario', '[]', 2, 'Bake.', 1, '[]', 'MEAL', 4)",
+                )
+                statement.execute("INSERT INTO recipeIngredient (recipeId, position, amount, unit, item) VALUES (1, 0, 200, 'g', 'salmon')")
+                statement.execute("PRAGMA user_version = 6")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(columns(fresh, "recipe"), columns(url, "recipe"), "table recipe after migration")
+        val recipe = db.recipeQueries.selectById(1, 1).executeAsOne()
+        assertEquals(Triple("Ala Mario", "abc", 4L), Triple(recipe.title, recipe.contentHash, recipe.rating))
+        assertEquals(null to null, recipe.imageSourceHash to recipe.imageVersion, "the next sync reads the picture")
+        assertEquals(1, db.recipeQueries.selectIngredients(1).executeAsList().size)
         driver.close()
     }
 }
