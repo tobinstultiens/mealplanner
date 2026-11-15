@@ -45,9 +45,16 @@ import java.net.InetSocketAddress
 /**
  * A server on localhost that answers the calls of the screens with fixed sample data, so
  * the pictures of the screenshot tests never change on their own. The week is the one of
- * [TODAY]; [emptyWeek] leaves it without meals, for the empty state.
+ * [TODAY]; [emptyWeek] leaves it without meals, and [emptyOffers], [emptyPrices] and [emptyRecipes]
+ * leave those lists empty, for the empty states. The offers and prices are shared data that a
+ * running server always has, so only a fake can show those states.
  */
-class FakeBackend(private val emptyWeek: Boolean = false) : AutoCloseable {
+class FakeBackend(
+    private val emptyWeek: Boolean = false,
+    private val emptyOffers: Boolean = false,
+    private val emptyPrices: Boolean = false,
+    private val emptyRecipes: Boolean = false,
+) : AutoCloseable {
     private val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
         createContext("/") { exchange -> exchange.respond() }
         start()
@@ -80,15 +87,15 @@ class FakeBackend(private val emptyWeek: Boolean = false) : AutoCloseable {
         return when {
             path == "/api/me" -> json.encodeToString(Me("anna", "Anna"))
             path == "/api/foods/dataset" -> json.encodeToString(FoodDataset(2328, "NEVO online version 2025/9.0, RIVM, Bilthoven"))
-            path == "/api/recipes" -> json.encodeToString(recipes)
+            path == "/api/recipes" -> json.encodeToString(if (emptyRecipes) emptyList() else recipes)
             parts.size == 3 && parts[1] == "recipes" -> json.encodeToString(recipeDetail(parts[2].toLong()))
             path == "/api/routines" -> json.encodeToString(Routines(breakfast = 1))
             path == "/api/sync/cooking" -> json.encodeToString(CookingSyncStatus("2026-11-17T20:00:00Z", "a1b2c3d", null, 6))
             parts.size == 3 && parts[1] == "days" -> json.encodeToString(day(parts[2]))
             parts.size == 3 && parts[1] == "plans" -> json.encodeToString(plan(parts[2]))
             parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(shopping(parts[2]))
-            path == "/api/offers" -> json.encodeToString(offers)
-            path == "/api/prices" -> json.encodeToString(prices)
+            path == "/api/offers" -> json.encodeToString(if (emptyOffers) OffersState(emptyList(), emptyList()) else offers)
+            path == "/api/prices" -> json.encodeToString(if (emptyPrices) PricesState(emptyList(), emptyList(), null) else prices)
             path == "/api/weights" -> json.encodeToString(weights)
             path == "/api/pantry" -> json.encodeToString(Pantry(emptyList(), emptyList()))
             else -> null

@@ -105,20 +105,27 @@ optional fields is safe. Removing or renaming a field, or changing its meaning, 
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
 Today, Plan, Shopping (also in shopping mode and with an empty week), Recipes, recipe detail, Offers, Prices, Progress and
-Settings screens on the JVM with Robolectric and Roborazzi, and compares each with its picture in
+Settings screens, the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
+with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
 sample data, with the date, time zone and locale (English, UK) fixed, so a picture only changes when the
 UI does. Every screen is taken twice: 360 dp wide, font scale 1.3, light (where text is cut off first) and
-411 dp, font scale 1.0, dark. The pictures are saved at half size to keep the repository small.
+411 dp, font scale 1.0, dark. A screen that scrolls is rendered as tall as its content (the `heightDp` of its
+`Shot`), so what is below the first screenful is checked too. The pictures are saved at half size to keep the
+repository small.
 
 ```bash
 ./gradlew :composeApp:verifyScreenshots   # fails when a picture differs; ~15 s once built
 ./gradlew :composeApp:recordScreenshots   # when the change is intended: rewrite the pictures, then commit them
 ```
 
+Name the task on the command line as above: running the test from the IDE's gutter icon does not record or
+verify anything, because the switch is read from the requested Gradle tasks.
+
 After a failure `composeApp/build/outputs/roborazzi` holds `*_actual.png` (the new picture) and `*_compare.png`
 (reference, difference, new, side by side); in CI they are the artifact `screenshot-differences`. A pull
-request that changes how a screen looks shows the changed pictures in its diff. A new screen or a new
+request that changes how a screen looks shows the changed pictures in its diff; that diff is the record of a
+design change, so pull requests and tickets do not need screenshots attached. A new screen or a new
 variant goes into the `Shot` enum or the `Look`s in `ScreenshotTest`. The emulator remains for flows such
 as the login and updates. `allTests` leaves these tests out.
 

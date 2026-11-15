@@ -153,8 +153,11 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                     if (log.entries.isNotEmpty()) SectionHeader(t(Msg.WEIGHINGS))
                     for (entry in log.entries.asReversed().take(30)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(dayLabel(entry.date, t.locale), Modifier.weight(1f))
-                            Text(t(Msg.WEIGHING_ROW, kg(entry.kg, t.locale), kg(entry.trendKg, t.locale)), style = MaterialTheme.typography.bodyMedium.numeric())
+                            // The day above the reading: side by side the day was squeezed to one word a line at large fonts.
+                            Column(Modifier.weight(1f)) {
+                                Text(dayLabel(entry.date, t.locale))
+                                Text(t(Msg.WEIGHING_ROW, kg(entry.kg, t.locale), kg(entry.trendKg, t.locale)), style = MaterialTheme.typography.bodyMedium.numeric())
+                            }
                             TextButton(onClick = { change { api.deleteWeight(entry.date) } }) { Text(t(Msg.REMOVE)) }
                         }
                     }
