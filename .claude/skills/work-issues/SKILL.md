@@ -33,6 +33,9 @@ First, before anything else: whether the Android app needs a release, taken from
 
 Then per issue: the PR, the verdict, merged or not, and what is left. Then check that nothing was left behind: `git worktree list` and `gh pr list`.
 
+## 6. Milestone check
+After the report, see whether an audit is due: a release was made in this run, or about ten pull requests have merged since the last audit (the newest folder in `build/audit/`; its `report.md` names the commit). If so, and no coder is still running and no pull request of this run is open, start the `architect` agent once and pass on its summary and the paths of its drafts; the owner decides which drafts become issues. Otherwise don't start it: it is expensive, and it is never part of working on an issue. The owner can always ask for it directly.
+
 ## Limits
 - Never merge a PR yourself, and never push to `main`, tag, release or run workflows: the reviewer merges, the owner releases.
 - Don't raise an agent's model or effort beyond the rules above without the owner asking.
