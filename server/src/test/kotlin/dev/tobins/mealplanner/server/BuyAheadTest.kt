@@ -484,17 +484,140 @@ class BuyAheadTest {
     fun aMealUsesTheWeightOfItsLinesScaledToItsPortions() {
         val chicken = Ingredient(1, "Chicken fillet", null, null, null, null, null, isStaple = false)
         val oil = Ingredient(2, "Olive oil", null, null, null, null, null, isStaple = true)
+        val coriander = Ingredient(3, "Coriander", null, null, null, null, null, isStaple = false)
         val recipe = RecipeLines(
             servings = 4,
             lines = listOf(
                 IngredientLine(800.0, "g", Dimension.WEIGHT, 800.0, "chicken fillet", null) to chicken,
                 IngredientLine(400.0, "g", Dimension.WEIGHT, 400.0, "chicken fillet", null) to chicken,
                 IngredientLine(null, null, null, null, "olive oil", null) to oil,
+                IngredientLine(2.0, "tbsp", Dimension.VOLUME, 30.0, "olive oil", null) to oil,
+                IngredientLine(1.0, "bunch", Dimension.COUNT, null, "coriander", null) to coriander,
                 IngredientLine(1.0, "g", Dimension.WEIGHT, 1.0, "mystery", null) to null,
             ),
         )
-        // Two lines of chicken add up; oil "to taste" has no weight to tell; a line without an ingredient is left out.
-        assertEquals(mapOf(1L to 600.0, 2L to null), gramsUsed(recipe, portions = 2.0))
+        // Two lines of chicken add up. Oil "to taste" has no weight and adds nothing; 30 ml of oil
+        // without a density weighs as water. A bunch without a weight per piece can't be weighed, so
+        // the meal takes no coriander; a line without an ingredient is left out.
+        assertEquals(mapOf(1L to 600.0, 2L to 15.0), gramsUsed(recipe, portions = 2.0))
+    }
+
+    /** The test account's id, for what the API doesn't show. */
+    private fun accountId() = UserRepository(db).resolve(Identity("sub-t", "t", "T")).id
+
+    /** Grams left of the stock of [ingredient] for meals of [weekStart]; null when there is none or its amount is unknown. */
+    private fun left(ingredient: Ingredient, weekStart: String) =
+        db.pantryQueries.selectStock(accountId(), weekStart, listOf(ingredient.id)).executeAsOneOrNull()?.grams
+
+    /** Puts [portions] of the recipe titled [title] in a slot of the week starting [weekStart], as the planner would. */
+    private suspend fun HttpClient.plan(weekStart: String, day: Int, slot: MealSlot, title: String, portions: Double, leftover: Boolean = false): PlannedMeal {
+        val recipe = get("/api/recipes").body<List<dev.tobins.mealplanner.api.RecipeSummary>>().single { it.title == title }
+        db.planQueries.upsertMeal(accountId(), weekStart, day.toLong(), slot.name, recipe.id, title, portions, 500.0, 30.0, if (leftover) 1 else 0, 0, MealStatus.PLANNED.name)
+        return PlannedMeal(day, slot, recipe.id, title, portions, 500.0, 30.0, leftover)
+    }
+
+    private suspend fun HttpClient.mark(weekStart: String, meal: PlannedMeal, status: MealStatus) {
+        val response = put("/api/plans/$weekStart/meals/${meal.day}/${meal.slot}/status") { setBody(status) }
+        assertEquals(HttpStatusCode.OK, response.status)
+    }
+
+    @Test
+    fun aLineWithoutAWeightTakesNothingFromTheStock() = testApplication {
+        val http = start().ready()
+        // A stock-up of a litre of olive oil, then two dinners that use it: one "to taste" and by the
+        // splash, which can't be weighed, and one by the tablespoon.
+        http.tick(http.list().stockUp.single { it.name == "Olive oil" }.key)
+        val oil = http.ingredient("Olive oil")
+        val bought = assertNotNull(left(oil, week))
+        write("oil-to-taste", "---\ntitle: Oil to taste\n---\n```ingredients\nservings: 1\n200 | g | lettuce\n | | olive oil\n1 | splash | olive oil\n```")
+        write("oil-by-the-spoon", "---\ntitle: Oil by the spoon\n---\n```ingredients\nservings: 1\n200 | g | lettuce\n2 | tbsp | olive oil\n```")
+        http.post("/api/sync/cooking")
+
+        http.mark(week, http.plan(week, 0, MealSlot.DINNER, "Oil to taste", 1.0), MealStatus.EATEN)
+        assertEquals(bought, left(oil, week), "nothing taken: not the whole litre, as before")
+        http.mark(week, http.plan(week, 1, MealSlot.DINNER, "Oil by the spoon", 1.0), MealStatus.EATEN)
+        assertEquals(bought - 2 * 14.7868 * (oil.gramsPerMl ?: 1.0), assertNotNull(left(oil, week)), 1e-6)
+    }
+
+    @Test
+    fun aLeftoverLunchTakesItsShareOnceWhicheverIsEatenAndUnEatenFirst() = testApplication {
+        val http = start().ready()
+        // Bought ahead: three batches of chicken for next week (1.2 kg for four servings each). Next
+        // week has a chicken dinner for two with its leftovers for two the next day: 600 g each.
+        http.tick(http.list().buyAhead.single().key)
+        val chicken = http.ingredient("Chicken fillet")
+        val dinner = http.plan(nextWeek, 0, MealSlot.DINNER, "Chicken 0", 2.0)
+        val lunch = http.plan(nextWeek, 1, MealSlot.LUNCH, "Chicken 0", 2.0, leftover = true)
+        fun left() = left(chicken, nextWeek)
+        assertEquals(3600.0, left())
+
+        // The dinner skipped, the leftovers were cooked for lunch: the lunch takes its own share.
+        http.mark(nextWeek, dinner, MealStatus.SKIPPED)
+        http.mark(nextWeek, lunch, MealStatus.EATEN)
+        assertEquals(3000.0, left())
+        http.mark(nextWeek, lunch, MealStatus.PLANNED)
+        assertEquals(3600.0, left(), "un-eaten, it gives that back")
+
+        // The dinner eaten: cooked with its leftovers, it takes both shares, once.
+        http.mark(nextWeek, dinner, MealStatus.EATEN)
+        http.mark(nextWeek, dinner, MealStatus.EATEN)
+        assertEquals(2400.0, left())
+        http.mark(nextWeek, lunch, MealStatus.EATEN)
+        assertEquals(2400.0, left(), "the leftovers were cooked with the dinner")
+
+        // Un-eaten by mistake while the lunch stays eaten: only the dinner's share comes back, and
+        // eaten again it takes only that.
+        http.mark(nextWeek, dinner, MealStatus.PLANNED)
+        assertEquals(3000.0, left())
+        http.mark(nextWeek, dinner, MealStatus.EATEN)
+        assertEquals(2400.0, left())
+
+        // The lunch un-eaten while the dinner stays eaten: the leftovers were cooked all the same.
+        http.mark(nextWeek, lunch, MealStatus.SKIPPED)
+        assertEquals(2400.0, left())
+        http.mark(nextWeek, dinner, MealStatus.SKIPPED)
+        assertEquals(3600.0, left(), "nothing eaten, nothing taken")
+    }
+
+    @Test
+    fun unEatingAMealPutsBackWhatItUsedUp() = testApplication {
+        val http = start().ready()
+        http.tick(http.list().buyAhead.single().key)
+        val chicken = http.ingredient("Chicken fillet")
+        // A feast of twelve servings uses all 3.6 kg of chicken.
+        val feast = http.plan(nextWeek, 2, MealSlot.DINNER, "Chicken 1", 12.0)
+        http.mark(nextWeek, feast, MealStatus.EATEN)
+        assertFalse("Chicken fillet" in http.onHand())
+        http.mark(nextWeek, feast, MealStatus.PLANNED)
+        assertEquals(3600.0, left(chicken, nextWeek))
+        assertTrue("Chicken fillet" in http.onHand())
+        assertTrue(scope().ingredients.onHandFor(LocalDate.parse(week)).isEmpty(), "still for next week only")
+    }
+
+    @Test
+    fun whatTheOwnerSaysOfTheStockOutlastsUnEating() = testApplication {
+        val http = start().ready()
+        val key = http.list().buyAhead.single().key
+        http.tick(key)
+        val dinner = http.plan(nextWeek, 0, MealSlot.DINNER, "Chicken 0", 2.0)
+
+        // Un-ticked after a meal was eaten from it: it wasn't bought, so un-eating brings nothing back.
+        http.mark(nextWeek, dinner, MealStatus.EATEN)
+        assertTrue("Chicken fillet" in http.onHand())
+        http.tick(key, checked = false)
+        http.mark(nextWeek, dinner, MealStatus.PLANNED)
+        assertFalse("Chicken fillet" in http.onHand())
+
+        // Taken off in the pantry after a meal was eaten from it: the owner says it is gone. (A kilo
+        // of rice stocked up this week; the dinner takes 100 g.)
+        http.tick(http.list().stockUp.single { it.name == "White rice" }.key)
+        val rice = http.ingredient("White rice")
+        val thisWeeks = http.plan(week, 3, MealSlot.DINNER, "Chicken 2", 2.0)
+        http.mark(week, thisWeeks, MealStatus.EATEN)
+        assertEquals(900.0, assertNotNull(left(rice, week)), 1e-9)
+        http.delete("/api/pantry/on-hand/${rice.id}")
+        http.mark(week, thisWeeks, MealStatus.PLANNED)
+        assertFalse("White rice" in http.onHand())
     }
 
     @Test

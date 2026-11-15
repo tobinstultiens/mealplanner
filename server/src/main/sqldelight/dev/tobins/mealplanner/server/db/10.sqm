@@ -1,0 +1,18 @@
+-- Version 10 -> 11: what eating a meal took from the stock bought ahead or stocked up (issue 84), so
+-- that un-eating it puts exactly that back. Only a new table, so no table is rebuilt and no row is
+-- touched: meals eaten before have nothing kept, and un-eating one gives nothing back, as before.
+
+CREATE TABLE stockUse (
+    userId INTEGER NOT NULL,
+    weekStart TEXT NOT NULL,
+    day INTEGER NOT NULL,
+    slot TEXT NOT NULL,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    fromWeek TEXT NOT NULL,            -- onHand.fromWeek of the stock it was taken from
+    addedAt TEXT NOT NULL,             -- onHand.addedAt of that stock
+    grams REAL,                        -- taken; NULL when the stock's amount was unknown and the meal used it up
+    PRIMARY KEY (userId, weekStart, day, slot, ingredientId),
+    FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE
+);
+
+CREATE INDEX stockUse_ingredient ON stockUse(ingredientId);

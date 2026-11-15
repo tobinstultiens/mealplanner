@@ -121,8 +121,8 @@ class PlanRepository(
 
     /**
      * Marks a meal eaten, skipped or planned again. Eating it is eating from what was bought ahead or
-     * stocked up for it ([IngredientRepository.useUp]); planning it again does not bring that back,
-     * and marking it eaten when it already is takes nothing more.
+     * stocked up for it ([eatFromStock]); marking it skipped or planned again puts that back
+     * ([giveBackToStock]), and marking it eaten when it already is takes nothing more.
      */
     fun setStatus(weekStart: String, day: Int, slot: MealSlot, status: MealStatus): WeekPlan {
         val start = parseWeekStart(weekStart)
@@ -130,23 +130,51 @@ class PlanRepository(
             val meals = meals(start)
             val meal = meals.firstOrNull { it.day == day && it.slot == slot }
             q.setStatus(status.name, userId, start.toString(), day.toLong(), slot.name)
-            if (meal != null && status == MealStatus.EATEN && meal.status != MealStatus.EATEN) {
-                ingredients.useUp(gramsCooked(meal, meals), start)
+            if (meal != null && (meal.status == MealStatus.EATEN) != (status == MealStatus.EATEN)) {
+                if (status == MealStatus.EATEN) eatFromStock(start, meal, meals) else giveBackToStock(start, meal, meals)
             }
         }
         return view(start)
     }
 
     /**
-     * What cooking [meal] took from the pantry, by ingredient id ([gramsUsed]). A dinner is cooked
-     * with its leftovers, so it takes the next day's leftover lunch's share too, and that lunch takes
-     * nothing more: whether the leftovers are eaten or not, they were cooked.
+     * Takes from the stock what eating [meal] used ([IngredientRepository.useUp]), each share kept
+     * under the meal whose portions it is for. A dinner is cooked with its leftovers, so it takes the
+     * next day's leftover lunch's share too, unless that lunch was eaten already and took its own. A
+     * leftover lunch takes its own share only when its dinner was not eaten: then it was cooked for
+     * the lunch. Whichever is eaten first, the two take the same in the end.
      */
-    private fun gramsCooked(meal: PlannedMeal, week: List<PlannedMeal>): Map<Long, Double?> {
-        if (meal.leftover) return emptyMap()
-        val leftovers = week.filter { it.leftover && it.recipeId == meal.recipeId && it.day == meal.day + 1 && it.slot == MealSlot.LUNCH }
-        val recipe = recipes.linesWithIngredients(listOf(meal.recipeId))[meal.recipeId] ?: return emptyMap()
-        return gramsUsed(recipe, meal.portions + leftovers.sumOf { it.portions })
+    private fun eatFromStock(start: LocalDate, meal: PlannedMeal, week: List<PlannedMeal>) {
+        if (dinnerOf(meal, week)?.status != MealStatus.EATEN) take(start, meal)
+        leftoversOf(meal, week)?.takeIf { it.status != MealStatus.EATEN }?.let { take(start, it) }
+    }
+
+    /**
+     * The inverse of [eatFromStock]: puts back what was taken for [meal]'s portions, unless it is a
+     * leftover lunch whose dinner is still eaten (cooked, so used whether eaten or not), and for its
+     * leftover lunch's, unless that lunch is eaten.
+     */
+    private fun giveBackToStock(start: LocalDate, meal: PlannedMeal, week: List<PlannedMeal>) {
+        if (dinnerOf(meal, week)?.status != MealStatus.EATEN) ingredients.giveBack(MealRef(start, meal.day, meal.slot))
+        leftoversOf(meal, week)?.takeIf { it.status != MealStatus.EATEN }?.let { ingredients.giveBack(MealRef(start, it.day, it.slot)) }
+    }
+
+    /** Takes [meal]'s portions of its recipe from the stock ([gramsUsed]), kept under [meal]. */
+    private fun take(start: LocalDate, meal: PlannedMeal) {
+        val recipe = recipes.linesWithIngredients(listOf(meal.recipeId))[meal.recipeId] ?: return
+        ingredients.useUp(MealRef(start, meal.day, meal.slot), gramsUsed(recipe, meal.portions))
+    }
+
+    /** The next day's leftover lunch cooked with [meal], when it is a dinner that has one. */
+    private fun leftoversOf(meal: PlannedMeal, week: List<PlannedMeal>): PlannedMeal? = week.firstOrNull {
+        meal.slot == MealSlot.DINNER && !meal.leftover &&
+            it.leftover && it.recipeId == meal.recipeId && it.day == meal.day + 1 && it.slot == MealSlot.LUNCH
+    }
+
+    /** The dinner [meal] is the leftovers of, when it is a leftover lunch and that dinner is in the plan. */
+    private fun dinnerOf(meal: PlannedMeal, week: List<PlannedMeal>): PlannedMeal? = week.firstOrNull {
+        meal.slot == MealSlot.LUNCH && meal.leftover &&
+            !it.leftover && it.recipeId == meal.recipeId && it.day == meal.day - 1 && it.slot == MealSlot.DINNER
     }
 
     /** The meals planned for one date; the plan week is the one starting on that date's Monday. */

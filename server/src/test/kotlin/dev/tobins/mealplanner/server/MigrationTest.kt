@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.server.db.Database
 import java.sql.DriverManager
 import java.sql.Statement
@@ -43,6 +44,12 @@ class MigrationTest {
     /** Version 10 added the own items of the shopping list (9.sqm); dropping the table drops its index. */
     private fun dropOwnItems(statement: Statement) {
         statement.execute("DROP TABLE shoppingExtra")
+        dropStockUses(statement)
+    }
+
+    /** Version 11 added what eating a meal took from the stock (10.sqm). */
+    private fun dropStockUses(statement: Statement) {
+        statement.execute("DROP TABLE stockUse")
     }
 
     @Test
@@ -69,7 +76,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         val tables = listOf(
             "appUser", "userMeta", "recipe", "recipeIngredient", "ingredient", "ingredientAlias", "onHand",
-            "ingredientPrice", "planMeal", "shoppingCheck", "shoppingExtra", "offer", "foodLog", "weight",
+            "ingredientPrice", "planMeal", "shoppingCheck", "shoppingExtra", "stockUse", "offer", "foodLog", "weight",
         )
         for (table in tables) {
             assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
@@ -263,8 +270,14 @@ class MigrationTest {
         assertEquals(setOf(1L, 2L), ingredients.onHandFor(week))
         assertEquals(setOf(2L), ingredients.onHandFor(week.minusDays(7)), "the tick still counts from its week")
         // Nobody knows how much of the chicken there was: a meal of it uses it up, as before.
-        ingredients.useUp(mapOf(1L to 300.0, 2L to 100.0), week)
+        db.planQueries.upsertMeal(1, week.toString(), 0, "DINNER", 1, "Chicken", 2.0, 800.0, 40.0, 0, 0, "EATEN")
+        val dinner = MealRef(week, 0, MealSlot.DINNER)
+        ingredients.useUp(dinner, mapOf(1L to 300.0, 2L to 100.0))
         assertEquals(setOf(2L), ingredients.onHandFor(week), "spinach was put on hand by hand and stays")
+        // Un-eaten, the dinner puts it back as it was: of an unknown amount.
+        ingredients.giveBack(dinner)
+        assertEquals(setOf(1L, 2L), ingredients.onHandFor(week))
+        assertEquals(null, db.pantryQueries.selectStock(1, week.toString(), listOf(1L)).executeAsOne().grams)
         driver.close()
     }
 
@@ -293,6 +306,58 @@ class MigrationTest {
         assertEquals(0L, db.shoppingQueries.countOpenExtras(1).executeAsOne())
         db.shoppingQueries.insertExtra(1, "Coffee", "2026-11-16")
         assertEquals(listOf("Coffee"), db.shoppingQueries.selectExtrasForWeek(1, "2026-11-23").executeAsList().map { it.name })
+        driver.close()
+    }
+
+    @Test
+    fun aVersionTenDatabaseKeepsItsStockAndMealsEatenBeforeGiveNothingBack() {
+        val file = createTempFile("v10", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        // Version 10 is today's schema without what meals took from the stock.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropStockUses(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'sub', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (userId, name) VALUES (1, 'Chicken fillet'), (1, 'Rice')")
+                statement.execute(
+                    "INSERT INTO onHand (ingredientId, addedAt, fromWeek, grams) VALUES " +
+                        "(1, '2026-11-01T00:00:00Z', '2026-11-23', 600.0), (2, '2026-11-01T00:00:00Z', '2026-11-16', 1000.0)",
+                )
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '2026-11-23', 0, 'DINNER', 1, 'Chicken', 2.0, 800.0, 40.0, 0, 0, 'EATEN'), " +
+                        "(1, '2026-11-23', 1, 'DINNER', 1, 'Chicken', 2.0, 800.0, 40.0, 0, 0, 'PLANNED')",
+                )
+                statement.execute("PRAGMA user_version = 10")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(columns(fresh, "stockUse"), columns(url, "stockUse"), "table stockUse after migration")
+        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        val week = LocalDate.parse("2026-11-23")
+        fun left(id: Long) = db.pantryQueries.selectStock(1, week.toString(), listOf(id)).executeAsOneOrNull()?.grams
+        // Monday's dinner was eaten before what it took was kept: un-eating it gives nothing back.
+        ingredients.giveBack(MealRef(week, 0, MealSlot.DINNER))
+        assertEquals(600.0 to 1000.0, left(1) to left(2))
+
+        // What a meal takes goes with it: replaced or removed, the meal leaves what it took taken.
+        val tuesday = MealRef(week, 1, MealSlot.DINNER)
+        fun uses() = db.pantryQueries.selectStockUses(1, week.toString(), 1, "DINNER").executeAsList()
+        ingredients.useUp(tuesday, mapOf(1L to 200.0, 2L to 100.0))
+        assertEquals(400.0 to 900.0, left(1) to left(2))
+        assertEquals(2, uses().size)
+        db.planQueries.upsertMeal(1, week.toString(), 1, "DINNER", 2, "Other", 2.0, 800.0, 40.0, 0, 0, "PLANNED")
+        assertEquals(emptyList(), uses(), "replaced")
+        ingredients.useUp(tuesday, mapOf(1L to 200.0))
+        db.planQueries.deleteMeal(1, week.toString(), 1, "DINNER")
+        assertEquals(emptyList(), uses(), "removed")
+        assertEquals(200.0 to 900.0, left(1) to left(2))
         driver.close()
     }
 }
