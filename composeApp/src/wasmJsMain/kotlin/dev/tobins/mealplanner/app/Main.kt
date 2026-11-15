@@ -12,6 +12,8 @@ private object LocalStorageSettings : SettingsStorage {
     override fun get(key: String): String? = localStorage.getItem(key)
 
     override fun set(key: String, value: String) = localStorage.setItem(key, value)
+
+    override fun remove(key: String) = localStorage.removeItem(key)
 }
 
 /** The open screen lives in the address fragment; changing it adds no history entry, so the back button is untouched. */

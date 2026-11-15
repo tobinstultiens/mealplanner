@@ -7,6 +7,9 @@ interface SettingsStorage {
     fun get(key: String): String?
 
     fun set(key: String, value: String)
+
+    /** Forgets [key], so stored lists that are no longer needed take no room. */
+    fun remove(key: String)
 }
 
 /** Keeps everything in memory; for previews and tests. */
@@ -18,16 +21,26 @@ class MemorySettingsStorage : SettingsStorage {
     override fun set(key: String, value: String) {
         values[key] = value
     }
+
+    override fun remove(key: String) {
+        values.remove(key)
+    }
 }
 
 private const val URL_KEY = "server.url"
 
-/** The stored server settings, falling back to [defaults] for what was never saved. */
-fun SettingsStorage.serverSettings(defaults: ServerSettings) = ServerSettings(url = get(URL_KEY) ?: defaults.url)
+/**
+ * The stored server settings, falling back to [defaults] for what was never saved. Written the way
+ * the settings screen writes an address, so that saving the same server compares equal and keeps
+ * the login and the client (a built-in address with a trailing `/` read as another server).
+ */
+fun SettingsStorage.serverSettings(defaults: ServerSettings) = ServerSettings(url = normalUrl(get(URL_KEY) ?: defaults.url))
 
 fun SettingsStorage.saveServerSettings(settings: ServerSettings) {
-    set(URL_KEY, settings.url.trim().trimEnd('/'))
+    set(URL_KEY, normalUrl(settings.url))
 }
+
+private fun normalUrl(url: String) = url.trim().trimEnd('/')
 
 /** Light, dark, or whatever the device uses. */
 enum class ThemeMode { SYSTEM, LIGHT, DARK }

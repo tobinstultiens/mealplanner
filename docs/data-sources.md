@@ -219,10 +219,30 @@ corrected in the same dialog as its shop section (Recipes â†’ Link ingredients â
 long as it is logged in (`ShoppingSession`), so leaving the Shopping screen for a recipe, another
 tab, the pantry or the offers cancels nothing, and coming back shows the same week, scroll position
 and opened groups. Requests go out one at a time, each with 10 seconds to answer. Without an answer
-or with a server error (5xx) the tick stays stored and the list says it is offline; stored ticks go
-out first the next time their week's list is opened, also after the app was closed. A tick the
-server refuses (another 4xx than 401, 408 or 429) goes back, and the snackbar says why. Logging out
-forgets the stored lists and their unsent ticks, so they never reach another account's list.
+or with a server error (5xx) the tick stays stored and the list says it is offline. Stored ticks of
+every week go out, oldest week first, before any list is fetched, also after the app was closed: a
+buy-ahead tick made offline last week still reaches the server. A tick the server refuses (another
+4xx than 401, 408 or 429) goes back, and the snackbar says why. Logging out (or a login the identity
+provider no longer renews) forgets the stored lists and their unsent ticks, and an answer that
+arrives after that stores nothing, so they never reach another account's list.
+
+**The list keeps itself current**, since a second phone or the web client on the same login may
+tick too. Each list from the server is laid under the ticks not yet sent, as a tick's answer is, so
+a refresh never flips back a row just tapped, and none is sent while another request is under way.
+How often the app asks:
+
+| State | Requests |
+|---|---|
+| Shopping screen shown, app in front, shopping mode | the list every 30 s (two people in one shop) |
+| Shopping screen shown, app in front | the list every 2 minutes |
+| Offline (or the list failed to load), screen shown, in front | one attempt every 30 s: the oldest stored tick, or else the list; on success the rest go and the offline line goes, without Retry |
+| App comes to the front (start, back from another app or browser tab) | stored ticks, then the list shown, or else the current week's list, so it is on the phone in a shop without reception even if it was not opened |
+| Leaving the Plan tab | the current week's list (the plan may have changed), unless the Shopping screen shows |
+| Another screen, or the app behind | nothing |
+
+A list is a few kilobytes gzipped; 30 s applies only with the screen kept on in shopping mode.
+Stored lists of weeks more than four weeks back are dropped on start, unless ticks of theirs still
+wait for the server.
 
 ## Own items on the shopping list
 

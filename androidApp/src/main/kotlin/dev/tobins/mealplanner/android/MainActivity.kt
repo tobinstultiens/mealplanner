@@ -24,6 +24,10 @@ private class PreferencesStorage(private val prefs: SharedPreferences) : Setting
     override fun set(key: String, value: String) {
         prefs.edit().putString(key, value).apply()
     }
+
+    override fun remove(key: String) {
+        prefs.edit().remove(key).apply()
+    }
 }
 
 /**

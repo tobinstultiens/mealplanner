@@ -35,6 +35,13 @@ expect fun systemColorScheme(dark: Boolean): ColorScheme?
 expect fun KeepScreenOn(enabled: Boolean)
 
 /**
+ * Whether the app is in front: on screen, not behind another app (Android) or in a hidden browser
+ * tab. The shopping list keeps itself current only then, and is fetched again when it comes back.
+ */
+@Composable
+expect fun appInFront(): Boolean
+
+/**
  * The loader of product pictures. It sends its own User-Agent (Jumbo resets connections that
  * carry OkHttp's default), keeps pictures on disk where the platform has room for that, and
  * ignores the stores' cache headers: AH's bonus pictures say `max-age=0`, yet the shopping list

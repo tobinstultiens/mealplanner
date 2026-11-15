@@ -88,7 +88,8 @@ fun App(
             login.refresh(settings.url, current) ?: run {
                 // Whoever logs in next may be someone else: what was the account's goes, as on logging out.
                 // The shopping session of this client is closed when the client is replaced; until then
-                // its requests fail for want of a login, and it stores nothing over the cleared copy.
+                // its requests fail for want of a login, and one answered anyway stores nothing, as its
+                // cache was made before the clear (ShoppingCache).
                 if (storage.session() == null) {
                     storage.logOut()
                     session = null
@@ -101,9 +102,17 @@ fun App(
     // screen cancels none of its requests, and the next account starts with a session of its own.
     // Its place in the list is kept in the saved state, as the screen's own state was before.
     fun shoppingSession(place: ShoppingSession.Place = ShoppingSession.Place()) =
-        ShoppingSession(scope, api.shoppingServer(), ShoppingCache(storage), place = place)
+        ShoppingSession(scope, api.shoppingServer(), ShoppingCache(storage), place = place, shoppingMode = storage::shoppingMode)
     val shopping = rememberSaveable(api, storage, saver = shoppingPlaceSaver(::shoppingSession)) { shoppingSession() }
     DisposableEffect(shopping) { onDispose { shopping.close() } }
+    // The list keeps itself current only while the app is in front; on start and on coming back
+    // it sends what was ticked offline and fetches the list, also before the Shopping tab is opened.
+    val inFront = appInFront()
+    val loggedIn = session != null
+    DisposableEffect(shopping, inFront, loggedIn) {
+        shopping.inFront(inFront && loggedIn)
+        onDispose {}
+    }
 
     /** Logs out; the shopping requests still going stop first, so nothing of the account is written back afterwards. */
     fun endSession() {
@@ -133,6 +142,12 @@ fun App(
     // The address follows the open screen, so that a reload comes back to it.
     val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen)
     LaunchedEffect(open, session != null) { addressFor(open, loggedIn = session != null)?.let(routes::write) }
+    // Leaving the Plan tab the plan may have changed: the current week's list is fetched for the shop.
+    var previousTab by remember { mutableStateOf(tab) }
+    LaunchedEffect(tab) {
+        if (previousTab == Tab.PLAN && tab != Tab.PLAN && session != null) shopping.prefetch()
+        previousTab = tab
+    }
 
     LaunchedEffect(Unit) {
         loginCallbacks.collect { url ->

@@ -31,6 +31,22 @@ class SettingsStorageTest {
     }
 
     @Test
+    fun theBuiltInServerReadsAsTheSettingsScreenWritesIt() {
+        // Otherwise saving the same server would compare as another one, and log out.
+        val storage = MemorySettingsStorage()
+        assertEquals(ServerSettings("https://meals.example.nl"), storage.serverSettings(ServerSettings("https://meals.example.nl/")))
+    }
+
+    @Test
+    fun aRemovedKeyIsGone() {
+        val storage = MemorySettingsStorage()
+        storage.set("shopping.2026-11-16", "{}")
+        storage.remove("shopping.2026-11-16")
+        assertEquals(null, storage.get("shopping.2026-11-16"))
+        storage.remove("never.set")
+    }
+
+    @Test
     fun shoppingModeIsOffUntilSwitchedOn() {
         val storage = MemorySettingsStorage()
         assertEquals(false, storage.shoppingMode())
