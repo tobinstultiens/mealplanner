@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.Store
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -34,5 +35,43 @@ class SettingsStorageTest {
         assertEquals(true, storage.systemColors())
         storage.saveSystemColors(false)
         assertEquals(false, storage.systemColors())
+    }
+
+    @Test
+    fun theShoppingViewIsBySectionUntilChanged() {
+        val storage = MemorySettingsStorage()
+        assertEquals(ShoppingView.SECTION, storage.shoppingView())
+
+        storage.saveShoppingView(ShoppingView.STORE)
+        assertEquals(ShoppingView.STORE, storage.shoppingView())
+    }
+
+    @Test
+    fun theChosenStoreIsRememberedUntilCleared() {
+        val storage = MemorySettingsStorage()
+        assertEquals(null, storage.shoppingStore())
+
+        storage.saveShoppingStore(Store.JUMBO)
+        assertEquals(Store.JUMBO, storage.shoppingStore())
+        storage.saveShoppingStore(null)
+        assertEquals(null, storage.shoppingStore())
+    }
+
+    @Test
+    fun allThreeStoresAreInUseUntilNarrowed() {
+        val storage = MemorySettingsStorage()
+        assertEquals(Store.entries.toSet(), storage.shops())
+
+        storage.saveShops(setOf(Store.AH, Store.LIDL))
+        assertEquals(setOf(Store.AH, Store.LIDL), storage.shops())
+    }
+
+    @Test
+    fun anEmptyOrUnreadableStoreSettingMeansAllStores() {
+        val storage = MemorySettingsStorage()
+        storage.saveShops(emptySet())
+        assertEquals(Store.entries.toSet(), storage.shops())
+        storage.set("shops", "NOPE")
+        assertEquals(Store.entries.toSet(), storage.shops())
     }
 }
