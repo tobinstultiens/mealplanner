@@ -477,7 +477,7 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shoppingMode: Boolean
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(checked = item.checked, onCheckedChange = null, modifier = Modifier.padding(12.dp))
-        ProductPicture(item.imageUrl, item.name, size = if (shoppingMode) 56.dp else 48.dp, dimmed = item.checked)
+        ProductPicture(item.pictureUrl(offer), item.name, size = if (shoppingMode) 56.dp else 48.dp, dimmed = item.checked)
         Column(Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp)) {
             Text(
                 if (item.onHand) t(Msg.ON_HAND_MAYBE, item.name) else item.name,

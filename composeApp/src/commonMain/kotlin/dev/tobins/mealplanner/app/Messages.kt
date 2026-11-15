@@ -147,8 +147,8 @@ enum class Msg(private val english: String, private val dutch: String) {
     SYSTEM_COLORS_HINT("Take the colours from your wallpaper.", "Neem de kleuren over van je achtergrond."),
     PRODUCT_PICTURES("Show product pictures", "Productfoto's tonen"),
     PRODUCT_PICTURES_HINT(
-        "Loaded from the stores' websites, so they know this phone looks. Off shows a letter instead.",
-        "Worden van de websites van de winkels geladen, dus zij zien dat deze telefoon meekijkt. Uit toont een letter.",
+        "Pictures are loaded from the stores' websites, so the stores can see this phone asking for them. Off shows a letter instead.",
+        "Foto's worden van de websites van de winkels geladen, dus de winkels zien dat deze telefoon ze opvraagt. Uit toont een letter.",
     ),
     CARD_APP("App", "App"),
     VERSION("Version {0}", "Versie {0}"),

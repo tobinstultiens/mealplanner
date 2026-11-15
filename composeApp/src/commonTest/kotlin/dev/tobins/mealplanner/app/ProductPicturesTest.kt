@@ -1,5 +1,8 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.Store
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -33,5 +36,19 @@ class ProductPicturesTest {
         assertEquals("É", pictureInitial("  énkele boon"))
         assertEquals("5", pictureInitial("5 kruiden"))
         assertEquals("•", pictureInitial(""))
+    }
+
+    @Test
+    fun aShoppingRowShowsThePictureOfTheOfferItsBadgeIsFor() {
+        fun offer(store: Store, price: Double, image: String?) =
+            Offer(store, "Pear", null, price, validFrom = "2026-01-01", validUntil = "2026-01-07", imageUrl = image)
+        val ahOffer = offer(Store.AH, 1.49, ah)
+        val lidlOffer = offer(Store.LIDL, 1.99, lidl)
+        // The item's own picture is the cheapest offer's, Lidl's here; the AH-only view shows AH's badge.
+        val item = ShoppingItem("pear", "Pear", null, null, "Fruit", emptyList(), false, false, listOf(ahOffer, lidlOffer), imageUrl = lidl)
+
+        assertEquals(ah, item.pictureUrl(item.bestOffer(setOf(Store.AH))))
+        assertEquals(lidl, item.pictureUrl(null))
+        assertEquals(lidl, item.pictureUrl(offer(Store.AH, 1.49, null)))
     }
 }
