@@ -99,6 +99,17 @@ data class ShoppingItem(
      * ingredient itself (`1 | onion`) are not here; they stay in [pieces].
      */
     val otherAmounts: List<String> = emptyList(),
+    /**
+     * The weight this row said when it was ticked off, on a ticked row of what the week's meals need
+     * ([ShoppingList.items], [ShoppingList.noLongerNeeded]): [grams] then, or [knownGrams] when that
+     * was null. When the meals need more now ([grams], or [knownGrams], above it), the tick stays
+     * ([checked] true, so apps from before it never see a bought item come back) and the app can say
+     * more is needed. Null when unknown: a row that said no weight, a tick from before the server kept
+     * it, and the advice and own items, whose ticks go by other rules.
+     */
+    val boughtGrams: Double? = null,
+    /** The number of pieces this row said when it was ticked off, as [boughtGrams] the weight. */
+    val boughtPieces: Double? = null,
 )
 
 /**
@@ -147,6 +158,17 @@ data class ShoppingList(
      * planned, and when buy-ahead is off or dismissed. Meaningless when [buyAhead] is empty.
      */
     val buyAheadProvisional: Boolean = false,
+    /**
+     * Rows of [items] that were ticked off this week and that the meals no longer need since the plan
+     * changed: food that was bought and no meal of the week uses now. Each has its key, its name as
+     * the row had it, what was bought ([ShoppingItem.boughtGrams], [ShoppingItem.boughtPieces]),
+     * [ShoppingItem.checked] true and [ShoppingItem.onHand] when its ingredient is on hand already; no
+     * amounts needed and no recipes. Un-ticking one with its key (the usual `PUT` of the list) takes
+     * it off. Only ticks the server remembers the row of are here: not ticks from before it did,
+     * the advice's or own items', nor a dismissed group. A separate list, so that apps from before it
+     * never take it for something to buy.
+     */
+    val noLongerNeeded: List<ShoppingItem> = emptyList(),
 )
 
 @Serializable

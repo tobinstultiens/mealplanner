@@ -1,10 +1,12 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.server.db.Database
 import java.sql.DriverManager
 import java.sql.Statement
 import java.time.LocalDate
+import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -50,6 +52,12 @@ class MigrationTest {
     /** Version 11 added what eating a meal took from the stock (10.sqm). */
     private fun dropStockUses(statement: Statement) {
         statement.execute("DROP TABLE stockUse")
+        dropTickMemory(statement)
+    }
+
+    /** Version 12 added what a tick remembers of its row (11.sqm). */
+    private fun dropTickMemory(statement: Statement) {
+        for (column in listOf("name", "grams", "pieces")) statement.execute("ALTER TABLE shoppingCheck DROP COLUMN $column")
     }
 
     @Test
@@ -302,7 +310,7 @@ class MigrationTest {
         val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
         openDatabase(fresh).first.close()
         assertEquals(columns(fresh, "shoppingExtra"), columns(url, "shoppingExtra"), "table shoppingExtra after migration")
-        assertEquals(setOf("i12", "dismissed:stock-up"), db.planQueries.selectChecks(1, "2026-11-16").executeAsList().toSet())
+        assertEquals(setOf("i12", "dismissed:stock-up"), db.shoppingQueries.selectChecks(1, "2026-11-16").executeAsList().map { it.itemKey }.toSet())
         assertEquals(0L, db.shoppingQueries.countOpenExtras(1).executeAsOne())
         db.shoppingQueries.insertExtra(1, "Coffee", "2026-11-16")
         assertEquals(listOf("Coffee"), db.shoppingQueries.selectExtrasForWeek(1, "2026-11-23").executeAsList().map { it.name })
@@ -358,6 +366,51 @@ class MigrationTest {
         db.planQueries.deleteMeal(1, week.toString(), 1, "DINNER")
         assertEquals(emptyList(), uses(), "removed")
         assertEquals(200.0 to 900.0, left(1) to left(2))
+        driver.close()
+    }
+
+    @Test
+    fun aVersionElevenDatabaseKeepsItsTicksAsPlainTicksThatRememberNothing() {
+        val file = createTempFile("v11", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        // Version 11 is today's schema without what a tick remembers.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropTickMemory(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'sub', '2026-11-01T00:00:00Z')")
+                statement.execute(
+                    "INSERT INTO shoppingCheck (userId, weekStart, itemKey) VALUES " +
+                        "(1, '$week', 't:beef'), (1, '$week', 't:leek'), (1, '$week', 'dismissed:stock-up')",
+                )
+                statement.execute("PRAGMA user_version = 11")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(columns(fresh, "shoppingCheck"), columns(url, "shoppingCheck"), "table shoppingCheck after migration")
+        val ticks = db.shoppingQueries.selectChecks(1, week).executeAsList()
+        assertEquals(setOf("t:beef", "t:leek", "dismissed:stock-up"), ticks.map { it.itemKey }.toSet())
+        assertTrue(ticks.all { it.name == null && it.grams == null && it.pieces == null }, "nothing is known of what was bought")
+
+        // The week's stew needs beef (no catalogue here, so its row is "t:beef") and no leek any more.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val scope = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+        val stew = scope.recipes.create(RecipeInput("Stew", 2, "400 | g | beef")).summary
+        db.planQueries.upsertMeal(1, week, 0, "DINNER", stew.id, stew.title, 2.0, 800.0, 40.0, 0, 0, "PLANNED")
+        val list = scope.shopping.get(week)
+        // Still ticked as before, without an amount bought: never "more needed", never "no longer needed".
+        val beef = list.items.single()
+        assertEquals("t:beef" to true, beef.key to beef.checked)
+        assertEquals(null to null, beef.boughtGrams to beef.boughtPieces)
+        assertEquals(emptyList(), list.noLongerNeeded)
+        assertTrue(list.stockUpDismissed)
         driver.close()
     }
 }

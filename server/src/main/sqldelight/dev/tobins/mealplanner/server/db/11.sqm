@@ -1,0 +1,8 @@
+-- Version 11 -> 12: a tick remembers what its row of the shopping list said (issue 90), so that the
+-- list can show a ticked row the plan now needs more of, and a bought item no meal needs any more.
+-- Only new nullable columns, so no table is rebuilt and no row is touched: ticks from before keep
+-- all three NULL and stay plain ticks, as before.
+
+ALTER TABLE shoppingCheck ADD COLUMN name TEXT;
+ALTER TABLE shoppingCheck ADD COLUMN grams REAL;
+ALTER TABLE shoppingCheck ADD COLUMN pieces REAL;

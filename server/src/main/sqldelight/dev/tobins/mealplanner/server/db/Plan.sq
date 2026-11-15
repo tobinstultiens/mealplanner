@@ -35,23 +35,6 @@ DELETE FROM planMeal WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?
 setLocked:
 UPDATE planMeal SET locked = ? WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?;
 
--- Items ticked off on a week's shopping list.
-CREATE TABLE shoppingCheck (
-    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
-    weekStart TEXT NOT NULL,
-    itemKey TEXT NOT NULL,
-    PRIMARY KEY (userId, weekStart, itemKey)
-);
-
-selectChecks:
-SELECT itemKey FROM shoppingCheck WHERE userId = ? AND weekStart = ?;
-
-insertCheck:
-INSERT OR IGNORE INTO shoppingCheck (userId, weekStart, itemKey) VALUES (?, ?, ?);
-
-deleteCheck:
-DELETE FROM shoppingCheck WHERE userId = ? AND weekStart = ? AND itemKey = ?;
-
 -- The latest offers per store, replaced as a whole by each successful fetch.
 CREATE TABLE offer (
     store TEXT NOT NULL,

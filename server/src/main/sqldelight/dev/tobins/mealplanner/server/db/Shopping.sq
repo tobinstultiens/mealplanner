@@ -1,3 +1,27 @@
+-- Items ticked off on a week's shopping list, and dismissed advice groups (ShoppingKey). A tick of a
+-- row of what the week's meals need keeps what the row said then (name, grams, pieces), so that the
+-- list can tell when the plan needs more since, or no longer needs it; all three are NULL for other
+-- ticks and for ticks from before version 12.
+CREATE TABLE shoppingCheck (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    weekStart TEXT NOT NULL,
+    itemKey TEXT NOT NULL,
+    name TEXT,
+    grams REAL,                        -- the weight the row said; its known part when not all of it could be weighed
+    pieces REAL,
+    PRIMARY KEY (userId, weekStart, itemKey)
+);
+
+selectChecks:
+SELECT itemKey, name, grams, pieces FROM shoppingCheck WHERE userId = ? AND weekStart = ?;
+
+-- Ticking a ticked item again keeps what its first tick said.
+insertCheck:
+INSERT OR IGNORE INTO shoppingCheck (userId, weekStart, itemKey, name, grams, pieces) VALUES (?, ?, ?, ?, ?, ?);
+
+deleteCheck:
+DELETE FROM shoppingCheck WHERE userId = ? AND weekStart = ? AND itemKey = ?;
+
 -- Things the account put on its shopping list itself (coffee, toilet paper), apart from what the
 -- recipes need. One is on the list of every week from fromWeek on until it is ticked off; ticked
 -- off in a week it belongs to that week (boughtWeek) and is on no other list.

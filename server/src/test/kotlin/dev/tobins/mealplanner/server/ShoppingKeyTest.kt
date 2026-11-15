@@ -83,6 +83,6 @@ class ShoppingKeyTest {
         assertEquals(week, tick("t:olive oil").body<ShoppingList>().weekStart)
 
         val userId = db.userQueries.selectBySubject("sub-alice").executeAsOne().id
-        assertEquals(setOf("i12", "t:olive oil"), db.planQueries.selectChecks(userId, week).executeAsList().toSet())
+        assertEquals(setOf("i12", "t:olive oil"), db.shoppingQueries.selectChecks(userId, week).executeAsList().map { it.itemKey }.toSet())
     }
 }
