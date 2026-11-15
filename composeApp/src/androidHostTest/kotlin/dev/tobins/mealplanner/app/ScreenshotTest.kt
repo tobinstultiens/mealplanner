@@ -91,7 +91,7 @@ enum class Shot(
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
     SHELL(content = { _, settings -> shell(settings) }),
-    SETTINGS(content = { _, _ ->
+    SETTINGS(heightDp = 900, content = { _, _ ->
         ServerSettingsScreen(
             current = ServerSettings("https://mealplanner.example.nl"),
             account = "Anna",
