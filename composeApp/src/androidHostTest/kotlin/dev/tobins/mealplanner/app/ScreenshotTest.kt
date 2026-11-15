@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -37,12 +38,19 @@ data class Look(val dark: Boolean, val widthDp: Int, val fontScale: Float) {
     val name get() = "${if (dark) "dark" else "light"}-${widthDp}dp-x$fontScale"
 }
 
+@Composable
+private fun shopping(api: ApiClient, shoppingMode: Boolean) {
+    val storage = remember { MemorySettingsStorage().also { it.saveShoppingMode(shoppingMode) } }
+    ShoppingScreen(api, ShoppingCache(storage), storage, {}, {})
+}
+
 /** A screen under test and the sample data it gets. */
 enum class Shot(val emptyWeek: Boolean = false, val content: @Composable (ApiClient, ServerSettings) -> Unit) {
     TODAY(content = { api, _ -> TodayScreen(api, {}, {}) }),
     PLAN(content = { api, _ -> PlanScreen(api, {}, {}) }),
-    SHOPPING(content = { api, _ -> ShoppingScreen(api, ShoppingCache(MemorySettingsStorage()), {}, {}) }),
-    SHOPPING_EMPTY(emptyWeek = true, content = { api, _ -> ShoppingScreen(api, ShoppingCache(MemorySettingsStorage()), {}, {}) }),
+    SHOPPING(content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_MODE(content = { api, _ -> shopping(api, shoppingMode = true) }),
+    SHOPPING_EMPTY(emptyWeek = true, content = { api, _ -> shopping(api, shoppingMode = false) }),
     RECIPES(content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
     RECIPE_DETAIL(content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
     OFFERS(content = { api, _ -> OffersScreen(api, {}, {}) }),

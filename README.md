@@ -100,7 +100,7 @@ optional fields is safe. Removing or renaming a field, or changing its meaning, 
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today, Plan, Shopping (also with an empty week), Recipes, recipe detail, Offers, Prices, Progress and
+Today, Plan, Shopping (also in shopping mode and with an empty week), Recipes, recipe detail, Offers, Prices, Progress and
 Settings screens on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
 sample data, with the date, time zone and locale (English, UK) fixed, so a picture only changes when the
