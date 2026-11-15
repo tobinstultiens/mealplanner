@@ -138,10 +138,14 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
         SectionDialog(
             entry = entry,
             onDismiss = { placing = null },
-            onConfirm = { choice ->
+            onConfirm = { choice, keeps ->
                 placing = null
                 scope.launch {
-                    when (val result = load { api.setSection(entry.ingredientId, choice) }) {
+                    val result = load {
+                        val placed = api.setSection(entry.ingredientId, choice)
+                        if (keeps == entry.keepsChoice()) placed else api.setKeeps(entry.ingredientId, keeps)
+                    }
+                    when (result) {
                         is Load.Ready -> {
                             sections = sections?.map { if (it.ingredientId == entry.ingredientId) result.value else it }
                             snackbar.showSnackbar(t(Msg.SECTION_CHANGED, entry.name, t.sectionTitleOfKey(result.value.section)))
@@ -311,18 +315,28 @@ private fun SectionRow(entry: IngredientSection, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp)) {
         Text(entry.name, style = MaterialTheme.typography.bodyLarge)
         Text(
-            t.sectionTitleOfKey(entry.section).let { if (entry.byHand) t(Msg.SET_BY_HAND, it) else it },
+            listOfNotNull(
+                t.sectionTitleOfKey(entry.section).let { if (entry.byHand) t(Msg.SET_BY_HAND, it) else it },
+                t(Msg.KEEPS_SHORT).takeIf { entry.keeps },
+            ).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
-/** Picks an ingredient's section, or the automatic one (null) with where it comes from. */
+/** Whether the ingredient keeps until next week as set by hand; null when it follows its section. */
+private fun IngredientSection.keepsChoice(): Boolean? = keeps.takeIf { keepsByHand }
+
+/**
+ * Picks an ingredient's section, or the automatic one (null) with where it comes from; and whether
+ * it keeps until next week, or the section's answer (null).
+ */
 @Composable
-private fun SectionDialog(entry: IngredientSection, onDismiss: () -> Unit, onConfirm: (String?) -> Unit) {
+private fun SectionDialog(entry: IngredientSection, onDismiss: () -> Unit, onConfirm: (section: String?, keeps: Boolean?) -> Unit) {
     val t = LocalStrings.current
     var choice by remember { mutableStateOf(if (entry.byHand) entry.section else null) }
+    var keeps by remember { mutableStateOf(entry.keepsChoice()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(t(Msg.SECTION_FOR, entry.name)) },
@@ -332,9 +346,16 @@ private fun SectionDialog(entry: IngredientSection, onDismiss: () -> Unit, onCon
                 ShopSection.entries.forEach { section ->
                     SectionOption(t(section.msg()), null, selected = choice == section.name) { choice = section.name }
                 }
+                Text(t(Msg.KEEPS_TITLE), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Spacing.InsideCard))
+                Text(t(Msg.KEEPS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // The automatic answer follows the section chosen above.
+                val section = ShopSection.fromKey(choice ?: entry.automatic) ?: ShopSection.OTHER
+                SectionOption(t(Msg.AUTOMATIC, t(if (section.shelfLife.keepsUntilNextWeek) Msg.KEEPS_YES else Msg.KEEPS_NO)), null, selected = keeps == null) { keeps = null }
+                SectionOption(t(Msg.KEEPS_YES), null, selected = keeps == true) { keeps = true }
+                SectionOption(t(Msg.KEEPS_NO), null, selected = keeps == false) { keeps = false }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(choice) }) { Text(t(Msg.SAVE)) } },
+        confirmButton = { TextButton(onClick = { onConfirm(choice, keeps) }) { Text(t(Msg.SAVE)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )
 }

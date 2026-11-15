@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -33,8 +34,7 @@ internal class ShoppingTicks(
     private val wanted = mutableMapOf<String, Boolean>()
     private val turn = Mutex()
 
-    private fun overlay(list: ShoppingList) =
-        list.copy(items = list.items.map { item -> wanted[item.key]?.let { item.copy(checked = it) } ?: item })
+    private fun overlay(list: ShoppingList) = list.withTicks(wanted)
 
     /** Takes a list from the server (or the stored copy); returns it with unsent ticks laid over. */
     fun reset(list: ShoppingList): ShoppingList {
@@ -75,7 +75,7 @@ internal class ShoppingTicks(
 
     private fun keepForLater(current: ShoppingList, key: String, checked: Boolean) {
         offline(overlay(current), key, checked)
-        base = current.copy(items = current.items.map { if (it.key == key) it.copy(checked = checked) else it })
+        base = current.withTicks(mapOf(key to checked))
         settle(key, checked)
     }
 
@@ -83,4 +83,14 @@ internal class ShoppingTicks(
     private fun settle(key: String, checked: Boolean) {
         if (wanted[key] == checked) wanted.remove(key)
     }
+}
+
+/**
+ * The list with [ticks] (checked or not, by item key) laid over every group that can be ticked:
+ * this week's items and the buy-ahead and stock-up advice.
+ */
+internal fun ShoppingList.withTicks(ticks: Map<String, Boolean>): ShoppingList {
+    if (ticks.isEmpty()) return this
+    fun List<ShoppingItem>.ticked() = map { item -> ticks[item.key]?.let { item.copy(checked = it) } ?: item }
+    return copy(items = items.ticked(), buyAhead = buyAhead.ticked(), stockUp = stockUp.ticked())
 }

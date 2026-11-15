@@ -27,6 +27,7 @@ import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Routines
+import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
@@ -101,6 +102,7 @@ class FakeBackend(
             path == "/api/pantry" -> json.encodeToString(Pantry(emptyList(), emptyList()))
             // Never chosen: every store, as for an account that never opened the per-store list.
             path == "/api/shops" -> json.encodeToString(ShopsSetting())
+            path == "/api/shopping-advice" -> json.encodeToString(ShoppingAdvice())
             else -> null
         }
     }
@@ -151,8 +153,11 @@ class FakeBackend(
         if (emptyWeek) return ShoppingList(weekStart, emptyList(), emptyList())
         // In walking order, as the server sends it: by shop section, then by name. The regular price is the
         // amount needed at the price per kg of `prices`; the pepper, counted in pieces only, has none.
-        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null) =
-            ShoppingItem(key, name, grams, pieces, section.title, listOf(recipe), onHand = false, checked = checked, offers = offers, imageUrl = imageUrl, regularPrice = regularPrice)
+        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String?, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null) =
+            ShoppingItem(key, name, grams, pieces, section.title, listOfNotNull(recipe), onHand = false, checked = checked, offers = offers, imageUrl = imageUrl, regularPrice = regularPrice)
+        // Offers that end this week, for the advice: with their share already worked out, as the server sends them.
+        fun deal(store: Store, title: String, deal: String, price: Double, paidShare: Double) =
+            Offer(store, title, deal, price, null, null, null, "2026-11-16", "2026-11-22", paidShare = paidShare)
         val chicken = "Slow-cooked chicken thighs with coconut, lemon and spinach"
         val chickpea = "Chickpea salad with feta and roasted peppers"
         return ShoppingList(
@@ -169,6 +174,21 @@ class FakeBackend(
             ),
             staples = listOf("Olive oil", "Salt"),
             toTaste = listOf("Black pepper", "Fresh parsley"),
+            // Two meals of next week, provisional: one item for both, one for one; the second is ticked.
+            buyAhead = listOf(
+                item(
+                    "ahead:i21", "Minced beef", 1000.0, null, ShopSection.MEAT, "Beef chilli with beans",
+                    offers = listOf(deal(Store.JUMBO, "Rundergehakt 500 g", "2 voor 7,00", 3.50, 0.6)), regularPrice = 11.98,
+                ).let { it.copy(recipes = it.recipes + "Lasagne") },
+                item(
+                    "ahead:i22", "Frozen spinach", 450.0, null, ShopSection.FROZEN, "Lasagne", checked = true,
+                    offers = listOf(deal(Store.AH, "AH Spinazie diepvries 450 g", "25% korting", 1.12, 0.75)), regularPrice = 1.49,
+                ),
+            ),
+            stockUp = listOf(
+                item("stock:i23", "Rice", 1000.0, null, ShopSection.WORLD, null, offers = listOf(deal(Store.LIDL, "Basmati rijst 1 kg", "1+1 gratis", 2.29, 0.5)), regularPrice = 2.29),
+                item("stock:i24", "Chopped tomatoes", 400.0, null, ShopSection.TINS, null, offers = listOf(deal(Store.AH, "AH Tomatenblokjes 400 g", "2e halve prijs", 0.62, 0.75)), regularPrice = 0.69),
+            ),
         )
     }
 
