@@ -190,8 +190,9 @@ and publishes a GitHub release with `mealplanner-vX.Y.Z.apk` attached. Leave the
 raise the patch number of the latest tag (the first release is `0.1.0`), or enter one such as
 `0.2.0`. The version code is derived from it (`1.2.3` → 10203), so later releases install as
 updates. The release's notes are written by `scripts/release-notes.sh`: one line per squash commit
-title since the previous `v*` tag (without the ` (#n)` suffix, newest first), only for commits that
-touch `composeApp/`, `androidApp/`, `shared/` or `server/`. The app shows them under "What's new"
+title since the previous `v*` tag (without the ` (#n)` suffixes, newest first), only for commits that
+change a file under `composeApp/`, `androidApp/`, `shared/` or `server/` outside the test source
+folders, so merges that only change tests are left out. The app shows them under "What's new"
 where it offers the update; a release without notes is offered without that heading. Only an app that
 already has this feature shows them, so the first release that displays notes is the one after it.
 
