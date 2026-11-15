@@ -65,6 +65,13 @@ server jar includes that build: the server serves it at `/`. On the first visit 
 login page in the same tab; the tokens are kept in the browser's `localStorage`. `kotlin-js-store/` pins the JavaScript toolchain's
 dependencies; commit changes to it. The web tests run in a headless Chrome.
 
+Checked by hand (login, all five tabs, light and dark, 360 px and 1280 px wide, Dutch locale, back
+button, mouse wheel, keyboard focus) in Chromium 157, and in Firefox 160 (login and two tabs only).
+Differences from the Android app that are deliberate or known: a reload always returns to the Today
+tab (screens are not part of the address), text cannot be selected (as on Android), keyboard focus is
+hard to see (follow-ups in #54), and the page background before the app has started follows the
+browser's light/dark setting, not the Light/Dark choice in Settings.
+
 ## Android app
 
 The server address and the login are under Progress → Settings. Until another address is saved the
