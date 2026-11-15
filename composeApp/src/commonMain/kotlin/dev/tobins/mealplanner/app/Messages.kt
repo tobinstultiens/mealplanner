@@ -397,6 +397,11 @@ enum class Msg(private val english: String, private val dutch: String) {
         "It keeps, and the offer ends this week. Ticked, it counts as on hand for next week's plan.",
         "Het blijft goed en de aanbieding stopt deze week. Afgevinkt telt het als in huis voor het plan van volgende week.",
     ),
+    BUY_AHEAD_HINT_PROVISIONAL(
+        "Next week is not planned yet: these are dinners it could have. It keeps, and the offer ends this week. Ticked, next week's plan prefers meals that use it.",
+        "Volgende week is nog niet gepland: dit zijn maaltijden die het kan krijgen. Het blijft goed en de aanbieding stopt deze week. Afgevinkt kiest het plan van volgende week liever maaltijden die het gebruiken.",
+    ),
+    SUGGESTED_MEALS("for e.g. {0}", "bijv. voor {0}"),
     STOCK_UP_TITLE("Stock up: on offer now", "Inslaan: nu in de aanbieding"),
     STOCK_UP_HINT(
         "Keeps for months; no meal on this list needs it. One pack each; ticked, it goes in the pantry.",

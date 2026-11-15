@@ -141,6 +141,12 @@ data class ShoppingList(
     val buyAheadDismissed: Boolean = false,
     /** True when [stockUp] was dismissed for this week (and is empty for that reason). */
     val stockUpDismissed: Boolean = false,
+    /**
+     * True when the meals named in [buyAhead] are only a suggestion: next week has no plan yet, so
+     * they are dinners the planner could pick, not ones it has picked. False when next week is
+     * planned, and when buy-ahead is off or dismissed. Meaningless when [buyAhead] is empty.
+     */
+    val buyAheadProvisional: Boolean = false,
 )
 
 @Serializable

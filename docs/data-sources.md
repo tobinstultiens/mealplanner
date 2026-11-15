@@ -156,6 +156,10 @@ them qualifies when it keeps, is on offer this week but not (as far as known) ne
 staple and not on hand, and its saving is known. The meals saving at least €0.50 that way, at most
 three, most saved first (`BuyAhead.choose`), give the list: what one batch of each needs, with the
 meals named. No random choice is involved, so the list stays the same while it is ticked off.
+Nothing of the provisional choice is stored, so `ShoppingList.buyAheadProvisional` is true while next
+week has no plan: the app then says the meals are dinners next week could have (rows read "for e.g."
+before them) and not what it will cook. It is false once next week is planned, and when buy ahead is
+switched off or dismissed.
 
 **Stock up** (`ShoppingList.stockUp`, keys `stock:i<id>`): ingredients that keep and are a staple, or
 that a recipe uses and keep for months (so not fresh meat), on offer now, not on hand and not on the

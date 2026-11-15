@@ -38,7 +38,14 @@ fun adviceAt(items: List<ShoppingItem>, store: Store?, shops: Set<Store>, today:
 fun ShoppingList.hasAdvice(store: Store?, shops: Set<Store>, today: String): Boolean =
     AdviceTexts.entries.any { it.dismissed(this) || adviceAt(it.items(this), store, shops, today).isNotEmpty() }
 
-/** The hint under an advice group's title: what it is for, and what its offers save when that is known. */
-fun adviceHint(texts: AdviceTexts, items: List<ShoppingItem>, shops: Set<Store>, today: String, strings: Strings): String =
-    listOfNotNull(strings(texts.hint), savingOf(items, shops, today)?.let { strings(Msg.ADVICE_SAVING, formatEuro(it, strings.locale)) })
+/**
+ * The hint under an advice group's title: what it is for, and what its offers save when that is known.
+ * With [provisional] (next week has no plan, see [ShoppingList.buyAheadProvisional]) the buy-ahead
+ * hint says its meals are only dinners next week could have.
+ */
+fun adviceHint(texts: AdviceTexts, items: List<ShoppingItem>, shops: Set<Store>, today: String, strings: Strings, provisional: Boolean = false): String =
+    listOfNotNull(
+        strings(if (provisional && texts == AdviceTexts.BUY_AHEAD) Msg.BUY_AHEAD_HINT_PROVISIONAL else texts.hint),
+        savingOf(items, shops, today)?.let { strings(Msg.ADVICE_SAVING, formatEuro(it, strings.locale)) },
+    )
         .joinToString(" ")
