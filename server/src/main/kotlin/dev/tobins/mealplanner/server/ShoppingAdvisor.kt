@@ -15,7 +15,7 @@ import dev.tobins.mealplanner.shopping.ShopSection
  * the stores the account shops at only, and by what those offers save against the regular price.
  *
  * The keys of the items it makes are those of [ShoppingList.buyAhead][dev.tobins.mealplanner.api.ShoppingList.buyAhead]
- * and `stockUp`: [aheadKey] and [stockKey].
+ * and `stockUp`: [ShoppingKey.Ahead] and [ShoppingKey.Stock].
  */
 class ShoppingAdvisor(
     /** This week's offers at the stores in use, by ingredient id, each with its paid share. */
@@ -27,7 +27,7 @@ class ShoppingAdvisor(
     private val keeps: Map<Long, Boolean>,
     private val productImages: Map<Long, String>,
     /** The keys ticked on this week's list. */
-    private val checked: Set<String>,
+    private val checked: Set<ShoppingKey>,
 ) {
     /** The share of the regular price paid with the best offer that saves; null without one. */
     private fun paidShare(id: Long): Double? = offers[id]?.mapNotNull { it.paidShare }?.minOrNull()
@@ -55,7 +55,7 @@ class ShoppingAdvisor(
     ): List<ShoppingItem> {
         fun qualifies(need: ShoppingNeed): Boolean {
             val id = need.ingredient?.id ?: return false
-            return keeps[id] == true && id !in onOfferNextWeek && (id !in onHand || aheadKey(id) in checked) && saving(need) != null
+            return keeps[id] == true && id !in onOfferNextWeek && (id !in onHand || ShoppingKey.Ahead(id) in checked) && saving(need) != null
         }
         val options = meals.map { meal ->
             val needs = shoppingNeeds(listOf(meal), lines, sectionOf).needs.filter(::qualifies)
@@ -64,7 +64,7 @@ class ShoppingAdvisor(
         val chosen = BuyAhead.choose(options).mapTo(HashSet()) { it.recipeId }
         return shoppingNeeds(meals.filter { it.recipeId in chosen }, lines, sectionOf).needs.filter(::qualifies).map { need ->
             val id = need.ingredient!!.id
-            val key = aheadKey(id)
+            val key = ShoppingKey.Ahead(id)
             need.toItem(key, key in checked, onHand = false, offers[id].orEmpty(), productImages[id], perKg[id])
         }
     }
@@ -79,7 +79,7 @@ class ShoppingAdvisor(
         ingredients.asSequence()
             .filter { !it.negligible && it.id !in listed && keeps[it.id] == true }
             .filter { it.isStaple || (it.id in used && sectionOf[it.id]?.shelfLife == ShelfLife.LONG) }
-            .filter { it.id !in onHand || stockKey(it.id) in checked }
+            .filter { it.id !in onHand || ShoppingKey.Stock(it.id) in checked }
             .mapNotNull(::pack)
             .filter { it.saving >= MIN_STOCK_UP_SAVING }
             .sortedByDescending { it.saving }
@@ -102,9 +102,9 @@ class ShoppingAdvisor(
         val saving get() = regular * (1 - offer.paidShare!!)
 
         fun toItem(): ShoppingItem {
-            val key = stockKey(ingredient.id)
+            val key = ShoppingKey.Stock(ingredient.id)
             return ShoppingItem(
-                key = key,
+                key = key.toString(),
                 name = ingredient.name,
                 grams = grams,
                 pieces = null,
@@ -125,12 +125,5 @@ class ShoppingAdvisor(
 
         /** Euros a pack must save to be worth stocking up on. */
         const val MIN_STOCK_UP_SAVING = 0.25
-
-        const val AHEAD_PREFIX = "ahead:i"
-        const val STOCK_PREFIX = "stock:i"
-
-        fun aheadKey(ingredientId: Long) = "$AHEAD_PREFIX$ingredientId"
-
-        fun stockKey(ingredientId: Long) = "$STOCK_PREFIX$ingredientId"
     }
 }

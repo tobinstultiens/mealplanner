@@ -41,6 +41,13 @@ class UserScope(
             offersByIngredient = { from, until -> prices.offers(ingredients, from, until) },
             pricing = { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) },
             shops = shops::inUse,
+        )
+    }
+    val shopping by lazy {
+        ShoppingListRepository(
+            db, accountId, plans, recipes, profiles, ingredients,
+            offersByIngredient = { from, until -> prices.offers(ingredients, from, until) },
+            shops = shops::inUse,
             regularPerKg = { prices.perKg(ingredients) },
             sections = sections::byIngredient,
             keeps = sections::keepsByIngredient,

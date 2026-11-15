@@ -113,18 +113,18 @@ class ShopSectionsTest {
     @Test
     fun aTypicalWeeksListFollowsTheRouteThroughTheShop() {
         val (_, user, week) = setup()
-        assertEquals(route, user.plans.shoppingList(week).sections())
+        assertEquals(route, user.shopping.get(week).sections())
     }
 
     @Test
     fun tickedAndOnHandItemsKeepTheirPlace() {
         val (_, user, week) = setup()
-        val before = user.plans.shoppingList(week)
+        val before = user.shopping.get(week)
         val milk = before.items.single { it.name == "Milk" }
-        user.plans.setChecked(week, ShoppingCheck(milk.key, true))
+        user.shopping.setChecked(week, ShoppingCheck(milk.key, true))
         user.ingredients.setOnHand(before.items.single { it.name == "Onion" }.key.removePrefix("i").toLong(), true)
 
-        val after = user.plans.shoppingList(week)
+        val after = user.shopping.get(week)
         assertTrue(after.items.single { it.name == "Milk" }.checked)
         assertTrue(after.items.single { it.name == "Onion" }.onHand)
         assertEquals(before.items.map { it.key }, after.items.map { it.key })
@@ -143,7 +143,7 @@ class ShopSectionsTest {
     @Test
     fun anAppFromBeforeSectionsReadsTheListInWalkingOrder() {
         val (_, user, week) = setup()
-        val text = DefaultJson.encodeToString(ShoppingList.serializer(), user.plans.shoppingList(week))
+        val text = DefaultJson.encodeToString(ShoppingList.serializer(), user.shopping.get(week))
         // Apps up to v0.1.1 reject fields they do not know, and the product pictures (issue 33) add `imageUrl`:
         // that change ships only together with an app release that ignores unknown fields (README, "API compatibility").
         assertFailsWith<SerializationException> { DefaultJson.decodeFromString(OldShoppingList.serializer(), text) }
@@ -179,7 +179,7 @@ class ShopSectionsTest {
         prices.refresh(pause = Duration.ZERO)
         assertEquals("Albert Heijn: Kaas › Goudse kaas", gouda().source, "the store's category, now known, comes before the food group")
         assertEquals(ShopSection.DAIRY.name, gouda().section)
-        assertEquals("Dairy and eggs", user.plans.shoppingList(setup.week).items.single { it.name == "Gouda" }.category)
+        assertEquals("Dairy and eggs", user.shopping.get(setup.week).items.single { it.name == "Gouda" }.category)
 
         // Cleared, the automatic section is back.
         assertFalse(user.sections.set(gouda.id, SectionChoice(null)).byHand)

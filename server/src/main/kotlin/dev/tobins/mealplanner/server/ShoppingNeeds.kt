@@ -12,7 +12,7 @@ import dev.tobins.mealplanner.units.Dimension
 data class PlannedRecipe(val recipeId: Long, val title: String, val portions: Double)
 
 /** One thing to buy, summed over the recipes that use it. [key] identifies it within its list. */
-class ShoppingNeed(val key: String, val ingredient: Ingredient?, val name: String, val section: ShopSection) {
+class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: String, val section: ShopSection) {
     var grams = 0.0
     var gramsKnown = true
     var pieces = 0.0
@@ -23,14 +23,14 @@ class ShoppingNeed(val key: String, val ingredient: Ingredient?, val name: Strin
 
     /** The row on the list, with what is known about buying it. */
     fun toItem(
-        key: String,
+        key: ShoppingKey,
         checked: Boolean,
         onHand: Boolean,
         offers: List<Offer>,
         productImage: String?,
         perKg: Double?,
     ) = ShoppingItem(
-        key = key,
+        key = key.toString(),
         name = name,
         grams = totalGrams,
         pieces = pieces.takeIf { it > 0 },
@@ -53,7 +53,7 @@ class ShoppingNeeds(val needs: List<ShoppingNeed>, val staples: List<String>, va
  * by section ([sectionOf], by ingredient id) and then by name.
  */
 fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, sectionOf: Map<Long, ShopSection>): ShoppingNeeds {
-    val needs = linkedMapOf<String, ShoppingNeed>()
+    val needs = linkedMapOf<ShoppingKey, ShoppingNeed>()
     val staples = sortedSetOf<String>()
     val toTaste = sortedSetOf<String>()
     for (planned in recipes) {
@@ -68,7 +68,8 @@ fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, s
                 if (ingredient?.name != "Water") toTaste += ingredient?.name ?: IngredientLine.coreText(line.ingredientText)
                 continue
             }
-            val key = ingredient?.let { "i${it.id}" } ?: "t:${IngredientRepository.normalise(IngredientLine.coreText(line.ingredientText))}"
+            val key = ingredient?.let { ShoppingKey.Ingredient(it.id) }
+                ?: ShoppingKey.Text(IngredientRepository.normalise(IngredientLine.coreText(line.ingredientText)))
             val need = needs.getOrPut(key) {
                 ShoppingNeed(
                     key = key,

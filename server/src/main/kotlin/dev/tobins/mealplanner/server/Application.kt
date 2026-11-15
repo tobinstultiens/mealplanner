@@ -354,10 +354,10 @@ fun Application.module(
 
                 get { call.respond(call.user.plans.get(call.week())) }
 
-                get("/shopping") { call.respond(call.user.plans.shoppingList(call.week())) }
+                get("/shopping") { call.respond(call.user.shopping.get(call.week())) }
 
                 // Ticks an item of the shopping list off, or back on.
-                put("/shopping") { call.respond(call.user.plans.setChecked(call.week(), call.receive<ShoppingCheck>())) }
+                put("/shopping") { call.respond(call.user.shopping.setChecked(call.week(), call.receive<ShoppingCheck>())) }
 
                 // PUT hides the buy-ahead or stock-up group of the week's list, DELETE shows it again.
                 for (dismissed in listOf(true, false)) {
@@ -365,7 +365,7 @@ fun Application.module(
                         handle {
                             val group = ShoppingAdviceGroup.fromPath(call.parameters["group"])
                                 ?: throw IllegalArgumentException("group must be one of ${ShoppingAdviceGroup.entries.joinToString { it.path }}")
-                            call.respond(call.user.plans.setDismissed(call.week(), group, dismissed))
+                            call.respond(call.user.shopping.setDismissed(call.week(), group, dismissed))
                         }
                     }
                 }
