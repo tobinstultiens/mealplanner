@@ -118,7 +118,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
                     for (extra in day.extras) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(extra.description, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(extra.description, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 Text(
                                     "${extra.kcal.roundToInt()} kcal · ${extra.proteinG.roundToInt()} g protein",
                                     style = MaterialTheme.typography.bodySmall,
@@ -196,12 +196,7 @@ private fun MealCard(meal: PlannedMeal, onOpen: () -> Unit, onStatus: (MealStatu
                     style = MaterialTheme.typography.titleMedium,
                     textDecoration = if (meal.status == MealStatus.SKIPPED) TextDecoration.LineThrough else null,
                 )
-                Text(
-                    "${formatAmount(meal.portions)} ${if (meal.portions == 1.0) "serving" else "servings"} · " +
-                        "${meal.kcal.roundToInt()} kcal · ${meal.proteinG.roundToInt()} g protein",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                MealNumbers(meal.macrosText(), meal.cost?.let { "≈ ${formatEuro(it)}" })
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 when (meal.status) {

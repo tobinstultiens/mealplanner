@@ -23,3 +23,5 @@ actual fun SystemBars(dark: Boolean) {
 }
 
 actual fun secureRandomBytes(size: Int): ByteArray = ByteArray(size).also { java.security.SecureRandom().nextBytes(it) }
+
+actual fun deviceLocaleTag(): String = java.util.Locale.getDefault().toLanguageTag()

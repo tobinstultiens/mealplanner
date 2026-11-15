@@ -3,7 +3,8 @@ package dev.tobins.mealplanner.app
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -41,7 +42,7 @@ import kotlinx.coroutines.launch
  * This week's store offers. By default only those for ingredients in the catalogue,
  * which are the ones that can end up in a plan.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
     val today = remember { todayIso() }
@@ -93,7 +94,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
                     item {
                         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             current.value.sources.forEach { SourceLine(it) }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(
                                     selected = onlyMatched,
                                     onClick = { onlyMatched = !onlyMatched },
@@ -129,19 +130,24 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
 
 @Composable
 private fun SourceLine(status: OfferSourceStatus) {
-    val text = when {
-        status.error != null && status.fetchedAt == null -> "${status.store.label}: could not fetch (${status.error})"
-        status.error != null -> "${status.store.label}: ${status.offerCount} offers, last fetch failed (${status.error})"
-        status.fetchedAt != null -> "${status.store.label}: ${status.offerCount} offers, fetched ${dayLabel(status.fetchedAt!!.take(10))}"
-        else -> "${status.store.label}: not fetched yet"
+    val fetched = status.fetchedAt?.let { dayMonthLabel(it.take(10)) }
+    val error = status.error
+    when {
+        error != null -> ErrorBanner(
+            if (fetched == null) "${status.store.label}: could not fetch" else "${status.store.label}: last fetch failed, offers from $fetched",
+            error,
+        )
+        fetched != null -> Text(
+            "${status.store.label}: ${status.offerCount} offers, fetched $fetched",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        else -> Text(
+            "${status.store.label}: not fetched yet",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        color = if (status.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-    )
 }
 
 @Composable
@@ -152,11 +158,9 @@ private fun OfferRow(offer: Offer) {
         }
         Text(offer.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(
-            listOfNotNull(offer.shortText(), offer.packSize, "until ${dayLabel(offer.validUntil)}").joinToString(" · "),
+            listOfNotNull(offer.shortText(), offer.packSize, "until ${dayMonthLabel(offer.validUntil)}").joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }

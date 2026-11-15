@@ -31,3 +31,6 @@ actual fun SystemBars(dark: Boolean) {}
 private external fun randomBytesCsv(size: Int): String
 
 actual fun secureRandomBytes(size: Int): ByteArray = randomBytesCsv(size).split(',').map { it.toInt().toByte() }.toByteArray()
+
+/** The browser's preferred language, e.g. `nl-NL`. */
+actual fun deviceLocaleTag(): String = window.navigator.language

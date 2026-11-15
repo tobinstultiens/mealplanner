@@ -40,10 +40,10 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /** `3 × · 330 g`, `450 g`, `2 ×`, or empty when the recipes give no quantity. */
-fun ShoppingItem.quantityText(): String = listOfNotNull(
+fun ShoppingItem.quantityText(locale: FormatLocale = FormatLocale.device): String = listOfNotNull(
     // Pieces are rounded up: nobody buys 1.5 onions.
     pieces?.let { "${ceil(it - 1e-9).toInt()} ×" },
-    grams?.let { if (it >= 1000) "${formatAmount(it / 1000)} kg" else "${it.roundToInt()} g" },
+    grams?.let { if (it >= 1000) "${formatAmount(it / 1000, locale)} kg" else "${it.roundToInt()} g" },
 ).joinToString(" · ")
 
 /** What to buy for a week's plan, grouped by shop section, with items to tick off. */
@@ -73,7 +73,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
         } else {
             state = result
             offlineSince = null
-            (result as? Load.Ready)?.let { cache.save(it.value, nowLabel()) }
+            (result as? Load.Ready)?.let { cache.save(it.value, nowIso()) }
         }
     }
 
@@ -82,7 +82,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
             TopAppBar(
                 title = {
                     PeriodStepper(
-                        label = "Week of ${dayLabel(weekStart).substringAfter(' ')}",
+                        label = "Week of ${dayMonthLabel(weekStart)}",
                         previous = "Previous week",
                         next = "Next week",
                         onPrevious = { weekStart = plusDays(weekStart, -7) },
@@ -115,7 +115,8 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
                         item {
                             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    "Offline: the list as of $since. Ticks are saved and sent later.",
+                                    // Lists saved by older versions hold the time as text, not as an instant.
+                                    "Offline: the list as of ${runCatching { instantLabel(since) }.getOrDefault(since)}. Ticks are saved and sent later.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.weight(1f),
@@ -156,13 +157,13 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
                                     when (val result = load { api.setShoppingChecked(weekStart, item.key, !item.checked) }) {
                                         is Load.Ready -> {
                                             state = result
-                                            cache.save(result.value, nowLabel())
+                                            cache.save(result.value, nowIso())
                                         }
                                         // No connection: keep the tick and send it later.
                                         is Load.Failed -> if (result.status == null) {
-                                            cache.save(list, offlineSince ?: nowLabel())
+                                            cache.save(list, offlineSince ?: nowIso())
                                             cache.tickOffline(weekStart, item.key, !item.checked)
-                                            offlineSince = nowLabel()
+                                            offlineSince = nowIso()
                                         } else {
                                             state = Load.Ready(list)
                                             snackbar.showSnackbar("Could not save the tick: ${result.message}")
@@ -210,14 +211,14 @@ private fun ShoppingRow(item: ShoppingItem, onToggle: () -> Unit) {
             Text(
                 item.name + if (item.onHand) "  (on hand?)" else "",
                 textDecoration = if (item.checked) TextDecoration.LineThrough else null,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 item.recipes.joinToString(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             if (item.offers.isNotEmpty()) {
@@ -225,11 +226,9 @@ private fun ShoppingRow(item: ShoppingItem, onToggle: () -> Unit) {
                     "% " + item.offers.distinctBy { it.store to it.deal }.joinToString("  ·  ") { it.shortText() },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        Text(item.quantityText(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 12.dp))
+        Text(item.quantityText(), style = MaterialTheme.typography.bodyMedium, softWrap = false, modifier = Modifier.padding(horizontal = 12.dp))
     }
 }

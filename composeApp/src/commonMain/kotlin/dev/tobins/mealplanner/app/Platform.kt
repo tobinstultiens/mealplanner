@@ -12,3 +12,6 @@ expect fun SystemBars(dark: Boolean)
 
 /** Cryptographically secure random bytes, for the login's PKCE secret and state. */
 expect fun secureRandomBytes(size: Int): ByteArray
+
+/** The device's locale as a BCP-47 tag (`nl-NL`), for [FormatLocale]. */
+expect fun deviceLocaleTag(): String

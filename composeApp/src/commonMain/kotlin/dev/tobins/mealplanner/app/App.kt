@@ -228,7 +228,8 @@ fun App(
                                         selected = tab == entry,
                                         onClick = { tab = entry },
                                         icon = { Icon(if (tab == entry) entry.selectedIcon else entry.icon, contentDescription = null) },
-                                        label = { Text(entry.label) },
+                                        // One line even at a large font size: wrapping makes the bar taller on some tabs only.
+                                        label = { Text(entry.label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall) },
                                     )
                                 }
                             }
