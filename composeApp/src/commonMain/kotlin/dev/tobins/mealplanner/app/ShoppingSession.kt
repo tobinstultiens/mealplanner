@@ -208,7 +208,8 @@ internal class ShoppingSession(
      * Runs the checks while the screen shows in front, and stops them otherwise. Every
      * [RECONNECT] the list is tried again while offline or failed, and fetched when it is due:
      * every check in shopping mode, after [REFRESH] otherwise. Not while a request is under way,
-     * as a tick's answer is a fresh list anyway.
+     * as a tick's answer is a fresh list anyway. A list the server refused is not asked for by
+     * itself, as asking again would not help; Retry and showing the screen again still ask.
      */
     private fun keepCurrent() {
         if (!(screenShown && appInFront)) {
@@ -222,7 +223,12 @@ internal class ShoppingSession(
             while (true) {
                 delay(RECONNECT)
                 waited += RECONNECT
-                val due = offlineSince != null || state is Load.Failed || waited >= if (shoppingMode()) REFRESH_IN_SHOP else REFRESH
+                val failed = state as? Load.Failed
+                val due = when {
+                    failed != null -> !failed.refused
+                    offlineSince != null -> true
+                    else -> waited >= if (shoppingMode()) REFRESH_IN_SHOP else REFRESH
+                }
                 if (due && !turn.isLocked) {
                     waited = Duration.ZERO
                     fetch(weekStart)
@@ -261,8 +267,8 @@ internal class ShoppingSession(
      * Sends the ticks left from before, then fetches the list; the list is laid under the ticks
      * not sent yet, as a tick's answer is, so it never flips a row back. Without an answer or with
      * a server error the stored copy is shown, with when it was saved; once a tick got no answer
-     * the list is not waited for as well. A list on screen is never replaced by a refusal; with
-     * nothing to show, a failure shows as such.
+     * the list is not waited for as well, but a server error on a tick does not hold the list up.
+     * A list on screen is never replaced by a refusal; with nothing to show, a failure shows as such.
      */
     private suspend fun load(week: String) {
         val result = sendWaiting() ?: timed { server.list(week) }
@@ -288,8 +294,10 @@ internal class ShoppingSession(
      * Sends the ticks of every week that wait in the cache from an earlier visit, a lost
      * connection or an app that was closed, oldest week first: the list fetched next includes
      * them, and next week's plan knows what was bought ahead. A tick the server refuses is dropped
-     * and reported, and never stops the list from loading. When one gets no answer the rest wait
-     * for the next time, and that failure is returned.
+     * and reported. One it fails on (a 5xx) stays stored for the next time and the rest still go:
+     * the server answered, so the list can load, and one tick it keeps failing on must not stop
+     * every list from loading. When one gets no answer at all the rest wait for the next time, and
+     * that failure is returned.
      */
     private suspend fun sendWaiting(): Load.Failed? {
         for (week in cache.weeksWithTicks()) {
@@ -298,11 +306,13 @@ internal class ShoppingSession(
             for ((key, checked) in waiting) {
                 when (val result = timed { server.check(week, key, checked) }) {
                     is Load.Ready -> cache.confirm(result.value, nowIso(), key, checked)
-                    is Load.Failed -> if (result.refused) {
-                        cache.forget(week, key, checked)
-                        waitingNotices += Notice(Msg.TICK_FAILED, result.message)
-                    } else {
-                        return result
+                    is Load.Failed -> when {
+                        result.refused -> {
+                            cache.forget(week, key, checked)
+                            waitingNotices += Notice(Msg.TICK_FAILED, result.message)
+                        }
+                        // Without a status nothing answered: no connection, or the time limit ran out.
+                        result.status == null -> return result
                     }
                     Load.Loading -> Unit
                 }
