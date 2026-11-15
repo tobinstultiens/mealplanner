@@ -106,7 +106,10 @@ ingredient's shop section (below).
 An offer becomes a share of the regular price (`Discounts`): "25% korting" pays 0.75, "1+1 gratis"
 0.5, "2e halve prijs" 0.75; stated prices ("2 voor 3,99", "voor 4,49", Lidl's plain prices) are
 compared with the regular price of a pack of the offer's size. Online-only deals are ignored. The
-best offer per ingredient in the plan's week applies. The planner then prefers meals whose
+best offer per ingredient in the plan's week applies: the one with the lowest share (it saves most on
+the amount needed, whatever the pack size); offers without a share come after those, one that states a
+price before one with only a deal text, then the server's order (`shopping/BestOffer.kt`, one rule
+for the server and the app). The planner then prefers meals whose
 calories cost less than the median (`WeekPlanner.savings`), so offers pull those meals in.
 
 Only offers at the stores the account shops at count ("Stores I shop at", an account setting:
@@ -119,7 +122,8 @@ stores shown until the next account's answer arrives.
 
 The shopping list gives each item's regular price for the amount needed (`ShoppingItem.regularPrice`)
 and each offer's share (`Offer.paidShare`, as above), so the app can show what a store's offers save:
-the sum of regular price times the share taken off, for the items whose cheapest offer is there.
+the sum of regular price times the share taken off, for the items whose best offer is there. An item whose offers have no share (the deal can't be valued)
+keeps its badge but is listed under "Any store".
 Regular prices are AH's, so for Jumbo and Lidl that saving is an estimate against AH's price, and the
 app says so.
 
@@ -244,8 +248,8 @@ Where the URLs come from:
 | Jumbo | `image` of a promotion in the offers page payload | one, 300 × 300 PNG (about 130 KB) | that one |
 | Lidl | `image` of a tile's `data-grid-data` | `imageList_V2[].variants[]` per ratio (4:3, 3:4), each `smallUrl` 380 × 285 (about 160 KB PNG) and `mediumUrl` 772 × 579 (about 630 KB); `image` is the 4:3 `smallUrl` | `image` |
 
-A shopping-list item shows the picture of its best offer in the plan's week (the cheapest that
-states a price, else the first, the rule the app uses for the row's badge), or else the picture
+A shopping-list item shows the picture of its best offer in the plan's week (the one that saves
+most, the rule the app uses for the row's badge), or else the picture
 of the AH product its regular price comes from (stored with the price, shared like it), or none.
 An account that set the ingredient's price by hand gets no product picture: that price is not the
 product's, and a hand price often means the product found was the wrong one. Offers stored before

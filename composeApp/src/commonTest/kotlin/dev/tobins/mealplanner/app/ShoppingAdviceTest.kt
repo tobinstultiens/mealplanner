@@ -72,6 +72,9 @@ class ShoppingAdviceTest {
             "It keeps, and the offer ends this week. Ticked, it counts as on hand for next week's plan. Saves about €4.50.",
             adviceHint(AdviceTexts.BUY_AHEAD, listOf(beef, spinach), all, Strings.English),
         )
+        // The hint adds up the offers the server chose by: the one that saves most, not the cheapest pack.
+        val chicken = item("ahead:i6", offer(Store.AH, 3.49, 0.9), offer(Store.AH, 8.99, 0.7))
+        assertEquals(chicken.regularPrice!! * 0.3, savingOf(listOf(chicken), all)!!, 1e-9)
         val unknown = item("stock:i5", offer(Store.AH, 1.0, 0.5), regularPrice = null)
         assertEquals(Strings.English(Msg.STOCK_UP_HINT), adviceHint(AdviceTexts.STOCK_UP, listOf(unknown), all, Strings.English))
     }

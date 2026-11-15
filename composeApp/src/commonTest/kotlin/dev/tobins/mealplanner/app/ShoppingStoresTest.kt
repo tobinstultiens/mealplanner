@@ -9,46 +9,51 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ShoppingStoresTest {
-    private fun offer(store: Store, price: Double?, deal: String? = null) =
-        Offer(store, "Product", deal, price, validFrom = "2026-01-01", validUntil = "2026-01-07")
+    private fun offer(store: Store, price: Double?, deal: String? = null, share: Double? = null) =
+        Offer(store, "Product", deal, price, validFrom = "2026-01-01", validUntil = "2026-01-07", paidShare = share)
 
     private fun item(key: String, category: String, vararg offers: Offer, checked: Boolean = false) =
         ShoppingItem(key, key, null, null, category, emptyList(), false, checked, offers.toList())
 
     private val all = Store.entries.toSet()
 
-    // Walking order: fruit, dairy, tins. Milk is cheaper at AH, pear and cheese at Jumbo, leek at Lidl.
+    // Walking order: fruit, dairy, tins. Milk saves most at AH (the tie with Jumbo goes to the first offer), pear and cheese at Jumbo, leek at Lidl.
     private val items = listOf(
         item("apple", "Fruit & veg"),
-        item("leek", "Fruit & veg", offer(Store.LIDL, 0.99)),
-        item("pear", "Fruit & veg", offer(Store.AH, 1.49), offer(Store.JUMBO, 1.29), checked = true),
-        item("milk", "Dairy", offer(Store.AH, 1.19), offer(Store.JUMBO, null, "1+1 gratis")),
-        item("cheese", "Dairy", offer(Store.JUMBO, 3.0), checked = true),
-        item("rice", "Tins", offer(Store.AH, 1.99)),
+        item("leek", "Fruit & veg", offer(Store.LIDL, 0.99, share = 0.75)),
+        item("pear", "Fruit & veg", offer(Store.AH, 1.49, share = 0.8), offer(Store.JUMBO, 1.29, share = 0.7), checked = true),
+        item("milk", "Dairy", offer(Store.AH, 1.19, share = 0.5), offer(Store.JUMBO, null, "1+1 gratis", share = 0.5)),
+        item("cheese", "Dairy", offer(Store.JUMBO, 3.0, share = 0.75), checked = true),
+        item("rice", "Tins", offer(Store.AH, 1.99, share = 0.75)),
         item("salt", "Tins"),
     )
 
     private fun keys(list: List<ShoppingItem>) = list.map { it.key }
 
     @Test
-    fun aPricedOfferBeatsOneWithOnlyADealText() {
-        val priced = offer(Store.AH, 2.0)
-        assertEquals(priced, cheapestOffer(listOf(offer(Store.JUMBO, null, "1+1 gratis"), priced)))
+    fun theOfferThatSavesMostWinsNotTheCheaperPack() {
+        val chicken = item("chicken", "Meat", offer(Store.AH, 3.49, share = 0.9), offer(Store.JUMBO, 8.99, share = 0.7))
+        assertEquals(Store.JUMBO, chicken.bestOffer()?.store)
+        assertEquals(listOf("chicken"), keys(storeOverview(listOf(chicken), all).stores.single { it.store == Store.JUMBO }.items))
     }
 
     @Test
-    fun pricedOffersAreComparedByPrice() {
-        val cheap = offer(Store.LIDL, 1.1)
-        assertEquals(cheap, cheapestOffer(listOf(offer(Store.AH, 1.5), cheap, offer(Store.JUMBO, 1.3))))
+    fun anOfferWithoutAShareKeepsItsBadgeButNotItsStoreGroup() {
+        val bread = item("bread", "Bakery", offer(Store.LIDL, 1.0))
+        assertEquals("Lidl €1.00", bread.bestOffer(all)?.badgeText(Strings.English))
+        val overview = storeOverview(listOf(bread), all)
+        assertTrue(overview.stores.isEmpty())
+        assertEquals(listOf("bread"), keys(overview.anyStore))
+        val visit = storeVisit(listOf(bread), Store.AH, all, shoppingMode = false)
+        assertTrue(visit.elsewhere.isEmpty())
+        assertEquals(listOf("bread"), keys(visit.sections.single().open))
     }
 
     @Test
-    fun withoutComparablePricesTheServersOrderDecides() {
-        val first = offer(Store.JUMBO, null, "2 voor 3")
-        assertEquals(first, cheapestOffer(listOf(first, offer(Store.LIDL, null, "1+1 gratis"))))
-        val tie = offer(Store.AH, 1.5)
-        assertEquals(tie, cheapestOffer(listOf(tie, offer(Store.LIDL, 1.5))))
-        assertNull(cheapestOffer(emptyList()))
+    fun anOfferThatSavesBeatsAnotherStoresOfferThatSavesNothing() {
+        val rice = item("rice", "Tins", offer(Store.AH, 0.5), offer(Store.JUMBO, 1.5, share = 0.9))
+        assertEquals(listOf("rice"), keys(storeOverview(listOf(rice), all).stores.single().items))
+        assertEquals(Store.JUMBO, storeOverview(listOf(rice), all).stores.single().store)
     }
 
     @Test
@@ -137,16 +142,16 @@ class ShoppingStoresTest {
         }
     }
 
-    /** Regular prices: €4 of milk, €10 of cheese, €2 of rice. Every offer takes a quarter off, the deal-only one half. */
+    /** Regular prices: €4 of milk, €10 of cheese, €2 of rice. Offers take a quarter off, the milk's half. */
     private val priced = items.map { item ->
         val regular = mapOf("milk" to 4.0, "cheese" to 10.0, "rice" to 2.0)[item.key]
-        item.copy(regularPrice = regular, offers = item.offers.map { it.copy(paidShare = if (it.price == null) 0.5 else 0.75) })
+        item.copy(regularPrice = regular)
     }
 
     @Test
     fun eachStoreSavesWhatItsOffersTakeOffTheRegularPrices() {
         val overview = storeOverview(priced, all)
-        assertEquals(1.0 + 0.5, overview.stores.single { it.store == Store.AH }.saving!!, 1e-9, "milk and rice at AH")
+        assertEquals(2.0 + 0.5, overview.stores.single { it.store == Store.AH }.saving!!, 1e-9, "milk and rice at AH")
         assertEquals(2.5, overview.stores.single { it.store == Store.JUMBO }.saving!!, 1e-9, "cheese; pear has no regular price")
         assertNull(overview.stores.single { it.store == Store.LIDL }.saving, "leek has no regular price")
         assertEquals(2.5, storeVisit(priced, Store.JUMBO, all, shoppingMode = false).saving!!, 1e-9, "only Jumbo's own offers")

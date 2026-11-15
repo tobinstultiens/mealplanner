@@ -15,6 +15,7 @@ import dev.tobins.mealplanner.server.prices.AhAisles
 import dev.tobins.mealplanner.server.prices.PriceSource
 import dev.tobins.mealplanner.server.prices.StoreAisle
 import dev.tobins.mealplanner.server.prices.StoreProduct
+import dev.tobins.mealplanner.shopping.bestOffer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
@@ -96,7 +97,7 @@ class PriceRepository(
     fun pricing(ingredients: IngredientRepository, from: LocalDate, until: LocalDate, shops: Set<Store> = Store.entries.toSet()): Pricing {
         val perKg = perKg(ingredients)
         val discounts = offersWithShares(ingredients, perKg, from, until).mapNotNull { (id, onOffer) ->
-            onOffer.filter { it.store in shops }.mapNotNull { it.paidShare }.minOrNull()?.let { id to it }
+            bestOffer(onOffer.filter { it.store in shops })?.paidShare?.let { id to it }
         }.toMap()
         return Pricing(perKg, discounts)
     }
