@@ -1,6 +1,16 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Switch
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -54,7 +64,7 @@ fun ShoppingItem.quantityText(locale: FormatLocale = FormatLocale.device): Strin
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Unit, onOpenOffers: () -> Unit) {
+fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStorage, onOpenPantry: () -> Unit, onOpenOffers: () -> Unit) {
     var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
     var state by remember { mutableStateOf<Load<ShoppingList>>(Load.Loading) }
     // Set when showing the stored copy because the server could not be reached.
@@ -62,6 +72,52 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
     var reload by remember { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var shoppingMode by remember { mutableStateOf(settings.shoppingMode()) }
+    // Finished sections and Done groups the user opened; everything else stays collapsed.
+    var expanded by remember { mutableStateOf(emptySet<String>()) }
+    KeepScreenOn(shoppingMode)
+
+    /** Sets one item's tick: shown at once, then confirmed or corrected by the server's answer. */
+    fun tick(key: String, checked: Boolean) {
+        val list = (state as? Load.Ready)?.value ?: return
+        state = Load.Ready(list.copy(items = list.items.map { if (it.key == key) it.copy(checked = checked) else it }))
+        if (offlineSince != null) {
+            cache.tickOffline(weekStart, key, checked)
+            return
+        }
+        scope.launch {
+            when (val result = load { api.setShoppingChecked(weekStart, key, checked) }) {
+                is Load.Ready -> {
+                    state = result
+                    cache.save(result.value, nowIso())
+                }
+                // No connection: keep the tick and send it later.
+                is Load.Failed -> if (result.status == null) {
+                    cache.save((state as? Load.Ready)?.value ?: list, offlineSince ?: nowIso())
+                    cache.tickOffline(weekStart, key, checked)
+                    offlineSince = nowIso()
+                } else {
+                    state = Load.Ready(list)
+                    snackbar.showSnackbar("Could not save the tick: ${result.message}")
+                }
+                Load.Loading -> Unit
+            }
+        }
+    }
+
+    /** In shopping mode a mis-tap is one tap from undone. */
+    fun tickWithUndo(item: ShoppingItem) {
+        tick(item.key, !item.checked)
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val answer = snackbar.showSnackbar(
+                "${item.name} ${if (item.checked) "back on the list" else "ticked off"}",
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Short,
+            )
+            if (answer == SnackbarResult.ActionPerformed) tick(item.key, item.checked)
+        }
+    }
 
     LaunchedEffect(weekStart, reload) {
         if (state !is Load.Ready) state = Load.Loading
@@ -109,11 +165,29 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
             }
             is Load.Ready -> {
                 val list = current.value
+                @Composable
+                fun row(item: ShoppingItem) = ShoppingRow(
+                    item,
+                    shoppingMode,
+                    onToggle = { if (shoppingMode) tickWithUndo(item) else tick(item.key, !item.checked) },
+                    onOfferClick = {
+                        scope.launch {
+                            snackbar.currentSnackbarData?.dismiss()
+                            snackbar.showSnackbar(item.offers.distinctBy { it.store to it.deal }.joinToString("\n") { "${it.shortText()} (${it.title})" })
+                        }
+                    },
+                )
                 if (list.items.isEmpty()) {
                     EmptyState(Spot.NothingToBuy, "Nothing to buy: no meals are planned for this week.", Modifier.padding(padding))
                     return@Scaffold
                 }
                 LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
+                    item {
+                        ShoppingModeSwitch(shoppingMode) {
+                            shoppingMode = it
+                            settings.saveShoppingMode(it)
+                        }
+                    }
                     offlineSince?.let { since ->
                         item {
                             Row(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalAlignment = Alignment.CenterVertically) {
@@ -129,56 +203,27 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
                         }
                     }
                     item {
-                        val left = list.items.count { !it.checked }
-                        val onOffer = list.items.count { it.offers.isNotEmpty() }
                         Text(
-                            (if (left == 0) "All ${list.items.size} items ticked off" else "$left of ${list.items.size} items left") +
-                                if (onOffer > 0) " · $onOffer on offer this week" else "",
+                            shoppingProgress(list.items),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                         )
                     }
-                    // Groups come in the order of their first item: the route through the shop.
-                    list.items.groupBy { it.category }.forEach { (category, items) ->
-                        item(key = "h:$category") {
-                            // The icon is decoration: the title next to it is what a screen reader reads.
-                            Row(
-                                Modifier.padding(start = Spacing.ScreenEdge, top = Spacing.InsideCard, bottom = Spacing.Tight),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(sectionIcon(category), contentDescription = null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                SectionHeader(category)
-                            }
+                    shoppingSections(list.items, shoppingMode).forEach { section ->
+                        val title = section.title
+                        val sectionOpen = !section.finished || title in expanded
+                        item(key = "h:$title") {
+                            SectionHeaderRow(title, section, sectionOpen) { expanded = expanded.toggled(title) }
                         }
-                        items(items, key = { it.key }) { item ->
-                            ShoppingRow(item) {
-                                // Show the tick at once; the server's answer then confirms or corrects it.
-                                val ticked = list.copy(items = list.items.map { if (it.key == item.key) it.copy(checked = !item.checked) else it })
-                                state = Load.Ready(ticked)
-                                if (offlineSince != null) {
-                                    cache.tickOffline(weekStart, item.key, !item.checked)
-                                    return@ShoppingRow
-                                }
-                                scope.launch {
-                                    when (val result = load { api.setShoppingChecked(weekStart, item.key, !item.checked) }) {
-                                        is Load.Ready -> {
-                                            state = result
-                                            cache.save(result.value, nowIso())
-                                        }
-                                        // No connection: keep the tick and send it later.
-                                        is Load.Failed -> if (result.status == null) {
-                                            cache.save(list, offlineSince ?: nowIso())
-                                            cache.tickOffline(weekStart, item.key, !item.checked)
-                                            offlineSince = nowIso()
-                                        } else {
-                                            state = Load.Ready(list)
-                                            snackbar.showSnackbar("Could not save the tick: ${result.message}")
-                                        }
-                                        Load.Loading -> Unit
-                                    }
-                                }
+                        items(section.open, key = { it.key }) { item -> row(item) }
+                        if (section.finished && sectionOpen) {
+                            items(section.done, key = { it.key }) { item -> row(item) }
+                        } else if (section.done.isNotEmpty() && !section.finished) {
+                            val doneOpen = "done:$title" in expanded
+                            item(key = "d:$title") {
+                                DoneGroupHeader(section.done.size, doneOpen) { expanded = expanded.toggled("done:$title") }
                             }
+                            if (doneOpen) items(section.done, key = { it.key }) { item -> row(item) }
                         }
                     }
                     if (list.toTaste.isNotEmpty()) {
@@ -207,16 +252,82 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
     }
 }
 
+private fun Set<String>.toggled(entry: String) = if (entry in this) this - entry else this + entry
+
 @Composable
-private fun ShoppingRow(item: ShoppingItem, onToggle: () -> Unit) {
+private fun ShoppingModeSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth().toggleable(on, role = Role.Switch, onValueChange = onChange).heightIn(min = 56.dp).padding(horizontal = Spacing.ScreenEdge),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = item.checked, onCheckedChange = { onToggle() })
+        Column(Modifier.weight(1f)) {
+            Text("Shopping mode", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Big rows, the screen stays on, ticked items step aside",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = on, onCheckedChange = null)
+    }
+}
+
+/** The section's title with its icon; a finished section shows a tick and opens or closes on tap. */
+@Composable
+private fun SectionHeaderRow(title: String, section: ShoppingSectionView, open: Boolean, onToggle: () -> Unit) {
+    // The icon is decoration: the title next to it is what a screen reader reads.
+    Row(
+        Modifier.fillMaxWidth()
+            .then(if (section.finished) Modifier.toggleable(open, role = Role.Button, onValueChange = { onToggle() }).heightIn(min = 56.dp) else Modifier)
+            .padding(start = Spacing.ScreenEdge, end = Spacing.ScreenEdge, top = Spacing.InsideCard, bottom = Spacing.Tight),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(sectionIcon(title), contentDescription = null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+        SectionHeader(title, Modifier.weight(1f, fill = false))
+        if (section.finished) {
+            Text(
+                "✓ ${section.done.size} ticked",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** The collapsed "Done (n)" line at the end of a section. */
+@Composable
+private fun DoneGroupHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(open, role = Role.Button, onValueChange = { onToggle() }).heightIn(min = 56.dp).padding(horizontal = Spacing.ScreenEdge),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            AppIcons.ChevronRight,
+            contentDescription = null,
+            Modifier.size(20.dp).rotate(if (open) 90f else 0f),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text("Done ($count)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ShoppingRow(item: ShoppingItem, shoppingMode: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
+    val offer = item.bestOffer()
+    Row(
+        Modifier.fillMaxWidth()
+            .toggleable(item.checked, role = Role.Checkbox, onValueChange = { onToggle() })
+            .heightIn(min = if (shoppingMode) 64.dp else 56.dp)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = item.checked, onCheckedChange = null, modifier = Modifier.padding(12.dp))
         Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
             Text(
                 item.name + if (item.onHand) "  (on hand?)" else "",
+                style = if (shoppingMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
                 textDecoration = if (item.checked) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -228,14 +339,22 @@ private fun ShoppingRow(item: ShoppingItem, onToggle: () -> Unit) {
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (item.offers.isNotEmpty()) {
+        }
+        Column(Modifier.padding(horizontal = 12.dp), horizontalAlignment = Alignment.End) {
+            Text(item.quantityText(), style = MaterialTheme.typography.bodyMedium.numeric(), softWrap = false)
+            if (offer != null) {
+                // A tap shows the full deal; the rest of the row keeps ticking.
                 Text(
-                    "% " + item.offers.distinctBy { it.store to it.deal }.joinToString("  ·  ") { it.shortText() },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    offer.badgeText(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    softWrap = false,
+                    modifier = Modifier.padding(top = 2.dp).clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .clickable(role = Role.Button, onClickLabel = "Show the deal", onClick = onOfferClick)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                 )
             }
         }
-        Text(item.quantityText(), style = MaterialTheme.typography.bodyMedium.numeric(), softWrap = false, modifier = Modifier.padding(horizontal = 12.dp))
     }
 }

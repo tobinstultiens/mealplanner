@@ -34,3 +34,12 @@ actual fun systemColorScheme(dark: Boolean): androidx.compose.material3.ColorSch
     val context = androidx.compose.ui.platform.LocalContext.current
     return if (dark) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context)
 }
+
+@Composable
+actual fun KeepScreenOn(enabled: Boolean) {
+    val window = androidx.activity.compose.LocalActivity.current?.window ?: return
+    androidx.compose.runtime.DisposableEffect(window, enabled) {
+        if (enabled) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
+}

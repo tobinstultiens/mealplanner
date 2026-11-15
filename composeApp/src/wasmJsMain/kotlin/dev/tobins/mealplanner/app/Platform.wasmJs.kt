@@ -40,3 +40,7 @@ actual fun systemColorsAvailable(): Boolean = false
 
 @Composable
 actual fun systemColorScheme(dark: Boolean): androidx.compose.material3.ColorScheme? = null
+
+/** The browser decides when to lock the screen. */
+@Composable
+actual fun KeepScreenOn(enabled: Boolean) {}
