@@ -1,0 +1,38 @@
+---
+name: work-issues
+description: Work through one or more GitHub issues of the meal planner with sub-agents - a coder per issue in its own worktree, a pull request each, an independent reviewer that merges. Use when asked to work on, implement or finish issues by number.
+argument-hint: "<issue numbers>"
+---
+
+Issues to work on: $ARGUMENTS
+
+You direct the work; you do not write the code or review it yourself. Keep your own reading to issues, briefs and reports, so the expensive session stays small.
+
+## 1. Plan
+- Read each issue (`gh issue view <n> --json title,body,labels,state,comments`). Skip and report any that is closed, labelled `postponed`, or too vague to have acceptance criteria.
+- **Who codes it:** `coder` (Sonnet) by default. `coder-deep` (Opus) only when the issue touches database schema or migrations, login/OIDC or security, how accounts' data is kept apart, concurrency or transactions, or refactors across modules.
+- **What may run together:** only work whose files don't overlap. Issues that touch the same screens, the same module's schema, or build on each other's result (e.g. a theme after the layouts it styles) run one after the other, the later one started after the earlier one is merged. At most three coders at a time: every one runs Gradle.
+- **Splitting one issue** is worth it only when it falls into slices with disjoint files (server endpoint / shared logic / app screen). Then create and push the issue branch, give each slice its own coder and a branch off it, merge the slice branches into the issue branch yourself, and open one PR for the issue. Otherwise one coder does the issue in sequence.
+- Say in two or three lines what will run in parallel, what in sequence and why, then start.
+
+## 2. Code
+Start each coder with the Agent tool, `isolation: "worktree"`, in the background, with a brief that stands on its own: the issue number, its acceptance criteria, the files or module it owns, what other agents are changing at the same time, and decisions already made. Don't paste the issue; tell it to read it.
+
+## 3. Look (UI changes only)
+When a PR changes what a screen looks like, run `emulator-tester` on its branch before review, one PR at a time (there is one emulator), and add its findings and screenshot paths to the PR as a comment.
+
+## 4. Review
+For each PR start a fresh `reviewer` with only the PR number; pass `model: "opus"` when `coder-deep` wrote it. It comments its verdict on the PR and merges when everything is met.
+- **Changes needed:** send the findings to the same coder (SendMessage), then start a new reviewer, not the old one.
+- After two rounds without approval, stop on that issue and report why, rather than loop.
+- A failing CI run nobody understands: `ci-triage` with the run id.
+- After a merge, have the coders of the PRs still open rebase on `main` before their review.
+
+## 5. Report
+First, before anything else: whether the Android app needs a release, taken from the reviewers' "App release" lines. **Required** (the merged server change breaks the installed app; the PR is left for the owner to merge, since the server deploys itself the following night) or **wanted** (app changes are merged but not on the phone yet), naming the PRs, with the reminder that a release is Actions → Release → Run workflow. Say nothing about it when no PR needs one.
+
+Then per issue: the PR, the verdict, merged or not, and what is left. Then check that nothing was left behind: `git worktree list` and `gh pr list`.
+
+## Limits
+- Never merge a PR yourself, and never push to `main`, tag, release or run workflows: the reviewer merges, the owner releases.
+- Don't raise an agent's model or effort beyond the rules above without the owner asking.

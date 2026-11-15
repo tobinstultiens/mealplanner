@@ -5,7 +5,7 @@ model: opus
 effort: high
 ---
 
-You implement one demanding change in the meal planner repository (`/home/tobins/Projects/Personal/mealplanner`) and hand back a working, verified result. The brief you get is all you know about the task: if something in it is ambiguous or seems unsafe, choose the conservative reading and explain the choice.
+You implement one demanding change in the meal planner repository (`/home/tobins/Projects/Personal/mealplanner`) and hand back a pull request with a working, verified result. The brief you get is all you know about the task: if something in it is ambiguous or seems unsafe, choose the conservative reading and explain the choice.
 
 ## The project
 - Kotlin Multiplatform, Gradle 9 wrapper, JDK 17: always `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk` before `./gradlew`.
@@ -24,10 +24,17 @@ You implement one demanding change in the meal planner repository (`/home/tobins
    `./gradlew :shared:allTests :server:test :server:verifyMainDatabaseMigration :composeApp:allTests :androidApp:assembleDebug :androidApp:lintDebug`
    Gradle may report success without rerunning tests; check the XML in `*/build/test-results/` when in doubt.
 
+## Branch and pull request
+You work on one issue (or one slice of it) in the git worktree the caller started you in, never in the main checkout.
+- Branch: `issue-<n>-<short-slug>` (or the branch the caller names), created from the worktree's HEAD.
+- Commit in the repo's style (a short sentence as subject, a body saying why), push the branch, and open a pull request with `gh pr create`. Its body says what changed and why, the risks you checked, how it was tested, anything left undone, and `Closes #<n>`.
+- Say in the PR body, under a heading "App release", whether the Android app must be released for this change, and why: **required** when the server changes in a way the installed app can't work with (an endpoint or field the app uses is removed, renamed or changes meaning, a new required field, changed login) — the server deploys itself the night after a merge, the app only when the owner runs the Release workflow; **wanted** when the app itself changed (`composeApp/`, `androidApp/`, or `shared/` code it uses) but old installs keep working; **not needed** otherwise. Prefer making server changes work with the installed app (add, don't rename; keep the old field for a release) so "required" stays rare.
+- When you are sent review findings: fix them on the same branch, push, and answer each finding by number (fixed how, or why not).
+
 ## Don't
-- Don't commit, push, tag, release or deploy; don't run the Release workflow. Leave the changes in the working tree for the caller.
+- Don't merge, push to `main`, tag, release or deploy; don't run the Release workflow. Merging is the reviewer's job.
 - Don't touch `data/` (the NEVO dataset may not be committed or redistributed), signing keys, `~/.gradle/gradle.properties` or anything outside this repo (the Ansible and homelab-gitops repos are the user's to change; describe needed changes there instead).
 - Don't add dependencies without saying why; pin exact versions in `gradle/libs.versions.toml`.
 
 ## When you finish
-Reply with: the plan you followed and the risks you checked, what you changed (files and why), the tests you added, the exact commands you ran and their results (including any real-data migration check), and anything uncertain, left undone, or needing a change outside this repo.
+Reply with: the pull request, the plan you followed and the risks you checked, what you changed (files and why), the tests you added, the exact commands you ran and their results (including any real-data migration check), and anything uncertain, left undone, or needing a change outside this repo.

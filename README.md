@@ -90,6 +90,31 @@ version. Every change also needs a migration file `N.sqm` (version N to N+1) nex
 applies pending migrations on start. `MigrationTest` builds a version 1 database from
 `server/src/test/resources/schema/v1.sql` and checks it ends up identical to a fresh one.
 
+## Working on issues with Claude Code
+
+Changes go through a pull request: an issue is implemented on a branch `issue-<n>-…` in its own git
+worktree, CI runs on the pull request, and a reviewer that knows nothing about how the code was
+written checks it against the issue and squash-merges it. In Claude Code, `/work-issues 27 21`
+runs that for the given issues; the session you type it in directs the work and the sub-agents in
+`.claude/agents/` do it:
+
+| Agent | Model, effort | Does |
+|---|---|---|
+| `coder` | Sonnet, medium | One well-scoped issue, opens the pull request |
+| `coder-deep` | Opus, high | The same for schema migrations, login, account separation, concurrency, cross-module refactors |
+| `reviewer` | Sonnet, high (Opus for `coder-deep`'s work) | Checks a pull request against its issue; merges when all is met and CI is green |
+| `emulator-tester` | Sonnet, medium | Looks at a UI change on the Android emulator |
+| `ci-triage` | Haiku, low | Finds the first real error of a failed build |
+| `price-auditor` | Sonnet, medium | Flags wrongly matched AH prices |
+
+Issues whose files don't overlap run side by side (three at most); others one after the other.
+The reviewer never merges changes to the workflows, signing or `.claude/`, and nothing releases:
+that stays manual, below. A merged server change is live the next night (see `docs/deploy.md`), the
+app only after a release, so every pull request states whether the app must be released: the
+reviewer labels those `needs-app-release`, reports it first, and leaves a pull request whose server
+change would break the installed app for you to merge together with a release. Only the reviewer
+can run `gh pr merge` (`.claude/hooks/gate-pr-merge.sh`).
+
 ## Releases
 
 Releases are made by hand, not on every commit: Actions → **Release** → Run workflow, on `main`.
