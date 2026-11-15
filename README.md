@@ -78,8 +78,12 @@ The server address and the login are under Progress → Settings. Until another 
 build's default applies: `http://10.0.2.2:8080` (the host machine, seen from an emulator), which
 `-PserverUrl=…` changes at build time. The tokens are kept in the app's private storage.
 
-Numbers, prices and dates follow the device's language (a decimal comma, `vr 13 nov`); the app's own texts are
-English. The web app uses the browser's language.
+The app is in English and Dutch. Progress → Settings → Appearance → Language picks System (Dutch when the
+device, or the browser for the web app, is set to a `nl` language, English otherwise), English or Nederlands;
+it applies at once and is kept. Numbers, prices and dates follow the same choice (a decimal comma, `vr 13 nov`
+in Dutch); with System they follow the device. The texts are in `composeApp/.../Messages.kt`, each with its
+English and Dutch side by side, and the notification of an update in `androidApp/src/main/res/values*/strings.xml`.
+Texts that come from the server (error messages, store deals, recipes) are shown as they are.
 
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):

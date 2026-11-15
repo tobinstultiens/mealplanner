@@ -63,7 +63,7 @@ class ShoppingStoresTest {
     fun aRowShowsTheOfferOfAStoreInUseNeverOneOfASwitchedOffStore() {
         val pear = items.first { it.key == "pear" }
         val withoutJumbo = setOf(Store.AH, Store.LIDL)
-        assertEquals("AH €1.49", pear.bestOffer(withoutJumbo)?.badgeText(FormatLocale.English))
+        assertEquals("AH €1.49", pear.bestOffer(withoutJumbo)?.badgeText(Strings.English))
         // Pear is grouped under AH then, and the badge agrees with the group.
         assertEquals(listOf("pear"), storeOverview(listOf(pear), withoutJumbo).stores.single { it.store == Store.AH }.items.map { it.key })
         // Cheese is on offer at Jumbo only: with Jumbo off it has no badge and sits under Any store.
@@ -96,8 +96,8 @@ class ShoppingStoresTest {
 
     @Test
     fun theGroupTitleNamesTheStoreAndCountsItsItems() {
-        assertEquals("AH · 2 items on offer", storeOverview(items, all).stores[0].title)
-        assertEquals("Lidl · 1 item on offer", storeOverview(items, all).stores[2].title)
+        assertEquals("AH · 2 items on offer", storeOverview(items, all).stores[0].title(Strings.English))
+        assertEquals("Lidl · 1 item on offer", storeOverview(items, all).stores[2].title(Strings.English))
     }
 
     @Test
@@ -113,7 +113,7 @@ class ShoppingStoresTest {
     fun whatIsCheaperAtAnotherStoreIsListedWithWhereAndHowMuch() {
         val elsewhere = storeVisit(items, Store.AH, all, shoppingMode = false).elsewhere
         assertEquals(listOf("leek", "pear", "cheese"), elsewhere.map { it.item.key })
-        assertEquals(listOf("Lidl €0.99", "Jumbo €1.29", "Jumbo €3.00"), elsewhere.map { it.where(FormatLocale.English) })
+        assertEquals(listOf("Lidl €0.99", "Jumbo €1.29", "Jumbo €3.00"), elsewhere.map { it.where(Strings.English) })
     }
 
     @Test

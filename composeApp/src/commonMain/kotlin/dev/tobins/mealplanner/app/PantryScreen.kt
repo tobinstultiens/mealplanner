@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
+    val t = LocalStrings.current
     var state by remember { mutableStateOf<Load<Pair<List<Ingredient>, Pantry>>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -50,11 +51,11 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
         state = load { api.ingredients() to api.pantry() }
     }
 
-    SubScreen("Pantry", onBack, snackbar) { padding ->
+    SubScreen(t(Msg.PANTRY), onBack, snackbar) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage("Could not load the pantry", current.message) { reload++ }
+                ErrorMessage(t(Msg.PANTRY_LOAD_FAILED), current.message) { reload++ }
             }
             is Load.Ready -> {
                 val (ingredients, pantry) = current.value
@@ -77,15 +78,14 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
 
                 Column(Modifier.padding(padding).fillMaxSize()) {
                     Text(
-                        "Staples: ${staples.size} (always at home, never on the shopping list) · " +
-                            "On hand: ${onHand.size} (to use up; the planner favours them)",
+                        t(Msg.PANTRY_SUMMARY, staples.size, onHand.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
                     )
                     OutlinedTextField(
                         query, { query = it },
-                        label = { Text("Search ingredients") },
+                        label = { Text(t(Msg.SEARCH_INGREDIENTS)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                     )
@@ -100,12 +100,12 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
                                 FilterChip(
                                     selected = ingredient.id in staples,
                                     onClick = { update { api.setStaple(ingredient.id, ingredient.id !in staples) } },
-                                    label = { Text("Staple") },
+                                    label = { Text(t(Msg.STAPLE)) },
                                 )
                                 FilterChip(
                                     selected = ingredient.id in onHand,
                                     onClick = { update { api.setOnHand(ingredient.id, ingredient.id !in onHand) } },
-                                    label = { Text("On hand") },
+                                    label = { Text(t(Msg.ON_HAND)) },
                                 )
                             }
                         }

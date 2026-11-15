@@ -50,15 +50,12 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
 
 /** `Chicken fillet raw · 109 kcal, 23 g protein per 100 g`. */
-private fun Food.summary(): String {
+private fun Food.summary(t: Strings): String {
     val per = if (basis == FoodBasis.PER_100_ML) "100 ml" else "100 g"
     val kcal = per100.kcal?.roundToLong() ?: 0
     val protein = per100.proteinG?.roundToLong() ?: 0
-    return "$nameEn · $kcal kcal, $protein g protein per $per"
+    return t(Msg.FOOD_SUMMARY, nameEn, kcal, protein, per)
 }
-
-/** A section's title by its key; a key from a newer server is shown as it is. */
-private fun sectionTitle(key: String): String = ShopSection.fromKey(key)?.title ?: key
 
 /**
  * The ingredients to list under "Shop sections": with no [query], those still under Other,
@@ -77,6 +74,7 @@ internal fun sectionsToShow(all: List<IngredientSection>, query: String): List<I
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
+    val t = LocalStrings.current
     var state by remember { mutableStateOf<Load<List<UnmappedText>>>(Load.Loading) }
     var reference by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -95,11 +93,11 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
         if (reference == null) reference = (load { api.foodDataset() } as? Load.Ready)?.value?.reference
     }
 
-    SubScreen("Link ingredients", onBack, snackbar) { padding ->
+    SubScreen(t(Msg.LINK_INGREDIENTS), onBack, snackbar) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage("Could not load ingredients", current.message) { reload++ }
+                ErrorMessage(t(Msg.INGREDIENTS_LOAD_FAILED), current.message) { reload++ }
             }
             is Load.Ready -> LazyColumn(
                 Modifier.padding(padding).fillMaxSize(),
@@ -108,8 +106,7 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
             ) {
                 item {
                     Text(
-                        if (current.value.isEmpty()) "Every ingredient with an amount is linked."
-                        else "Ingredients that match a food exactly are linked automatically. These need your decision; most-used first.",
+                        if (current.value.isEmpty()) t(Msg.ALL_LINKED) else t(Msg.NEEDS_DECISION),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -127,7 +124,7 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
                 reference?.let {
                     item {
                         Text(
-                            "Nutrition data: $it",
+                            t(Msg.NUTRITION_DATA, it),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -147,9 +144,9 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
                     when (val result = load { api.setSection(entry.ingredientId, choice) }) {
                         is Load.Ready -> {
                             sections = sections?.map { if (it.ingredientId == entry.ingredientId) result.value else it }
-                            snackbar.showSnackbar("${entry.name} is now under ${sectionTitle(result.value.section)}")
+                            snackbar.showSnackbar(t(Msg.SECTION_CHANGED, entry.name, t.sectionTitleOfKey(result.value.section)))
                         }
-                        is Load.Failed -> snackbar.showSnackbar("Could not change the section: ${result.message}")
+                        is Load.Failed -> snackbar.showSnackbar(t(Msg.SECTION_CHANGE_FAILED, result.message))
                         Load.Loading -> Unit
                     }
                 }
@@ -169,9 +166,9 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
                     when (val result = load { api.map(request) }) {
                         is Load.Ready -> {
                             reload++
-                            snackbar.showSnackbar("Linked “${unmapped.text}” to ${result.value.name}")
+                            snackbar.showSnackbar(t(Msg.LINKED, unmapped.text, result.value.name))
                         }
-                        is Load.Failed -> snackbar.showSnackbar("Could not link: ${result.message}")
+                        is Load.Failed -> snackbar.showSnackbar(t(Msg.LINK_FAILED, result.message))
                         Load.Loading -> Unit
                     }
                 }
@@ -183,25 +180,25 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun UnmappedCard(unmapped: UnmappedText, onPick: (Food?) -> Unit) {
+    val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(unmapped.text, style = MaterialTheme.typography.titleMedium)
             Text(
-                (if (unmapped.recipeCount == 1) "Used in 1 recipe" else "Used in ${unmapped.recipeCount} recipes") +
-                    ", e.g. ${unmapped.exampleRecipe}",
+                t.plural(Plural.USED_IN_RECIPES, unmapped.recipeCount, unmapped.exampleRecipe),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             val linked = unmapped.linkedIngredient
             if (linked != null) {
-                Text("Linked to ${linked.name}, but its weight per piece is unknown.", style = MaterialTheme.typography.bodyMedium)
-                AssistChip(onClick = { onPick(linked.food) }, label = { Text("Set weight per piece") })
+                Text(t(Msg.LINKED_NO_WEIGHT, linked.name), style = MaterialTheme.typography.bodyMedium)
+                AssistChip(onClick = { onPick(linked.food) }, label = { Text(t(Msg.SET_PIECE_WEIGHT)) })
             } else {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     unmapped.suggestedFoods.take(3).forEach { food ->
                         AssistChip(onClick = { onPick(food) }, label = { Text(food.nameEn) })
                     }
-                    AssistChip(onClick = { onPick(null) }, label = { Text("Search…") })
+                    AssistChip(onClick = { onPick(null) }, label = { Text(t(Msg.SEARCH_DOTS)) })
                 }
             }
         }
@@ -217,6 +214,7 @@ private fun LinkDialog(
     onDismiss: () -> Unit,
     onConfirm: (MappingRequest) -> Unit,
 ) {
+    val t = LocalStrings.current
     var selected by remember { mutableStateOf(preselected) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Food>>(emptyList()) }
@@ -234,37 +232,37 @@ private fun LinkDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Link “${unmapped.text}”") },
+        title = { Text(t(Msg.LINK_TITLE, unmapped.text)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 val food = selected
                 val linked = unmapped.linkedIngredient
                 if (linked != null) {
-                    Text("Linked to ${linked.name}.")
+                    Text(t(Msg.LINKED_TO, linked.name))
                 } else if (food != null) {
-                    Text(food.summary())
-                    TextButton(onClick = { selected = null }) { Text("Choose another food") }
+                    Text(food.summary(t))
+                    TextButton(onClick = { selected = null }) { Text(t(Msg.CHOOSE_OTHER_FOOD)) }
                 } else {
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
-                        label = { Text("Search foods (English or Dutch)") },
+                        label = { Text(t(Msg.SEARCH_FOODS)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     results.take(6).forEach { result ->
-                        TextButton(onClick = { selected = result }) { Text(result.summary()) }
+                        TextButton(onClick = { selected = result }) { Text(result.summary(t)) }
                     }
                     if (query.trim().length >= 2 && results.isEmpty()) {
-                        Text("No foods found.", style = MaterialTheme.typography.bodySmall)
+                        Text(t(Msg.NO_FOODS), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 if (unmapped.countedInPieces) {
                     OutlinedTextField(
                         value = gramsText,
                         onValueChange = { gramsText = it },
-                        label = { Text("Grams per piece") },
-                        supportingText = { Text("Recipes count this in pieces; without a weight it cannot be counted.") },
+                        label = { Text(t(Msg.GRAMS_PER_PIECE)) },
+                        supportingText = { Text(t(Msg.GRAMS_PER_PIECE_HINT)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
@@ -282,26 +280,25 @@ private fun LinkDialog(
                         else MappingRequest(text = unmapped.text, nevoCode = selected!!.nevoCode, gramsPerPiece = grams),
                     )
                 },
-            ) { Text(if (unmapped.linkedIngredient != null) "Save" else "Link") }
+            ) { Text(if (unmapped.linkedIngredient != null) t(Msg.SAVE) else t(Msg.LINK)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )
 }
 
 @Composable
 private fun SectionsIntro(query: String, onQuery: (String) -> Unit, inOther: Int) {
+    val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-        SectionHeader("Shop sections", Modifier.padding(top = Spacing.InsideCard))
+        SectionHeader(t(Msg.SHOP_SECTIONS), Modifier.padding(top = Spacing.InsideCard))
         Text(
-            "The shopping list follows the route through the shop. " +
-                (if (inOther == 0) "Every ingredient has a section." else "Ingredients without a section go last, under Other; these are listed below.") +
-                " Tap an ingredient to put it in another section.",
+            t(Msg.SECTIONS_INTRO) + " " + (if (inOther == 0) t(Msg.SECTIONS_ALL_SET) else t(Msg.SECTIONS_SOME_OTHER)) + " " + t(Msg.SECTIONS_TAP),
             style = MaterialTheme.typography.bodyMedium,
         )
         OutlinedTextField(
             value = query,
             onValueChange = onQuery,
-            label = { Text("Find an ingredient") },
+            label = { Text(t(Msg.FIND_INGREDIENT)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -310,10 +307,11 @@ private fun SectionsIntro(query: String, onQuery: (String) -> Unit, inOther: Int
 
 @Composable
 private fun SectionRow(entry: IngredientSection, onClick: () -> Unit) {
+    val t = LocalStrings.current
     Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp)) {
         Text(entry.name, style = MaterialTheme.typography.bodyLarge)
         Text(
-            sectionTitle(entry.section) + if (entry.byHand) " · set by hand" else "",
+            t.sectionTitleOfKey(entry.section).let { if (entry.byHand) t(Msg.SET_BY_HAND, it) else it },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -323,20 +321,21 @@ private fun SectionRow(entry: IngredientSection, onClick: () -> Unit) {
 /** Picks an ingredient's section, or the automatic one (null) with where it comes from. */
 @Composable
 private fun SectionDialog(entry: IngredientSection, onDismiss: () -> Unit, onConfirm: (String?) -> Unit) {
+    val t = LocalStrings.current
     var choice by remember { mutableStateOf(if (entry.byHand) entry.section else null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Section for ${entry.name}") },
+        title = { Text(t(Msg.SECTION_FOR, entry.name)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                SectionOption("Automatic: ${sectionTitle(entry.automatic)}", entry.source, selected = choice == null) { choice = null }
+                SectionOption(t(Msg.AUTOMATIC, t.sectionTitleOfKey(entry.automatic)), entry.source, selected = choice == null) { choice = null }
                 ShopSection.entries.forEach { section ->
-                    SectionOption(section.title, null, selected = choice == section.name) { choice = section.name }
+                    SectionOption(t(section.msg()), null, selected = choice == section.name) { choice = section.name }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(choice) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { onConfirm(choice) }) { Text(t(Msg.SAVE)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )
 }
 

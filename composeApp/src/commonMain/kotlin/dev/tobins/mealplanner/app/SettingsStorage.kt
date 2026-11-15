@@ -30,7 +30,7 @@ fun SettingsStorage.saveServerSettings(settings: ServerSettings) {
 }
 
 /** Light, dark, or whatever the device uses. */
-enum class ThemeMode(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 private const val THEME_KEY = "theme"
 
@@ -38,6 +38,14 @@ fun SettingsStorage.themeMode(): ThemeMode =
     get(THEME_KEY)?.let { stored -> ThemeMode.entries.firstOrNull { it.name == stored } } ?: ThemeMode.SYSTEM
 
 fun SettingsStorage.saveThemeMode(mode: ThemeMode) = set(THEME_KEY, mode.name)
+
+private const val LANGUAGE_KEY = "language"
+
+/** The language chosen in Settings; the device's own until then. */
+fun SettingsStorage.appLanguage(): AppLanguage =
+    get(LANGUAGE_KEY)?.let { stored -> AppLanguage.entries.firstOrNull { it.name == stored } } ?: AppLanguage.SYSTEM
+
+fun SettingsStorage.saveAppLanguage(language: AppLanguage) = set(LANGUAGE_KEY, language.name)
 
 private const val SYSTEM_COLORS_KEY = "systemColors"
 
@@ -54,7 +62,7 @@ fun SettingsStorage.shoppingMode(): Boolean = get(SHOPPING_MODE_KEY) == "true"
 fun SettingsStorage.saveShoppingMode(on: Boolean) = set(SHOPPING_MODE_KEY, on.toString())
 
 /** How the shopping list is grouped: by shop section, or by the store to buy at. */
-enum class ShoppingView(val label: String) { SECTION("By section"), STORE("Per store") }
+enum class ShoppingView { SECTION, STORE }
 
 private const val SHOPPING_VIEW_KEY = "shoppingView"
 

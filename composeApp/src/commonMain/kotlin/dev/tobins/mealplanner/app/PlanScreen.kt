@@ -48,6 +48,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -> Unit) {
+    val t = LocalStrings.current
     var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
     var state by remember { mutableStateOf<Load<WeekPlan>>(Load.Loading) }
     var busy by remember { mutableStateOf(false) }
@@ -79,7 +80,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
         GenerateDialog(
             onDismiss = { generatingFor = null },
             fixedSlot = meal.slot,
-            title = "New ${meal.slot.name.lowercase()} for ${dayLabel(plusDays(weekStart, meal.day))}",
+            title = t(Msg.PLAN_NEW_FOR, t.slot(meal.slot), dayLabel(plusDays(weekStart, meal.day), t.locale)),
         ) { request ->
             state = Load.Ready(api.generateIntoPlan(weekStart, meal.day, meal.slot, request))
             generatingFor = null
@@ -91,9 +92,9 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
             TopAppBar(
                 title = {
                     PeriodStepper(
-                        label = "Week of ${dayMonthLabel(weekStart)}",
-                        previous = "Previous week",
-                        next = "Next week",
+                        label = t(Msg.WEEK_OF, dayMonthLabel(weekStart, t.locale)),
+                        previous = t(Msg.PREVIOUS_WEEK),
+                        next = t(Msg.NEXT_WEEK),
                         onPrevious = { weekStart = plusDays(weekStart, -7) },
                         onNext = { weekStart = plusDays(weekStart, 7) },
                     )
@@ -108,12 +109,12 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                 if (current.status == 409) {
                     EmptyState(
                         AppIcons.Person,
-                        "Set up your profile first: the planner needs your daily calorie and protein targets.",
-                        actionLabel = "Open profile",
+                        t(Msg.PLAN_SET_UP_PROFILE),
+                        actionLabel = t(Msg.OPEN_PROFILE),
                         onAction = onOpenProfile,
                     )
                 } else {
-                    ErrorMessage("Could not load the plan", current.message) { weekStart = weekStart.also { state = Load.Loading } }
+                    ErrorMessage(t(Msg.PLAN_LOAD_FAILED), current.message) { weekStart = weekStart.also { state = Load.Loading } }
                 }
             }
             is Load.Ready -> {
@@ -127,24 +128,23 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                             Text(
-                                "Daily target: ${plan.targets.kcal} kcal · ${plan.targets.proteinG} g protein",
+                                t(Msg.DAILY_TARGET, plan.targets.kcal, plan.targets.proteinG),
                                 style = MaterialTheme.typography.bodyMedium.numeric(),
                             )
                             plan.cost?.let { cost ->
                                 val saved = (plan.costWithoutOffers ?: cost) - cost
                                 Text(
-                                    "≈ ${formatEuro(cost)} for the week's meals" +
-                                        if (saved >= 0.01) ", ${formatEuro(saved)} saved by offers" else "",
+                                    if (saved >= 0.01) t(Msg.WEEK_COST_SAVED, formatEuro(cost, t.locale), formatEuro(saved, t.locale))
+                                    else t(Msg.WEEK_COST, formatEuro(cost, t.locale)),
                                     style = MaterialTheme.typography.bodyMedium.numeric(),
                                 )
                             }
                             Button(enabled = !busy, onClick = { change { api.generatePlan(weekStart) } }) {
-                                Text(if (hasMeals) "Replan unlocked meals" else "Plan this week")
+                                Text(if (hasMeals) t(Msg.REPLAN) else t(Msg.PLAN_WEEK))
                             }
                             if (hasMeals && plan.emptySlots.isNotEmpty()) {
                                 Text(
-                                    "No recipes yet for: ${plan.emptySlots.joinToString { it.name.lowercase() }}. " +
-                                        "Days stay below the target until those exist.",
+                                    t(Msg.NO_RECIPES_FOR, plan.emptySlots.joinToString { t.slot(it) }),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -152,7 +152,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                         }
                     }
                     if (!hasMeals) {
-                        item { EmptyState(Spot.NothingPlanned, "Nothing planned for this week yet.", Modifier.height(240.dp)) }
+                        item { EmptyState(Spot.NothingPlanned, t(Msg.NOTHING_PLANNED_WEEK), Modifier.height(240.dp)) }
                     }
                     if (hasMeals) {
                         items(plan.days, key = { it.date }) { day ->
@@ -183,11 +183,12 @@ private fun DayCard(
     onGenerate: (PlannedMeal) -> Unit,
     onToggleLock: (PlannedMeal) -> Unit,
 ) {
+    val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Text(dayLabel(day.date), style = MaterialTheme.typography.titleMedium)
+            Text(dayLabel(day.date, t.locale), style = MaterialTheme.typography.titleMedium)
             Text(
-                "${day.kcal.roundToInt()} of ${targets.kcal} kcal · ${day.proteinG.roundToInt()} of ${targets.proteinG} g protein",
+                t(Msg.DAY_TOTALS, day.kcal.roundToInt(), targets.kcal, day.proteinG.roundToInt(), targets.proteinG),
                 style = MaterialTheme.typography.bodyMedium.numeric(),
             )
             LinearProgressIndicator(
@@ -195,7 +196,7 @@ private fun DayCard(
                 modifier = Modifier.fillMaxWidth(),
             )
             if (day.meals.isEmpty()) {
-                Text("Nothing planned", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t(Msg.NOTHING_PLANNED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             for (meal in day.meals) {
                 // The whole meal opens its recipe; the two icon buttons take their own taps.
@@ -204,7 +205,7 @@ private fun DayCard(
                     Row(verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
                             Text(
-                                meal.slot.name.lowercase().replaceFirstChar { it.uppercase() } + if (meal.leftover) " · leftovers" else "",
+                                t.mealLabel(meal),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -212,7 +213,7 @@ private fun DayCard(
                         }
                         BarAction(
                             if (meal.locked) AppIcons.Lock else AppIcons.LockOpen,
-                            if (meal.locked) "Unlock ${meal.slot.name.lowercase()}" else "Lock ${meal.slot.name.lowercase()}",
+                            if (meal.locked) t(Msg.UNLOCK_SLOT, t.slot(meal.slot)) else t(Msg.LOCK_SLOT, t.slot(meal.slot)),
                             onClick = { onToggleLock(meal) },
                             enabled = enabled,
                         )
@@ -220,17 +221,17 @@ private fun DayCard(
                             var menu by remember { mutableStateOf(false) }
                             BarAction(
                                 AppIcons.Swap,
-                                "Swap ${meal.slot.name.lowercase()}",
+                                t(Msg.SWAP_SLOT, t.slot(meal.slot)),
                                 onClick = { menu = true },
                                 enabled = enabled && !meal.locked,
                             )
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(text = { Text("Another recipe") }, onClick = { menu = false; onReroll(meal) })
-                                DropdownMenuItem(text = { Text("Write a new recipe…") }, onClick = { menu = false; onGenerate(meal) })
+                                DropdownMenuItem(text = { Text(t(Msg.ANOTHER_RECIPE)) }, onClick = { menu = false; onReroll(meal) })
+                                DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, onClick = { menu = false; onGenerate(meal) })
                             }
                         }
                     }
-                    MealNumbers(meal.macrosText(), meal.cost?.let { "≈ ${formatEuro(it)}" }, Modifier.padding(bottom = 4.dp))
+                    MealNumbers(meal.macrosText(t), meal.cost?.let { "≈ ${formatEuro(it, t.locale)}" }, Modifier.padding(bottom = 4.dp))
                 }
             }
         }

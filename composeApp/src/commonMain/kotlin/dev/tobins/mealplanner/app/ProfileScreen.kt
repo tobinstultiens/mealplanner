@@ -36,17 +36,18 @@ import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.targets.TargetCalculator
 import kotlinx.coroutines.launch
 
-private val activityLabels = mapOf(
-    ActivityLevel.SEDENTARY to "Mostly sitting",
-    ActivityLevel.LIGHT to "Light (1–3 workouts a week)",
-    ActivityLevel.MODERATE to "Moderate (3–5 workouts)",
-    ActivityLevel.ACTIVE to "Very active (6–7 workouts)",
-)
+private fun ActivityLevel.msg() = when (this) {
+    ActivityLevel.SEDENTARY -> Msg.ACTIVITY_SEDENTARY
+    ActivityLevel.LIGHT -> Msg.ACTIVITY_LIGHT
+    ActivityLevel.MODERATE -> Msg.ACTIVITY_MODERATE
+    ActivityLevel.ACTIVE -> Msg.ACTIVITY_ACTIVE
+}
 
 /** Body data and goal; the daily calorie and protein targets follow from them. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
+    val t = LocalStrings.current
     var loaded by remember { mutableStateOf<Load<ProfileState>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
@@ -67,12 +68,12 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
         loaded = Load.Loading
         loaded = load { api.profile() }
         (loaded as? Load.Ready)?.value?.profile?.let { profile ->
-            weight = formatAmount(profile.weightKg)
-            height = formatAmount(profile.heightCm)
+            weight = formatAmount(profile.weightKg, t.locale)
+            height = formatAmount(profile.heightCm, t.locale)
             age = profile.ageYears.toString()
             sex = profile.sex
             activity = profile.activity
-            goal = formatAmount(profile.goalKgPerWeek)
+            goal = formatAmount(profile.goalKgPerWeek, t.locale)
             kcalOverride = profile.kcalOverride?.toString().orEmpty()
             proteinOverride = profile.proteinOverrideG?.toString().orEmpty()
             likes = profile.likes.joinToString(", ")
@@ -94,43 +95,42 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
     }
     val problems = draft?.let(TargetCalculator::problems)
 
-    SubScreen("Profile and targets", onBack, snackbar) { padding ->
+    SubScreen(t(Msg.PROFILE_AND_TARGETS), onBack, snackbar) { padding ->
         when (val current = loaded) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage("Could not load your profile", current.message) { reload++ }
+                ErrorMessage(t(Msg.PROFILE_LOAD_FAILED), current.message) { reload++ }
             }
             is Load.Ready -> Column(
                 Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
                 verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
             ) {
-                NumberField("Weight (kg)", weight, decimal = true) { weight = it }
-                NumberField("Height (cm)", height, decimal = true) { height = it }
-                NumberField("Age", age, decimal = false) { age = it }
+                NumberField(t(Msg.WEIGHT_KG), weight, decimal = true) { weight = it }
+                NumberField(t(Msg.HEIGHT_CM), height, decimal = true) { height = it }
+                NumberField(t(Msg.AGE), age, decimal = false) { age = it }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                    FilterChip(selected = sex == Sex.MALE, onClick = { sex = Sex.MALE }, label = { Text("Male") })
-                    FilterChip(selected = sex == Sex.FEMALE, onClick = { sex = Sex.FEMALE }, label = { Text("Female") })
+                    FilterChip(selected = sex == Sex.MALE, onClick = { sex = Sex.MALE }, label = { Text(t(Msg.MALE)) })
+                    FilterChip(selected = sex == Sex.FEMALE, onClick = { sex = Sex.FEMALE }, label = { Text(t(Msg.FEMALE)) })
                 }
-                Text("Activity", style = MaterialTheme.typography.labelLarge)
+                Text(t(Msg.ACTIVITY), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     ActivityLevel.entries.forEach { level ->
-                        FilterChip(selected = activity == level, onClick = { activity = level }, label = { Text(activityLabels.getValue(level)) })
+                        FilterChip(selected = activity == level, onClick = { activity = level }, label = { Text(t(level.msg())) })
                     }
                 }
-                NumberField("Weight loss per week (kg, 0 to 1)", goal, decimal = true) { goal = it }
+                NumberField(t(Msg.GOAL_PER_WEEK), goal, decimal = true) { goal = it }
 
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-                        Text("Daily targets", style = MaterialTheme.typography.labelLarge)
+                        Text(t(Msg.DAILY_TARGETS), style = MaterialTheme.typography.labelLarge)
                         when {
-                            draft == null -> Text("Fill in the fields above to see your targets.")
-                            !problems.isNullOrEmpty() -> Text(problems.joinToString("\n"), color = MaterialTheme.colorScheme.error)
+                            draft == null -> Text(t(Msg.FILL_IN))
+                            !problems.isNullOrEmpty() -> Text(problems.joinToString("\n") { t.profileProblem(it) }, color = MaterialTheme.colorScheme.error)
                             else -> {
                                 val targets = TargetCalculator.targets(draft)
-                                Text("${targets.kcal} kcal · ${targets.proteinG} g protein", style = MaterialTheme.typography.titleLarge.numeric())
+                                Text(t(Msg.KCAL_PROTEIN, targets.kcal, targets.proteinG), style = MaterialTheme.typography.titleLarge.numeric())
                                 Text(
-                                    "You maintain your weight at about ${TargetCalculator.maintenanceKcal(draft)} kcal a day. " +
-                                        "Suggested: ${TargetCalculator.suggest(draft).let { "${it.kcal} kcal, ${it.proteinG} g protein" }}.",
+                                    TargetCalculator.suggest(draft).let { t(Msg.MAINTENANCE, TargetCalculator.maintenanceKcal(draft), it.kcal, it.proteinG) },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -138,21 +138,21 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                         }
                     }
                 }
-                Text("Optional: use your own targets instead of the suggestion", style = MaterialTheme.typography.labelLarge)
-                NumberField("Calories per day", kcalOverride, decimal = false) { kcalOverride = it }
-                NumberField("Protein per day (g)", proteinOverride, decimal = false) { proteinOverride = it }
+                Text(t(Msg.OWN_TARGETS), style = MaterialTheme.typography.labelLarge)
+                NumberField(t(Msg.CALORIES_PER_DAY), kcalOverride, decimal = false) { kcalOverride = it }
+                NumberField(t(Msg.PROTEIN_PER_DAY), proteinOverride, decimal = false) { proteinOverride = it }
 
-                Text("Taste", style = MaterialTheme.typography.labelLarge)
+                Text(t(Msg.TASTE), style = MaterialTheme.typography.labelLarge)
                 OutlinedTextField(
                     likes, { likes = it },
-                    label = { Text("Likes, comma separated") },
-                    supportingText = { Text("Cuisines or flavours for new recipes, e.g. Korean, spicy") },
+                    label = { Text(t(Msg.LIKES)) },
+                    supportingText = { Text(t(Msg.LIKES_HINT)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     dislikes, { dislikes = it },
-                    label = { Text("Never use, comma separated") },
-                    supportingText = { Text("Ingredients the planner and new recipes leave out, e.g. mushroom") },
+                    label = { Text(t(Msg.DISLIKES)) },
+                    supportingText = { Text(t(Msg.DISLIKES_HINT)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
 
@@ -163,14 +163,14 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                             when (val result = load { api.saveProfile(draft!!) }) {
                                 is Load.Ready -> {
                                     loaded = result
-                                    snackbar.showSnackbar("Profile saved")
+                                    snackbar.showSnackbar(t(Msg.PROFILE_SAVED))
                                 }
-                                is Load.Failed -> snackbar.showSnackbar("Could not save: ${result.message}")
+                                is Load.Failed -> snackbar.showSnackbar(t(Msg.SAVE_FAILED, result.message))
                                 Load.Loading -> Unit
                             }
                         }
                     },
-                ) { Text("Save") }
+                ) { Text(t(Msg.SAVE)) }
             }
         }
     }

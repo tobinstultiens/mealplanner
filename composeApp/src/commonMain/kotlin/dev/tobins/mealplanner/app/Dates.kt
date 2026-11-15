@@ -15,7 +15,7 @@ import kotlin.time.ExperimentalTime
 
 /*
  * Date helpers shared by Android and the web. Dates travel as ISO strings, as in the API;
- * the labels follow the device's locale ([FormatLocale]).
+ * the labels follow the app's language ([FormatLocale], [Strings]).
  */
 
 /** Where "now" comes from. Only the screenshot tests replace it, so that their pictures show the same date every day. */
@@ -36,14 +36,14 @@ fun mondayOf(isoDate: String): String {
 }
 
 /** A short label for a date, e.g. `Mon 16 Nov` (`Mon, Nov 16` in American English). */
-fun dayLabel(isoDate: String, locale: FormatLocale = FormatLocale.device): String {
+fun dayLabel(isoDate: String, locale: FormatLocale): String {
     val date = LocalDate.parse(isoDate)
     val weekday = locale.dayNames[date.dayOfWeek.isoDayNumber - 1]
     return "$weekday${if (locale.monthFirst) "," else ""} ${dayMonthLabel(isoDate, locale)}"
 }
 
 /** A date without its weekday, e.g. `16 Nov` (`Nov 16` in American English). */
-fun dayMonthLabel(isoDate: String, locale: FormatLocale = FormatLocale.device): String {
+fun dayMonthLabel(isoDate: String, locale: FormatLocale): String {
     val date = LocalDate.parse(isoDate)
     val month = locale.monthNames[date.month.ordinal]
     return if (locale.monthFirst) "$month ${date.day}" else "${date.day} $month"
@@ -53,11 +53,11 @@ fun dayMonthLabel(isoDate: String, locale: FormatLocale = FormatLocale.device): 
  * When something happened, as briefly as is clear: `today 12:40`, `yesterday 12:40`, or
  * `Fri 13 Nov 12:40` for older ones. [isoDate] and [time] are local; [today] is today's date.
  */
-fun whenLabel(isoDate: String, time: String, today: String, locale: FormatLocale = FormatLocale.device): String =
+fun whenLabel(isoDate: String, time: String, today: String, strings: Strings): String =
     when (daysBetween(isoDate, today)) {
-        0 -> "today $time"
-        1 -> "yesterday $time"
-        else -> "${dayLabel(isoDate, locale)} $time"
+        0 -> strings(Msg.WHEN_TODAY, time)
+        1 -> strings(Msg.WHEN_YESTERDAY, time)
+        else -> "${dayLabel(isoDate, strings.locale)} $time"
     }
 
 /** Whole days from [fromIso] to [toIso]; negative when [toIso] is earlier. */
@@ -69,8 +69,8 @@ fun nowIso(): String = appClock.now().toString()
 
 /** An ISO instant in local time, e.g. `today 12:40` or `Fri 13 Nov 12:40`. */
 @OptIn(ExperimentalTime::class)
-fun instantLabel(isoInstant: String): String {
+fun instantLabel(isoInstant: String, strings: Strings): String {
     val local = kotlin.time.Instant.parse(isoInstant).toLocalDateTime(TimeZone.currentSystemDefault())
     val time = "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
-    return whenLabel(local.date.toString(), time, todayIso())
+    return whenLabel(local.date.toString(), time, todayIso(), strings)
 }

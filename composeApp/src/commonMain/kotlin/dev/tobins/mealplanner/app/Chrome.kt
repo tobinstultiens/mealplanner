@@ -77,7 +77,7 @@ fun BarAction(
 
 /** The arrow that leaves a sub-screen. */
 @Composable
-fun BackButton(onClick: () -> Unit) = BarAction(AppIcons.Back, "Back", onClick)
+fun BackButton(onClick: () -> Unit) = BarAction(AppIcons.Back, LocalStrings.current(Msg.BACK), onClick)
 
 /** One entry of an [OverflowMenu]. */
 class MenuAction(val icon: ImageVector, val label: String, val onClick: () -> Unit)
@@ -87,7 +87,7 @@ class MenuAction(val icon: ImageVector, val label: String, val onClick: () -> Un
 fun OverflowMenu(vararg actions: MenuAction) {
     var open by remember { mutableStateOf(false) }
     Box {
-        BarAction(AppIcons.More, "More", onClick = { open = true })
+        BarAction(AppIcons.More, LocalStrings.current(Msg.MORE), onClick = { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             actions.forEach { action ->
                 DropdownMenuItem(
@@ -113,14 +113,14 @@ fun ErrorBanner(summary: String, details: String, modifier: Modifier = Modifier)
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         Icon(AppIcons.Error, contentDescription = null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
         Text(summary, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        TextButton(onClick = { open = true }) { Text("Details") }
+        TextButton(onClick = { open = true }) { Text(LocalStrings.current(Msg.DETAILS)) }
     }
     if (open) {
         AlertDialog(
             onDismissRequest = { open = false },
             title = { Text(summary) },
             text = { Text(details, Modifier.verticalScroll(rememberScrollState())) },
-            confirmButton = { TextButton(onClick = { open = false }) { Text("Close") } },
+            confirmButton = { TextButton(onClick = { open = false }) { Text(LocalStrings.current(Msg.CLOSE)) } },
         )
     }
 }
@@ -264,6 +264,6 @@ fun LoadingState(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         CircularProgressIndicator()
-        Text("Loading…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(LocalStrings.current(Msg.LOADING), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

@@ -63,7 +63,7 @@ object AppUpdates {
         val http = HttpClient { install(ContentNegotiation) { json(json) } }
         try {
             val response = http.get(url) { header("Accept", "application/vnd.github+json") }
-            check(response.status.isSuccess()) { "GitHub answered ${response.status.value}" }
+            check(response.status.isSuccess()) { Strings.current(Msg.GITHUB_ANSWERED, response.status.value) }
             return newer(response.body<GithubRelease>(), currentVersion)
         } finally {
             http.close()
@@ -96,19 +96,20 @@ object AppUpdates {
 /** Asks whether to install [update]; the notes are the release's changelog. */
 @androidx.compose.runtime.Composable
 fun UpdateDialog(update: AppUpdate, currentVersion: String, onUpdate: () -> Unit, onLater: () -> Unit) {
+    val t = LocalStrings.current
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onLater,
-        title = { androidx.compose.material3.Text("Version ${update.version} is available") },
+        title = { androidx.compose.material3.Text(t(Msg.UPDATE_AVAILABLE, update.version)) },
         text = {
             androidx.compose.foundation.layout.Column(
                 androidx.compose.ui.Modifier.heightIn(max = 360.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.Related),
             ) {
-                androidx.compose.material3.Text("You have $currentVersion. The update downloads and then asks Android to install it.")
+                androidx.compose.material3.Text(t(Msg.UPDATE_EXPLAIN, currentVersion))
                 if (update.notes.isNotBlank()) MarkdownText(update.notes)
             }
         },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = onUpdate) { androidx.compose.material3.Text("Update") } },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onLater) { androidx.compose.material3.Text("Later") } },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onUpdate) { androidx.compose.material3.Text(t(Msg.UPDATE)) } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onLater) { androidx.compose.material3.Text(t(Msg.LATER)) } },
     )
 }

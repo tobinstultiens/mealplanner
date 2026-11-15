@@ -22,9 +22,9 @@ class DatesTest {
     @Test
     fun recentMomentsAreToldRelativeToToday() {
         val en = FormatLocale.English
-        assertEquals("today 17:08", whenLabel("2026-11-15", "17:08", today = "2026-11-15", locale = en))
-        assertEquals("yesterday 17:08", whenLabel("2026-11-14", "17:08", today = "2026-11-15", locale = en))
-        assertEquals("Fri 13 Nov 17:08", whenLabel("2026-11-13", "17:08", today = "2026-11-15", locale = en))
+        assertEquals("today 17:08", whenLabel("2026-11-15", "17:08", today = "2026-11-15", strings = Strings.English))
+        assertEquals("yesterday 17:08", whenLabel("2026-11-14", "17:08", today = "2026-11-15", strings = Strings.English))
+        assertEquals("Fri 13 Nov 17:08", whenLabel("2026-11-13", "17:08", today = "2026-11-15", strings = Strings.English))
     }
 
     @Test

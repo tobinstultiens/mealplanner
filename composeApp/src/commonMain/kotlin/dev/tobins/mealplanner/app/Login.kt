@@ -98,11 +98,11 @@ class Login(
     /** Finishes a login from the redirect [url]: checks it belongs to the login we started and swaps the code for tokens. */
     suspend fun finish(url: String): Session {
         val pending = storage.get(PENDING_KEY)?.takeIf { it.isNotBlank() }?.let { json.decodeFromString<PendingLogin>(it) }
-            ?: error("No login was started")
+            ?: error(Strings.current(Msg.LOGIN_NOT_STARTED))
         val params = Url(url).parameters
         params["error"]?.let { error(params["error_description"] ?: it) }
-        check(params["state"] == pending.state) { "The login answer does not match the login that was started" }
-        val code = params["code"] ?: error("The login answer has no code")
+        check(params["state"] == pending.state) { Strings.current(Msg.LOGIN_ANSWER_MISMATCH) }
+        val code = params["code"] ?: error(Strings.current(Msg.LOGIN_NO_CODE))
         storage.set(PENDING_KEY, "")
         val response = http.submitForm(
             pending.tokenEndpoint,
@@ -114,7 +114,7 @@ class Login(
                 append("code_verifier", pending.verifier)
             },
         )
-        check(response.status.isSuccess()) { "Logging in failed (${response.status.value})" }
+        check(response.status.isSuccess()) { Strings.current(Msg.LOGIN_FAILED_STATUS, response.status.value) }
         return toSession(json.decodeFromString(response.bodyAsText()), previousRefresh = null).also { storage.saveSession(it) }
     }
 
@@ -148,7 +148,7 @@ class Login(
         if (!response.status.isSuccess()) {
             // The server explains itself as {"error": "..."}.
             val reason = runCatching { json.decodeFromString<Map<String, String>>(body)["error"] }.getOrNull()
-            error(reason ?: "The server answered ${response.status.value} for its login settings")
+            error(reason ?: Strings.current(Msg.LOGIN_SETTINGS_STATUS, response.status.value))
         }
         return json.decodeFromString(body)
     }

@@ -27,15 +27,15 @@ fun shoppingSections(items: List<ShoppingItem>, shoppingMode: Boolean): List<Sho
     }
 
 /** `12 of 43 · 3 sections to go`, or `All 43 ticked off` when nothing is left. */
-fun shoppingProgress(items: List<ShoppingItem>): String {
+fun shoppingProgress(items: List<ShoppingItem>, strings: Strings): String {
     val ticked = items.count { it.checked }
-    if (ticked == items.size) return "All ${items.size} ticked off"
+    if (ticked == items.size) return strings(Msg.ALL_TICKED_OFF, items.size)
     val sectionsToGo = items.filter { !it.checked }.map { it.category }.toSet().size
-    return "$ticked of ${items.size} · $sectionsToGo ${if (sectionsToGo == 1) "section" else "sections"} to go"
+    return strings.plural(Plural.SECTIONS_TO_GO, sectionsToGo, ticked, items.size)
 }
 
 /** `AH €1.99`, or `AH 1+1 gratis` when the store states no price: short enough for the row's edge. */
-fun Offer.badgeText(locale: FormatLocale = FormatLocale.device): String {
+fun Offer.badgeText(strings: Strings): String {
     // Some stores shout their deals in capitals; in a badge that is too loud.
-    return "${store.shortName()} ${price?.let { formatEuro(it, locale) } ?: deal?.takeIf { it.isNotBlank() }?.lowercase() ?: "offer"}"
+    return "${store.shortName()} ${price?.let { formatEuro(it, strings.locale) } ?: deal?.takeIf { it.isNotBlank() }?.lowercase() ?: strings(Msg.BADGE_OFFER)}"
 }

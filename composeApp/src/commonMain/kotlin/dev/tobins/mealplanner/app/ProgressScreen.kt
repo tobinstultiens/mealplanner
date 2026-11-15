@@ -53,12 +53,13 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
-private fun kg(value: Double): String = "${formatAmount((value * 10).roundToInt() / 10.0)} kg"
+private fun kg(value: Double, locale: FormatLocale): String = "${formatAmount((value * 10).roundToInt() / 10.0, locale)} kg"
 
 /** Weight log with its trend, and the calorie-target suggestion that follows from it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -> Unit) {
+    val t = LocalStrings.current
     val today = remember { todayIso() }
     var state by remember { mutableStateOf<Load<WeightLog>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
@@ -85,10 +86,10 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Progress") },
+                title = { Text(t(Msg.TAB_PROGRESS)) },
                 actions = {
-                    BarAction(AppIcons.Person, "Profile and targets", onOpenProfile)
-                    BarAction(AppIcons.Settings, "Settings", onOpenServer)
+                    BarAction(AppIcons.Person, t(Msg.PROFILE_AND_TARGETS), onOpenProfile)
+                    BarAction(AppIcons.Settings, t(Msg.SETTINGS), onOpenServer)
                 },
             )
         },
@@ -97,7 +98,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage("Could not load your weight log", current.message) { reload++ }
+                ErrorMessage(t(Msg.WEIGHT_LOAD_FAILED), current.message) { reload++ }
             }
             is Load.Ready -> {
                 val log = current.value
@@ -109,7 +110,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                         val value = weightText.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it in 30.0..300.0 }
                         OutlinedTextField(
                             weightText, { weightText = it },
-                            label = { Text("Today's weight (kg)") },
+                            label = { Text(t(Msg.TODAYS_WEIGHT)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f),
@@ -117,13 +118,12 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                         Button(enabled = value != null, onClick = {
                             change { api.setWeight(today, value!!) }
                             weightText = ""
-                        }) { Text("Save") }
+                        }) { Text(t(Msg.SAVE)) }
                     }
 
                     if (log.entries.isEmpty()) {
                         Text(
-                            "Weigh yourself at the same time each day, for example after getting up. " +
-                                "After two weeks the trend shows whether the calorie target fits.",
+                            t(Msg.WEIGH_HINT),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
@@ -141,7 +141,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                                         api.saveProfile(profile.copy(kcalOverride = suggestion.suggestedKcal))
                                     }
                                     snackbar.showSnackbar(
-                                        if (result is Load.Ready) "Calorie target is now ${suggestion.suggestedKcal} kcal" else "Could not change the target",
+                                        if (result is Load.Ready) t(Msg.TARGET_NOW, suggestion.suggestedKcal) else t(Msg.TARGET_CHANGE_FAILED),
                                     )
                                     reload++
                                 }
@@ -150,12 +150,12 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                         )
                     }
 
-                    if (log.entries.isNotEmpty()) SectionHeader("Weighings")
+                    if (log.entries.isNotEmpty()) SectionHeader(t(Msg.WEIGHINGS))
                     for (entry in log.entries.asReversed().take(30)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(dayLabel(entry.date), Modifier.weight(1f))
-                            Text("${kg(entry.kg)}  ·  trend ${kg(entry.trendKg)}", style = MaterialTheme.typography.bodyMedium.numeric())
-                            TextButton(onClick = { change { api.deleteWeight(entry.date) } }) { Text("Remove") }
+                            Text(dayLabel(entry.date, t.locale), Modifier.weight(1f))
+                            Text(t(Msg.WEIGHING_ROW, kg(entry.kg, t.locale), kg(entry.trendKg, t.locale)), style = MaterialTheme.typography.bodyMedium.numeric())
+                            TextButton(onClick = { change { api.deleteWeight(entry.date) } }) { Text(t(Msg.REMOVE)) }
                         }
                     }
                 }
@@ -166,24 +166,25 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
 
 @Composable
 private fun TrendSummary(log: WeightLog) {
+    val t = LocalStrings.current
     val last = log.entries.last()
     val first = log.entries.first()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-            Text("Trend weight", style = MaterialTheme.typography.labelLarge)
-            Text(kg(last.trendKg), style = MaterialTheme.typography.headlineMedium)
+            Text(t(Msg.TREND_WEIGHT), style = MaterialTheme.typography.labelLarge)
+            Text(kg(last.trendKg, t.locale), style = MaterialTheme.typography.headlineMedium)
             val change = last.trendKg - first.trendKg
             if (log.entries.size >= 2) {
                 Text(
-                    "${if (change <= 0) "Down" else "Up"} ${kg(abs(change))} since ${dayMonthLabel(first.date)}",
+                    t(if (change <= 0) Msg.DOWN_SINCE else Msg.UP_SINCE, kg(abs(change), t.locale), dayMonthLabel(first.date, t.locale)),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             Text(
                 log.actualKgPerWeek?.let {
-                    if (it >= 0) "Losing ${formatAmount((it * 100).roundToInt() / 100.0)} kg a week over the last two weeks"
-                    else "Gaining ${formatAmount((-it * 100).roundToInt() / 100.0)} kg a week over the last two weeks"
-                } ?: "A weekly rate appears after two weeks of regular weighings.",
+                    if (it >= 0) t(Msg.LOSING, formatAmount((it * 100).roundToInt() / 100.0, t.locale))
+                    else t(Msg.GAINING, formatAmount((-it * 100).roundToInt() / 100.0, t.locale))
+                } ?: t(Msg.RATE_LATER),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -193,18 +194,20 @@ private fun TrendSummary(log: WeightLog) {
 
 @Composable
 private fun SuggestionCard(suggestion: TargetSuggestion, onAccept: () -> Unit, onDismiss: () -> Unit) {
+    val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Text("Adjust your calorie target?", style = MaterialTheme.typography.titleMedium)
-            val rate = formatAmount((abs(suggestion.actualKgPerWeek) * 100).roundToInt() / 100.0)
+            Text(t(Msg.ADJUST_TARGET), style = MaterialTheme.typography.titleMedium)
+            val rate = formatAmount((abs(suggestion.actualKgPerWeek) * 100).roundToInt() / 100.0, t.locale)
             Text(
-                "Your goal is ${formatAmount(suggestion.goalKgPerWeek)} kg a week, and the trend shows " +
-                    "${if (suggestion.actualKgPerWeek >= 0) "a loss" else "a gain"} of $rate kg a week. " +
-                    "Changing the target from ${suggestion.currentKcal} to ${suggestion.suggestedKcal} kcal should close the gap.",
+                t(
+                    if (suggestion.actualKgPerWeek >= 0) Msg.SUGGESTION_LOSS else Msg.SUGGESTION_GAIN,
+                    formatAmount(suggestion.goalKgPerWeek, t.locale), rate, suggestion.currentKcal, suggestion.suggestedKcal,
+                ),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                Button(onClick = onAccept) { Text("Use ${suggestion.suggestedKcal} kcal") }
-                TextButton(onClick = onDismiss) { Text("Not now") }
+                Button(onClick = onAccept) { Text(t(Msg.USE_KCAL, suggestion.suggestedKcal)) }
+                TextButton(onClick = onDismiss) { Text(t(Msg.NOT_NOW)) }
             }
         }
     }
@@ -217,6 +220,7 @@ private fun SuggestionCard(suggestion: TargetSuggestion, onAccept: () -> Unit, o
  */
 @Composable
 private fun WeightChart(entries: List<WeightEntry>) {
+    val t = LocalStrings.current
     val lineColor = MaterialTheme.colorScheme.primary
     val dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     val gridColor = MaterialTheme.colorScheme.outlineVariant
@@ -239,10 +243,10 @@ private fun WeightChart(entries: List<WeightEntry>) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        SectionHeader("Weight trend (kg)")
+        SectionHeader(t(Msg.WEIGHT_TREND_CHART))
         Text(
-            selected?.let { entries[it] }?.let { "${dayLabel(it.date)}: weighed ${kg(it.kg)}, trend ${kg(it.trendKg)}" }
-                ?: "Line: trend. Dots: daily weighings. Touch the chart to read a day.",
+            selected?.let { entries[it] }?.let { t(Msg.CHART_SELECTED, dayLabel(it.date, t.locale), kg(it.kg, t.locale), kg(it.trendKg, t.locale)) }
+                ?: t(Msg.CHART_HINT),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -269,11 +273,11 @@ private fun WeightChart(entries: List<WeightEntry>) {
             // Recessive grid with value labels in text colour.
             for (tick in ticks) {
                 drawLine(gridColor, Offset(left, y(tick)), Offset(right, y(tick)), strokeWidth = 1.dp.toPx())
-                val label = measurer.measure(formatAmount(tick), labelStyle)
+                val label = measurer.measure(formatAmount(tick, t.locale), labelStyle)
                 drawText(label, topLeft = Offset(left - label.size.width - 6.dp.toPx(), y(tick) - label.size.height / 2))
             }
-            val firstLabel = measurer.measure(dayMonthLabel(entries.first().date), labelStyle)
-            val lastLabel = measurer.measure(dayMonthLabel(entries.last().date), labelStyle)
+            val firstLabel = measurer.measure(dayMonthLabel(entries.first().date, t.locale), labelStyle)
+            val lastLabel = measurer.measure(dayMonthLabel(entries.last().date, t.locale), labelStyle)
             drawText(firstLabel, topLeft = Offset(left, bottom + 4.dp.toPx()))
             drawText(lastLabel, topLeft = Offset(right - lastLabel.size.width, bottom + 4.dp.toPx()))
 

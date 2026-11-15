@@ -80,14 +80,15 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
             .let { it as? kotlinx.serialization.json.JsonObject }?.get("error")
             ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
     }.getOrNull()
-    Load.Failed(reason ?: "The server answered ${e.response.status.value} ${e.response.status.description}", e.response.status.value)
+    Load.Failed(reason ?: Strings.current(Msg.SERVER_ANSWERED, e.response.status.value, e.response.status.description), e.response.status.value)
 } catch (e: Exception) {
-    Load.Failed(e.message ?: "Unknown error")
+    Load.Failed(e.message ?: Strings.current(Msg.UNKNOWN_ERROR))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -> Unit, onNewRecipe: () -> Unit) {
+    val t = LocalStrings.current
     var generating by remember { mutableStateOf(false) }
     var state by remember { mutableStateOf<Load<List<RecipeSummary>>>(Load.Loading) }
     var reload by remember { mutableIntStateOf(0) }
@@ -108,21 +109,19 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Recipes") },
+                title = { Text(t(Msg.TAB_RECIPES)) },
                 actions = {
-                    BarAction(AppIcons.Add, "New recipe", onNewRecipe)
+                    BarAction(AppIcons.Add, t(Msg.NEW_RECIPE), onNewRecipe)
                     BarAction(
                         AppIcons.Sync,
-                        if (syncing) "Syncing the cooking site" else "Sync the cooking site",
+                        if (syncing) t(Msg.SYNCING) else t(Msg.SYNC),
                         busy = syncing,
                         onClick = {
                             syncing = true
                             scope.launch {
                                 val message = when (val result = load { api.syncCookingSite() }) {
-                                    is Load.Ready -> with(result.value) {
-                                        "Synced: $added added, $updated updated, $removed removed"
-                                    }
-                                    is Load.Failed -> "Sync failed: ${result.message}"
+                                    is Load.Ready -> with(result.value) { t(Msg.SYNCED, added, updated, removed) }
+                                    is Load.Failed -> t(Msg.SYNC_FAILED, result.message)
                                     Load.Loading -> ""
                                 }
                                 syncing = false
@@ -132,8 +131,8 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                         },
                     )
                     OverflowMenu(
-                        MenuAction(AppIcons.Generate, "Generate a recipe") { generating = true },
-                        MenuAction(AppIcons.Link, "Link ingredients", onOpenMapping),
+                        MenuAction(AppIcons.Generate, t(Msg.GENERATE_RECIPE)) { generating = true },
+                        MenuAction(AppIcons.Link, t(Msg.LINK_INGREDIENTS), onOpenMapping),
                     )
                 },
             )
@@ -152,14 +151,14 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                label = { Text("Search title or tag") },
+                label = { Text(t(Msg.SEARCH_RECIPES)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge),
             )
             FilterChip(
                 selected = mealsOnly,
                 onClick = { mealsOnly = !mealsOnly },
-                label = { Text("Meals only") },
+                label = { Text(t(Msg.MEALS_ONLY)) },
                 modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
             )
             syncStatus?.let { SyncLine(it, onEdit = { editingRepo = true }) }
@@ -173,8 +172,8 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                         // A new repository is imported right away.
                         if (url != null) {
                             val message = when (val result = load { api.syncCookingSite() }) {
-                                is Load.Ready -> with(result.value) { "Imported: $added added, $updated updated, $removed removed" }
-                                is Load.Failed -> "Import failed: ${result.message}"
+                                is Load.Ready -> with(result.value) { t(Msg.IMPORTED, added, updated, removed) }
+                                is Load.Failed -> t(Msg.IMPORT_FAILED, result.message)
                                 Load.Loading -> ""
                             }
                             reload++
@@ -185,7 +184,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
             }
             when (val current = state) {
                 Load.Loading -> LoadingState()
-                is Load.Failed -> ErrorMessage("Could not load recipes", current.message) { reload++ }
+                is Load.Failed -> ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current.message) { reload++ }
                 is Load.Ready -> {
                     val shown = current.value.filter { recipe ->
                         (!mealsOnly || recipe.kind == RecipeKind.MEAL) &&
@@ -195,12 +194,12 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                     if (current.value.isEmpty()) {
                         EmptyState(
                             Spot.NoRecipes,
-                            "No recipes yet. Add your cooking site to import them, or write one yourself.",
-                            actionLabel = "New recipe",
+                            t(Msg.NO_RECIPES_YET),
+                            actionLabel = t(Msg.NEW_RECIPE),
                             onAction = onNewRecipe,
                         )
                     } else if (shown.isEmpty()) {
-                        EmptyState(AppIcons.Recipes, "No recipes match.")
+                        EmptyState(AppIcons.Recipes, t(Msg.NO_RECIPES_MATCH))
                     } else {
                         LazyColumn(contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                             items(shown, key = { it.id }) { recipe ->
@@ -221,20 +220,22 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
  */
 @Composable
 private fun SyncLine(status: CookingSyncStatus, onEdit: () -> Unit) {
+    val t = LocalStrings.current
     val text = when {
-        status.repoUrl == null && status.syncedAt == null -> "No cooking site set. Tap to import recipes from one."
-        status.syncedAt == null -> "Cooking site not synced yet"
-        else -> "Cooking site synced ${instantLabel(status.syncedAt!!)}"
+        status.repoUrl == null && status.syncedAt == null -> t(Msg.SYNC_NONE)
+        status.syncedAt == null -> t(Msg.SYNC_NOT_YET)
+        else -> t(Msg.SYNC_AT, instantLabel(status.syncedAt!!, t))
     }
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onEdit).padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.Center) {
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        status.error?.let { ErrorBanner("Last sync failed", it) }
+        status.error?.let { ErrorBanner(t(Msg.LAST_SYNC_FAILED), it) }
     }
 }
 
 /** Sets the git repository of the account's cooking site (Hugo recipes), or clears it. */
 @Composable
 private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: suspend (String?) -> Unit) {
+    val t = LocalStrings.current
     var url by remember { mutableStateOf(current.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -248,14 +249,14 @@ private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: s
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Cooking site") },
+        title = { Text(t(Msg.COOKING_SITE)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                Text("The git repository of your cooking site. Its recipes are imported now and then automatically every 6 hours.")
+                Text(t(Msg.COOKING_SITE_EXPLAIN))
                 OutlinedTextField(
                     url, { url = it; error = null },
-                    label = { Text("Repository URL") },
-                    placeholder = { Text("https://github.com/you/cooking.git") },
+                    label = { Text(t(Msg.REPO_URL)) },
+                    placeholder = { Text(t(Msg.REPO_URL_EXAMPLE)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -263,12 +264,12 @@ private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: s
             }
         },
         confirmButton = {
-            TextButton(enabled = !saving && url.isNotBlank(), onClick = { save(url.trim()) }) { Text(if (saving) "Importing…" else "Save") }
+            TextButton(enabled = !saving && url.isNotBlank(), onClick = { save(url.trim()) }) { Text(if (saving) t(Msg.IMPORTING) else t(Msg.SAVE)) }
         },
         dismissButton = {
             Row {
-                if (current != null) TextButton(enabled = !saving, onClick = { save(null) }) { Text("Remove") }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                if (current != null) TextButton(enabled = !saving, onClick = { save(null) }) { Text(t(Msg.REMOVE)) }
+                TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) }
             }
         },
     )
@@ -277,7 +278,7 @@ private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: s
 /** A recipe in the list: the title, then nutrition left and cost right, then details and a warning badge. */
 @Composable
 private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
-    val text = recipe.rowText()
+    val text = recipe.rowText(LocalStrings.current)
     Column(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Spacing.ScreenEdge, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(Spacing.Tight),
@@ -299,6 +300,7 @@ private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?, onBack: () -> Unit, onEdit: () -> Unit) {
+    val t = LocalStrings.current
     val scope = rememberCoroutineScope()
     var state by remember(recipeId) { mutableStateOf<Load<RecipeDetail>>(Load.Loading) }
     var routines by remember { mutableStateOf<Routines?>(null) }
@@ -309,15 +311,15 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
         routines = (load { api.routines() } as? Load.Ready)?.value
     }
 
-    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: "Recipe", onBack, actions = {
+    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: t(Msg.RECIPE), onBack, actions = {
         if ((state as? Load.Ready)?.value?.summary?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }) {
-            BarAction(AppIcons.Edit, "Edit recipe", onEdit)
+            BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
         }
     }) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Box(Modifier.padding(padding)) {
-                ErrorMessage("Could not load recipe", current.message) { reload++ }
+                ErrorMessage(t(Msg.RECIPE_LOAD_FAILED), current.message) { reload++ }
             }
             is Load.Ready -> {
                 val recipe = current.value
@@ -331,7 +333,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                         }
                     }
                     recipe.summary.servings?.let {
-                        Text(if (it == 1) "Makes 1 serving" else "Makes $it servings", style = MaterialTheme.typography.labelLarge)
+                        Text(t.plural(Plural.MAKES_SERVINGS, it), style = MaterialTheme.typography.labelLarge)
                     }
                     recipe.summary.nutrition?.let { NutritionCard(it, nutritionSource) }
                     recipe.summary.cost?.let { CostCard(it) }
@@ -350,12 +352,12 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                     }
                     if (recipe.ingredients.isEmpty()) {
                         Text(
-                            "This recipe has no structured ingredient list on the cooking site yet, so it cannot be planned.",
+                            t(Msg.NO_STRUCTURED_INGREDIENTS),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
-                        Text("Ingredients", style = MaterialTheme.typography.titleMedium)
+                        Text(t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
                         var group: String? = null
                         for (mapped in recipe.ingredients) {
                             val line = mapped.line
@@ -364,14 +366,14 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                                 group?.let { SectionHeader(it) }
                             }
                             Column {
-                                Text("•  ${line.displayText()}")
+                                Text("•  ${line.displayText(t.locale)}")
                                 mapped.ingredientName?.let { name ->
                                     Text(
                                         "     $name" + when {
-                                            mapped.negligible -> " · not counted (negligible)"
-                                            mapped.grams != null -> " · ${formatGrams(mapped.grams)}"
+                                            mapped.negligible -> " · " + t(Msg.NOT_COUNTED)
+                                            mapped.grams != null -> " · ${formatGrams(mapped.grams, t.locale)}"
                                             mapped.line.amount == null -> ""
-                                            else -> " · weight unknown"
+                                            else -> " · " + t(Msg.WEIGHT_UNKNOWN)
                                         },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -393,14 +395,15 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
 /** Five stars, each a 48 dp target; tapping the current rating clears it. */
 @Composable
 private fun RatingRow(rating: Int?, onRate: (Int?) -> Unit) {
+    val t = LocalStrings.current
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Rating", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = 8.dp))
+        Text(t(Msg.RATING), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = 8.dp))
         for (star in 1..5) {
             val filled = rating != null && star <= rating
             IconButton(onClick = { onRate(if (rating == star) null else star) }) {
                 Icon(
                     if (filled) AppIcons.StarFilled else AppIcons.Star,
-                    contentDescription = if (star == 1) "Rate 1 star" else "Rate $star stars",
+                    contentDescription = t.plural(Plural.RATE_STARS, star),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -412,6 +415,7 @@ private fun RatingRow(rating: Int?, onRate: (Int?) -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RoutineButtons(summary: RecipeSummary, routines: Routines, onChange: (Routines) -> Unit) {
+    val t = LocalStrings.current
     val canBreakfast = summary.kind == RecipeKind.MEAL && MealSlot.BREAKFAST in summary.mealSlots
     val canSnack = summary.kind == RecipeKind.MEAL && MealSlot.SNACK in summary.mealSlots
     if (!canBreakfast && !canSnack && routines.breakfast != summary.id && routines.snack != summary.id) return
@@ -420,14 +424,14 @@ private fun RoutineButtons(summary: RecipeSummary, routines: Routines, onChange:
             FilterChip(
                 selected = routines.breakfast == summary.id,
                 onClick = { onChange(routines.copy(breakfast = if (routines.breakfast == summary.id) null else summary.id)) },
-                label = { Text("Every day for breakfast") },
+                label = { Text(t(Msg.EVERY_DAY_BREAKFAST)) },
             )
         }
         if (canSnack || routines.snack == summary.id) {
             FilterChip(
                 selected = routines.snack == summary.id,
                 onClick = { onChange(routines.copy(snack = if (routines.snack == summary.id) null else summary.id)) },
-                label = { Text("Every day as snack") },
+                label = { Text(t(Msg.EVERY_DAY_SNACK)) },
             )
         }
     }
@@ -437,8 +441,9 @@ private fun RoutineButtons(summary: RecipeSummary, routines: Routines, onChange:
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -> Unit) {
+    val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Text("Plan as", style = MaterialTheme.typography.labelLarge)
+        Text(t(Msg.PLAN_AS), style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             val isMeal = summary.kind == RecipeKind.MEAL
             MealSlot.entries.forEach { slot ->
@@ -449,13 +454,13 @@ private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -
                         val slots = if (selected) summary.mealSlots - slot else (if (isMeal) summary.mealSlots else emptyList()) + slot
                         onChange(RecipeSettings(if (slots.isEmpty()) RecipeKind.COMPONENT else RecipeKind.MEAL, slots))
                     },
-                    label = { Text(slot.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                    label = { Text(t.slot(slot, capitalised = true)) },
                 )
             }
         }
         if (summary.kind == RecipeKind.COMPONENT) {
             Text(
-                "Not planned as a meal (a sauce, rub, dough or side).",
+                t(Msg.NOT_PLANNED_AS_MEAL),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -465,39 +470,40 @@ private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -
 
 @Composable
 private fun NutritionCard(nutrition: RecipeNutrition, source: String?) {
+    val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-            Text("Per serving", style = MaterialTheme.typography.labelLarge)
-            Text(nutrition.headline(), style = MaterialTheme.typography.titleLarge)
+            Text(t(Msg.PER_SERVING), style = MaterialTheme.typography.labelLarge)
+            Text(nutrition.headline(t), style = MaterialTheme.typography.titleLarge)
             with(nutrition.perServing) {
                 Text(
-                    "Fat ${formatGrams(fatG)} · Carbs ${formatGrams(carbsG)} · Fibre ${formatGrams(fibreG)}",
+                    t(Msg.NUTRITION_MACROS, formatGrams(fatG, t.locale), formatGrams(carbsG, t.locale), formatGrams(fibreG, t.locale)),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             if (!nutrition.complete) {
                 Text(
-                    "Incomplete: ${nutrition.uncounted.size} ingredients are not counted yet (${nutrition.uncounted.joinToString("; ")}).",
+                    t.plural(Plural.INCOMPLETE, nutrition.uncounted.size, nutrition.uncounted.joinToString("; ")),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
             if (nutrition.unquantified.isNotEmpty()) {
                 Text(
-                    "Too low: no amount is given for ${nutrition.unquantified.joinToString("; ")}. Add amounts on the cooking site to count them.",
+                    t(Msg.TOO_LOW, nutrition.unquantified.joinToString("; ")),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
             if (nutrition.approximate) {
                 Text(
-                    "Approximate: some volumes were converted assuming 1 g per ml.",
+                    t(Msg.APPROXIMATE),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             source?.let {
-                Text("Source: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t(Msg.SOURCE, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -505,30 +511,32 @@ private fun NutritionCard(nutrition: RecipeNutrition, source: String?) {
 
 @Composable
 private fun CostCard(cost: RecipeCost) {
+    val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-            Text("Cost per serving", style = MaterialTheme.typography.labelLarge)
-            Text("≈ ${formatEuro(cost.perServingWithOffers)}", style = MaterialTheme.typography.titleLarge.numeric())
+            Text(t(Msg.COST_PER_SERVING), style = MaterialTheme.typography.labelLarge)
+            Text("≈ ${formatEuro(cost.perServingWithOffers, t.locale)}", style = MaterialTheme.typography.titleLarge.numeric())
             if (cost.perServingWithOffers < cost.perServing - 0.005) {
                 Text(
-                    "${formatEuro(cost.perServing)} at regular prices; this week's offers save ${formatEuro(cost.perServing - cost.perServingWithOffers)}.",
+                    t(Msg.COST_SAVED, formatEuro(cost.perServing, t.locale), formatEuro(cost.perServing - cost.perServingWithOffers, t.locale)),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             if (cost.estimated.isNotEmpty()) {
                 Text(
-                    "Estimated at a typical price: ${cost.estimated.joinToString("; ")}.",
+                    t(Msg.COST_ESTIMATED, cost.estimated.joinToString("; ")),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text("Regular prices from Albert Heijn.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(t(Msg.COST_SOURCE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
 internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
+    val t = LocalStrings.current
     val openServer = LocalOpenServerSettings.current
     Column(
         Modifier.fillMaxSize().padding(Spacing.Message),
@@ -543,8 +551,8 @@ internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
             ErrorBanner(summary = detail.lineSequence().first().take(100) + "…", details = detail, modifier = Modifier.fillMaxWidth())
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Button(onClick = onRetry) { Text("Try again") }
-            if (openServer != null) TextButton(onClick = openServer) { Text("Server settings") }
+            Button(onClick = onRetry) { Text(t(Msg.TRY_AGAIN)) }
+            if (openServer != null) TextButton(onClick = openServer) { Text(t(Msg.SERVER_SETTINGS)) }
         }
     }
 }

@@ -16,6 +16,9 @@ import kotlin.test.assertNull
 
 private val en = FormatLocale.English
 
+/** English texts with the decimal comma of a German device, as the "System" language gives. */
+private val germanFormats = Strings.of(AppLanguage.SYSTEM, "de-DE")
+
 class FormattingTest {
     @Test
     fun amountsDropTrailingZerosAndRoundToHundredths() {
@@ -64,12 +67,12 @@ class FormattingTest {
         fun offer(store: dev.tobins.mealplanner.api.Store, deal: String?, price: Double? = null, was: Double? = null) =
             dev.tobins.mealplanner.api.Offer(store, "x", deal, price, was, validFrom = "a", validUntil = "b")
 
-        assertEquals("AH: €3.49 (was €4.59)", offer(dev.tobins.mealplanner.api.Store.AH, "VOOR 3.49", 3.49, 4.59).shortText(en))
-        assertEquals("AH: 25% korting", offer(dev.tobins.mealplanner.api.Store.AH, "25% KORTING").shortText(en))
-        assertEquals("Jumbo: 1+1 gratis", offer(dev.tobins.mealplanner.api.Store.JUMBO, "1+1 gratis").shortText(en))
-        assertEquals("Lidl: €4.29", offer(dev.tobins.mealplanner.api.Store.LIDL, null, 4.29).shortText(en))
-        assertEquals("AH: 2 voor 1.99, €1.00", offer(dev.tobins.mealplanner.api.Store.AH, "2 voor 1.99", 1.0).shortText(en))
-        assertEquals("Jumbo: Alleen online, €1.09", offer(dev.tobins.mealplanner.api.Store.JUMBO, "Voor 1,09 · alleen online", 1.09).shortText(en))
+        assertEquals("AH: €3.49 (was €4.59)", offer(dev.tobins.mealplanner.api.Store.AH, "VOOR 3.49", 3.49, 4.59).shortText(Strings.English))
+        assertEquals("AH: 25% korting", offer(dev.tobins.mealplanner.api.Store.AH, "25% KORTING").shortText(Strings.English))
+        assertEquals("Jumbo: 1+1 gratis", offer(dev.tobins.mealplanner.api.Store.JUMBO, "1+1 gratis").shortText(Strings.English))
+        assertEquals("Lidl: €4.29", offer(dev.tobins.mealplanner.api.Store.LIDL, null, 4.29).shortText(Strings.English))
+        assertEquals("AH: 2 voor 1.99, €1.00", offer(dev.tobins.mealplanner.api.Store.AH, "2 voor 1.99", 1.0).shortText(Strings.English))
+        assertEquals("Jumbo: Alleen online, €1.09", offer(dev.tobins.mealplanner.api.Store.JUMBO, "Voor 1,09 · alleen online", 1.09).shortText(Strings.English))
         assertEquals("€0.05", formatEuro(0.049, en))
     }
 
@@ -79,8 +82,8 @@ class FormattingTest {
         assertEquals("€2,11", formatEuro(2.11, nl))
         assertEquals("1,5", formatAmount(1.5, nl))
         assertEquals("1,25 kg", item(1250.0).quantityText(nl))
-        assertEquals("AH: €3,49 (was €4,59)", offer("VOOR 3.49", 3.49, 4.59).shortText(nl))
-        assertEquals("1,75 servings · 461 kcal · 46 g protein", meal(1.75).macrosText(nl))
+        assertEquals("AH: €3,49 (was €4,59)", offer("VOOR 3.49", 3.49, 4.59).shortText(germanFormats))
+        assertEquals("1,75 servings · 461 kcal · 46 g protein", meal(1.75).macrosText(germanFormats))
     }
 
     @Test
@@ -98,28 +101,28 @@ class FormattingTest {
 
     @Test
     fun mealNumbersAreServingsKcalAndProtein() {
-        assertEquals("1 serving · 461 kcal · 46 g protein", meal(1.0).macrosText(en))
-        assertEquals("1.5 servings · 461 kcal · 46 g protein", meal(1.5).macrosText(en))
+        assertEquals("1 serving · 461 kcal · 46 g protein", meal(1.0).macrosText(Strings.English))
+        assertEquals("1.5 servings · 461 kcal · 46 g protein", meal(1.5).macrosText(Strings.English))
     }
 
     @Test
     fun aRecipeRowKeepsNutritionAndCostApart() {
-        val full = recipe(nutrition = nutrition(complete = true), cost = RecipeCost(3.0, 2.1)).rowText(en)
+        val full = recipe(nutrition = nutrition(complete = true), cost = RecipeCost(3.0, 2.1)).rowText(Strings.English)
         assertEquals("387 kcal · 43 g protein", full.nutrition)
         assertEquals("≈ €2.10", full.cost)
         assertEquals("4 servings · ★★★★ · vegan · quick", full.details)
         assertNull(full.warning)
 
-        val missing = recipe(nutrition = nutrition(complete = true, unquantified = listOf("chicken")), cost = null).rowText(en)
+        val missing = recipe(nutrition = nutrition(complete = true, unquantified = listOf("chicken")), cost = null).rowText(Strings.English)
         assertEquals("387 kcal · 43 g protein", missing.nutrition)
         assertNull(missing.cost)
         assertEquals("Missing amounts", missing.warning)
 
-        val toLink = recipe(nutrition = nutrition(complete = false, uncounted = listOf("a", "b")), cost = null).rowText(en)
+        val toLink = recipe(nutrition = nutrition(complete = false, uncounted = listOf("a", "b")), cost = null).rowText(Strings.English)
         assertNull(toLink.nutrition)
         assertEquals("2 ingredients to link", toLink.warning)
 
-        val none = recipe(nutrition = null, plannable = false, servings = 1, rating = null, tags = emptyList()).rowText(en)
+        val none = recipe(nutrition = null, plannable = false, servings = 1, rating = null, tags = emptyList()).rowText(Strings.English)
         assertEquals("No amounts yet", none.warning)
         assertEquals("1 serving", none.details)
     }
