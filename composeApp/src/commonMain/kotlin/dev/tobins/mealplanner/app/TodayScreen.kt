@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -57,6 +58,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+    val pictures by rememberRecipePictureUrls(api)
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(date, reload) {
@@ -110,6 +112,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
                     for (meal in day.meals) {
                         MealCard(
                             meal = meal,
+                            pictureUrl = pictures[meal.recipeId],
                             onOpen = { onOpenRecipe(meal.recipeId) },
                             onStatus = { status -> change { api.setMealStatus(day.weekStart, day.dayIndex, meal.slot, status) } },
                         )
@@ -182,22 +185,26 @@ private fun TotalsCard(day: DayView) {
 }
 
 @Composable
-private fun MealCard(meal: PlannedMeal, onOpen: () -> Unit, onStatus: (MealStatus) -> Unit) {
+private fun MealCard(meal: PlannedMeal, pictureUrl: String?, onOpen: () -> Unit, onStatus: (MealStatus) -> Unit) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Column(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
-                Text(
-                    t.mealLabel(meal),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    meal.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    textDecoration = if (meal.status == MealStatus.SKIPPED) TextDecoration.LineThrough else null,
-                )
-                MealNumbers(meal.macrosText(t), meal.cost?.let { "≈ ${formatEuro(it, t.locale)}" })
+            // A meal with a photo shows it at the end of the meal's lines; one without keeps them full width.
+            Row(Modifier.fillMaxWidth().clickable(onClick = onOpen), horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        t.mealLabel(meal),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        meal.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        textDecoration = if (meal.status == MealStatus.SKIPPED) TextDecoration.LineThrough else null,
+                    )
+                    MealNumbers(meal.macrosText(t), meal.cost?.let { "≈ ${formatEuro(it, t.locale)}" })
+                }
+                recipePicture(pictureUrl)?.let { RecipePhoto(it, Modifier.size(64.dp)) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalAlignment = Alignment.CenterVertically) {
                 when (meal.status) {

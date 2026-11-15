@@ -77,6 +77,11 @@ data class ShoppingItem(
     val checked: Boolean,
     /** Store offers for this ingredient during the plan's week. */
     val offers: List<Offer> = emptyList(),
+    /**
+     * A picture to recognise the item by: the best offer's (the cheapest that states a price,
+     * else the first), or else the AH product its regular price comes from. Null without either.
+     */
+    val imageUrl: String? = null,
 )
 
 /**

@@ -13,7 +13,34 @@
    "currentPrice": null,
    "isBonus": false,
    "unitPriceDescription": "prijs per kg €16.60",
-   "mainCategory": "Vleeswaren"
+   "mainCategory": "Vleeswaren",
+   "images": [
+    {
+     "width": 800,
+     "height": 800,
+     "url": "https://static.ah.nl/dam/product/AHI_43545239393132353833?revLabel=1&rendition=800x800_WEBP&fileType=binary"
+    },
+    {
+     "width": 400,
+     "height": 400,
+     "url": "https://static.ah.nl/dam/product/AHI_43545239393132353833?revLabel=1&rendition=400x400_WEBP&fileType=binary"
+    },
+    {
+     "width": 200,
+     "height": 200,
+     "url": "https://static.ah.nl/dam/product/AHI_43545239393132353833?revLabel=1&rendition=200x200_WEBP&fileType=binary"
+    },
+    {
+     "width": 48,
+     "height": 48,
+     "url": "https://static.ah.nl/dam/product/AHI_43545239393132353833?revLabel=1&rendition=48x48_GIF&fileType=binary"
+    },
+    {
+     "width": 80,
+     "height": 80,
+     "url": "https://static.ah.nl/dam/product/AHI_43545239393132353833?revLabel=1&rendition=80x80_JPG&fileType=binary"
+    }
+   ]
   },
   {
    "title": "AH Scharrel roasted kipfilet 4-pack",
@@ -22,7 +49,34 @@
    "currentPrice": 13.64,
    "isBonus": true,
    "unitPriceDescription": null,
-   "mainCategory": "Vleeswaren"
+   "mainCategory": "Vleeswaren",
+   "images": [
+    {
+     "width": 800,
+     "height": 800,
+     "url": "https://static.ah.nl/dam/product/AHI_4352446545695476544c2d5861525356392d384f4841?revLabel=1&rendition=800x800_WEBP&fileType=binary"
+    },
+    {
+     "width": 400,
+     "height": 400,
+     "url": "https://static.ah.nl/dam/product/AHI_4352446545695476544c2d5861525356392d384f4841?revLabel=1&rendition=400x400_WEBP&fileType=binary"
+    },
+    {
+     "width": 200,
+     "height": 200,
+     "url": "https://static.ah.nl/dam/product/AHI_4352446545695476544c2d5861525356392d384f4841?revLabel=1&rendition=200x200_WEBP&fileType=binary"
+    },
+    {
+     "width": 48,
+     "height": 48,
+     "url": "https://static.ah.nl/dam/product/AHI_4352446545695476544c2d5861525356392d384f4841?revLabel=1&rendition=48x48_GIF&fileType=binary"
+    },
+    {
+     "width": 80,
+     "height": 80,
+     "url": "https://static.ah.nl/dam/product/AHI_4352446545695476544c2d5861525356392d384f4841?revLabel=1&rendition=80x80_JPG&fileType=binary"
+    }
+   ]
   },
   {
    "title": "AH Scharrel flinterdunne kipfilet 2-pack",
@@ -31,7 +85,34 @@
    "currentPrice": 6.58,
    "isBonus": true,
    "unitPriceDescription": null,
-   "mainCategory": "Vleeswaren"
+   "mainCategory": "Vleeswaren",
+   "images": [
+    {
+     "width": 800,
+     "height": 800,
+     "url": "https://static.ah.nl/dam/product/AHI_49643274344f43315450697a37396b6f617a72694e51?revLabel=1&rendition=800x800_WEBP&fileType=binary"
+    },
+    {
+     "width": 400,
+     "height": 400,
+     "url": "https://static.ah.nl/dam/product/AHI_49643274344f43315450697a37396b6f617a72694e51?revLabel=1&rendition=400x400_WEBP&fileType=binary"
+    },
+    {
+     "width": 200,
+     "height": 200,
+     "url": "https://static.ah.nl/dam/product/AHI_49643274344f43315450697a37396b6f617a72694e51?revLabel=1&rendition=200x200_WEBP&fileType=binary"
+    },
+    {
+     "width": 48,
+     "height": 48,
+     "url": "https://static.ah.nl/dam/product/AHI_49643274344f43315450697a37396b6f617a72694e51?revLabel=1&rendition=48x48_GIF&fileType=binary"
+    },
+    {
+     "width": 80,
+     "height": 80,
+     "url": "https://static.ah.nl/dam/product/AHI_49643274344f43315450697a37396b6f617a72694e51?revLabel=1&rendition=80x80_JPG&fileType=binary"
+    }
+   ]
   },
   {
    "title": "AH Scharrel flinterdunne kipfilet 3-pack",
@@ -40,7 +121,34 @@
    "currentPrice": 9.66,
    "isBonus": true,
    "unitPriceDescription": null,
-   "mainCategory": "Vleeswaren"
+   "mainCategory": "Vleeswaren",
+   "images": [
+    {
+     "width": 800,
+     "height": 800,
+     "url": "https://static.ah.nl/dam/product/AHI_41705f63446b494d53783666415743566c555f506341?revLabel=1&rendition=800x800_WEBP&fileType=binary"
+    },
+    {
+     "width": 400,
+     "height": 400,
+     "url": "https://static.ah.nl/dam/product/AHI_41705f63446b494d53783666415743566c555f506341?revLabel=1&rendition=400x400_WEBP&fileType=binary"
+    },
+    {
+     "width": 200,
+     "height": 200,
+     "url": "https://static.ah.nl/dam/product/AHI_41705f63446b494d53783666415743566c555f506341?revLabel=1&rendition=200x200_WEBP&fileType=binary"
+    },
+    {
+     "width": 48,
+     "height": 48,
+     "url": "https://static.ah.nl/dam/product/AHI_41705f63446b494d53783666415743566c555f506341?revLabel=1&rendition=48x48_GIF&fileType=binary"
+    },
+    {
+     "width": 80,
+     "height": 80,
+     "url": "https://static.ah.nl/dam/product/AHI_41705f63446b494d53783666415743566c555f506341?revLabel=1&rendition=80x80_JPG&fileType=binary"
+    }
+   ]
   },
   {
    "title": "AH Kipfilet grootverpakking",
@@ -49,7 +157,34 @@
    "currentPrice": null,
    "isBonus": false,
    "unitPriceDescription": "prijs per kg €16.60",
-   "mainCategory": "Vleeswaren"
+   "mainCategory": "Vleeswaren",
+   "images": [
+    {
+     "width": 800,
+     "height": 800,
+     "url": "https://static.ah.nl/dam/product/AHI_5a61776d34463544544d714d5462455331426e4c3641?revLabel=1&rendition=800x800_WEBP&fileType=binary"
+    },
+    {
+     "width": 400,
+     "height": 400,
+     "url": "https://static.ah.nl/dam/product/AHI_5a61776d34463544544d714d5462455331426e4c3641?revLabel=1&rendition=400x400_WEBP&fileType=binary"
+    },
+    {
+     "width": 200,
+     "height": 200,
+     "url": "https://static.ah.nl/dam/product/AHI_5a61776d34463544544d714d5462455331426e4c3641?revLabel=1&rendition=200x200_WEBP&fileType=binary"
+    },
+    {
+     "width": 48,
+     "height": 48,
+     "url": "https://static.ah.nl/dam/product/AHI_5a61776d34463544544d714d5462455331426e4c3641?revLabel=1&rendition=48x48_GIF&fileType=binary"
+    },
+    {
+     "width": 80,
+     "height": 80,
+     "url": "https://static.ah.nl/dam/product/AHI_5a61776d34463544544d714d5462455331426e4c3641?revLabel=1&rendition=80x80_JPG&fileType=binary"
+    }
+   ]
   },
   {
    "title": "AH Kipfilet online only",

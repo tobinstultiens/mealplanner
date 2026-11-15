@@ -61,6 +61,8 @@ fun ServerSettingsScreen(
     /** Whether the colours come from the wallpaper; the switch shows only where the device has them. */
     systemColors: Boolean,
     onSystemColors: (Boolean) -> Unit,
+    productPictures: Boolean,
+    onProductPictures: (Boolean) -> Unit,
     onSave: (ServerSettings) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -145,19 +147,9 @@ fun ServerSettingsScreen(
                     }
                 }
                 if (systemColorsAvailable()) {
-                    // The whole row switches, so the label is as good a target as the switch itself.
-                    Row(
-                        Modifier.fillMaxWidth().toggleable(systemColors, role = Role.Switch, onValueChange = onSystemColors),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(t(Msg.SYSTEM_COLORS), style = MaterialTheme.typography.bodyMedium)
-                            Text(t(Msg.SYSTEM_COLORS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(checked = systemColors, onCheckedChange = null)
-                    }
+                    SwitchRow(t(Msg.SYSTEM_COLORS), t(Msg.SYSTEM_COLORS_HINT), systemColors, onSystemColors)
                 }
+                SwitchRow(t(Msg.PRODUCT_PICTURES), t(Msg.PRODUCT_PICTURES_HINT), productPictures, onProductPictures)
             }
             if (updater != null) AppVersionSection(updater)
             if (loggedIn) server()
@@ -167,6 +159,22 @@ fun ServerSettingsScreen(
 
 /** The outcome of "Test connection": [text] is the server version, or the error. */
 private class ConnectionResult(val ok: Boolean, val text: String)
+
+/** A setting with an explanation and a switch; the whole row switches, so the label is as good a target as the switch itself. */
+@Composable
+private fun SwitchRow(title: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
 
 /** One group of settings: a card with its title. */
 @Composable

@@ -44,3 +44,11 @@ actual fun systemColorScheme(dark: Boolean): androidx.compose.material3.ColorSch
 /** The browser decides when to lock the screen. */
 @Composable
 actual fun KeepScreenOn(enabled: Boolean) {}
+
+/** The browser keeps its own cache and sets the User-Agent itself, so there is nothing to configure. */
+actual fun productImageLoader(context: coil3.PlatformContext): coil3.ImageLoader =
+    coil3.ImageLoader.Builder(context)
+        .components { add(coil3.network.ktor3.KtorNetworkFetcherFactory(io.ktor.client.HttpClient())) }
+        .build()
+
+actual fun runsInBrowser(): Boolean = true

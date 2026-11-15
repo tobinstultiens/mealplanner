@@ -91,7 +91,7 @@ enum class Shot(
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
     SHELL(content = { _, settings -> shell(settings) }),
-    SETTINGS(content = { _, _ ->
+    SETTINGS(heightDp = 900, content = { _, _ ->
         ServerSettingsScreen(
             current = ServerSettings("https://mealplanner.example.nl"),
             account = "Anna",
@@ -106,6 +106,8 @@ enum class Shot(
             onLanguage = {},
             systemColors = false,
             onSystemColors = {},
+            productPictures = true,
+            onProductPictures = {},
             onSave = {},
             onBack = {},
         )
@@ -171,7 +173,14 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     private fun Frame(content: @Composable () -> Unit) {
         val density = LocalDensity.current
         // The language is pinned to English, whatever the machine's locale is.
-        CompositionLocalProvider(LocalDensity provides Density(density.density, look.fontScale), LocalStrings provides Strings.English) {
+        // Pictures come from a fake loader: a screenshot must never wait for, or depend on, the stores' servers.
+        val pictures = remember { fakeImageLoader(RuntimeEnvironment.getApplication(), failing = { "feta" in it }) }
+        CompositionLocalProvider(
+            LocalDensity provides Density(density.density, look.fontScale),
+            LocalStrings provides Strings.English,
+            LocalProductImageLoader provides pictures,
+            LocalRecipeImages provides RecipeImages(pictures, "http://fake", { null }),
+        ) {
             MealPlannerTheme(look.dark) {
                 Surface(Modifier.testTag(FRAME).size(look.widthDp.dp, shot.heightDp.dp)) { content() }
             }

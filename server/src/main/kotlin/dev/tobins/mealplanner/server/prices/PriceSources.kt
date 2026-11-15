@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server.prices
 
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.server.offers.AhParser
 import dev.tobins.mealplanner.server.offers.ahHeaders
 import dev.tobins.mealplanner.server.offers.ahToken
 import dev.tobins.mealplanner.server.offers.ok
@@ -34,6 +35,8 @@ data class StoreProduct(
     val category: String?,
     /** The store's category within [category], e.g. "Tarwebloem". */
     val subCategory: String? = null,
+    /** The store's picture of the product, as the store gives it (checked when stored). */
+    val imageUrl: String? = null,
 )
 
 /** Where a store files a product: its main [category] and the [subCategory] within it. */
@@ -89,6 +92,7 @@ object AhProductParser {
                 unitPrice = p.string("unitPriceDescription"),
                 category = p.string("mainCategory"),
                 subCategory = p.string("subCategory"),
+                imageUrl = AhParser.image(p),
             )
         }
 

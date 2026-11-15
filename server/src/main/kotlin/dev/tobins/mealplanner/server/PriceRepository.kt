@@ -9,6 +9,7 @@ import dev.tobins.mealplanner.pricing.PackSize
 import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.OfferMatcher
+import dev.tobins.mealplanner.server.offers.StoreImages
 import dev.tobins.mealplanner.server.prices.AhAisles
 import dev.tobins.mealplanner.server.prices.PriceSource
 import dev.tobins.mealplanner.server.prices.StoreAisle
@@ -69,6 +70,16 @@ class PriceRepository(
     fun aisles(): Map<String, StoreAisle> = q.selectPrices().executeAsList().mapNotNull { row ->
         row.category?.let { row.name.lowercase() to StoreAisle(Store.valueOf(row.store), it, row.subCategory) }
     }.toMap()
+
+    /**
+     * The picture of the product each of the account's ingredients is priced with, by ingredient
+     * id. Ingredients with a price set by hand are left out: that price is not the product's, and
+     * a hand price often means the product found was the wrong one.
+     */
+    fun productImages(ingredients: IngredientRepository): Map<Long, String> {
+        val images = q.selectPrices().executeAsList().mapNotNull { row -> row.imageUrl?.let { row.name.lowercase() to it } }.toMap()
+        return ingredients.list().filter { it.pricePerKg == null }.mapNotNull { i -> images[i.name.lowercase()]?.let { i.id to it } }.toMap()
+    }
 
     /** One account's prices with the discounts of offers valid at some point between [from] and [until]. */
     fun pricing(ingredients: IngredientRepository, from: LocalDate, until: LocalDate): Pricing {
@@ -147,7 +158,7 @@ class PriceRepository(
                     val (product, perKg) = price
                     q.upsertPrice(
                         ingredient.name, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString(),
-                        product.category, product.subCategory,
+                        product.category, product.subCategory, StoreImages.accept(product.imageUrl),
                     )
                     found++
                 }

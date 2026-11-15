@@ -63,7 +63,8 @@ CREATE TABLE offer (
     category TEXT,
     validFrom TEXT NOT NULL,
     validUntil TEXT NOT NULL,
-    url TEXT
+    url TEXT,
+    imageUrl TEXT                      -- the store's product picture, on one of its image hosts
 );
 
 CREATE INDEX offer_store ON offer(store);
@@ -88,8 +89,8 @@ deleteOffers:
 DELETE FROM offer WHERE store = ?;
 
 insertOffer:
-INSERT INTO offer (store, title, deal, price, originalPrice, packSize, category, validFrom, validUntil, url)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO offer (store, title, deal, price, originalPrice, packSize, category, validFrom, validUntil, url, imageUrl)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectSources:
 SELECT * FROM offerSource;

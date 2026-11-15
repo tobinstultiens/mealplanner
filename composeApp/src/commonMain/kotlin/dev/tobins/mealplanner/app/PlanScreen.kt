@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Box
@@ -54,6 +55,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
     var busy by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val pictures by rememberRecipePictureUrls(api)
     // The meal a new recipe is being written for.
     var generatingFor by remember { mutableStateOf<PlannedMeal?>(null) }
 
@@ -160,6 +162,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                                 day = day,
                                 targets = plan.targets,
                                 enabled = !busy,
+                                pictures = pictures,
                                 onOpenRecipe = onOpenRecipe,
                                 onReroll = { meal -> change { api.rerollMeal(weekStart, meal.day, meal.slot) } },
                                 onGenerate = { meal -> generatingFor = meal },
@@ -178,6 +181,7 @@ private fun DayCard(
     day: PlanDay,
     targets: DailyTargets,
     enabled: Boolean,
+    pictures: Map<Long, String>,
     onOpenRecipe: (Long) -> Unit,
     onReroll: (PlannedMeal) -> Unit,
     onGenerate: (PlannedMeal) -> Unit,
@@ -211,6 +215,8 @@ private fun DayCard(
                             )
                             Text(meal.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
+                        // A meal with a photo shows it before the buttons; one without has nothing there.
+                        recipePicture(pictures[meal.recipeId])?.let { RecipePhoto(it, Modifier.padding(top = 4.dp, end = Spacing.Related).size(48.dp)) }
                         BarAction(
                             if (meal.locked) AppIcons.Lock else AppIcons.LockOpen,
                             if (meal.locked) t(Msg.UNLOCK_SLOT, t.slot(meal.slot)) else t(Msg.LOCK_SLOT, t.slot(meal.slot)),

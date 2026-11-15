@@ -291,15 +291,16 @@ class RecipeRepository(
      * Makes the stored cooking-site recipes match [parsed], the full current content
      * of the repo. Files are identified by path; unchanged hashes are skipped; recipes
      * whose file is gone are marked removed, and come back if the file reappears.
+     * Pictures are left to [RecipePictures.sync], after this.
      */
-    fun syncCookingSite(parsed: List<Pair<ParsedRecipe, String>>, now: Instant = Instant.now()): SyncResult {
+    fun syncCookingSite(pages: List<SitePage>, now: Instant = Instant.now()): SyncResult {
         var added = 0
         var updated = 0
         var unchanged = 0
         var removed = 0
         db.transaction {
             val existing = q.selectSynced(userId).executeAsList().associateBy { it.sourcePath }
-            for ((recipe, hash) in parsed) {
+            for ((recipe, hash) in pages) {
                 val row = existing[recipe.path]
                 when {
                     row == null -> {
@@ -339,7 +340,7 @@ class RecipeRepository(
                     }
                 }
             }
-            val present = parsed.mapTo(HashSet()) { it.first.path }
+            val present = pages.mapTo(HashSet()) { it.recipe.path }
             for (row in existing.values) {
                 if (row.sourcePath !in present && row.removedAt == null) {
                     q.markRemoved(now.toString(), userId, row.id)
@@ -347,7 +348,7 @@ class RecipeRepository(
                 }
             }
         }
-        val problems = parsed.map { it.first }.filter { it.problems.isNotEmpty() }.associate { it.path to it.problems }
+        val problems = pages.map { it.recipe }.filter { it.problems.isNotEmpty() }.associate { it.path to it.problems }
         return SyncResult(added, updated, unchanged, removed, problems = problems)
     }
 
@@ -371,6 +372,7 @@ class RecipeRepository(
         mealSlots = slotsOf(this).sortedBy { it.ordinal },
         rating = rating?.toInt(),
         cost = cost,
+        imageUrl = imageVersion?.let { "/api/recipes/$id/image?v=$it" },
     )
 
     private fun Boolean.toLong() = if (this) 1L else 0L

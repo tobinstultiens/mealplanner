@@ -37,6 +37,8 @@ kotlin {
             implementation(libs.ktor.client.auth)
             implementation(libs.ktor.serialization.json)
             implementation(libs.kotlinx.datetime)
+            implementation(libs.coil.compose)
+            implementation(libs.coil.network.ktor)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

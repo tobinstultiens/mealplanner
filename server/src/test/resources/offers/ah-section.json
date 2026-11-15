@@ -22,7 +22,34 @@
     "currentPrice": 3.49,
     "isBonus": true,
     "mainCategory": "Vlees",
-    "subCategory": "Gehakt (half-om-half)"
+    "subCategory": "Gehakt (half-om-half)",
+    "images": [
+     {
+      "width": 800,
+      "height": 800,
+      "url": "https://static.ah.nl/dam/product/AHI_5f37776b6d71456651626935325a6b484a315a317577?revLabel=1&rendition=800x800_WEBP&fileType=binary"
+     },
+     {
+      "width": 400,
+      "height": 400,
+      "url": "https://static.ah.nl/dam/product/AHI_5f37776b6d71456651626935325a6b484a315a317577?revLabel=1&rendition=400x400_WEBP&fileType=binary"
+     },
+     {
+      "width": 200,
+      "height": 200,
+      "url": "https://static.ah.nl/dam/product/AHI_5f37776b6d71456651626935325a6b484a315a317577?revLabel=1&rendition=200x200_WEBP&fileType=binary"
+     },
+     {
+      "width": 48,
+      "height": 48,
+      "url": "https://static.ah.nl/dam/product/AHI_5f37776b6d71456651626935325a6b484a315a317577?revLabel=1&rendition=48x48_GIF&fileType=binary"
+     },
+     {
+      "width": 80,
+      "height": 80,
+      "url": "https://static.ah.nl/dam/product/AHI_5f37776b6d71456651626935325a6b484a315a317577?revLabel=1&rendition=80x80_JPG&fileType=binary"
+     }
+    ]
    }
   },
   {
@@ -39,6 +66,33 @@
       "defaultDescription": "25% korting",
       "percentage": 25,
       "precisePercentage": 25
+     }
+    ],
+    "images": [
+     {
+      "width": 800,
+      "height": 800,
+      "url": "https://static.ah.nl/dam/product/AHI_386e6f465431636d544165796b302d33616a79774951?revLabel=1&rendition=800x800_WEBP&fileType=binary"
+     },
+     {
+      "width": 400,
+      "height": 400,
+      "url": "https://static.ah.nl/dam/product/AHI_386e6f465431636d544165796b302d33616a79774951?revLabel=1&rendition=400x400_WEBP&fileType=binary"
+     },
+     {
+      "width": 200,
+      "height": 200,
+      "url": "https://static.ah.nl/dam/product/AHI_386e6f465431636d544165796b302d33616a79774951?revLabel=1&rendition=200x200_WEBP&fileType=binary"
+     },
+     {
+      "width": 48,
+      "height": 48,
+      "url": "https://static.ah.nl/dam/product/AHI_386e6f465431636d544165796b302d33616a79774951?revLabel=1&rendition=48x48_GIF&fileType=binary"
+     },
+     {
+      "width": 80,
+      "height": 80,
+      "url": "https://static.ah.nl/dam/product/AHI_386e6f465431636d544165796b302d33616a79774951?revLabel=1&rendition=80x80_JPG&fileType=binary"
      }
     ]
    }
@@ -64,7 +118,34 @@
     "currentPrice": 5.4,
     "isBonus": true,
     "mainCategory": "Vlees",
-    "subCategory": "Varkenshaas"
+    "subCategory": "Varkenshaas",
+    "images": [
+     {
+      "width": 800,
+      "height": 800,
+      "url": "https://static.ah.nl/dam/product/AHI_3456753975764b7352766d305968754b366f67537677?revLabel=1&rendition=800x800_WEBP&fileType=binary"
+     },
+     {
+      "width": 400,
+      "height": 400,
+      "url": "https://static.ah.nl/dam/product/AHI_3456753975764b7352766d305968754b366f67537677?revLabel=1&rendition=400x400_WEBP&fileType=binary"
+     },
+     {
+      "width": 200,
+      "height": 200,
+      "url": "https://static.ah.nl/dam/product/AHI_3456753975764b7352766d305968754b366f67537677?revLabel=1&rendition=200x200_WEBP&fileType=binary"
+     },
+     {
+      "width": 48,
+      "height": 48,
+      "url": "https://static.ah.nl/dam/product/AHI_3456753975764b7352766d305968754b366f67537677?revLabel=1&rendition=48x48_GIF&fileType=binary"
+     },
+     {
+      "width": 80,
+      "height": 80,
+      "url": "https://static.ah.nl/dam/product/AHI_3456753975764b7352766d305968754b366f67537677?revLabel=1&rendition=80x80_JPG&fileType=binary"
+     }
+    ]
    }
   },
   {
@@ -82,6 +163,18 @@
       "count": 100,
       "price": 1.59,
       "unit": "GRAM"
+     }
+    ],
+    "images": [
+     {
+      "width": 200,
+      "height": 200,
+      "url": "https://static.ah.nl/mam/bonus/COMBIBEELD_207831_AH_NL_WK46_ALLE_AH_GREENFIELDS_STOOFVLEES?rendition=200px&fileType=binary&version=kybRNnZOGKGxCexGJV6X_DmmLfSHZUXOpnvnXD-SZHo"
+     },
+     {
+      "width": 708,
+      "height": 708,
+      "url": "https://static.ah.nl/mam/bonus/COMBIBEELD_207831_AH_NL_WK46_ALLE_AH_GREENFIELDS_STOOFVLEES?rendition=708px&fileType=binary&version=kybRNnZOGKGxCexGJV6X_DmmLfSHZUXOpnvnXD-SZHo"
      }
     ]
    }

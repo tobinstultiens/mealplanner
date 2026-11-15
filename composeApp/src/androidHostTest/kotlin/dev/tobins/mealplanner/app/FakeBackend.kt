@@ -147,17 +147,17 @@ class FakeBackend(
     private fun shopping(weekStart: String): ShoppingList {
         if (emptyWeek) return ShoppingList(weekStart, emptyList(), emptyList())
         // In walking order, as the server sends it: by shop section, then by name.
-        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String, checked: Boolean = false, offers: List<Offer> = emptyList()) =
-            ShoppingItem(key, name, grams, pieces, section.title, listOf(recipe), onHand = false, checked = checked, offers = offers)
+        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null) =
+            ShoppingItem(key, name, grams, pieces, section.title, listOf(recipe), onHand = false, checked = checked, offers = offers, imageUrl = imageUrl)
         val chicken = "Slow-cooked chicken thighs with coconut, lemon and spinach"
         val chickpea = "Chickpea salad with feta and roasted peppers"
         return ShoppingList(
             weekStart = weekStart,
             items = listOf(
-                item("pepper", "Red bell pepper", null, 4.0, ShopSection.FRUIT_VEG, chickpea, offers = listOf(offerList[0])),
+                item("pepper", "Red bell pepper", null, 4.0, ShopSection.FRUIT_VEG, chickpea, offers = listOf(offerList[0]), imageUrl = offerList[0].imageUrl),
                 item("spinach", "Spinach", 600.0, null, ShopSection.FRUIT_VEG, chicken),
-                item("chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true),
-                item("feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea),
+                item("chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true, imageUrl = offerList[1].imageUrl),
+                item("feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea, imageUrl = offerList[2].imageUrl),
                 item("oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries"),
             ),
             staples = listOf("Olive oil", "Salt"),
@@ -165,7 +165,7 @@ class FakeBackend(
         )
     }
 
-    private fun summary(id: Long, title: String, section: String, kcal: Double, protein: Double, rating: Int?, tags: List<String> = emptyList()) = RecipeSummary(
+    private fun summary(id: Long, title: String, section: String, kcal: Double, protein: Double, rating: Int?, tags: List<String> = emptyList(), photo: Boolean = false) = RecipeSummary(
         id = id,
         title = title,
         section = section,
@@ -181,13 +181,15 @@ class FakeBackend(
         mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER),
         rating = rating,
         cost = RecipeCost(2.40, 2.10),
+        imageUrl = if (photo) "/api/recipes/$id/image?v=0a1b2c" else null,
     )
 
     private val recipes = listOf(
-        summary(1, "Overnight oats with blueberries", "Breakfast", 460.0, 24.0, 4, listOf("quick", "vegetarian")),
+        // Two recipes have a photo, like the real ones where a few do; the others show how the screens look without.
+        summary(1, "Overnight oats with blueberries", "Breakfast", 460.0, 24.0, 4, listOf("quick", "vegetarian"), photo = true),
         summary(2, "Chickpea salad with feta and roasted peppers", "Lunch", 640.0, 42.0, 5, listOf("vegetarian")),
         summary(3, "Tuna pasta salad", "Lunch", 610.0, 38.0, null),
-        summary(4, "Slow-cooked chicken thighs with coconut, lemon and spinach", "Dinner", 810.0, 55.0, 5, listOf("meal prep", "gluten free")),
+        summary(4, "Slow-cooked chicken thighs with coconut, lemon and spinach", "Dinner", 810.0, 55.0, 5, listOf("meal prep", "gluten free"), photo = true),
         summary(5, "Lentil soup", "Dinner", 520.0, 31.0, 3),
         summary(6, "Shakshuka", "Dinner", 560.0, 29.0, 4, listOf("vegetarian", "eggs")),
     )
@@ -215,9 +217,9 @@ class FakeBackend(
     )
 
     private val offerList = listOf(
-        Offer(Store.AH, "Rode paprika 500 g", "25% korting", 2.24, 2.99, "500 g", "Groente", "2026-11-16", "2026-11-22", ingredientName = "Red bell pepper"),
-        Offer(Store.JUMBO, "Kipdijfilet 600 g", "2 voor 9,00", 4.50, 5.99, "600 g", "Vlees", "2026-11-16", "2026-11-22", ingredientName = "Chicken thigh fillet"),
-        Offer(Store.LIDL, "Griekse feta 200 g", "1+1 gratis", 1.79, null, "200 g", "Zuivel", "2026-11-16", "2026-11-22", ingredientName = "Feta"),
+        Offer(Store.AH, "Rode paprika 500 g", "25% korting", 2.24, 2.99, "500 g", "Groente", "2026-11-16", "2026-11-22", ingredientName = "Red bell pepper", imageUrl = "https://static.ah.nl/dam/product/paprika.webp"),
+        Offer(Store.JUMBO, "Kipdijfilet 600 g", "2 voor 9,00", 4.50, 5.99, "600 g", "Vlees", "2026-11-16", "2026-11-22", ingredientName = "Chicken thigh fillet", imageUrl = "https://www.jumbo.com/INTERSHOP/static/kip.png"),
+        Offer(Store.LIDL, "Griekse feta 200 g", "1+1 gratis", 1.79, null, "200 g", "Zuivel", "2026-11-16", "2026-11-22", ingredientName = "Feta", imageUrl = "https://www.lidl.nl/assets/feta.png"),
         Offer(Store.AH, "Bio havermout met een heel lange productnaam voor de test", "voor 1,49", 1.49, 1.89, "500 g", null, "2026-11-16", "2026-11-22"),
     )
 

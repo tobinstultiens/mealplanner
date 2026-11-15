@@ -16,7 +16,10 @@ import dev.tobins.mealplanner.shopping.ShopSection
 import io.ktor.serialization.kotlinx.json.DefaultJson
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import java.time.Duration
+import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,7 +69,7 @@ class ShopSectionsTest {
         val offers = OfferRepository(db, emptyList())
         val prices = PriceRepository(db, null, foodRepo, offers)
         val accountId = UserRepository(db).resolve(Identity("a", "alice")).id
-        val user = UserScope(accountId, db, foodRepo, offers, prices, null)
+        val user = UserScope(accountId, db, foodRepo, offers, prices, null, createTempDirectory("pictures").toFile())
 
         val names = listOf(
             "Banana", "Onion", "Bread", "Gouda", "Ham", "Pesto", "Chicken", "Salmon", "Milk", "Eggs",
@@ -74,7 +77,7 @@ class ShopSectionsTest {
         )
         names.forEachIndexed { i, name -> user.ingredients.create(IngredientInput(name, nevoCode = i + 1)) }
         user.ingredients.create(IngredientInput("Rice"))
-        db.priceQueries.upsertPrice("rice", "AH", "AH Basmati rijst", "1 kg", 2.5, 2.5, "2026-11-15T00:00:00Z", "Pasta, rijst, wereldkeuken", "Rijst")
+        db.priceQueries.upsertPrice("rice", "AH", "AH Basmati rijst", "1 kg", 2.5, 2.5, "2026-11-15T00:00:00Z", "Pasta, rijst, wereldkeuken", "Rijst", null)
         val paper = user.ingredients.create(IngredientInput("Baking paper"))
         user.sections.set(paper.id, SectionChoice(ShopSection.NON_FOOD.name))
 
@@ -140,10 +143,13 @@ class ShopSectionsTest {
     @Test
     fun anAppFromBeforeSectionsReadsTheListInWalkingOrder() {
         val (_, user, week) = setup()
-        // Encoded as the server sends it, decoded as the installed app does: unknown fields would fail.
         val text = DefaultJson.encodeToString(ShoppingList.serializer(), user.plans.shoppingList(week))
-        val old = DefaultJson.decodeFromString(OldShoppingList.serializer(), text)
-        // That app groups the items by category in the order they come.
+        // Apps up to v0.1.1 reject fields they do not know, and the product pictures (issue 33) add `imageUrl`:
+        // that change ships only together with an app release that ignores unknown fields (README, "API compatibility").
+        assertFailsWith<SerializationException> { DefaultJson.decodeFromString(OldShoppingList.serializer(), text) }
+        // Decoded as an app does that ignores unknown fields, as every release after v0.1.1 does.
+        val old = Json(DefaultJson) { ignoreUnknownKeys = true }.decodeFromString(OldShoppingList.serializer(), text)
+        // Such an app groups the items by category in the order they come.
         assertEquals(route, old.items.groupBy { it.category }.map { (category, items) -> category to items.map { it.name } })
     }
 
@@ -184,12 +190,12 @@ class ShopSectionsTest {
     fun theStoresCategoryComesBeforeTheFoodGroup() {
         val setup = setup()
         // Pretend AH sells pesto with the pasta.
-        setup.db.priceQueries.upsertPrice("pesto", "AH", "AH Pesto", "190 g", 2.0, 10.5, "2026-11-15T00:00:00Z", "Pasta, rijst, wereldkeuken", null)
+        setup.db.priceQueries.upsertPrice("pesto", "AH", "AH Pesto", "190 g", 2.0, 10.5, "2026-11-15T00:00:00Z", "Pasta, rijst, wereldkeuken", null, null)
         val pesto = setup.user.sections.list().single { it.name == "Pesto" }
         assertEquals(ShopSection.WORLD.name, pesto.section)
         assertEquals("Albert Heijn: Pasta, rijst, wereldkeuken", pesto.source)
         // A category this version doesn't know falls back to the food group.
-        setup.db.priceQueries.upsertPrice("pesto", "AH", "AH Pesto", "190 g", 2.0, 10.5, "2026-11-15T00:00:00Z", "Iets nieuws", null)
+        setup.db.priceQueries.upsertPrice("pesto", "AH", "AH Pesto", "190 g", 2.0, 10.5, "2026-11-15T00:00:00Z", "Iets nieuws", null, null)
         assertEquals(ShopSection.SAUCES.name, setup.user.sections.list().single { it.name == "Pesto" }.section)
     }
 

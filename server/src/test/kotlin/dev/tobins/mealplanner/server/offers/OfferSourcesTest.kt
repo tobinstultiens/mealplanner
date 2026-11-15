@@ -51,7 +51,9 @@ class OfferSourcesTest {
         val http = HttpClient()
         for (source in listOf(AhOfferSource(http), JumboOfferSource(http), LidlOfferSource(http))) {
             val offers = source.fetch()
+            val pictured = offers.mapNotNull { StoreImages.accept(it.imageUrl) }
             println("${source.store}: ${offers.size} offers, e.g. ${offers.take(3).map { "${it.title} (${it.deal})" }}")
+            println("${source.store}: ${pictured.size} with a picture on the store's image host, e.g. ${pictured.take(2)}")
             assertTrue(offers.size > 10, "${source.store} returned only ${offers.size} offers")
         }
     }

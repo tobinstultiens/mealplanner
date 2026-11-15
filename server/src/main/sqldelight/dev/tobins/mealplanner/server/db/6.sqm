@@ -1,0 +1,9 @@
+-- Version 6 -> 7: recipe pictures from the cooking site. Only new columns, so no table is rebuilt
+-- and no row is touched. Recipes from before have no picture until the next sync of their
+-- account's cooking site (within six hours, or right away from the app) reads it.
+
+-- SHA-256 of the picture file the recipe's page shows, as last read by a sync; NULL when none.
+ALTER TABLE recipe ADD COLUMN imageSourceHash TEXT;
+
+-- Version of the web-sized copy kept for it (part of its URL); NULL when there is no copy.
+ALTER TABLE recipe ADD COLUMN imageVersion TEXT;

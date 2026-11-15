@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import coil3.compose.LocalPlatformContext
 import dev.tobins.mealplanner.api.Me
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -64,6 +65,13 @@ fun App(
     val strings = remember(language) { Strings.of(language, deviceLocaleTag()) }
     SideEffect { Strings.current = strings }
     var systemColors by remember { mutableStateOf(storage.systemColors()) }
+    var productPictures by remember { mutableStateOf(storage.productPictures()) }
+    val platformContext = LocalPlatformContext.current
+    // One loader for the whole app so its caches are shared. With product pictures off the rows get none and
+    // show their letter; recipe photos come from our own server and are loaded either way.
+    val imageLoader = remember { productImageLoader(platformContext) }
+    DisposableEffect(imageLoader) { onDispose { imageLoader.shutdown() } }
+    val recipeImages = remember(settings, imageLoader, storage) { RecipeImages(imageLoader, settings.url, { storage.session()?.accessToken }) }
     // A newer release found on start; "Later" hides it until the next start.
     var update by remember { mutableStateOf<AppUpdate?>(null) }
     LaunchedEffect(updater) {
@@ -128,7 +136,11 @@ fun App(
         ThemeMode.DARK -> true
     }
     SystemBars(dark)
-    CompositionLocalProvider(LocalStrings provides strings) {
+    CompositionLocalProvider(
+        LocalStrings provides strings,
+        LocalProductImageLoader provides imageLoader.takeIf { productPictures },
+        LocalRecipeImages provides recipeImages,
+    ) {
     MealPlannerTheme(dark, systemColors) {
       // On a wide browser window the app keeps a phone-like column in the middle.
       Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
@@ -183,6 +195,11 @@ fun App(
                     onSystemColors = {
                         storage.saveSystemColors(it)
                         systemColors = it
+                    },
+                    productPictures = productPictures,
+                    onProductPictures = {
+                        storage.saveProductPictures(it)
+                        productPictures = it
                     },
                     onSave = {
                         // Another server has its own accounts: the session doesn't carry over.

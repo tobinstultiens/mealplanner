@@ -26,7 +26,12 @@ Gatus checks `/health`.
    the App Link).
 
 The database and the cooking repo checkout live next to the NEVO file in
-`<docker_config_dir>/mealplanner`, owned by uid 1000 (the container runs as 1000:1000).
+`<docker_config_dir>/mealplanner`, owned by uid 1000 (the container runs as 1000:1000). So do the
+recipe pictures, in `recipe-images/` next to the database (`MEALPLANNER_IMAGE_DIR` moves them): that
+folder must be on the same persistent volume as the database, since the database records which
+pictures exist. With `MEALPLANNER_DB_URL=jdbc:sqlite:/data/mealplanner.db` and `/data` mounted, as now,
+nothing needs setting. Lost pictures come back at the next cooking-site sync. A copy is about 130 KB
+(the one photo on the site today, 800 × 600).
 
 ## Updating
 

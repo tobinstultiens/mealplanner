@@ -38,6 +38,7 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
+import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -161,6 +162,38 @@ class AccountsTest {
         assertEquals(CookingSync.EVERY_HOURS, status.everyHours)
         assertNull(alice.get("/api/sync/cooking").body<CookingSyncStatus>().repoUrl, "alice has none")
         assertNull(bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting(null)) }.body<CookingSyncStatus>().repoUrl)
+    }
+
+    @Test
+    fun recipePicturesStayWithTheirAccount() = testApplication {
+        val site = PictureFixtures.site(
+            "content/recipes/pizza/index.md" to PictureFixtures.page("Pizza", "image: pizza.jpg"),
+            "content/recipes/pizza/pizza.jpg" to PictureFixtures.jpeg(40, 30),
+        )
+        // The server-wide site serves the owner: Alice, who logs in first.
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = site, imageDir = createTempDirectory("images").toFile())
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        assertEquals(HttpStatusCode.OK, alice.post("/api/sync/cooking").status)
+        val pizza = alice.get("/api/recipes").body<List<RecipeSummary>>().single()
+        val url = pizza.imageUrl!!
+        assertEquals(HttpStatusCode.OK, alice.get(url).status)
+
+        // Bob gets nothing, by the picture's URL or by the recipe's id.
+        assertEquals(HttpStatusCode.NotFound, bob.get(url).status)
+        assertEquals(HttpStatusCode.NotFound, bob.get("/api/recipes/${pizza.id}/image").status)
+        // Syncing, setting and clearing a site of his own touch only his account.
+        assertEquals(HttpStatusCode.ServiceUnavailable, bob.post("/api/sync/cooking").status)
+        bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting("https://example.org/bob/cooking.git")) }
+        bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting(null)) }
+        assertEquals(url, alice.get("/api/recipes").body<List<RecipeSummary>>().single().imageUrl)
+        assertEquals(HttpStatusCode.OK, alice.get(url).status)
+
+        // Alice moving to another site of her own removes her pictures until that one is synced.
+        alice.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting("https://example.org/alice/cooking.git")) }
+        assertNull(alice.get("/api/recipes").body<List<RecipeSummary>>().single().imageUrl)
+        assertEquals(HttpStatusCode.NotFound, alice.get(url).status)
     }
 
     @Test

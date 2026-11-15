@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -275,25 +277,33 @@ private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: s
     )
 }
 
-/** A recipe in the list: the title, then nutrition left and cost right, then details and a warning badge. */
+/**
+ * A recipe in the list: the title, then nutrition left and cost right, then details and a warning badge.
+ * A recipe with a photo shows it as a thumbnail at the end of the row, so the text of every row starts
+ * at the same place; one without keeps the plain row, with no box in its place.
+ */
 @Composable
 private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
     val text = recipe.rowText(LocalStrings.current)
-    Column(
+    val picture = recipePicture(recipe.imageUrl)
+    Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Spacing.ScreenEdge, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(Spacing.Tight),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
     ) {
-        Text(recipe.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (text.nutrition != null || text.cost != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
-                Text(text.nutrition.orEmpty(), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                text.cost?.let { Text(it, style = MaterialTheme.typography.bodyMedium, softWrap = false) }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
+            Text(recipe.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (text.nutrition != null || text.cost != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
+                    Text(text.nutrition.orEmpty(), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    text.cost?.let { Text(it, style = MaterialTheme.typography.bodyMedium, softWrap = false) }
+                }
             }
+            text.details?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            text.warning?.let { WarningBadge(it) }
         }
-        text.details?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        text.warning?.let { WarningBadge(it) }
+        picture?.let { RecipePhoto(it, Modifier.size(72.dp)) }
     }
 }
 
@@ -327,6 +337,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                     Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
                     verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
+                    recipePicture(recipe.summary.imageUrl)?.let { RecipePhoto(it, Modifier.fillMaxWidth().aspectRatio(16f / 9f)) }
                     if (recipe.summary.tags.isNotEmpty()) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                             recipe.summary.tags.forEach { AssistChip(onClick = {}, label = { Text(it) }) }

@@ -38,10 +38,14 @@ import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.compression.Compression
 import io.ktor.server.plugins.compression.gzip
 import io.ktor.server.plugins.compression.minimumSize
+import io.ktor.server.plugins.compression.excludeContentType
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.response.respondRedirect
+import io.ktor.server.response.respondFile
+import io.ktor.server.response.header
+import io.ktor.http.HttpHeaders
 import io.ktor.server.request.queryString
 import io.ktor.http.ContentType
 import io.ktor.server.routing.get
@@ -98,6 +102,11 @@ data class ServerConfig(
     /** Where per-account files (cooking repo clones) go. */
     val dataDir: File = File(".runtime"),
     /**
+     * Where web-sized copies of recipe pictures go, one folder per account. Belongs with the database:
+     * the database says which copies exist, so it must survive (and be backed up) with it.
+     */
+    val imageDir: File = File(dataDir, "recipe-images"),
+    /**
      * SHA-256 fingerprints of the Android app's signing certificates, published in
      * `/.well-known/assetlinks.json` so Android opens the app for the login redirect.
      */
@@ -106,6 +115,9 @@ data class ServerConfig(
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): ServerConfig {
             val databaseUrl = env["MEALPLANNER_DB_URL"] ?: "jdbc:sqlite:.runtime/mealplanner.db"
+            // The database file's folder; null for an in-memory database.
+            val databaseDir = databaseUrl.removePrefix("jdbc:sqlite:").takeIf { !it.startsWith(":") }?.let { File(it).absoluteFile.parentFile }
+            val dataDir = env["MEALPLANNER_DATA_DIR"]?.takeIf { it.isNotBlank() }?.let(::File) ?: databaseDir ?: File(".runtime")
             return ServerConfig(
                 port = env["PORT"]?.toInt() ?: 8080,
                 databaseUrl = databaseUrl,
@@ -118,9 +130,9 @@ data class ServerConfig(
                 oidcClientId = env["MEALPLANNER_OIDC_CLIENT_ID"]?.takeIf { it.isNotBlank() } ?: "mealplanner",
                 owner = env["MEALPLANNER_OWNER"]?.takeIf { it.isNotBlank() },
                 androidCertificates = env["MEALPLANNER_ANDROID_CERTS"].orEmpty().split(',', ' ').map { it.trim() }.filter { it.isNotEmpty() },
-                dataDir = env["MEALPLANNER_DATA_DIR"]?.takeIf { it.isNotBlank() }?.let(::File)
-                    ?: databaseUrl.removePrefix("jdbc:sqlite:").takeIf { !it.startsWith(":") }?.let { File(it).absoluteFile.parentFile }
-                    ?: File(".runtime"),
+                dataDir = dataDir,
+                imageDir = env["MEALPLANNER_IMAGE_DIR"]?.takeIf { it.isNotBlank() }?.let(::File)
+                    ?: File(databaseDir ?: dataDir, "recipe-images"),
             )
         }
     }
@@ -147,7 +159,7 @@ fun Application.module(
     val prices = PriceRepository(database, priceSource, foods, offers)
     val users = UserRepository(database)
     // Everything else belongs to one account and is reached through its scope.
-    fun scope(accountId: Long) = UserScope(accountId, database, foods, offers, prices, generator)
+    fun scope(accountId: Long) = UserScope(accountId, database, foods, offers, prices, generator, config.imageDir)
     val cooking = CookingSync(users, config.dataDir, config.cookingRepo, config.cookingRepoUrl, ::scope)
 
     // Accounts with a repository of their own: synced a few times a day.
@@ -191,9 +203,13 @@ fun Application.module(
         scope(accountId).ingredients.applySeed().takeIf { it > 0 }?.let { log.info("Added $it default ingredients to account $accountId") }
     }
     install(CallLogging)
-    // Mostly for the web client: its WebAssembly files shrink to about a third.
+    // Mostly for the web client: its WebAssembly files shrink to about a third. Recipe pictures are
+    // JPEGs, already compressed: gzip would only cost time.
     install(Compression) {
-        gzip { minimumSize(1024) }
+        gzip {
+            minimumSize(1024)
+            excludeContentType(ContentType.Image.JPEG, ContentType.Image.PNG)
+        }
     }
     install(ContentNegotiation) { json() }
     install(StatusPages) {
@@ -465,6 +481,13 @@ fun Application.module(
                 }
                 put("/settings") { call.respond(call.user.recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }
                 put("/rating") { call.respond(call.user.recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
+                // The recipe's picture, at the URL in its summary. That URL changes with the picture, so
+                // clients may keep it for good; private, since it is this account's.
+                get("/image") {
+                    val picture = call.user.pictures.find(call.id()) ?: throw NotFoundException("Recipe ${call.id()} has no picture")
+                    call.response.header(HttpHeaders.CacheControl, "private, max-age=31536000, immutable")
+                    call.respondFile(picture)
+                }
             }
 
             get("/api/sync/cooking") { call.respond(cooking.status(call.accountId)) }

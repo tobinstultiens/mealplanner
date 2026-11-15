@@ -56,7 +56,8 @@ log and weights. Store offers, regular prices and the NEVO data are shared.
   claims on first login, or else the first account to log in.
 - Each account can set its own cooking-site repository (Recipes tab, `PUT /api/sync/cooking/repo`); it
   is cloned under `<data dir>/users/<id>/cooking` and synced every six hours. `COOKING_REPO_URL` and
-  `COOKING_REPO_PATH` only serve the owner until they set one.
+  `COOKING_REPO_PATH` only serve the owner until they set one. A sync also keeps a web-sized copy of
+  each recipe's picture (see `docs/data-sources.md`, "Recipe pictures"), served only to that account.
 
 ## Web client
 
@@ -85,6 +86,10 @@ in Dutch); with System they follow the device. The texts are in `composeApp/.../
 English and Dutch side by side, and the notification of an update in `androidApp/src/main/res/values*/strings.xml`.
 Texts that come from the server (error messages, store deals, recipes) are shown as they are.
 
+Offers and shopping-list rows show the product's picture from the store (Coil 3; docs/data-sources.md, "Product pictures"), with the first letter of the product as placeholder. Progress → Settings → Appearance → "Show product pictures" turns the loading off. The web app shows no pictures for Jumbo, which sends no CORS headers. The screenshot tests use a fake loader and never touch the network.
+
+Recipe photos (from the cooking site) show on the Recipes list, the recipe screen, Today and the Plan, for the recipes that have one; a recipe without one keeps the plain layout, with no placeholder. They come from our own server, so the same loader fetches them with the login token, and the "Show product pictures" setting does not affect them.
+
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):
 
@@ -100,6 +105,9 @@ Installed apps outlive server deployments. App releases up to and including v0.1
 they do not know, so until a release containing the lenient client (`ApiClient`) is installed, responses
 those apps read must not gain fields: new data goes in new routes or types. Once it is installed, adding
 optional fields is safe. Removing or renaming a field, or changing its meaning, still breaks installed apps.
+The product pictures (`Offer.imageUrl`, `ShoppingItem.imageUrl`) and the recipe pictures
+(`RecipeSummary.imageUrl`) are the first fields added this way, so they are merged together with the
+first app release after v0.1.1.
 
 ## Screenshot tests
 
@@ -198,6 +206,7 @@ installed side by side: they share the application id but not the signing key.
 | `MEALPLANNER_OWNER` | unset | Username that claims the data from before accounts; unset: the first login |
 | `MEALPLANNER_ANDROID_CERTS` | unset | SHA-256 fingerprints of the app's signing certificates, for `assetlinks.json` |
 | `MEALPLANNER_DATA_DIR` | the database's directory | Where per-account cooking repo clones go |
+| `MEALPLANNER_IMAGE_DIR` | `recipe-images` in the database's directory | Where web-sized copies of the cooking sites' recipe pictures go, one folder per account. Keep it on the same persistent volume as the database: the database says which copies exist |
 | `PORT` | `8080` | Listen port |
 | `MEALPLANNER_DB_URL` | `jdbc:sqlite:.runtime/mealplanner.db` | SQLite database |
 | `COOKING_REPO_URL` | unset | The owner's cooking repo until they set one in the app; cloned and re-synced every six hours |

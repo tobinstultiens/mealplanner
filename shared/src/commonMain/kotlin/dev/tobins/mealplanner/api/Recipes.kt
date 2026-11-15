@@ -26,6 +26,13 @@ data class RecipeSummary(
     val rating: Int? = null,
     /** Estimated cost per serving; null when nothing in it could be priced. */
     val cost: RecipeCost? = null,
+    /**
+     * The recipe's picture from the cooking site, relative to the server, e.g.
+     * `/api/recipes/12/image?v=3f2a…`; fetched with the login like any other call. The URL
+     * changes when the picture does, so it can be cached for good. Null when there is none
+     * (always for recipes made in the app).
+     */
+    val imageUrl: String? = null,
 )
 
 /** What a serving costs, from regular store prices and this week's offers. */

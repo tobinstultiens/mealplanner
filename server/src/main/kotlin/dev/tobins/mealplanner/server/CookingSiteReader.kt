@@ -5,6 +5,9 @@ import dev.tobins.mealplanner.recipes.ParsedRecipe
 import java.io.File
 import java.security.MessageDigest
 
+/** A recipe page of the cooking site: the recipe, the SHA-256 of the page's text, and the picture it shows. */
+data class SitePage(val recipe: ParsedRecipe, val hash: String, val picture: File? = null)
+
 /**
  * Reads every recipe page from a local checkout of the cooking repo.
  * Section index pages (`_index.md`) are not recipes and are skipped.
@@ -12,17 +15,17 @@ import java.security.MessageDigest
 class CookingSiteReader(private val repoDir: File, private val parser: HugoRecipeParser = HugoRecipeParser()) {
     constructor(repo: CookingRepo) : this(repo.dir, HugoRecipeParser(repo.units()))
 
-
-    /** Each parsed recipe with the SHA-256 of its file, or null when the checkout has no `content/` folder. */
-    fun readAll(): List<Pair<ParsedRecipe, String>>? {
+    /** Every recipe page, or null when the checkout has no `content/` folder. */
+    fun readAll(): List<SitePage>? {
         val content = File(repoDir, "content")
         if (!content.isDirectory) return null
+        val pictures = PagePictureFinder(repoDir)
         return content.walkTopDown()
             .filter { it.isFile && it.extension == "md" && it.name != "_index.md" }
             .sortedBy { it.path }
             .map { file ->
                 val text = file.readText()
-                parser.parse(file.relativeTo(content).invariantSeparatorsPath, text) to sha256(text)
+                SitePage(parser.parse(file.relativeTo(content).invariantSeparatorsPath, text), sha256(text), pictures.find(file, text))
             }
             .toList()
     }
