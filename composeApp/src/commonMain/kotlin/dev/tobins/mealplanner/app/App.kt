@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
 /**
@@ -225,7 +227,7 @@ fun App(
                                     NavigationBarItem(
                                         selected = tab == entry,
                                         onClick = { tab = entry },
-                                        icon = { Text(entry.symbol) },
+                                        icon = { Icon(if (tab == entry) entry.selectedIcon else entry.icon, contentDescription = null) },
                                         label = { Text(entry.label) },
                                     )
                                 }
@@ -262,10 +264,11 @@ fun App(
     }
 }
 
-private enum class Tab(val label: String, val symbol: String) {
-    TODAY("Today", "☀"),
-    PLAN("Plan", "▦"),
-    SHOPPING("Shopping", "✓"),
-    RECIPES("Recipes", "☰"),
-    PROGRESS("Progress", "◉"),
+/** The five tabs; the icon is filled in for the one that is open. */
+private enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
+    TODAY("Today", AppIcons.Today, AppIcons.TodayFilled),
+    PLAN("Plan", AppIcons.Plan, AppIcons.PlanFilled),
+    SHOPPING("Shopping", AppIcons.Shopping, AppIcons.ShoppingFilled),
+    RECIPES("Recipes", AppIcons.Recipes, AppIcons.RecipesFilled),
+    PROGRESS("Progress", AppIcons.Progress, AppIcons.ProgressFilled),
 }

@@ -75,11 +75,17 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (date == today) "Today" else dayLabel(date)) },
+                title = {
+                    PeriodStepper(
+                        label = if (date == today) "Today" else dayLabel(date),
+                        previous = "Previous day",
+                        next = "Next day",
+                        onPrevious = { date = plusDays(date, -1) },
+                        onNext = { date = plusDays(date, 1) },
+                    )
+                },
                 actions = {
-                    TextButton(onClick = { date = plusDays(date, -1) }) { Text("‹") }
-                    if (date != today) TextButton(onClick = { date = today }) { Text("Today") }
-                    TextButton(onClick = { date = plusDays(date, 1) }) { Text("›") }
+                    if (date != today) BarAction(AppIcons.Today, "Back to today", onClick = { date = today })
                 },
             )
         },

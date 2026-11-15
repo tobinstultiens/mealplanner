@@ -75,7 +75,7 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Link ingredients") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = { BackButton(onBack) },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },

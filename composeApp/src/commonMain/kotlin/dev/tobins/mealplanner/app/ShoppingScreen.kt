@@ -80,12 +80,18 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Shopping") },
+                title = {
+                    PeriodStepper(
+                        label = "Week of ${dayLabel(weekStart).substringAfter(' ')}",
+                        previous = "Previous week",
+                        next = "Next week",
+                        onPrevious = { weekStart = plusDays(weekStart, -7) },
+                        onNext = { weekStart = plusDays(weekStart, 7) },
+                    )
+                },
                 actions = {
-                    TextButton(onClick = onOpenOffers) { Text("Offers") }
-                    TextButton(onClick = onOpenPantry) { Text("Pantry") }
-                    TextButton(onClick = { weekStart = plusDays(weekStart, -7) }) { Text("‹") }
-                    TextButton(onClick = { weekStart = plusDays(weekStart, 7) }) { Text("›") }
+                    BarAction(AppIcons.Offer, "Offers", onOpenOffers)
+                    BarAction(AppIcons.Pantry, "Pantry", onOpenPantry)
                 },
             )
         },
@@ -122,8 +128,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
                         val left = list.items.count { !it.checked }
                         val onOffer = list.items.count { it.offers.isNotEmpty() }
                         Text(
-                            "Week of ${dayLabel(weekStart).substringAfter(' ')} · " +
-                                (if (left == 0) "all ${list.items.size} items ticked off" else "$left of ${list.items.size} items left") +
+                            (if (left == 0) "All ${list.items.size} items ticked off" else "$left of ${list.items.size} items left") +
                                 if (onOffer > 0) " · $onOffer on offer this week" else "",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

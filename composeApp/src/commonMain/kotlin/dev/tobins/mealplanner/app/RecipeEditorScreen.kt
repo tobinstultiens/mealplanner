@@ -82,7 +82,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
         topBar = {
             TopAppBar(
                 title = { Text(if (recipeId == null) "New recipe" else "Edit recipe") },
-                navigationIcon = { TextButton(onClick = onCancel) { Text("Cancel") } },
+                navigationIcon = { BarAction(AppIcons.Close, "Cancel", onCancel) },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },

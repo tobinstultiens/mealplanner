@@ -18,7 +18,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,17 +62,17 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Offers") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = { BackButton(onBack) },
                 actions = {
-                    TextButton(onClick = onOpenPrices) { Text("Prices") }
-                    TextButton(enabled = !refreshing, onClick = {
+                    BarAction(AppIcons.Refresh, if (refreshing) "Fetching the offers" else "Refresh the offers", busy = refreshing, onClick = {
                         refreshing = true
                         scope.launch {
                             (load { api.refreshOffers() } as? Load.Failed)?.let { snackbar.showSnackbar("Could not refresh: ${it.message}") }
                             refreshing = false
                             reload++
                         }
-                    }) { Text(if (refreshing) "Fetching…" else "Refresh") }
+                    })
+                    OverflowMenu(MenuAction(AppIcons.Price, "Regular prices", onOpenPrices))
                 },
             )
         },

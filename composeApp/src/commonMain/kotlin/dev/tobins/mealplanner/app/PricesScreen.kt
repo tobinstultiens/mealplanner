@@ -16,7 +16,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,9 +59,9 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Regular prices") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = { BackButton(onBack) },
                 actions = {
-                    TextButton(enabled = !refreshing, onClick = {
+                    BarAction(AppIcons.Refresh, if (refreshing) "Looking up prices" else "Refresh the prices", busy = refreshing, onClick = {
                         scope.launch {
                             when (val started = load { api.refreshPrices() }) {
                                 is Load.Ready -> {
@@ -73,7 +72,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                                 Load.Loading -> {}
                             }
                         }
-                    }) { Text(if (refreshing) "Looking up…" else "Refresh") }
+                    })
                 },
             )
         },

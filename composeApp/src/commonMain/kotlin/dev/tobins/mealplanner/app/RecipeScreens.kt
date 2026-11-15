@@ -109,11 +109,11 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
             TopAppBar(
                 title = { Text("Recipes") },
                 actions = {
-                    TextButton(onClick = { generating = true }) { Text("Generate") }
-                    TextButton(onClick = onNewRecipe) { Text("New") }
-                    TextButton(onClick = onOpenMapping) { Text("Ingredients") }
-                    TextButton(
-                        enabled = !syncing,
+                    BarAction(AppIcons.Add, "New recipe", onNewRecipe)
+                    BarAction(
+                        AppIcons.Sync,
+                        if (syncing) "Syncing the cooking site" else "Sync the cooking site",
+                        busy = syncing,
                         onClick = {
                             syncing = true
                             scope.launch {
@@ -129,7 +129,11 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                                 snackbar.showSnackbar(message)
                             }
                         },
-                    ) { Text(if (syncing) "Syncing…" else "Sync") }
+                    )
+                    OverflowMenu(
+                        MenuAction(AppIcons.Generate, "Generate a recipe") { generating = true },
+                        MenuAction(AppIcons.Link, "Link ingredients", onOpenMapping),
+                    )
                 },
             )
         },
@@ -321,10 +325,10 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = { BackButton(onBack) },
                 actions = {
                     if ((state as? Load.Ready)?.value?.summary?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }) {
-                        TextButton(onClick = onEdit) { Text("Edit") }
+                        BarAction(AppIcons.Edit, "Edit recipe", onEdit)
                     }
                 },
             )

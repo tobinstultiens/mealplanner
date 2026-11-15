@@ -88,8 +88,8 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
             TopAppBar(
                 title = { Text("Progress") },
                 actions = {
-                    TextButton(onClick = onOpenProfile) { Text("Profile") }
-                    TextButton(onClick = onOpenServer) { Text("Settings") }
+                    BarAction(AppIcons.Person, "Profile and targets", onOpenProfile)
+                    BarAction(AppIcons.Settings, "Settings", onOpenServer)
                 },
             )
         },

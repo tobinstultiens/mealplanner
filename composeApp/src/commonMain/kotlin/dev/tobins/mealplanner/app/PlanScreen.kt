@@ -89,10 +89,14 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Week of ${dayLabel(weekStart).substringAfter(' ')}") },
-                actions = {
-                    TextButton(onClick = { weekStart = plusDays(weekStart, -7) }) { Text("‹ Prev") }
-                    TextButton(onClick = { weekStart = plusDays(weekStart, 7) }) { Text("Next ›") }
+                title = {
+                    PeriodStepper(
+                        label = "Week of ${dayLabel(weekStart).substringAfter(' ')}",
+                        previous = "Previous week",
+                        next = "Next week",
+                        onPrevious = { weekStart = plusDays(weekStart, -7) },
+                        onNext = { weekStart = plusDays(weekStart, 7) },
+                    )
                 },
             )
         },
