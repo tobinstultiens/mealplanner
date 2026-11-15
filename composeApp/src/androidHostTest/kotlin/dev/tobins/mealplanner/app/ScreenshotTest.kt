@@ -134,7 +134,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     companion object {
         private const val FRAME = "frame"
 
-        /** Pictures at three quarters of the size keep the references in the repository small; any changed pixel counts.
+        /** Pictures at half the size keep the references in the repository small; any changed pixel counts.
          * Made when used: Roborazzi reads Robolectric's state when it is created. */
         private fun options() = RoborazziOptions(
             recordOptions = RoborazziOptions.RecordOptions(resizeScale = 0.5),
