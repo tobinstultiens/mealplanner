@@ -60,6 +60,19 @@ class ShoppingStoresTest {
     }
 
     @Test
+    fun aRowShowsTheOfferOfAStoreInUseNeverOneOfASwitchedOffStore() {
+        val pear = items.first { it.key == "pear" }
+        val withoutJumbo = setOf(Store.AH, Store.LIDL)
+        assertEquals("AH €1.49", pear.bestOffer(withoutJumbo)?.badgeText(FormatLocale.English))
+        // Pear is grouped under AH then, and the badge agrees with the group.
+        assertEquals(listOf("pear"), storeOverview(listOf(pear), withoutJumbo).stores.single { it.store == Store.AH }.items.map { it.key })
+        // Cheese is on offer at Jumbo only: with Jumbo off it has no badge and sits under Any store.
+        val cheese = items.first { it.key == "cheese" }
+        assertNull(cheese.bestOffer(withoutJumbo))
+        assertEquals(listOf("cheese"), storeOverview(listOf(cheese), withoutJumbo).anyStore.map { it.key })
+    }
+
+    @Test
     fun theOverviewHasAGroupPerStoreAndAnyStoreForTheRest() {
         val overview = storeOverview(items, all)
         assertEquals(listOf(Store.AH, Store.JUMBO, Store.LIDL), overview.stores.map { it.store })

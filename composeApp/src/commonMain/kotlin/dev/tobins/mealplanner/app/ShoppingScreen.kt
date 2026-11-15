@@ -272,7 +272,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                                 item(key = "s:${group.store.name}") {
                                     GroupHeader(group.title, "Tap to shop here", onClick = { chooseStore(group.store) })
                                 }
-                                groupItems(group.store.name, group.items) { row(it) }
+                                groupItems(group.store.name, group.items) { row(it, it.bestOffer(shops)) }
                             }
                             if (overview.anyStore.isNotEmpty()) {
                                 item(key = "s:any") {
@@ -282,13 +282,13 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                                         onClick = null,
                                     )
                                 }
-                                groupItems("any", overview.anyStore) { row(it) }
+                                groupItems("any", overview.anyStore) { row(it, it.bestOffer(shops)) }
                             }
                         }
                         else -> {
                             val visit = storeVisit(list.items, store, shops, shoppingMode)
                             item(key = "visit") { ShopIAmIn(store) { chooseStore(null) } }
-                            sectionItems(visit.sections) { row(it) }
+                            sectionItems(visit.sections) { row(it, it.bestOffer(shops)) }
                             if (visit.elsewhere.isNotEmpty()) {
                                 val open = "elsewhere" in expanded
                                 item(key = "elsewhere") {
