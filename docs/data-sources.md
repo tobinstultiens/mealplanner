@@ -123,6 +123,45 @@ the sum of regular price times the share taken off, for the items whose cheapest
 Regular prices are AH's, so for Jumbo and Lidl that saving is an estimate against AH's price, and the
 app says so.
 
+## Buying ahead and stocking up
+
+Next to what the week's meals need (`ShoppingList.items`), the shopping list gives two kinds of
+advice, in separate lists so that apps from before them (v0.1.2) never take them for this week's
+needs. Both go by this week's offers at the stores the account shops at, and by what they save
+against the regular price. Each can be switched off in the account's settings
+(`GET`/`PUT /api/shopping-advice`, both on by default) or dismissed for one week
+(`PUT`/`DELETE /api/plans/{weekStart}/shopping/dismissed/{buy-ahead|stock-up}`); neither changes the
+plan or the rest of the list.
+
+**What keeps.** Each shop section has a shelf life (`ShopSection.shelfLife`): short (fruit and
+vegetables, bread, deli, chilled vegetarian, dairy, ready meals, Other), until next week in the
+freezer (fresh meat and fish), or months (sauces and oil, pasta and rice, tins, breakfast, baking,
+snacks, drinks, frozen). An ingredient keeps until next week unless its section's shelf life is
+short; the account can correct that per ingredient (`PUT /api/ingredients/{id}/keeps`, `null` goes
+back to the section's answer), for instance for long-life milk.
+
+**Buy ahead for next week** (`ShoppingList.buyAhead`, keys `ahead:i<id>`), only for a week with a
+plan. Next week's meals are those already planned there, or else a provisional choice
+(`BuyAhead.provisional`): the dinners the planner could pick, a meal by calories, not disliked and
+not planned this week (the planner avoids last week's recipes), one batch each. An ingredient of
+them qualifies when it keeps, is on offer this week but not (as far as known) next week, is not a
+staple and not on hand, and its saving is known. The meals saving at least €0.50 that way, at most
+three, most saved first (`BuyAhead.choose`), give the list: what one batch of each needs, with the
+meals named. No random choice is involved, so the list stays the same while it is ticked off.
+
+**Stock up** (`ShoppingList.stockUp`, keys `stock:i<id>`): ingredients that keep and are a staple, or
+that a recipe uses and keep for months (so not fresh meat), on offer now, not on hand and not on the
+list already. One pack of the best offer each, with its saving; the six saving most (at least
+€0.25 a pack), in walking order. Advice only: it never changes the plan.
+
+**Ticked items go to the pantry.** Ticking a buy-ahead item puts its ingredient on hand from next
+week (`onHand.fromWeek`), so this week's meals still get their own amount and next week's plan
+prefers the meals that use it (the planner's on-hand bonus); ticking a stock-up item puts it on hand
+from this week. Un-ticking takes back only what that tick put there. Such an item stops being on
+hand when a meal of that week or later that uses it is marked eaten, or when it is removed in the
+pantry. Items put on hand by hand behave as before: they stay until removed by hand. Next week's
+plan is not fixed in advance; only what was ticked carries over.
+
 ## Shop sections
 
 The shopping list is sorted in the order you walk a Dutch supermarket, modelled on Albert Heijn:

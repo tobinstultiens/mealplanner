@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.server.db.Database
 import java.sql.DriverManager
 import java.sql.Statement
+import java.time.LocalDate
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -23,6 +24,13 @@ class MigrationTest {
     private fun dropRecipePictureColumns(statement: Statement) {
         statement.execute("ALTER TABLE recipe DROP COLUMN imageSourceHash")
         statement.execute("ALTER TABLE recipe DROP COLUMN imageVersion")
+        dropBuyAheadColumns(statement)
+    }
+
+    /** Version 8 added what keeps, and since when a ticked item is on hand (7.sqm). */
+    private fun dropBuyAheadColumns(statement: Statement) {
+        statement.execute("ALTER TABLE ingredient DROP COLUMN keeps")
+        statement.execute("ALTER TABLE onHand DROP COLUMN fromWeek")
     }
 
     @Test
@@ -177,6 +185,39 @@ class MigrationTest {
         assertEquals(Triple("Ala Mario", "abc", 4L), Triple(recipe.title, recipe.contentHash, recipe.rating))
         assertEquals(null to null, recipe.imageSourceHash to recipe.imageVersion, "the next sync reads the picture")
         assertEquals(1, db.recipeQueries.selectIngredients(1).executeAsList().size)
+        driver.close()
+    }
+
+    @Test
+    fun aVersionSevenDatabaseKeepsItsPantryAndDecidesWhatKeepsBySection() {
+        val file = createTempFile("v7", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        // Version 7 is today's schema without the columns for buying ahead.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropBuyAheadColumns(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'sub', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (userId, name, section) VALUES (1, 'Chicken fillet', 'MEAT'), (1, 'Spinach', NULL)")
+                statement.execute("INSERT INTO onHand (ingredientId, addedAt) VALUES (2, '2026-11-01T00:00:00Z')")
+                statement.execute("PRAGMA user_version = 7")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        for (table in listOf("ingredient", "onHand")) {
+            assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
+        }
+        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        assertEquals(emptyMap(), ingredients.keepsByHand(), "by the section until set by hand")
+        assertEquals("MEAT", db.ingredientQueries.selectIngredientByName(1, "Chicken fillet").executeAsOne().section)
+        // What was on hand was put there by hand: it counts at once, in any week.
+        assertEquals(setOf(2L), ingredients.onHandFor(LocalDate.parse("2026-11-16")))
+        assertEquals(null, db.pantryQueries.selectOnHandWeeks(1).executeAsOne().fromWeek)
         driver.close()
     }
 }

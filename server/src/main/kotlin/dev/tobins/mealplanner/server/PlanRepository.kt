@@ -5,16 +5,16 @@ import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.ShoppingAdvice
+import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
-import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.planner.BuyAhead
 import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.planner.PlanRequest
-import dev.tobins.mealplanner.recipes.IngredientLine
-import dev.tobins.mealplanner.units.Dimension
 import dev.tobins.mealplanner.planner.WeekPlanner
 import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.server.db.Database
@@ -34,6 +34,7 @@ class PlanRepository(
     private val userId: Long,
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
+    private val ingredients: IngredientRepository,
     /** Offers valid between two dates at every store, grouped by ingredient id. */
     private val offersByIngredient: (LocalDate, LocalDate) -> Map<Long, List<Offer>> = { _, _ -> emptyMap() },
     /** Prices with the offers valid between two dates, at the stores the account shops at. */
@@ -44,6 +45,10 @@ class PlanRepository(
     private val regularPerKg: () -> Map<Long, Double> = { emptyMap() },
     /** The shop section of each of the account's ingredients, by id. */
     private val sections: () -> Map<Long, ShopSection> = { emptyMap() },
+    /** Whether each ingredient keeps until next week, by id, given the [sections]. */
+    private val keeps: (Map<Long, ShopSection>) -> Map<Long, Boolean> = { emptyMap() },
+    /** Which advice the account's shopping list gives. */
+    private val advice: () -> ShoppingAdvice = { ShoppingAdvice() },
     /** The picture of the product each of the account's ingredients is priced with, by id. */
     private val productImages: () -> Map<Long, String> = { emptyMap() },
 ) {
@@ -128,9 +133,20 @@ class PlanRepository(
         return view(start)
     }
 
+    /**
+     * Marks a meal eaten, skipped or planned again. Eating it uses up what was bought ahead or
+     * stocked up for it (see [IngredientRepository.useUp]); planning it again does not bring that back.
+     */
     fun setStatus(weekStart: String, day: Int, slot: MealSlot, status: MealStatus): WeekPlan {
         val start = parse(weekStart)
-        q.setStatus(status.name, userId, start.toString(), day.toLong(), slot.name)
+        db.transaction {
+            q.setStatus(status.name, userId, start.toString(), day.toLong(), slot.name)
+            val eaten = stored(start).firstOrNull { it.day == day && it.slot == slot }?.takeIf { status == MealStatus.EATEN }
+            if (eaten != null) {
+                val used = recipes.linesWithIngredients(listOf(eaten.recipeId))[eaten.recipeId]?.lines.orEmpty().mapNotNull { it.second?.id }
+                ingredients.useUp(used.distinct(), start)
+            }
+        }
         return view(start)
     }
 
@@ -160,95 +176,129 @@ class PlanRepository(
      * What the week's meals need. Each recipe is scaled to the portions planned for it,
      * leftovers included; staples are left out and only named as a reminder. Items come in
      * the order of the walk through the shop, by section and then by name; whether an item
-     * is ticked or on hand does not move it.
+     * is ticked or on hand does not move it. Next to it, the advice of [ShoppingList.buyAhead]
+     * and [ShoppingList.stockUp], unless switched off or dismissed for the week.
      */
     fun shoppingList(weekStart: String): ShoppingList {
         val start = parse(weekStart)
-        class Need(val name: String, val section: ShopSection, val onHand: Boolean) {
-            var grams = 0.0
-            var gramsKnown = true
-            var pieces = 0.0
-            val recipes = linkedSetOf<String>()
-        }
-        val onHand = recipes.onHandIds()
+        val meals = stored(start)
         val sectionOf = sections()
-        val needs = linkedMapOf<String, Need>()
-        val staples = sortedSetOf<String>()
-        val toTaste = sortedSetOf<String>()
-
-        val portionsByRecipe = stored(start).groupBy { it.recipeId }.mapValues { (_, meals) -> meals.sumOf { it.portions } to meals.first().title }
-        for ((recipeId, planned) in portionsByRecipe) {
-            val (portions, title) = planned
-            val (servings, lines) = recipes.linesWithIngredients(recipeId) ?: continue
-            val factor = portions / servings
-            for ((line, ingredient) in lines) {
-                if (ingredient?.isStaple == true) {
-                    staples += ingredient.name
-                    continue
-                }
-                if (ingredient?.negligible == true || (line.amount == null && NutritionCalculator.isSeasoning(line.ingredientText, ingredient))) {
-                    if (ingredient?.name != "Water") toTaste += ingredient?.name ?: IngredientLine.coreText(line.ingredientText)
-                    continue
-                }
-                val key = ingredient?.let { "i${it.id}" } ?: "t:${IngredientRepository.normalise(IngredientLine.coreText(line.ingredientText))}"
-                val need = needs.getOrPut(key) {
-                    Need(
-                        name = ingredient?.name ?: IngredientLine.coreText(line.ingredientText).replaceFirstChar { it.uppercase() },
-                        section = ingredient?.let { sectionOf[it.id] } ?: ShopSection.OTHER,
-                        onHand = ingredient?.id in onHand,
-                    )
-                }
-                need.recipes += title
-                val amount = line.amount ?: continue // "salt to taste": needed, but no quantity
-                val grams = ingredient?.let { NutritionCalculator.quantityOf(line, it)?.grams }
-                    ?: line.baseAmount.takeIf { line.dimension == Dimension.WEIGHT }
-                if (grams != null) need.grams += grams * factor else need.gramsKnown = false
-                if (line.dimension == Dimension.COUNT) need.pieces += amount * factor
-            }
-        }
+        val week = shoppingNeeds(planned(meals), recipes.linesWithIngredients(meals.map { it.recipeId }), sectionOf)
         val checked = q.selectChecks(userId, start.toString()).executeAsList().toSet()
+        val onHand = ingredients.onHandFor(start)
         // Every store's offers: the app chooses among those of the stores it shows.
         val offers = offersByIngredient(start, start.plusDays(DAYS - 1L))
         val images = productImages()
         val perKg = regularPerKg()
+        val items = week.needs.map { need ->
+            val id = need.ingredient?.id
+            need.toItem(need.key, need.key in checked, id in onHand, id?.let { offers[it] }.orEmpty(), id?.let { images[it] }, id?.let { perKg[it] })
+        }
+
+        val wanted = advice()
+        val buyAheadDismissed = dismissedKey(ShoppingAdviceGroup.BUY_AHEAD) in checked
+        val stockUpDismissed = dismissedKey(ShoppingAdviceGroup.STOCK_UP) in checked
+        // Advice goes by the offers of the stores the account shops at only: it is about saving money there.
+        val inUse = shops()
+        val advisor = ShoppingAdvisor(
+            offers = offers.mapValues { (_, all) -> all.filter { it.store in inUse } }.filterValues { it.isNotEmpty() },
+            perKg = perKg,
+            sectionOf = sectionOf,
+            keeps = keeps(sectionOf),
+            productImages = images,
+            checked = checked,
+        )
+        // Buying ahead goes with a plan: without meals this week there is nothing to shop with.
+        val buyAhead = if (wanted.buyAhead && !buyAheadDismissed && meals.isNotEmpty()) buyAhead(start, meals, advisor) else emptyList()
+        val stockUp = if (wanted.stockUp && !stockUpDismissed) {
+            val listed = week.needs.mapNotNullTo(HashSet()) { it.ingredient?.id } +
+                buyAhead.map { it.key.removePrefix(ShoppingAdvisor.AHEAD_PREFIX).toLong() }
+            advisor.stockUp(ingredients.list(), ingredients.usedIds(), onHand, listed)
+        } else {
+            emptyList()
+        }
         return ShoppingList(
             weekStart = start.toString(),
-            items = needs.entries.sortedWith(compareBy({ it.value.section.ordinal }, { it.value.name.lowercase() })).map { (key, need) ->
-                val ingredientId = key.removePrefix("i").toLongOrNull()?.takeIf { key.startsWith("i") }
-                val itemOffers = ingredientId?.let { offers[it] }.orEmpty()
-                val grams = need.grams.takeIf { need.gramsKnown && it > 0 }
-                ShoppingItem(
-                    key = key,
-                    name = need.name,
-                    grams = grams,
-                    pieces = need.pieces.takeIf { it > 0 },
-                    category = need.section.title,
-                    recipes = need.recipes.toList(),
-                    onHand = need.onHand,
-                    checked = key in checked,
-                    offers = itemOffers,
-                    imageUrl = bestOffer(itemOffers)?.imageUrl ?: ingredientId?.let { images[it] },
-                    regularPrice = grams?.let { g -> ingredientId?.let { perKg[it] }?.let { g / 1000 * it } },
-                )
-            },
-            staples = staples.toList(),
-            toTaste = toTaste.toList(),
+            items = items,
+            staples = week.staples,
+            toTaste = week.toTaste,
+            buyAhead = buyAhead,
+            stockUp = stockUp,
+            buyAheadDismissed = buyAheadDismissed,
+            stockUpDismissed = stockUpDismissed,
+        )
+    }
+
+    /** Planned meals as recipes to shop for: each recipe once, with all its portions (leftovers included). */
+    private fun planned(meals: List<PlannedMeal>): List<PlannedRecipe> =
+        meals.groupBy { it.recipeId }.map { (id, ofRecipe) -> PlannedRecipe(id, ofRecipe.first().title, ofRecipe.sumOf { it.portions }) }
+
+    /**
+     * What to buy now for next week's meals. When next week is planned already, those are its
+     * meals as planned; otherwise a provisional choice among the dinners the planner could pick
+     * then ([BuyAhead.provisional]), one batch each. Nothing of it is stored: next week is planned
+     * as usual later, with what was ticked here on hand.
+     */
+    private fun buyAhead(start: LocalDate, thisWeek: List<PlannedMeal>, advisor: ShoppingAdvisor): List<ShoppingItem> {
+        val next = start.plusDays(DAYS.toLong())
+        val nextWeek = stored(next)
+        val (meals, ratings) = if (nextWeek.isNotEmpty()) {
+            planned(nextWeek) to emptyMap()
+        } else {
+            val targets = profiles.state().targets ?: return emptyList()
+            val candidates = BuyAhead.provisional(
+                recipes.planCandidates(dislikes = profiles.profile()?.dislikes.orEmpty()),
+                targets,
+                plannedThisWeek = thisWeek.mapTo(HashSet()) { it.recipeId },
+            )
+            candidates.map { PlannedRecipe(it.recipeId, it.title, it.servings.toDouble()) } to candidates.associate { it.recipeId to it.rating }
+        }
+        return advisor.buyAhead(
+            meals,
+            recipes.linesWithIngredients(meals.map { it.recipeId }),
+            ratings,
+            onHand = ingredients.onHandFor(next),
+            onOfferNextWeek = onOffer(next),
         )
     }
 
     /**
-     * The offer the app shows on the item's row, so its picture matches the badge: the cheapest
-     * that states a price, else the first. The same rule as `cheapestOffer` in the app's
-     * ShoppingStores.kt, over every store's offers (the app may leave out stores it isn't shopping at).
+     * Ticks an item off, or back on. A buy-ahead item ticked is on hand from next week, a stock-up
+     * item from this week; un-ticking takes that back (see [IngredientRepository.putOnHandFrom]).
      */
-    private fun bestOffer(offers: List<Offer>): Offer? =
-        offers.filter { it.price != null }.minByOrNull { it.price!! } ?: offers.firstOrNull()
-
     fun setChecked(weekStart: String, check: ShoppingCheck): ShoppingList {
         val start = parse(weekStart)
-        if (check.checked) q.insertCheck(userId, start.toString(), check.key) else q.deleteCheck(userId, start.toString(), check.key)
+        require(!check.key.startsWith(DISMISSED_PREFIX)) { "Groups are dismissed at /shopping/dismissed/{group}" }
+        db.transaction {
+            onHandFromTick(start, check)
+            if (check.checked) q.insertCheck(userId, start.toString(), check.key) else q.deleteCheck(userId, start.toString(), check.key)
+        }
         return shoppingList(weekStart)
     }
+
+    private fun onHandFromTick(start: LocalDate, check: ShoppingCheck) {
+        val (id, from) = when {
+            check.key.startsWith(ShoppingAdvisor.AHEAD_PREFIX) -> ingredientIn(check.key, ShoppingAdvisor.AHEAD_PREFIX) to start.plusDays(DAYS.toLong())
+            check.key.startsWith(ShoppingAdvisor.STOCK_PREFIX) -> ingredientIn(check.key, ShoppingAdvisor.STOCK_PREFIX) to start
+            else -> return
+        }
+        // Both refuse an ingredient of another account (NotFoundException), before anything is stored.
+        if (check.checked) ingredients.putOnHandFrom(id, from) else ingredients.takeBackOnHand(id, from)
+    }
+
+    private fun ingredientIn(key: String, prefix: String): Long =
+        key.removePrefix(prefix).toLongOrNull() ?: throw IllegalArgumentException("Unknown shopping item $key")
+
+    /** Hides one of the advice groups of the week's list, or with [dismissed] false shows it again. Nothing else changes. */
+    fun setDismissed(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): ShoppingList {
+        val start = parse(weekStart)
+        val key = dismissedKey(group)
+        if (dismissed) q.insertCheck(userId, start.toString(), key) else q.deleteCheck(userId, start.toString(), key)
+        return shoppingList(weekStart)
+    }
+
+    /** A dismissed group is kept with the week's ticks, under a key no item has. */
+    private fun dismissedKey(group: ShoppingAdviceGroup) = "$DISMISSED_PREFIX${group.path}"
 
     private fun request(start: LocalDate, locked: List<PlannedMeal>, seed: Long) = PlanRequest(
         targets = targets(),
@@ -256,6 +306,7 @@ class PlanRepository(
             onOffer = onOffer(start),
             dislikes = profiles.profile()?.dislikes.orEmpty(),
             prices = pricing(start, start.plusDays(DAYS - 1L)),
+            onHand = ingredients.onHandFor(start),
         ),
         routines = recipes.routines().let { r ->
             listOfNotNull(r.breakfast?.let { MealSlot.BREAKFAST to it }, r.snack?.let { MealSlot.SNACK to it }).toMap()
@@ -325,5 +376,6 @@ class PlanRepository(
 
     private companion object {
         const val DAYS = 7
+        const val DISMISSED_PREFIX = "dismissed:"
     }
 }

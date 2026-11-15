@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
@@ -15,6 +16,8 @@ import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Routines
+import dev.tobins.mealplanner.api.ShoppingAdvice
+import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.SyncResult
@@ -321,6 +324,13 @@ fun Application.module(
                 call.respond(call.user.sections.set(id, call.receive<SectionChoice>()))
             }
 
+            // Sets by hand whether an ingredient keeps until next week; null goes back to its section's answer.
+            put("/api/ingredients/{id}/keeps") {
+                val id = call.parameters["id"]?.toLongOrNull()
+                    ?: throw IllegalArgumentException("Ingredient id must be a number")
+                call.respond(call.user.sections.setKeeps(id, call.receive<KeepsChoice>()))
+            }
+
             get("/api/profile") { call.respond(call.user.profiles.state()) }
 
             put("/api/profile") { call.respond(call.user.profiles.save(call.receive<Profile>())) }
@@ -329,6 +339,11 @@ fun Application.module(
             get("/api/shops") { call.respond(call.user.shops.setting()) }
 
             put("/api/shops") { call.respond(call.user.shops.save(call.receive<ShopsSetting>())) }
+
+            // Whether the shopping list advises buying ahead for next week and stocking up.
+            get("/api/shopping-advice") { call.respond(call.user.shoppingAdvice.setting()) }
+
+            put("/api/shopping-advice") { call.respond(call.user.shoppingAdvice.save(call.receive<ShoppingAdvice>())) }
 
             route("/api/plans/{weekStart}") {
                 fun io.ktor.server.routing.RoutingCall.week() = parameters["weekStart"]!!
@@ -343,6 +358,17 @@ fun Application.module(
 
                 // Ticks an item of the shopping list off, or back on.
                 put("/shopping") { call.respond(call.user.plans.setChecked(call.week(), call.receive<ShoppingCheck>())) }
+
+                // PUT hides the buy-ahead or stock-up group of the week's list, DELETE shows it again.
+                for (dismissed in listOf(true, false)) {
+                    route("/shopping/dismissed/{group}", if (dismissed) HttpMethod.Put else HttpMethod.Delete) {
+                        handle {
+                            val group = ShoppingAdviceGroup.fromPath(call.parameters["group"])
+                                ?: throw IllegalArgumentException("group must be one of ${ShoppingAdviceGroup.entries.joinToString { it.path }}")
+                            call.respond(call.user.plans.setDismissed(call.week(), group, dismissed))
+                        }
+                    }
+                }
 
                 // Replans every meal that is not locked.
                 post("/generate") { call.respond(call.user.plans.generate(call.week())) }

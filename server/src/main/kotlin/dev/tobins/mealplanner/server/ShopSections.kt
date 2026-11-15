@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientSection
+import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.server.prices.StoreAisle
 import dev.tobins.mealplanner.server.sections.FoodSections
@@ -13,6 +14,9 @@ import dev.tobins.mealplanner.shopping.ShopSection
  * by hand; the store category of the product its regular price comes from (shared, like the
  * price, because both are looked up per ingredient name); the NEVO food it is linked to; else
  * Other, at the end of the list.
+ *
+ * Whether an ingredient keeps until next week follows from its section's shelf life, unless the
+ * account set it by hand: the same kind of correction, for buying ahead.
  */
 class ShopSections(private val ingredients: IngredientRepository, private val prices: PriceRepository) {
     /**
@@ -21,8 +25,9 @@ class ShopSections(private val ingredients: IngredientRepository, private val pr
      */
     fun list(): List<IngredientSection> {
         val byHand = ingredients.sectionsByHand()
+        val keepsByHand = ingredients.keepsByHand()
         val aisles = prices.aisles()
-        return ingredients.list().filterNot { it.negligible }.map { describe(it, byHand[it.id], aisles) }
+        return ingredients.list().filterNot { it.negligible }.map { describe(it, byHand[it.id], keepsByHand[it.id], aisles) }
     }
 
     /** The section each ingredient's items go under, by ingredient id. */
@@ -39,18 +44,35 @@ class ShopSections(private val ingredients: IngredientRepository, private val pr
         }
         val ingredient = ingredients.find(id) ?: throw NotFoundException("No ingredient with id $id")
         ingredients.setSection(id, section)
-        return describe(ingredient, section, prices.aisles())
+        return describe(ingredient, section, ingredients.keepsByHand()[id], prices.aisles())
     }
 
-    private fun describe(ingredient: Ingredient, byHand: ShopSection?, aisles: Map<String, StoreAisle>): IngredientSection {
+    /** Sets by hand whether an ingredient keeps until next week, or with null goes back to its section's answer. */
+    fun setKeeps(id: Long, choice: KeepsChoice): IngredientSection {
+        val ingredient = ingredients.find(id) ?: throw NotFoundException("No ingredient with id $id")
+        ingredients.setKeeps(id, choice.keeps)
+        return describe(ingredient, ingredients.sectionsByHand()[id], choice.keeps, prices.aisles())
+    }
+
+    /** Whether each ingredient keeps until next week, by ingredient id; [sections] as [byIngredient] gives them. */
+    fun keepsByIngredient(sections: Map<Long, ShopSection>): Map<Long, Boolean> {
+        val byHand = ingredients.keepsByHand()
+        return sections.mapValues { (id, section) -> byHand[id] ?: section.shelfLife.keepsUntilNextWeek }
+    }
+
+    private fun describe(ingredient: Ingredient, byHand: ShopSection?, keepsByHand: Boolean?, aisles: Map<String, StoreAisle>): IngredientSection {
         val (automatic, source) = automatic(ingredient, aisles)
+        val section = byHand ?: automatic
         return IngredientSection(
             ingredientId = ingredient.id,
             name = ingredient.name,
-            section = (byHand ?: automatic).name,
+            section = section.name,
             automatic = automatic.name,
             source = source,
             byHand = byHand != null,
+            keeps = keepsByHand ?: section.shelfLife.keepsUntilNextWeek,
+            keepsAutomatic = section.shelfLife.keepsUntilNextWeek,
+            keepsByHand = keepsByHand != null,
         )
     }
 

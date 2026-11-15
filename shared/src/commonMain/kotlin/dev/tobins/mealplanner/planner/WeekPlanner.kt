@@ -187,6 +187,10 @@ object WeekPlanner {
     private fun isAMeal(candidate: PlanCandidate, budget: Double): Boolean =
         candidate.kcal * portionsFor(candidate, budget) >= 0.5 * budget
 
+    /** True when the planner would take [candidate] as a [slot] meal for someone with [targets]. */
+    fun fitsAsMeal(candidate: PlanCandidate, slot: MealSlot, targets: DailyTargets): Boolean =
+        slot in candidate.slots && candidate.kcal > 0 && isAMeal(candidate, targets.kcal * slot.share)
+
     private fun meal(
         candidate: PlanCandidate,
         day: Int,

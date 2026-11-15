@@ -54,6 +54,9 @@ private const val MANUAL_SECTION = "own"
 /** Sections of the cooking site whose pages are building blocks, not meals. */
 private val componentSections = setOf("sauces", "spices", "templates", "ideas", "fermenting", "baking", "cocktails")
 
+/** A recipe's base yield and its lines, each with the ingredient it means (null when unknown). */
+data class RecipeLines(val servings: Int, val lines: List<Pair<IngredientLine, Ingredient?>>)
+
 /** One account's recipes. */
 class RecipeRepository(
     private val db: Database,
@@ -125,16 +128,17 @@ class RecipeRepository(
     /**
      * @param dislikes words for ingredients never to plan; a recipe with a line whose text
      *   or linked ingredient name contains one of them as a word (or its plural) is left out.
+     * @param onHand the ingredients on hand in the week being planned ([IngredientRepository.onHandFor]).
      */
     fun planCandidates(
         onOffer: Set<Long> = emptySet(),
         dislikes: List<String> = emptyList(),
         prices: Pricing = Pricing.NONE,
+        onHand: Set<Long> = emptySet(),
     ): List<PlanCandidate> {
         val resolve = ingredients.resolver()
         val disliked = dislikes.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
             .map { Regex("\\b${Regex.escape(it)}(s|es|en|n)?\\b", RegexOption.IGNORE_CASE) }
-        val onHand = ingredients.pantry().onHand.mapTo(HashSet()) { it.id }
         return q.selectActive(userId).executeAsList().mapNotNull { row ->
             if (row.kind != RecipeKind.MEAL.name) return@mapNotNull null
             val lines = linesOf(row.id)
@@ -160,13 +164,16 @@ class RecipeRepository(
         }
     }
 
-    fun onHandIds(): Set<Long> = ingredients.pantry().onHand.mapTo(HashSet()) { it.id }
-
-    /** A recipe's base yield and its lines with the ingredient each one means; null if the recipe is gone. */
-    fun linesWithIngredients(recipeId: Long): Pair<Int, List<Pair<IngredientLine, Ingredient?>>>? {
-        val row = q.selectById(userId, recipeId).executeAsOneOrNull() ?: return null
+    /**
+     * Each recipe's base yield and its lines with the ingredient each one means, by recipe id; recipes
+     * that are gone are left out. One lookup of the catalogue serves them all.
+     */
+    fun linesWithIngredients(recipeIds: Collection<Long>): Map<Long, RecipeLines> {
         val resolve = ingredients.resolver()
-        return (row.servings?.toInt() ?: 1) to linesOf(recipeId).map { it to resolve(it) }
+        return recipeIds.distinct().mapNotNull { id ->
+            val row = q.selectById(userId, id).executeAsOneOrNull() ?: return@mapNotNull null
+            id to RecipeLines(row.servings?.toInt() ?: 1, linesOf(id).map { it to resolve(it) })
+        }.toMap()
     }
 
     /** Creates a recipe of the user's own, or one generated for them ([source] GENERATED). */
