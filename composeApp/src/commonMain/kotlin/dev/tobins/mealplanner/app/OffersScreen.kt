@@ -99,10 +99,8 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
                     }
                     if (shown.isEmpty()) {
                         item {
-                            EmptyState(
-                                AppIcons.Offer,
-                                if (all.isEmpty()) "No offers fetched yet. Tap Refresh." else "No offers match these filters.",
-                            )
+                            if (all.isEmpty()) EmptyState(Spot.NoOffers, "No offers fetched yet. Tap Refresh.")
+                            else EmptyState(AppIcons.Offer, "No offers match these filters.")
                         }
                     }
                     items(shown, key = { "${it.store}|${it.url ?: it.title}|${it.validFrom}" }) { offer ->

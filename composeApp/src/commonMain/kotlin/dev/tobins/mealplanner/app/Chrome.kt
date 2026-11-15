@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -216,12 +217,39 @@ fun EmptyState(
     actionLabel: String? = null,
     onAction: () -> Unit = {},
 ) {
+    EmptyStateLayout(message, modifier, actionLabel, onAction) {
+        Icon(icon, contentDescription = null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** An [EmptyState] with a [spot] illustration, which brings its own colours, in place of the plain icon. */
+@Composable
+fun EmptyState(
+    spot: Spot,
+    message: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
+) {
+    EmptyStateLayout(message, modifier, actionLabel, onAction) {
+        Image(Illustrations.spot(spot), contentDescription = null, Modifier.size(96.dp))
+    }
+}
+
+@Composable
+private fun EmptyStateLayout(
+    message: String,
+    modifier: Modifier,
+    actionLabel: String?,
+    onAction: () -> Unit,
+    art: @Composable () -> Unit,
+) {
     Column(
         modifier.fillMaxSize().padding(Spacing.Message),
         verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, contentDescription = null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+        art()
         Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
         if (actionLabel != null) Button(onClick = onAction) { Text(actionLabel) }
     }

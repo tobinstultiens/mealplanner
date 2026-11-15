@@ -1,0 +1,8 @@
+<resources>
+    <!-- The same splash screen in dark mode: the night theme has to repeat it, since its qualifier outranks the version's. -->
+    <style name="Theme.Mealplanner" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF10140F</item>
+        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>

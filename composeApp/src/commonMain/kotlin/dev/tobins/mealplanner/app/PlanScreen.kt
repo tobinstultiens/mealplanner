@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -149,6 +150,9 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                                 )
                             }
                         }
+                    }
+                    if (!hasMeals) {
+                        item { EmptyState(Spot.NothingPlanned, "Nothing planned for this week yet.", Modifier.height(240.dp)) }
                     }
                     if (hasMeals) {
                         items(plan.days, key = { it.date }) { day ->

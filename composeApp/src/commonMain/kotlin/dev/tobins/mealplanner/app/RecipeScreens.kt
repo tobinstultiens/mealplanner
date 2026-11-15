@@ -194,7 +194,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                     }
                     if (current.value.isEmpty()) {
                         EmptyState(
-                            AppIcons.Recipes,
+                            Spot.NoRecipes,
                             "No recipes yet. Add your cooking site to import them, or write one yourself.",
                             actionLabel = "New recipe",
                             onAction = onNewRecipe,
