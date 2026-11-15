@@ -36,6 +36,9 @@ object PackSize {
         return pieces.find(t)?.groupValues?.get(1)?.toInt() ?: if (t.contains("per stuk")) 1 else null
     }
 
+    /** True when [text] gives a volume ("1,5 l", "6 x 330 ml"): a size that is no weight without a density. */
+    fun isVolume(text: String): Boolean = volume.containsMatchIn(text.lowercase())
+
     /**
      * What to pick up for an item that needs [gramsNeeded] (or [piecesNeeded]) when the store sells it as
      * [offer]: the packs to take and how many packs the deal wants. The pack size is read from
@@ -102,6 +105,36 @@ object Discounts {
     private val fixedPrice = Regex("""^voor\s*(\d+(?:\.\d+)?)""")
     private val halfPriceNth = Regex("""(\d+)\s*e\s*halve prijs""")
     private val amountOff = Regex("""^(\d+(?:\.\d+)?)\s*korting""")
+    private val amountOffInEuros = Regex("""(\d+(?:\.\d+)?)\s*euro\s*korting""")
+    private val barePrice = Regex("""\d+(?:\.\d+)?""")
+    private val pricePerWeight = Regex("""(\d+(?:\.\d+)?)\s*per\s*(?:kilo|kg|(\d+)\s*(?:gram|g))""")
+    private val weightForPrice = Regex("""(\d+)\s*(?:gram|g)\s*voor\s*(\d+(?:\.\d+)?)""")
+
+    /**
+     * The kind of deal the store wrote as [deal], with the numbers that define it, so that deals can be
+     * compared over time ("this 2+1 pays 67 %, it is 1+1 about every four weeks"). [price] is the offer's
+     * own price: without a deal text (Lidl) the offer is that lower price.
+     *
+     * Only what the store says after a "·" ("· Alleen online") is left out. The rest must be one of the
+     * known forms as a whole: "2 stapelen tot 35%" or "voor 1,00 per hamburger" are [DealKind.Unknown]
+     * rather than read as something they may not be.
+     */
+    fun kind(deal: String?, price: Double? = null): DealKind {
+        if (deal.isNullOrBlank()) return price?.let(DealKind::LowerPrice) ?: DealKind.Unknown(deal)
+        val t = deal.lowercase().replace(',', '.').substringBefore('·').trim().replace(Regex("""\s+"""), " ")
+        fun Regex.whole() = matchEntire(t)?.groupValues
+        fun List<String>.number(i: Int) = get(i).toDouble()
+        free.whole()?.let { return DealKind.FreeItems(it[1].toInt(), it[2].toInt()) }
+        halfPriceNth.whole()?.let { return DealKind.NthHalfPrice(it[1].toInt()) }
+        percent.whole()?.let { return DealKind.PercentOff(it.number(1)) }
+        pricePerWeight.whole()?.let { return DealKind.PricePerKg(it.number(1) * 1000 / (it[2].toDoubleOrNull() ?: 1000.0)) }
+        weightForPrice.whole()?.let { return DealKind.PricePerKg(it.number(2) * 1000 / it.number(1)) }
+        multiPrice.whole()?.let { return DealKind.MultiPrice(it[1].toInt(), it.number(2)) }
+        fixedPrice.whole()?.let { return DealKind.LowerPrice(it.number(1)) }
+        barePrice.whole()?.let { return DealKind.LowerPrice(it.number(0)) }
+        (amountOff.whole() ?: amountOffInEuros.whole())?.let { return DealKind.AmountOff(it.number(1)) }
+        return DealKind.Unknown(deal)
+    }
 
     /**
      * How many packs the deal wants bought together: 2 for "2 voor 3,99", "1+1 gratis" and "2e halve

@@ -1,10 +1,15 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.offers.OfferSource
+import kotlinx.coroutines.runBlocking
 import java.sql.DriverManager
 import java.sql.Statement
+import java.time.Instant
 import java.time.LocalDate
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
@@ -58,6 +63,13 @@ class MigrationTest {
     /** Version 12 added what a tick remembers of its row (11.sqm). */
     private fun dropTickMemory(statement: Statement) {
         for (column in listOf("name", "grams", "pieces")) statement.execute("ALTER TABLE shoppingCheck DROP COLUMN $column")
+        dropPriceHistory(statement)
+    }
+
+    /** Version 13 added the price history (12.sqm); dropping the tables drops their indexes. */
+    private fun dropPriceHistory(statement: Statement) {
+        statement.execute("DROP TABLE offerHistory")
+        statement.execute("DROP TABLE regularPriceHistory")
     }
 
     @Test
@@ -85,6 +97,7 @@ class MigrationTest {
         val tables = listOf(
             "appUser", "userMeta", "recipe", "recipeIngredient", "ingredient", "ingredientAlias", "onHand",
             "ingredientPrice", "planMeal", "shoppingCheck", "shoppingExtra", "stockUse", "offer", "foodLog", "weight",
+            "offerHistory", "regularPriceHistory",
         )
         for (table in tables) {
             assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
@@ -411,6 +424,52 @@ class MigrationTest {
         assertEquals(null to null, beef.boughtGrams to beef.boughtPieces)
         assertEquals(emptyList(), list.noLongerNeeded)
         assertTrue(list.stockUpDismissed)
+        driver.close()
+    }
+
+    @Test
+    fun aVersionTwelveDatabaseKeepsItsOffersAndPricesAndStartsAnEmptyHistory() {
+        val file = createTempFile("v12", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        // Version 12 is today's schema without the price history.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropPriceHistory(statement)
+                statement.execute(
+                    "INSERT INTO offer (store, title, deal, price, validFrom, validUntil) " +
+                        "VALUES ('LIDL', 'Rundergehakt', NULL, 4.29, '2026-11-16', '2026-11-22')",
+                )
+                statement.execute("INSERT INTO offerSource (store, fetchedAt) VALUES ('LIDL', '2026-11-16T01:00:00.123Z')")
+                statement.execute(
+                    "INSERT INTO ingredientPrice (name, store, product, packSize, packPrice, eurosPerKg, fetchedAt) " +
+                        "VALUES ('Gouda', 'AH', 'AH Gouda', '500 g', 6.0, 12.0, '2026-11-14T00:00:00Z')",
+                )
+                statement.execute("PRAGMA user_version = 12")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        for (table in listOf("offerHistory", "regularPriceHistory")) {
+            assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
+        }
+        assertEquals("Rundergehakt", db.planQueries.selectOffersValidOn("2026-11-18").executeAsOne().title)
+        assertEquals(12.0, db.priceQueries.selectPrices().executeAsOne().eurosPerKg)
+        assertEquals(emptyList(), db.priceHistoryQueries.selectOfferHistory().executeAsList(), "history starts on the first refresh")
+        assertEquals(emptyList(), db.priceHistoryQueries.selectRegularPriceHistory().executeAsList())
+
+        // The first refresh after the migration starts the history with what the store offers.
+        val lidl = object : OfferSource {
+            override val store = Store.LIDL
+            override suspend fun fetch() = listOf(Offer(Store.LIDL, "Rundergehakt", null, 4.29, validFrom = "2026-11-16", validUntil = "2026-11-22"))
+        }
+        runBlocking { OfferRepository(db, listOf(lidl)).refresh(now = Instant.parse("2026-11-17T01:00:00Z")) }
+        val row = db.priceHistoryQueries.selectOfferHistory().executeAsOne()
+        assertEquals(Triple("LOWER_PRICE", "2026-11-17T01:00:00Z", "2026-11-17T01:00:00Z"), Triple(row.dealKind, row.firstSeen, row.lastSeen))
         driver.close()
     }
 }

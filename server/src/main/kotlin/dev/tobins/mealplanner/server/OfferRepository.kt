@@ -18,6 +18,7 @@ import java.time.LocalDate
 /** Weekly store offers: fetching them per store and keeping the latest successful result. */
 class OfferRepository(private val db: Database, private val sources: List<OfferSource>) {
     private val q = db.planQueries
+    private val history = PriceHistoryRepository(db)
     private val log = LoggerFactory.getLogger(OfferRepository::class.java)
 
     /**
@@ -66,10 +67,13 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
     /**
      * Fetches every store, or only those whose last successful fetch is older than
      * [olderThan]. A store that fails keeps its previous offers and records the error;
-     * the other stores are not affected.
+     * the other stores are not affected. What a store offers is also kept in the price
+     * history ([PriceHistoryRepository.recordOffers]), with the offers, in one transaction;
+     * a store that fails records nothing there either.
      */
     suspend fun refresh(olderThan: Duration? = null, now: Instant = Instant.now()): OffersState {
         val fetched = q.selectSources().executeAsList().associate { it.store to it.fetchedAt }
+        val ingredientOf by lazy { history.ingredientNames() }
         for (source in sources) {
             val last = fetched[source.store.name]?.let(Instant::parse)
             if (olderThan != null && last != null && Duration.between(last, now) < olderThan) continue
@@ -86,6 +90,8 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                     }
                     q.ensureSource(source.store.name)
                     q.recordSuccess(now.toString(), source.store.name)
+                    history.pruneOffers(now)
+                    history.recordOffers(source.store, offers, ingredientOf, now)
                 }
                 log.info("Fetched ${offers.size} offers from ${source.store.label}")
             } catch (e: CancellationException) {

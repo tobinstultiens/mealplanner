@@ -13,7 +13,8 @@ official API, so each can change without notice.
 
 How the server uses them (`server/src/main/kotlin/.../offers/`): every six hours it fetches each
 store whose last successful fetch is over a day old; `POST /api/offers/refresh` fetches all at once.
-A store that fails keeps its previous offers and reports the error under `/api/offers`. Parsers are
+A store that fails keeps its previous offers and reports the error under `/api/offers`. Each successful
+fetch is also kept in the price history (see "Price history" below). Parsers are
 tested against trimmed real responses in `server/src/test/resources/offers/`; the live check is
 `LIVE_OFFERS=1 ./gradlew :server:test --tests '*OfferSourcesTest.liveStores'`.
 On 2026-11-13 it returned 111 AH, 137 Jumbo and 39 Lidl offers.
@@ -135,6 +136,79 @@ needs 2`) its saving is left out of the sums. Nothing is said when the pack cann
 has no weighed amount.
 Regular prices are AH's, so for Jumbo and Lidl that saving is an estimate against AH's price, and the
 app says so.
+
+## Price history
+
+So that a later step can tell a good deal from an ordinary one ("this 2+1 pays 67 %, and it is 1+1 about
+every four weeks"), the server keeps what the stores offered and what the regular prices were, over time
+(`PriceHistory.sq`, `PriceHistoryRepository`, `history/PriceChanges.kt`). It is shared by every account like
+the offers and prices, written only by the server's own refreshes, and not reachable through the API yet.
+History starts on the first refresh after version 13 of the database; nothing from before is kept.
+
+**Offers** (`offerHistory`). A product is its store, its title and its pack size, each normalised (lower
+case, runs of spaces as one, a decimal comma as a point), so "VOOR 2.99" and "Voor 2.99" are the same; another
+pack size is another product. A row is one period in which the product was offered the same way:
+- A refresh that sees a product again with the same price, price before and deal text (normalised) moves
+  the row's `lastSeen` to its own time (and widens `validFrom`/`validUntil`); nothing new is written. A run of
+  identical nights is one row with `firstSeen` and `lastSeen`.
+- A changed price, price before or deal starts a new row; the old one keeps its `lastSeen`.
+- A product missing from a refresh gets nothing: its row keeps its `lastSeen`. When it comes back, even
+  unchanged, it starts a new row, so the gap is the time between one row's `lastSeen` and the next one's
+  `firstSeen`. A row continues only if the last recording of its store saw it.
+- The last recording is the store's latest `lastSeen`. A store that fails records nothing, and so does a
+  fetch that succeeds with no offers (or only ended ones): neither ends any offer, and the next good refresh
+  continues the rows as if the night in between had not happened. A refresh no later than the last one
+  recorded (two at once) records nothing.
+- Offers that have already ended are not recorded, so a page that still shows them does not stretch a
+  period. The same offer listed twice in one refresh (Jumbo lists this week's and next week's) is one
+  sighting valid over both weeks; the same product offered two ways at once (Jumbo's mandarins for 1,29 this
+  week and 1,89 next week) is two rows, each with its own dates.
+- The catalogue ingredient the product matches is kept by name (`ingredient`), from every account's
+  ingredients and aliases, as the regular prices are kept by name. It is matched when a row starts; a row
+  that matched nothing is matched again on each refresh, so it gets an ingredient an account adds later.
+- Recording happens in the transaction that stores the store's offers.
+
+With each row the deal is kept as the store wrote it and as a kind that can be compared (`Discounts.kind`,
+`DealTerms` in `shared/.../pricing/`). Only text after a "·" ("· Alleen online") is left out when reading the
+kind; the rest must be one of these forms as a whole, or the kind is `UNKNOWN`, kept with its text and no share:
+
+| `dealKind` | Store text | Numbers |
+|---|---|---|
+| `LOWER_PRICE` | "voor 1,99", "14,99 · OP=OP", no text with a price (Lidl) | `dealEuros`: the price |
+| `PERCENT_OFF` | "25% korting" | `dealPercent` |
+| `AMOUNT_OFF` | "1,00 korting", "2 euro korting" | `dealEuros`: off one pack |
+| `N_FOR_PRICE` | "2 voor 3,00" | `dealPacks`, `dealEuros`: for all of them |
+| `X_PLUS_Y_FREE` | "1+1 gratis", "2 + 1 gratis" | `dealPacks` (3 for 2+1), `dealFree` (1) |
+| `NTH_HALF_PRICE` | "2e halve prijs" | `dealPacks` (2) |
+| `PRICE_PER_KG` | "1,00 per kilo", "1,09 per 500 gram", "100 gram voor 1.59" | `dealEuros`: per kg |
+
+`dealPacks` is always the packs to buy together for the deal (`Discounts.packsNeeded`). `paidShare` is the
+share of the regular price paid when the deal is used in full, from the offer alone: the price paid per pack
+against the store's price before where it gives one, otherwise the deal's own share (1+1 0.50, 2+1 0.67,
+2e halve prijs 0.75, 25% korting 0.75). Deals stated as a price have no share without a price before; a later
+step can compare them with the regular price history. `eurosPerKg` and `eurosPerPiece` are the price at that
+share, where the pack size (or else the title) gives a weight or a count; volumes are left out. Online-only
+deals keep their share; their text says where they apply.
+
+In the offers of 2026-11-15 (426: 111 AH, 270 Jumbo, 45 Lidl) all but 7 were recognised. Unknown were
+"2 stapelen tot 35%", "2 stapelen voor 3.99" and "3 stapelen voor 7.99" (AH), "2 gratis blikjes bij 1
+multipack", "Gratis beanie bij 2 stuks" and "voor 1,00 per hamburger" (Jumbo), and one Lidl offer with
+neither a deal nor a price. "Stapelen" (mix and match) is left unknown because `packsNeeded` does not read it
+yet.
+
+**Regular prices** (`regularPriceHistory`). Per ingredient name and store, like `ingredientPrice`: a new row
+only when the product (title, pack size) or its price (per pack, per kg) changed. A lookup that finds the same
+again moves `lastSeen`. A name the lookup found nothing for keeps its row as it was, and when it is found again
+a new row starts (the gap shows); a name whose search failed, or that a stopped lookup did not reach, keeps its
+row open, as it keeps its price.
+
+**Kept for two years.** Rows whose `lastSeen` is more than two years old are removed during the refreshes
+(offers on each store's refresh, regular prices at the end of a lookup).
+
+A copy of a real database can be checked with
+`PRICE_HISTORY_DB=/path/to/copy.db ./gradlew :server:test --tests '*PriceHistoryRealDataTest*' -i`: it copies
+the file again, migrates it, compares row counts and `integrity_check`/`foreign_key_check` around the last
+migration, then replays its stored offers through six refreshes and prints the history's rows and timings.
 
 ## Buying ahead and stocking up
 

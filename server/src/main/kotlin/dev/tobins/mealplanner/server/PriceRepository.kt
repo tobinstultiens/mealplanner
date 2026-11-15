@@ -9,6 +9,7 @@ import dev.tobins.mealplanner.pricing.Discounts
 import dev.tobins.mealplanner.pricing.PackSize
 import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.history.RegularPriceSighting
 import dev.tobins.mealplanner.server.offers.OfferMatcher
 import dev.tobins.mealplanner.server.offers.StoreImages
 import dev.tobins.mealplanner.server.prices.AhAisles
@@ -37,6 +38,7 @@ class PriceRepository(
     private val offers: OfferRepository,
 ) {
     private val q = db.priceQueries
+    private val history = PriceHistoryRepository(db)
     private val log = LoggerFactory.getLogger(PriceRepository::class.java)
     private val refreshing = AtomicBoolean(false)
 
@@ -150,7 +152,8 @@ class PriceRepository(
      * Looks up every ingredient name of every account, or nothing when the last lookup is
      * younger than [olderThan].
      * One lookup at a time; a second call while one runs returns at once. An ingredient
-     * whose search fails keeps its previous price.
+     * whose search fails keeps its previous price. Each price found is also kept in the price
+     * history ([PriceHistoryRepository.recordRegularPrice]), in the transaction that stores it.
      */
     suspend fun refresh(olderThan: Duration? = null, now: Instant = Instant.now(), pause: Duration = Duration.ofMillis(300)) {
         val source = source ?: return
@@ -160,6 +163,8 @@ class PriceRepository(
         try {
             val catalogue = catalogue()
             val matcher = OfferMatcher(catalogue.associate { (ingredient, names) -> ingredient.id to names })
+            // When the previous lookup found each name's price; only this lookup changes it, one at a time.
+            val lastFound = q.selectPrices().executeAsList().associate { it.name.lowercase() to it.fetchedAt }
             var found = 0
             var failures = 0
             for ((ingredient, names) in catalogue) {
@@ -180,13 +185,21 @@ class PriceRepository(
                     q.deletePrice(ingredient.name)
                 } else {
                     val (product, perKg) = price
-                    q.upsertPrice(
-                        ingredient.name, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString(),
-                        product.category, product.subCategory, StoreImages.accept(product.imageUrl),
-                    )
+                    db.transaction {
+                        q.upsertPrice(
+                            ingredient.name, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString(),
+                            product.category, product.subCategory, StoreImages.accept(product.imageUrl),
+                        )
+                        history.recordRegularPrice(
+                            RegularPriceSighting(ingredient.name, source.store, product.title, product.packSize, product.regularPrice, perKg),
+                            lastFound[ingredient.name.lowercase()]?.let(Instant::parse),
+                            now,
+                        )
+                    }
                     found++
                 }
             }
+            history.pruneRegularPrices(now)
             db.foodQueries.upsertMeta(FETCHED_KEY, now.toString())
             log.info("Found ${source.store.label} prices for $found ingredients")
         } finally {

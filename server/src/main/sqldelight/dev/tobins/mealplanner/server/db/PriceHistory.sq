@@ -1,0 +1,92 @@
+-- What the stores offered over time, shared by every account like the offers. One row per period in
+-- which a product was offered the same way: a refresh that sees it again unchanged only moves lastSeen,
+-- a change (price, price before, deal) starts a new row, and so does an offer that comes back after a
+-- refresh without it. A product is its store, title and pack size, normalised (PriceHistoryRepository).
+CREATE TABLE offerHistory (
+    id INTEGER PRIMARY KEY,
+    store TEXT NOT NULL,
+    productKey TEXT NOT NULL,          -- the title, normalised
+    packKey TEXT NOT NULL,             -- the pack size, normalised; '' when the store gives none
+    title TEXT NOT NULL,               -- as the store wrote it when the period began
+    packSize TEXT,
+    ingredient TEXT COLLATE NOCASE,    -- name of the catalogue ingredient it matches, where one does
+    deal TEXT,                         -- as the store wrote it
+    dealKind TEXT NOT NULL,            -- LOWER_PRICE | PERCENT_OFF | AMOUNT_OFF | N_FOR_PRICE | X_PLUS_Y_FREE | NTH_HALF_PRICE | PRICE_PER_KG | UNKNOWN
+    dealPacks INTEGER NOT NULL,        -- packs bought together to get the deal
+    dealFree INTEGER,                  -- X_PLUS_Y_FREE: the free packs among them (2+1: 1 of 3)
+    dealPercent REAL,                  -- PERCENT_OFF
+    dealEuros REAL,                    -- LOWER_PRICE, N_FOR_PRICE: the price of dealPacks packs; AMOUNT_OFF: off one pack; PRICE_PER_KG: per kg
+    price REAL,
+    originalPrice REAL,
+    paidShare REAL,                    -- of the regular price, when the deal is used in full; NULL when the offer alone can't tell
+    eurosPerKg REAL,                   -- at that share, where the pack's weight can be read
+    eurosPerPiece REAL,
+    validFrom TEXT NOT NULL,           -- of the first offer of the period
+    validUntil TEXT NOT NULL,          -- of the last
+    firstSeen TEXT NOT NULL,           -- instants of the refreshes, to the second (UTC, fixed width)
+    lastSeen TEXT NOT NULL
+);
+
+CREATE INDEX offerHistory_product ON offerHistory(store, productKey, packKey);
+CREATE INDEX offerHistory_seen ON offerHistory(store, lastSeen);
+CREATE INDEX offerHistory_ingredient ON offerHistory(ingredient);
+
+-- The regular prices looked up over time, keyed by ingredient name like ingredientPrice. A new row only
+-- when the product or its price changed, or when the lookup found nothing for the name in between.
+CREATE TABLE regularPriceHistory (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE,
+    store TEXT NOT NULL,
+    product TEXT NOT NULL,
+    packSize TEXT,
+    packPrice REAL,
+    eurosPerKg REAL NOT NULL,
+    firstSeen TEXT NOT NULL,
+    lastSeen TEXT NOT NULL
+);
+
+CREATE INDEX regularPriceHistory_name ON regularPriceHistory(name, store, lastSeen);
+
+-- When the store's offers were last recorded: every refresh that records anything moves lastSeen of
+-- the rows it saw to its own time.
+lastOfferRecording:
+SELECT max(lastSeen) AS lastSeen FROM offerHistory WHERE store = ?;
+
+-- The periods still running: those the last recording saw.
+selectOpenOffers:
+SELECT * FROM offerHistory WHERE store = ? AND lastSeen = ?;
+
+insertOfferPeriod:
+INSERT INTO offerHistory (
+    store, productKey, packKey, title, packSize, ingredient, deal, dealKind, dealPacks, dealFree, dealPercent, dealEuros,
+    price, originalPrice, paidShare, eurosPerKg, eurosPerPiece, validFrom, validUntil, firstSeen, lastSeen
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- Seen again unchanged; :ingredient is the period's own, or a match found for it since.
+continueOfferPeriod:
+UPDATE offerHistory
+SET lastSeen = :lastSeen, validFrom = min(validFrom, :validFrom), validUntil = max(validUntil, :validUntil), ingredient = :ingredient
+WHERE id = :id;
+
+selectOfferHistory:
+SELECT * FROM offerHistory ORDER BY store, productKey, packKey, firstSeen, id;
+
+pruneOffers:
+DELETE FROM offerHistory WHERE lastSeen < ?;
+
+-- The period of this name's price that the lookup at :lastSeen saw, if it was seen then.
+selectOpenRegularPrice:
+SELECT * FROM regularPriceHistory WHERE name = ? AND store = ? AND lastSeen = ? ORDER BY id DESC LIMIT 1;
+
+insertRegularPrice:
+INSERT INTO regularPriceHistory (name, store, product, packSize, packPrice, eurosPerKg, firstSeen, lastSeen)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+continueRegularPrice:
+UPDATE regularPriceHistory SET lastSeen = ? WHERE id = ?;
+
+selectRegularPriceHistory:
+SELECT * FROM regularPriceHistory ORDER BY name, store, firstSeen, id;
+
+pruneRegularPrices:
+DELETE FROM regularPriceHistory WHERE lastSeen < ?;
