@@ -74,8 +74,8 @@ class JumboOfferSource(private val http: HttpClient, private val url: String = "
 }
 
 /**
- * Lidl, from the product tiles of its offers page. The page shows only the first batch
- * of tiles (about 50), so later items of a large folder are missed.
+ * Lidl, from the product tiles of its offers page. The page holds the whole week's list
+ * (about 50 tiles, no paging request) as far as can be found; see docs/data-sources.md.
  */
 class LidlOfferSource(private val http: HttpClient, private val url: String = "https://www.lidl.nl/c/aanbiedingen/a10008785") : OfferSource {
     override val store = Store.LIDL
