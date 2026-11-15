@@ -20,6 +20,8 @@
       "Bash(gh pr comment *)",
       "Bash(gh pr edit *)",
       "Bash(gh pr list*)",
+      "Bash(gh pr close *)",
+      "Bash(gh issue close *)",
       "Bash(gh issue view *)",
       "Bash(gh issue comment *)",
       "Bash(gh run view *)",
@@ -48,6 +50,13 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gate-pr-merge.sh",
             "if": "Bash(*gh pr merge*)",
+            "timeout": 10,
+            "onFailure": "block"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gate-pr-merge.sh",
+            "if": "Bash(*gh workflow run*)",
             "timeout": 10,
             "onFailure": "block"
           }

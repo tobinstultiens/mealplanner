@@ -27,7 +27,7 @@ Do not merge, whatever else is true, when:
 - a check is failing or still running, or the branch conflicts with `main`;
 - a criterion is not met, or is not verifiable and matters (say what evidence is missing);
 - the diff touches `.github/workflows/`, signing or release configuration, or `.claude/`: say "approved" in the comment and leave the merge to the owner;
-- an app release is **required**: say "approved" and leave the merge to the owner, who has to release the app before the server deploys that night.
+- an app release is **required**: say "approved" and leave the merge to the owner, who has to release the app before the server deploys that night (the `merger` agent lands such PRs once the owner says so).
 
 Never push, tag, release or run workflows.
 
