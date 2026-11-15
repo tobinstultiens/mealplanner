@@ -183,6 +183,43 @@ class AccountsTest {
     }
 
     @Test
+    fun shoppingListTicksStayWithTheirAccount() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val week = "2026-11-16"
+        // Without NEVO data the planner plans nothing, so each account's stew is put in its plan directly.
+        for ((client, subject) in listOf(alice to "sub-alice", bob to "sub-bob")) {
+            val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+            val userId = db.userQueries.selectBySubject(subject).executeAsOne().id
+            db.planQueries.upsertMeal(userId, week, 0, "DINNER", stew.id, stew.title, 2.0, 1000.0, 50.0, 0, 0, "PLANNED")
+        }
+        suspend fun HttpClient.list() = get("/api/plans/$week/shopping").body<ShoppingList>()
+        val alicesItems = alice.list().items
+        assertTrue(alicesItems.isNotEmpty())
+        // Lines with no ingredient linked have the same keys in both lists ("t:beef").
+        assertEquals(alicesItems.map { it.key }, bob.list().items.map { it.key })
+
+        // Alice's ticks are hers: Bob's list of the same stew stays as it was.
+        for (item in alicesItems) alice.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(item.key, true)) }
+        assertTrue(alice.list().items.all { it.checked })
+        assertTrue(bob.list().items.isNotEmpty())
+        assertTrue(bob.list().items.none { it.checked })
+
+        // Bob un-ticking her keys, or ticking them, changes only his own list.
+        for (item in alicesItems) {
+            assertEquals(HttpStatusCode.OK, bob.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(item.key, false)) }.status)
+        }
+        assertTrue(alice.list().items.all { it.checked })
+        val first = alicesItems.first().key
+        alice.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(first, false)) }
+        bob.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(first, true)) }
+        assertFalse(alice.list().items.single { it.key == first }.checked)
+    }
+
+    @Test
     fun eatingAMealUsesUpOnlyTheAccountsOwnStock() {
         val db = openDatabase("jdbc:sqlite::memory:").second
         val foods = FoodRepository(db)
