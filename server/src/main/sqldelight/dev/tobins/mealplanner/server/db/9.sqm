@@ -1,0 +1,12 @@
+-- Version 9 -> 10: own items on the shopping list (issue 93), such as coffee or toilet paper. Only a
+-- new table, so no table is rebuilt and no row is touched: every account starts without own items.
+
+CREATE TABLE shoppingExtra (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    fromWeek TEXT NOT NULL,            -- ISO date of the plan week it was added in
+    boughtWeek TEXT                    -- ISO date of the plan week it was ticked off in; NULL while open
+);
+
+CREATE INDEX shoppingExtra_user ON shoppingExtra(userId, boughtWeek);

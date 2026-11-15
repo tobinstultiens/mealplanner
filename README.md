@@ -116,7 +116,10 @@ response, so it too needs that release installed. v0.1.2 is that release and is 
 fields can now be added freely: `ShoppingItem.regularPrice` and `Offer.paidShare` (the saving per store)
 were added this way, and `ShopsTest` decodes the new shopping list with v0.1.2's types to prove it.
 The buy-ahead and stock-up advice (`ShoppingList.buyAhead`, `stockUp`) came as separate optional lists
-rather than rows of `items`, so v0.1.2 shows only what the week's meals need (`BuyAheadTest`).
+rather than rows of `items`, so v0.1.2 shows only what the week's meals need (`BuyAheadTest`). The account's
+own items (coffee, toilet paper) are the opposite case: they are rows of `items` (keys `x:<id>`), so v0.1.2
+shows and ticks them off without an update, though only a newer app can add one (`BuyAheadTest` decodes and
+ticks one with v0.1.2's types).
 
 ## Screenshot tests
 
@@ -250,7 +253,8 @@ ingredient texts to catalogue ingredients), `/api/profile` (body data
 and daily targets), `/api/shops` (the stores the account shops at; only their offers count for plans and costs),
 `/api/shopping-advice` (whether the shopping list advises buying ahead and stocking up; see
 `docs/data-sources.md`, "Buying ahead and stocking up"), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`
-with `shopping/dismissed/{group}`,
+with `shopping/dismissed/{group}` and the account's own items, `POST shopping/extras` with `{"name": "Coffee"}` and
+`DELETE shopping/extras/{id}`, rows of the list with keys `x:<id>`; see `docs/data-sources.md`, "Own items on the shopping list",
 and per meal `reroll`, `lock`, `status` and delete), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion), `/api/offers` (weekly store offers;
 `POST /api/offers/refresh` fetches them now) and `/api/prices` (regular AH prices per ingredient, the

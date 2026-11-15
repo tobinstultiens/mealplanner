@@ -16,6 +16,7 @@ import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
@@ -478,6 +479,7 @@ class BuyAheadTest {
     @Test
     fun theAppOfV012ReadsOnlyThisWeeksNeedsAsItsList() = testApplication {
         val http = start().ready()
+        http.post("/api/plans/$week/shopping/extras") { setBody(ShoppingExtraInput("Coffee")) }
         val list = http.list()
         assertTrue(list.buyAhead.isNotEmpty() && list.stockUp.isNotEmpty())
 
@@ -494,6 +496,9 @@ class BuyAheadTest {
         val ticked = v012.decodeFromString<V012ShoppingList>(http.tick(old.items.first().key).bodyAsText())
         assertTrue(ticked.items.first().checked)
         assertEquals(old.items.map { it.key }, ticked.items.map { it.key })
+        // An own item is a row of its list like any other: it shows it and ticks it off with its key.
+        val coffee = old.items.single { it.name == "Coffee" }
+        assertTrue(v012.decodeFromString<V012ShoppingList>(http.tick(coffee.key).bodyAsText()).items.single { it.key == coffee.key }.checked)
     }
 
     /** `ShoppingList` and `ShoppingItem` exactly as v0.1.2 has them (offers left out: the store test reads those). */
