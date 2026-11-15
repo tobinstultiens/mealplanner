@@ -67,6 +67,8 @@ enum class Shot(val emptyWeek: Boolean = false, val content: @Composable (ApiCli
             updater = null,
             theme = ThemeMode.SYSTEM,
             onTheme = {},
+            language = AppLanguage.ENGLISH,
+            onLanguage = {},
             systemColors = false,
             onSystemColors = {},
             onSave = {},
@@ -132,7 +134,8 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     @Composable
     private fun Frame(content: @Composable () -> Unit) {
         val density = LocalDensity.current
-        CompositionLocalProvider(LocalDensity provides Density(density.density, look.fontScale)) {
+        // The language is pinned to English, whatever the machine's locale is.
+        CompositionLocalProvider(LocalDensity provides Density(density.density, look.fontScale), LocalStrings provides Strings.English) {
             MealPlannerTheme(look.dark) {
                 Surface(Modifier.testTag(FRAME).size(look.widthDp.dp, 640.dp)) { content() }
             }
