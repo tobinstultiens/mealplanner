@@ -10,6 +10,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ShoppingModeTest {
+    private val today = "2026-01-02"
+    private val all = Store.entries.toSet()
+
     private fun item(key: String, category: String, checked: Boolean = false, offers: List<Offer> = emptyList()) =
         ShoppingItem(key, key, null, null, category, emptyList(), false, checked, offers)
 
@@ -58,17 +61,17 @@ class ShoppingModeTest {
     fun theBestOfferIsTheOneThatSavesMost() {
         val best = offer(Store.JUMBO, 1.49, share = 0.6)
         val withOffers = item("x", "Dairy", offers = listOf(offer(Store.AH, 0.99, share = 0.9), offer(Store.LIDL, null, "1+1 gratis"), best))
-        assertEquals(best, withOffers.bestOffer())
-        assertEquals("1+1 gratis", item("y", "Dairy", offers = listOf(offer(Store.LIDL, null, "1+1 gratis"))).bestOffer()?.deal)
-        assertNull(item("z", "Dairy").bestOffer())
+        assertEquals(best, withOffers.bestOffer(all, today))
+        assertEquals("1+1 gratis", item("y", "Dairy", offers = listOf(offer(Store.LIDL, null, "1+1 gratis"))).bestOffer(all, today)?.deal)
+        assertNull(item("z", "Dairy").bestOffer(all, today))
     }
 
     @Test
     fun theBadgeNamesTheStoreAndThePriceOrTheDeal() {
-        assertEquals("AH €1.99", offer(Store.AH, 1.99).badgeText(Strings.English))
-        assertEquals("AH €1,99", offer(Store.AH, 1.99).badgeText(Strings.Dutch))
-        assertEquals("Jumbo 1+1 gratis", offer(Store.JUMBO, null, "1+1 gratis").badgeText(Strings.English))
-        assertEquals("AH 2 voor 2.49", offer(Store.AH, null, "2 VOOR 2.49").badgeText(Strings.English))
-        assertEquals("Lidl offer", offer(Store.LIDL, null).badgeText(Strings.English))
+        assertEquals("AH €1.99", offer(Store.AH, 1.99).badgeText(Strings.English, today))
+        assertEquals("AH €1,99", offer(Store.AH, 1.99).badgeText(Strings.Dutch, today))
+        assertEquals("Jumbo 1+1 gratis", offer(Store.JUMBO, null, "1+1 gratis").badgeText(Strings.English, today))
+        assertEquals("AH 2 voor 2.49", offer(Store.AH, null, "2 VOOR 2.49").badgeText(Strings.English, today))
+        assertEquals("Lidl offer", offer(Store.LIDL, null).badgeText(Strings.English, today))
     }
 }

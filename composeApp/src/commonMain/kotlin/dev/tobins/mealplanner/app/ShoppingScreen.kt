@@ -93,6 +93,7 @@ internal fun ShoppingScreen(
     onOpenOffers: () -> Unit,
 ) {
     val t = LocalStrings.current
+    val today = todayIso()
     // The week, the list with its ticks, the opened groups and the scroll position live in the
     // session, which the app keeps: leaving the screen for a recipe or another tab loses none of it.
     val weekStart = session.weekStart
@@ -199,12 +200,12 @@ internal fun ShoppingScreen(
             item(key = key) { HiddenAdvice(t(texts.hidden)) { dismiss(texts.group, false) } }
             return
         }
-        val shown = adviceAt(texts.items(list), store, shops)
+        val shown = adviceAt(texts.items(list), store, shops, today)
         if (shown.isEmpty()) return
-        item(key = key) { AdviceHeader(t(texts.title), adviceHint(texts, shown, shops, t)) { dismiss(texts.group, true) } }
+        item(key = key) { AdviceHeader(t(texts.title), adviceHint(texts, shown, shops, today, t)) { dismiss(texts.group, true) } }
         val id = "${texts.group.path}:"
         if (byStore) {
-            storeOverview(shown, shops).stores.forEach { group ->
+            storeOverview(shown, shops, today).stores.forEach { group ->
                 item(key = "$id${group.store.name}") {
                     GroupHeader(group.title(t), group.saving?.let { t(Msg.ADVICE_SAVING, formatEuro(it, t.locale)) }.orEmpty(), onClick = null)
                 }
@@ -259,16 +260,17 @@ internal fun ShoppingScreen(
             is Load.Ready -> {
                 val list = current.value
                 @Composable
-                fun row(item: ShoppingItem, offer: Offer? = item.bestOffer(shops)) = ShoppingRow(
+                fun row(item: ShoppingItem, offer: Offer? = item.bestOffer(shops, today)) = ShoppingRow(
                     item,
                     offer,
                     shops,
+                    today,
                     shoppingMode,
                     onToggle = { if (shoppingMode) tickWithUndo(item) else tick(item.key, !item.checked) },
                     onOfferClick = {
                         scope.launch {
                             snackbar.currentSnackbarData?.dismiss()
-                            snackbar.showSnackbar(item.offers.filter { it.store in shops }.distinctBy { it.store to it.deal }.joinToString("\n") { "${it.shortText(t)} (${it.title})" })
+                            snackbar.showSnackbar(item.dealText(shops, today, t))
                         }
                     },
                 )
@@ -306,18 +308,18 @@ internal fun ShoppingScreen(
                         )
                     }
                     val store = chosenStore?.takeIf { view == ShoppingView.STORE && it in shops }
-                    if (list.hasAdvice(store, shops)) item(key = "this-week") { PartTitle(t(Msg.FOR_THIS_WEEK)) }
+                    if (list.hasAdvice(store, shops, today)) item(key = "this-week") { PartTitle(t(Msg.FOR_THIS_WEEK)) }
                     when {
                         view == ShoppingView.SECTION -> sectionItems(shoppingSections(list.items, shoppingMode)) { row(it) }
                         store == null -> {
-                            val overview = storeOverview(list.items, shops)
+                            val overview = storeOverview(list.items, shops, today)
                             item { ShopsInUse(shops, ::chooseShops) }
                             overview.stores.forEach { group ->
                                 item(key = "s:${group.store.name}") {
                                     val hint = group.saving?.let { t(Msg.STORE_SAVING_HINT, formatEuro(it, t.locale)) } ?: t(Msg.TAP_TO_SHOP)
                                     GroupHeader(group.title(t), hint, onClick = { chooseStore(group.store) })
                                 }
-                                groupItems(group.store.name, group.items) { row(it, it.bestOffer(shops)) }
+                                groupItems(group.store.name, group.items) { row(it, it.bestOffer(shops, today)) }
                             }
                             if (overview.anyStore.isNotEmpty()) {
                                 item(key = "s:any") {
@@ -327,13 +329,13 @@ internal fun ShoppingScreen(
                                         onClick = null,
                                     )
                                 }
-                                groupItems("any", overview.anyStore) { row(it, it.bestOffer(shops)) }
+                                groupItems("any", overview.anyStore) { row(it, it.bestOffer(shops, today)) }
                             }
                         }
                         else -> {
-                            val visit = storeVisit(list.items, store, shops, shoppingMode)
+                            val visit = storeVisit(list.items, store, shops, today, shoppingMode)
                             item(key = "visit") { ShopIAmIn(store, visit.saving) { chooseStore(null) } }
-                            sectionItems(visit.sections) { row(it, it.bestOffer(shops)) }
+                            sectionItems(visit.sections) { row(it, it.bestOffer(shops, today)) }
                             if (visit.elsewhere.isNotEmpty()) {
                                 val open = "elsewhere" in expanded
                                 item(key = "elsewhere") {
@@ -563,7 +565,7 @@ private fun ToggleHeader(title: String, open: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, shoppingMode: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
+private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, today: String, shoppingMode: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
     val t = LocalStrings.current
     Row(
         Modifier.fillMaxWidth()
@@ -605,7 +607,7 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, sh
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        offer.badgeText(t),
+                        offer.badgeText(t, today),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         softWrap = false,

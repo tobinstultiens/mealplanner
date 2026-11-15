@@ -2,6 +2,8 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.isoDayNumber
 
 /**
  * One shop section of the list as the screen shows it. With shopping mode on, ticked items sit
@@ -34,8 +36,19 @@ fun shoppingProgress(items: List<ShoppingItem>, strings: Strings): String {
     return strings.plural(Plural.SECTIONS_TO_GO, sectionsToGo, ticked, items.size)
 }
 
-/** `AH €1.99`, or `AH 1+1 gratis` when the store states no price: short enough for the row's edge. */
-fun Offer.badgeText(strings: Strings): String {
+/**
+ * `AH €1.99`, or `AH 1+1 gratis` when the store states no price: short enough for the row's edge.
+ * An offer that starts after [today] says when on a second line, which the row's narrow edge
+ * needs: `Lidl €1.79` and `from Thu`.
+ */
+fun Offer.badgeText(strings: Strings, today: String): String {
     // Some stores shout their deals in capitals; in a badge that is too loud.
-    return "${store.shortName()} ${price?.let { formatEuro(it, strings.locale) } ?: deal?.takeIf { it.isNotBlank() }?.lowercase() ?: strings(Msg.BADGE_OFFER)}"
+    val text = "${store.shortName()} ${price?.let { formatEuro(it, strings.locale) } ?: deal?.takeIf { it.isNotBlank() }?.lowercase() ?: strings(Msg.BADGE_OFFER)}"
+    return if (startsAfter(today)) "$text\n${startLabel(today, strings)}" else text
+}
+
+/** `from Thu` for a start within the coming week, else `from 23 Nov`: the day an offer can first be had. */
+fun Offer.startLabel(today: String, strings: Strings): String {
+    val day = if (daysBetween(today, validFrom) < 7) strings.locale.dayNames[LocalDate.parse(validFrom).dayOfWeek.isoDayNumber - 1] else dayMonthLabel(validFrom, strings.locale)
+    return strings(Msg.OFFER_FROM, day)
 }
