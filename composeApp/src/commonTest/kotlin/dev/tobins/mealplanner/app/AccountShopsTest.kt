@@ -143,4 +143,28 @@ class AccountShopsTest {
         assertEquals(all, ShopsSetting(emptyList()).storesInUse())
         assertEquals(setOf(Store.LIDL), ShopsSetting(listOf(Store.LIDL)).storesInUse())
     }
+
+    @Test
+    fun theNextAccountOnTheDeviceNeverSeesTheLastOnesStores() = runTest {
+        val storage = MemorySettingsStorage()
+        val first = shops(storage, FakeServer(ShopsSetting(listOf(Store.AH))))
+        first.sync()
+        assertEquals(setOf(Store.AH), first.stores)
+
+        storage.logOut()
+
+        val second = shops(storage, FakeServer(latency = 100))
+        assertEquals(all, second.stores, "before the second account's answer arrives")
+        assertEquals(null, storage.session())
+    }
+
+    @Test
+    fun theSettingsAndTheShoppingListShareOneChoice() = runTest {
+        val server = FakeServer()
+        val shared = shops(MemorySettingsStorage(), server)
+        // Both screens are handed this one instance: a choice made in either shows in the other.
+        shared.choose(setOf(Store.LIDL))
+        assertEquals(setOf(Store.LIDL), shared.stores)
+        assertEquals(listOf(listOf(Store.LIDL)), server.sent)
+    }
 }

@@ -95,6 +95,15 @@ fun SettingsStorage.shops(): Set<Store> {
 
 fun SettingsStorage.saveShops(shops: Set<Store>) = set(SHOPS_KEY, shops.joinToString(",") { it.name })
 
+/** Forgets the stores shown, for when another account may log in on this device; all stores until the server answers. */
+fun SettingsStorage.clearShops() = set(SHOPS_KEY, "")
+
+/** Ends the session and forgets what belongs to the account, so the next login starts clean. */
+fun SettingsStorage.logOut() {
+    saveSession(null)
+    clearShops()
+}
+
 private const val SHOPS_MOVED_KEY = "shopsMovedToAccount"
 
 /** Whether this device's own choice of stores has been offered to the account, which happens once. */

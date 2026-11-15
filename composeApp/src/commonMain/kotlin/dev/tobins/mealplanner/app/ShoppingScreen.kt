@@ -232,15 +232,16 @@ fun ShoppingScreen(
             is Load.Ready -> {
                 val list = current.value
                 @Composable
-                fun row(item: ShoppingItem, offer: Offer? = item.bestOffer()) = ShoppingRow(
+                fun row(item: ShoppingItem, offer: Offer? = item.bestOffer(shops)) = ShoppingRow(
                     item,
                     offer,
+                    shops,
                     shoppingMode,
                     onToggle = { if (shoppingMode) tickWithUndo(item) else tick(item.key, !item.checked) },
                     onOfferClick = {
                         scope.launch {
                             snackbar.currentSnackbarData?.dismiss()
-                            snackbar.showSnackbar(item.offers.distinctBy { it.store to it.deal }.joinToString("\n") { "${it.shortText(t)} (${it.title})" })
+                            snackbar.showSnackbar(item.offers.filter { it.store in shops }.distinctBy { it.store to it.deal }.joinToString("\n") { "${it.shortText(t)} (${it.title})" })
                         }
                     },
                 )
@@ -420,9 +421,13 @@ private fun ViewSwitch(view: ShoppingView, onChange: (ShoppingView) -> Unit) {
  * needs at least one. The note under them says so, and what the savings are measured against.
  */
 @Composable
-private fun ShopsInUse(shops: Set<Store>, onChange: (Set<Store>) -> Unit) {
+fun ShopsInUse(
+    shops: Set<Store>,
+    onChange: (Set<Store>) -> Unit,
+    modifier: Modifier = Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = Spacing.Tight),
+) {
     val t = LocalStrings.current
-    Column(Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = Spacing.Tight)) {
+    Column(modifier) {
         Text(t(Msg.STORES_I_SHOP_AT), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Store.entries.forEach { store ->
@@ -493,7 +498,7 @@ private fun ToggleHeader(title: String, open: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shoppingMode: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
+private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, shoppingMode: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
     val t = LocalStrings.current
     Row(
         Modifier.fillMaxWidth()
@@ -503,7 +508,7 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shoppingMode: Boolean
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(checked = item.checked, onCheckedChange = null, modifier = Modifier.padding(12.dp))
-        ProductPicture(item.pictureUrl(offer), item.name, size = if (shoppingMode) 56.dp else 48.dp, dimmed = item.checked)
+        ProductPicture(item.pictureUrl(offer, shops), item.name, size = if (shoppingMode) 56.dp else 48.dp, dimmed = item.checked)
         Column(Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp)) {
             Text(
                 if (item.onHand) t(Msg.ON_HAND_MAYBE, item.name) else item.name,

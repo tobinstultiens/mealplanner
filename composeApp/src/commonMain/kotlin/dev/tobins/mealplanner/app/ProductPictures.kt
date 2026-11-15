@@ -25,6 +25,7 @@ import coil3.ImageLoader
 import coil3.compose.AsyncImage
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.Store
 
 /**
  * Loads the product pictures. Null (the default) means none are loaded and every row keeps its
@@ -48,9 +49,11 @@ fun loadablePictureUrl(url: String?, browser: Boolean): String? {
 
 /**
  * The picture of the offer the row shows its badge for, so picture and badge name the same store
- * (the per-store views choose among fewer stores than the overview); else the item's own picture.
+ * (the per-store views choose among fewer stores than the overview); else the item's own picture,
+ * unless that is a picture from a store outside [shops].
  */
-fun ShoppingItem.pictureUrl(shown: Offer?): String? = shown?.imageUrl ?: imageUrl
+fun ShoppingItem.pictureUrl(shown: Offer?, shops: Set<Store> = Store.entries.toSet()): String? =
+    shown?.imageUrl ?: imageUrl?.takeUnless { url -> offers.any { it.store !in shops && it.imageUrl == url } }
 
 /** The first letter or digit of [name], capitalised: what stands in for a picture. */
 fun pictureInitial(name: String): String = name.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "•"

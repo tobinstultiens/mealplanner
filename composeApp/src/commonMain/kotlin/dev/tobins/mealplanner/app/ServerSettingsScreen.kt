@@ -63,6 +63,8 @@ fun ServerSettingsScreen(
     onSystemColors: (Boolean) -> Unit,
     productPictures: Boolean,
     onProductPictures: (Boolean) -> Unit,
+    /** The stores the account shops at: the same state and save path as the per-store shopping list. */
+    accountShops: AccountShops,
     onSave: (ServerSettings) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -150,6 +152,19 @@ fun ServerSettingsScreen(
                     SwitchRow(t(Msg.SYSTEM_COLORS), t(Msg.SYSTEM_COLORS_HINT), systemColors, onSystemColors)
                 }
                 SwitchRow(t(Msg.PRODUCT_PICTURES), t(Msg.PRODUCT_PICTURES_HINT), productPictures, onProductPictures)
+            }
+            if (loggedIn) {
+                var shopsError by remember { mutableStateOf<String?>(null) }
+                SettingsCard(t(Msg.CARD_SHOPPING)) {
+                    ShopsInUse(
+                        accountShops.stores,
+                        onChange = { chosen ->
+                            scope.launch { shopsError = (load { accountShops.choose(chosen) } as? Load.Failed)?.message }
+                        },
+                        modifier = Modifier,
+                    )
+                    shopsError?.let { ErrorBanner(t(Msg.SHOPS_SAVE_FAILED_TITLE), it) }
+                }
             }
             if (updater != null) AppVersionSection(updater)
             if (loggedIn) server()
