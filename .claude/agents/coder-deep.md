@@ -32,7 +32,7 @@ You work on one issue (or one slice of it) in the git worktree the caller starte
 - When you are sent review findings: fix them on the same branch, push, and answer each finding by number (fixed how, or why not).
 
 ## Don't
-- Don't merge, push to `main`, tag, release or deploy; don't run the Release workflow. Merging is the reviewer's job.
+- Don't merge, push to `main`, tag, release or deploy; don't run the Release workflow. Merging is the reviewer's job, or the merger's for what waits for the owner.
 - Don't touch `data/` (the NEVO dataset may not be committed or redistributed), signing keys, `~/.gradle/gradle.properties` or anything outside this repo (the Ansible and homelab-gitops repos are the user's to change; describe needed changes there instead).
 - Don't add dependencies without saying why; pin exact versions in `gradle/libs.versions.toml`.
 

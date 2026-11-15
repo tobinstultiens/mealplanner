@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# PreToolUse hook for Bash: only the `reviewer` sub-agent may merge a pull request.
+# PreToolUse hook for Bash: only the `reviewer` and `merger` sub-agents may merge a pull request.
+#
+# The reviewer merges what it approved; the merger lands, on the owner's approval, what
+# reviewers approved but left for the owner.
 #
 # - `gh pr merge` from anyone else (the main session, coders) is blocked.
-# - From the reviewer, the plain form `gh pr merge <number> [--squash] [--delete-branch]`
+# - From those two, the plain form `gh pr merge <number> [--squash] [--delete-branch]`
 #   is approved without a prompt; anything fancier goes through the normal permission flow.
 # - Every other command is left alone.
 #
@@ -18,12 +21,12 @@ if ! grep -Eq '(^|[;&|(])[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge([[:space:
   exit 0
 fi
 
-if [[ "$agent" != "reviewer" ]]; then
-  echo "Only the reviewer agent merges pull requests in this repo (.claude/hooks/gate-pr-merge.sh). Start a reviewer for the PR instead." >&2
+if [[ "$agent" != "reviewer" && "$agent" != "merger" ]]; then
+  echo "Only the reviewer and merger agents merge pull requests in this repo (.claude/hooks/gate-pr-merge.sh). Start a reviewer for the PR, or the merger once the owner approved merging." >&2
   exit 2
 fi
 
 if grep -Eq '^[[:space:]]*gh pr merge [0-9]+( --squash| --delete-branch)*[[:space:]]*$' <<<"$command"; then
-  jq -n '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "The reviewer agent may merge the pull request it reviewed"}}'
+  jq -n '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "The reviewer and merger agents may merge pull requests"}}'
 fi
 exit 0

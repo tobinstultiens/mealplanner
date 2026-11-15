@@ -25,6 +25,7 @@ A change in how a screen looks is shown by the screenshot tests: the coder re-re
 For each PR start a fresh `reviewer` with only the PR number; pass `model: "opus"` when `coder-deep` wrote it. It comments its verdict on the PR and merges when everything is met.
 - **Changes needed:** send the findings to the same coder (SendMessage), then start a new reviewer, not the old one.
 - After two rounds without approval, stop on that issue and report why, rather than loop.
+- **Approved but left for the owner** (a release is required, or it touches workflows, signing or `.claude/`): when more than one such PR waits, run `merger` in plan mode and give the owner its order and what they have to do. Only when the owner says which ones to merge, start `merger` in merge mode with the PR numbers and the owner's words quoted. Never infer that approval.
 - A failing CI run nobody understands: `ci-triage` with the run id.
 - After a merge, have the coders of the PRs still open rebase on `main` before their review.
 
@@ -37,5 +38,5 @@ Then per issue: the PR, the verdict, merged or not, and what is left. Then check
 After the report, see whether an audit is due: about twenty pull requests have merged since the last audit (the newest folder in `build/audit/`; its `report.md` names the commit). A release alone does not make one due. If it is due, and no coder is still running and no pull request of this run is open, start the `architect` agent once (when a release is about to be made, after it, not before) and pass on its summary and the paths of its drafts; the owner decides which drafts become issues. Otherwise don't start it: it is expensive, and it is never part of working on an issue. The owner can always ask for it directly.
 
 ## Limits
-- Never merge a PR yourself, and never push to `main`, tag, release or run workflows: the reviewer merges, the owner releases.
+- Never merge a PR yourself, and never push to `main`, tag, release or run workflows: the reviewer merges, the merger merges what the owner approved, the owner releases.
 - Don't raise an agent's model or effort beyond the rules above without the owner asking.

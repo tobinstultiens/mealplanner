@@ -157,6 +157,7 @@ runs that for the given issues; the session you type it in directs the work and 
 | `coder` | Sonnet, medium | One well-scoped issue, opens the pull request |
 | `coder-deep` | Opus, high | The same for schema migrations, login, account separation, concurrency, cross-module refactors |
 | `reviewer` | Sonnet, high (Opus for `coder-deep`'s work) | Checks a pull request against its issue; merges when all is met and CI is green |
+| `merger` | Sonnet, medium | Works out the order for pull requests that wait for you, and on your approval merges them and rebases the rest in between |
 | `emulator-tester` | Sonnet, medium | Looks at a UI change on the Android emulator |
 | `ci-triage` | Haiku, low | Finds the first real error of a failed build |
 | `price-auditor` | Sonnet, medium | Flags wrongly matched AH prices |
@@ -166,8 +167,10 @@ The reviewer never merges changes to the workflows, signing or `.claude/`, and n
 that stays manual, below. A merged server change is live the next night (see `docs/deploy.md`), the
 app only after a release, so every pull request states whether the app must be released: the
 reviewer labels those `needs-app-release`, reports it first, and leaves a pull request whose server
-change would break the installed app for you to merge together with a release. Only the reviewer
-can run `gh pr merge` (`.claude/hooks/gate-pr-merge.sh`).
+change would break the installed app for you to merge together with a release. When several wait, the `merger` agent says in
+which order they must go (a pull request built on another one merges after it), and once you say
+which ones to merge it merges them and fixes the conflicts in between. Only the reviewer and the
+merger can run `gh pr merge` (`.claude/hooks/gate-pr-merge.sh`).
 
 ## Releases
 
