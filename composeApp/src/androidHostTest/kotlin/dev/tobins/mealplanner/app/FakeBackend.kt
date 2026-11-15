@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.DailyTargets
 import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.FoodDataset
+import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientPrice
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MappedLine
@@ -99,7 +100,8 @@ class FakeBackend(
             path == "/api/offers" -> json.encodeToString(if (emptyOffers) OffersState(emptyList(), emptyList()) else offers)
             path == "/api/prices" -> json.encodeToString(if (emptyPrices) PricesState(emptyList(), emptyList(), null) else prices)
             path == "/api/weights" -> json.encodeToString(weights)
-            path == "/api/pantry" -> json.encodeToString(Pantry(emptyList(), emptyList()))
+            path == "/api/ingredients" -> json.encodeToString(ingredients)
+            path == "/api/pantry" -> json.encodeToString(pantry)
             // Never chosen: every store, as for an account that never opened the per-store list.
             path == "/api/shops" -> json.encodeToString(ShopsSetting())
             path == "/api/shopping-advice" -> json.encodeToString(ShoppingAdvice())
@@ -108,6 +110,24 @@ class FakeBackend(
     }
 
     private val targets = DailyTargets(2100, 130)
+
+    private fun ingredient(id: Long, name: String, staple: Boolean = false) = Ingredient(id, name, null, null, null, null, null, isStaple = staple)
+
+    private val ingredients = listOf(
+        ingredient(1, "Chicken thigh fillet"), ingredient(2, "Feta"), ingredient(3, "Greek yoghurt"),
+        ingredient(4, "Minced beef"), ingredient(5, "Olive oil", staple = true), ingredient(6, "Rolled oats"),
+        ingredient(7, "Salt", staple = true), ingredient(8, "Spinach"),
+    )
+
+    /**
+     * Feta on hand by hand, how much not known; what is left of the chicken bought ahead last week and
+     * of the yoghurt and oats stocked up; the minced beef bought ahead for next week, untouched.
+     */
+    private val pantry = Pantry(
+        staples = ingredients.filter { it.isStaple },
+        onHand = ingredients.filter { it.id in setOf(1L, 2L, 3L, 4L, 6L) },
+        onHandGrams = mapOf(1L to 300.0, 3L to 650.0, 4L to 1000.0, 6L to 200.0),
+    )
 
     private fun meal(day: Int, slot: MealSlot, id: Long, title: String, kcal: Double, protein: Double, cost: Double = 2.4) =
         PlannedMeal(day, slot, id, title, 1.0, kcal, protein, cost = cost)
@@ -153,8 +173,8 @@ class FakeBackend(
         if (emptyWeek) return ShoppingList(weekStart, emptyList(), emptyList())
         // In walking order, as the server sends it: by shop section, then by name. The regular price is the
         // amount needed at the price per kg of `prices`; the pepper, counted in pieces only, has none.
-        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String?, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null, knownGrams: Double? = null, otherAmounts: List<String> = emptyList(), boughtGrams: Double? = null) =
-            ShoppingItem(key, name, grams, pieces, section.title, listOfNotNull(recipe), onHand = false, checked = checked, knownGrams = knownGrams, otherAmounts = otherAmounts, offers = offers, imageUrl = imageUrl, regularPrice = regularPrice, boughtGrams = boughtGrams)
+        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String?, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null, knownGrams: Double? = null, otherAmounts: List<String> = emptyList(), boughtGrams: Double? = null, onHand: Boolean = false, onHandGrams: Double? = null) =
+            ShoppingItem(key, name, grams, pieces, section.title, listOfNotNull(recipe), onHand = onHand, checked = checked, knownGrams = knownGrams, otherAmounts = otherAmounts, offers = offers, imageUrl = imageUrl, regularPrice = regularPrice, boughtGrams = boughtGrams, onHandGrams = onHandGrams)
         // Offers that end this week, for the advice: with their share already worked out, as the server sends them.
         fun deal(store: Store, title: String, deal: String, price: Double, paidShare: Double) =
             Offer(store, title, deal, price, null, null, null, "2026-11-16", "2026-11-22", paidShare = paidShare)
@@ -167,17 +187,24 @@ class FakeBackend(
                 // Weighed in one recipe and counted in bags in another: the weight is known only in part.
                 item("spinach", "Spinach", null, 1.0, ShopSection.FRUIT_VEG, chicken, knownGrams = 600.0, otherAmounts = listOf("1 bag")),
                 item(
-                    // Bought for the 800 g a reroll needed; the meals need 1.4 kg now: 600 g more.
+                    // Bought for the 800 g a reroll needed; the meals need 1.4 kg now: 600 g more. 300 g
+                    // bought ahead last week is in the freezer: counted in when the row said 800 g, so it
+                    // shows as an amount only.
                     "chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true,
                     offers = listOf(offerList[1].copy(paidShare = 0.75)), imageUrl = offerList[1].imageUrl, regularPrice = 13.97, boughtGrams = 800.0,
+                    onHand = true, onHandGrams = 300.0,
                 ),
-                item("feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea, offers = listOf(offerList[2].copy(paidShare = 0.5)), imageUrl = offerList[2].imageUrl, regularPrice = 4.60),
+                // On hand by hand, so how much is not known.
+                item("feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea, offers = listOf(offerList[2].copy(paidShare = 0.5)), imageUrl = offerList[2].imageUrl, regularPrice = 4.60, onHand = true),
                 // Lidl's second week starts on Thursday, two days after the fixed "today": a badge with its day, nothing in the saving.
                 item(
                     "yoghurt", "Greek yoghurt", 500.0, null, ShopSection.DAIRY, chickpea,
                     offers = listOf(Offer(Store.LIDL, "Griekse yoghurt 500 g", "voor 1,19", 1.19, 1.79, "500 g", null, "2026-11-19", "2026-11-25", paidShare = 0.66)), regularPrice = 1.79,
+                    // Stocked up on earlier: more than the meals need.
+                    onHand = true, onHandGrams = 650.0,
                 ),
-                item("oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries", offers = listOf(offerList[3].copy(paidShare = 0.79)), regularPrice = 0.76),
+                // What is left of a stock-up bag covers part of it.
+                item("oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries", offers = listOf(offerList[3].copy(paidShare = 0.79)), regularPrice = 0.76, onHand = true, onHandGrams = 200.0),
                 // Own items, typed by hand: one the server filed under a section, one it could not place.
                 item("x:1", "Coffee", null, null, ShopSection.DRINKS, null),
                 item("x:2", "Birthday candles", null, null, ShopSection.OTHER, null),

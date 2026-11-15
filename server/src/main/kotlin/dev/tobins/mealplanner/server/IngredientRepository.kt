@@ -51,12 +51,18 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         return ingredients.mapValues { (id, ingredient) -> listOf(ingredient.name) + aliases[id].orEmpty() }
     }
 
+    /**
+     * The staples and what is on hand, with the grams left of each entry whose amount is known:
+     * also of what was bought ahead for next week, as that is at home already.
+     */
     fun pantry(): Pantry {
         val all = list()
         val byId = all.associateBy { it.id }
         return Pantry(
             staples = all.filter { it.isStaple },
             onHand = pantry.selectOnHand(userId).executeAsList().mapNotNull(byId::get),
+            onHandGrams = pantry.selectOnHandWeeks(userId).executeAsList()
+                .mapNotNull { row -> row.grams?.let { row.ingredientId to it } }.toMap(),
         )
     }
 
@@ -85,9 +91,16 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      * by hand, and the ticked buy-ahead and stock-up items that count from that week or earlier. An
      * item bought ahead for next week is at home already, but this week's meals need their own.
      */
-    fun onHandFor(week: LocalDate): Set<Long> = pantry.selectOnHandWeeks(userId).executeAsList()
+    fun onHandFor(week: LocalDate): Set<Long> = onHandGramsFor(week).keys
+
+    /**
+     * The ingredients on hand for the week starting [week] ([onHandFor]), each with the grams left of
+     * it. Null where that is not known: put on hand by hand, which says only that it is there, or
+     * ticked without an amount. Unknown is not none, so callers must not read null as zero.
+     */
+    fun onHandGramsFor(week: LocalDate): Map<Long, Double?> = pantry.selectOnHandWeeks(userId).executeAsList()
         .filter { it.fromWeek == null || LocalDate.parse(it.fromWeek) <= week }
-        .mapTo(HashSet()) { it.ingredientId }
+        .associate { it.ingredientId to it.grams }
 
     /**
      * A ticked item of the shopping list: [grams] of it (null when not known) on hand from [week] on,

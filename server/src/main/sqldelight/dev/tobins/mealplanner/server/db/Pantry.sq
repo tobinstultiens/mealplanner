@@ -23,9 +23,9 @@ SELECT id, :addedAt FROM ingredient WHERE id = :id AND userId = :userId;
 deleteOnHand:
 DELETE FROM onHand WHERE ingredientId = :id AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
 
--- With the week each entry counts from (NULL: at once).
+-- With the week each entry counts from (NULL: at once) and the grams left of it (NULL: not known).
 selectOnHandWeeks:
-SELECT o.ingredientId, o.fromWeek FROM onHand o JOIN ingredient i ON i.id = o.ingredientId
+SELECT o.ingredientId, o.fromWeek, o.grams FROM onHand o JOIN ingredient i ON i.id = o.ingredientId
 WHERE i.userId = ?;
 
 -- Marked on hand by hand: an entry a tick put there becomes one set by hand, so un-ticking or eating

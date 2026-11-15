@@ -189,6 +189,27 @@ stock would empty a litre of oil on its first use; a volume without a density co
 for nutrition. An item without an amount (one the list no longer advised, or one ticked before
 amounts were kept) is used up by the first meal that uses a weighed amount of it, as before.
 
+**A tick sent late.** The amount is the one the list advises when the tick reaches the server. A tick
+made offline may arrive after the store's offers were replaced and the list no longer advises the
+item; the app therefore sends the grams its stored list advised with the tick (`ShoppingCheck.grams`,
+never sent when unknown), and the server takes those when it has no advice row of its own. Sent
+grams must be above 0 and at most 10 kg (`ShoppingCheck.MAX_GRAMS`), else the tick is refused (400)
+and nothing is stored. A tick without them (apps before it, or a row the stored list does not have)
+is on hand without an amount, as before.
+
+**How much is left** shows where it is known. A row of the list whose ingredient is on hand for the
+week carries the grams left (`ShoppingItem.onHandGrams`), and the app says `300 g on hand, buy 200 g`
+under its name, `600 g on hand: enough` when that covers the need (with no packs to take), or `300 g
+on hand` when the need can't be weighed in full; the packs to take are for what is still to buy.
+A ticked row shows the amount alone: what it said when ticked already counted the stock there was,
+so on a row that needs more the one number still to buy is its "more" line, never that less the
+stock again. The
+pantry gives the grams left of each entry (`Pantry.onHandGrams`, next week's stock included, as it is
+at home) and the app shows `300 g left` under its name. An entry set by hand, or ticked without an
+amount, has no amount: the row says `(on hand?)` as before and the pantry no number, never zero.
+Ticking the row stays the user's choice: the app does not tick a row off for them, as a tick says
+what was bought.
+
 **Un-eating.** What each meal took is kept (`stockUse`, under the meal whose portions it was for), so
 marking an eaten meal skipped or planned again puts exactly that back, also when it had used the
 item up; eaten again, it takes it again. A dinner un-eaten while its leftover lunch stays eaten gives
@@ -236,7 +257,8 @@ bought)`, and counts as not ticked in the progress line, the sections and shoppi
 groups; tapping it un-ticks and ticks it in one step, so the server remembers the new amount. A
 row without bought amounts is a plain tick. `noLongerNeeded` is the group "Bought, no longer
 needed" below the list, with "Use it up" (puts the ingredient on hand, catalogue ingredients only)
-and "Remove" (un-ticks it).
+and "Remove" (un-ticks it). "Use it up" puts it on hand by hand, the pantry's own route, so it has
+no amount: the pantry shows no number for it, and meals don't eat from it.
 
 **Ticks in the app.** A tick shows at once and is stored on the device before it is sent
 (`ShoppingCache`); it is taken off when the server has it. The app keeps the list's state for as
@@ -262,7 +284,7 @@ How often the app asks:
 |---|---|
 | Shopping screen shown, app in front, shopping mode | the list every 30 s (two people in one shop) |
 | Shopping screen shown, app in front | the list every 2 minutes |
-| Offline (or the list failed to load), screen shown, in front | one attempt every 30 s: the oldest stored tick, or else the list; on success the rest go and the offline line goes, without Retry. A list the server refused (a 4xx) is not tried again by itself, only on Retry or when the screen or the app comes back |
+| Offline (or the list failed to load), screen shown, in front | a check every 30 s: the stored ticks, oldest first, then the list. Without a connection that is one attempt, as the first tick without an answer holds back the rest and the list; when the server answers with errors (5xx), every stored tick goes out and then the list. On success the offline line goes, without Retry. A list the server refused (a 4xx) is not tried again by itself, only on Retry or when the screen or the app comes back |
 | App comes to the front (start, back from another app or browser tab) | stored ticks, then the list shown, or else the current week's list, so it is on the phone in a shop without reception even if it was not opened |
 | Leaving the Plan tab | the current week's list (the plan may have changed), unless the Shopping screen shows |
 | Another screen, or the app behind | nothing |

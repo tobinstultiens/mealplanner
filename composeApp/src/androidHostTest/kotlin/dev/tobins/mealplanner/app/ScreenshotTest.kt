@@ -138,6 +138,7 @@ enum class Shot(
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
+    PANTRY(heightDp = 760, content = { api, _ -> PantryScreen(api, {}) }),
     FOCUS_FILLED_BUTTON(heightDp = 200, content = { _, _ -> focusRing(0) }),
     FOCUS_OUTLINED_BUTTON(heightDp = 200, content = { _, _ -> focusRing(1) }),
     FOCUS_ICON_BUTTON(heightDp = 200, content = { _, _ -> focusRing(2) }),

@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.api
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /** The meals of a day, in eating order. [share] is the part of the daily calories a slot gets. */
@@ -110,6 +112,13 @@ data class ShoppingItem(
     val boughtGrams: Double? = null,
     /** The number of pieces this row said when it was ticked off, as [boughtGrams] the weight. */
     val boughtPieces: Double? = null,
+    /**
+     * With [onHand] true: the grams left of the ingredient on hand for this week, from a ticked
+     * buy-ahead or stock-up item bought in a known amount, less what meals ate of it, so the app can
+     * say how much is still to buy. Null when that is not known (put on hand by hand, or ticked
+     * without an amount), which is not none, and whenever [onHand] is false.
+     */
+    val onHandGrams: Double? = null,
 )
 
 /**
@@ -171,8 +180,31 @@ data class ShoppingList(
     val noLongerNeeded: List<ShoppingItem> = emptyList(),
 )
 
+/**
+ * Ticks an item of the list off (`PUT /api/plans/{weekStart}/shopping`), or back on with [checked]
+ * false.
+ */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
-data class ShoppingCheck(val key: String, val checked: Boolean)
+data class ShoppingCheck(
+    val key: String,
+    val checked: Boolean,
+    /**
+     * For ticking off a buy-ahead or stock-up item: the grams the list advised buying, as the app
+     * had it. The server goes by its own advice while the list still has the item; this counts only
+     * when it no longer does, for a tick that arrives late (made offline, sent after the offers
+     * changed), and must then be above 0 and at most [MAX_GRAMS]. Without it the amount is not
+     * known, as for apps before it. Never sent when null, so a server from before it, which refuses
+     * fields it does not know, still takes every other tick.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val grams: Double? = null,
+) {
+    companion object {
+        /** More than any household buys of one ingredient at once: a few packs, not a pallet. */
+        const val MAX_GRAMS = 10_000.0
+    }
+}
 
 /**
  * An own item to put on the shopping list (`POST /api/plans/{weekStart}/shopping/extras`), such as

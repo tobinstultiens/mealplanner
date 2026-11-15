@@ -169,10 +169,11 @@ class ApiClient(
 
     suspend fun shoppingList(weekStart: String): ShoppingList = http.get("api/plans/$weekStart/shopping").body()
 
-    suspend fun setShoppingChecked(weekStart: String, key: String, checked: Boolean): ShoppingList =
+    /** Ticks an item off or back on; [grams] is what the list advised buying of a buy-ahead or stock-up item. */
+    suspend fun setShoppingChecked(weekStart: String, key: String, checked: Boolean, grams: Double? = null): ShoppingList =
         http.put("api/plans/$weekStart/shopping") {
             contentType(ContentType.Application.Json)
-            setBody(ShoppingCheck(key, checked))
+            setBody(ShoppingCheck(key, checked, grams))
         }.body()
 
     /** Hides the buy-ahead or stock-up advice of one week's list, or with [dismissed] false shows it again. */

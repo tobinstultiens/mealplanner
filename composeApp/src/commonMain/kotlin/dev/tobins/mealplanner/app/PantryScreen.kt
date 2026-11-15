@@ -34,7 +34,8 @@ import kotlinx.coroutines.launch
 
 /**
  * What is at home. A staple is always there and never goes on the shopping list;
- * an on-hand item is a perishable to use up, which the planner favours.
+ * an on-hand item is a perishable to use up, which the planner favours. One bought from the
+ * shopping list's advice says how much of it is left, when that is known.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,7 +97,17 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
                             ) {
-                                Text(ingredient.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Column(Modifier.weight(1f)) {
+                                    Text(ingredient.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    // An amount that is not known is left out, never shown as none.
+                                    pantry.onHandGrams[ingredient.id]?.takeIf { ingredient.id in onHand }?.let { grams ->
+                                        Text(
+                                            t(Msg.PANTRY_LEFT, weightText(grams, t.locale)),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
                                 FilterChip(
                                     selected = ingredient.id in staples,
                                     onClick = { update { api.setStaple(ingredient.id, ingredient.id !in staples) } },

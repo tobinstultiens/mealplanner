@@ -36,6 +36,9 @@ class ShoppingSessionTest {
     private class FakeServer(var latency: Long = 2000) : ShoppingServer {
         val lists = mutableMapOf<String, ShoppingList>()
         val ticks = mutableListOf<Triple<String, String, Boolean>>()
+
+        /** The grams sent with each tick the server took, with its key. */
+        val sentGrams = mutableListOf<Pair<String, Double?>>()
         val asked = mutableListOf<String>()
         var answer: ((String, Boolean) -> Load<ShoppingList>)? = null
         var listAnswer: Load<ShoppingList>? = null
@@ -59,12 +62,13 @@ class ShoppingSessionTest {
             return listAnswer ?: Load.Ready(listFor(weekStart))
         }
 
-        override suspend fun check(weekStart: String, key: String, checked: Boolean): Load<ShoppingList> {
+        override suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?): Load<ShoppingList> {
             asked += "check $weekStart $key"
             if (unreachable) return Load.Failed("Unable to resolve host")
             if (key in hanging) awaitCancellation()
             delay(latency)
             ticks += Triple(weekStart, key, checked)
+            sentGrams += key to grams
             answer?.let { return it(key, checked) }
             lists[weekStart] = listFor(weekStart).withTicks(mapOf(key to checked))
             return Load.Ready(listFor(weekStart))
@@ -359,6 +363,32 @@ class ShoppingSessionTest {
         assertEquals(Triple(monday, "a", true), server.ticks.last())
         assertEquals(emptyMap(), pending())
         assertNull(session.offlineSince)
+    }
+
+    @Test
+    fun anAdviceTickMadeOfflineGoesOutWithTheGramsAdvisedWhenItWasMade() = runTest {
+        val rice = ShoppingItem("stock:i7", "Rice", 1000.0, null, "World", emptyList(), onHand = false, checked = false)
+        server.lists[monday] = server.listFor(monday).copy(stockUp = listOf(rice))
+        val session = session()
+        session.resume()
+        settle()
+        server.unreachable = true
+        session.tick("a", true)
+        session.tick("stock:i7", true)
+        settle()
+
+        // Back online after the offers changed: the server's list no longer advises rice, and the
+        // answer to the first tick says so before the rice tick goes out.
+        server.lists[monday] = server.listFor(monday).copy(stockUp = emptyList())
+        server.unreachable = false
+        session.retry()
+        settle()
+        assertEquals(listOf("a" to null, "stock:i7" to 1000.0), server.sentGrams)
+
+        // Un-ticking says nothing of an amount.
+        session.tick("stock:i7", false)
+        settle()
+        assertEquals("stock:i7" to null, server.sentGrams.last())
     }
 
     @Test

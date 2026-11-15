@@ -255,6 +255,42 @@ class ShoppingStoresTest {
     }
 
     @Test
+    fun theRowSaysHowMuchIsOnHandAndWhatIsLeftToBuy() {
+        val offer = packOffer("700 g", "25% korting", 0.75)
+        fun stocked(left: Double?, grams: Double? = 1400.0) =
+            packItem(grams, null, offer).copy(onHand = true, onHandGrams = left)
+
+        // Part of it at home: what is left to buy, and the packs for that alone.
+        val part = stocked(800.0)
+        assertEquals("800 g on hand, buy 600 g", part.onHandText(Strings.English))
+        assertEquals("800 g in huis, koop 600 g", part.onHandText(Strings.Dutch))
+        assertEquals("1 × 700 g", part.packsStillToBuy(offer)?.text(Strings.English))
+        // All of it at home: enough, and nothing to pick up.
+        val enough = stocked(1500.0)
+        assertEquals("1,5 kg in huis: genoeg", enough.onHandText(Strings.Dutch))
+        assertEquals("1.5 kg on hand: enough", enough.onHandText(Strings.English))
+        assertNull(enough.packsStillToBuy(offer))
+        assertEquals("1.4 kg on hand: enough", stocked(1399.5).onHandText(Strings.English), "half a gram short is nothing to buy")
+        // The amount at home is not known (put on hand by hand): no number at all, and the packs for the whole need.
+        val unknown = stocked(null)
+        assertNull(unknown.onHandText(Strings.English))
+        assertEquals("2 × 700 g", unknown.packsStillToBuy(offer)?.text(Strings.English))
+        // The need can't be weighed in full: what is at home, without a sum.
+        assertEquals("300 g on hand", stocked(300.0, grams = null).onHandText(Strings.English))
+        // Ticked: what it said then counted the stock in, so the amount alone, and packs for the whole
+        // need as before; a row that needs more says what is left to buy in its own line.
+        val ticked = stocked(800.0).copy(checked = true)
+        assertEquals("800 g on hand", ticked.onHandText(Strings.English))
+        assertEquals("2 × 700 g", ticked.packsStillToBuy(offer)?.text(Strings.English))
+        val grown = stocked(300.0).copy(checked = true, boughtGrams = 800.0)
+        assertEquals("600 g more (800 g bought)", grown.moreNeeded()?.text(Strings.English), "the one number still to buy")
+        assertEquals("300 g on hand", grown.onHandText(Strings.English))
+        // Not on hand: nothing, whatever the amount says.
+        assertNull(stocked(800.0).copy(onHand = false).onHandText(Strings.English))
+        assertEquals("2 × 700 g", stocked(800.0).copy(onHand = false).packsStillToBuy(offer)?.text(Strings.English))
+    }
+
+    @Test
     fun theRowGuessesNothingWithoutAWeighedAmountOrAReadablePack() {
         assertNull(packItem(null, null, packOffer("500 g", null)).let { it.packsToBuy(it.offers.single()) })
         val unweighed = packItem(null, 2.0, packOffer("500 g", null), otherAmounts = listOf("1 bag"))

@@ -273,6 +273,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     SEARCH_INGREDIENTS("Search ingredients", "Zoek ingrediënten"),
     STAPLE("Staple", "Basis"),
     ON_HAND("On hand", "In huis"),
+    PANTRY_LEFT("{0} left", "nog {0}"),
 
     // --- Regular prices
     LOOKING_UP_PRICES("Looking up prices", "Prijzen opzoeken"),
@@ -398,6 +399,9 @@ enum class Msg(private val english: String, private val dutch: String) {
     ),
     ALL_STORES("All stores", "Alle winkels"),
     ON_HAND_MAYBE("{0}  (on hand?)", "{0}  (in huis?)"),
+    ON_HAND_AMOUNT("{0} on hand", "{0} in huis"),
+    ON_HAND_BUY("{0} on hand, buy {1}", "{0} in huis, koop {1}"),
+    ON_HAND_ENOUGH("{0} on hand: enough", "{0} in huis: genoeg"),
     SHOW_DEAL("Show the deal", "Toon de aanbieding"),
     FOR_THIS_WEEK("For this week", "Voor deze week"),
     BUY_AHEAD_TITLE("Buy ahead for next week (on offer now)", "Nu kopen voor volgende week (nu in de aanbieding)"),

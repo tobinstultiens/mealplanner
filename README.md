@@ -123,12 +123,16 @@ ticks one with v0.1.2's types). What a tick remembers of its row came the same w
 and `boughtPieces` are optional fields of a row that stays `checked`, so older apps never see a bought item
 come back un-ticked when the plan needs more, and `ShoppingList.noLongerNeeded` (bought items no meal needs
 any more) is a separate list, so they never take it for something to buy (`ShoppingTicksTest` decodes it
-with v0.1.2's types). A tick still needs only its key, as those apps send it.
+with v0.1.2's types). How much is on hand came the same way (`ShoppingItem.onHandGrams`, and
+`Pantry.onHandGrams` as a map next to the `onHand` list those apps read). A tick still needs only its key, as
+those apps send it; the grams newer apps send with an advice tick (`ShoppingCheck.grams`) are optional and
+left out when unknown, so a server from before them, which refuses fields it does not know, still takes
+every other tick.
 
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today, Plan, Shopping (also in shopping mode, with an empty week, per store and at one store), Recipes, recipe detail, Offers, Prices, Progress and
+Today, Plan, Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes, recipe detail, Offers, Prices, Progress and
 Settings screens, the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
