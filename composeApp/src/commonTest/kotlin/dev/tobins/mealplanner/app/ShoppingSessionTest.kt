@@ -40,6 +40,7 @@ class ShoppingSessionTest {
         var answer: ((String, Boolean) -> Load<ShoppingList>)? = null
         var listAnswer: Load<ShoppingList>? = null
         val hanging = mutableSetOf<String>()
+        val onHand = mutableListOf<Long>()
         var unreachable = false
 
         fun listFor(week: String): ShoppingList = lists.getOrPut(week) {
@@ -67,6 +68,12 @@ class ShoppingSessionTest {
             answer?.let { return it(key, checked) }
             lists[weekStart] = listFor(weekStart).withTicks(mapOf(key to checked))
             return Load.Ready(listFor(weekStart))
+        }
+
+        override suspend fun useUp(ingredientId: Long): Load<Unit> {
+            delay(latency)
+            onHand += ingredientId
+            return Load.Ready(Unit)
         }
 
         override suspend fun dismiss(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): Load<ShoppingList> {
@@ -121,6 +128,53 @@ class ShoppingSessionTest {
     private fun ShoppingSession.checked() = shown().items.map { it.checked }
 
     private fun pending(week: String = monday) = ShoppingCache(storage).pending(week)
+
+    @Test
+    fun tickingARowThatNeedsMoreUnTicksAndTicksItAgainInOneStep() = runTest {
+        // The server remembers what a tick said: un-ticking forgets it, ticking stores the amount of that moment.
+        val bought = ShoppingItem("a", "a", 1400.0, null, "Meat", emptyList(), onHand = false, checked = true, boughtGrams = 800.0)
+        server.lists[monday] = ShoppingList(monday, listOf(bought), staples = emptyList())
+        server.answer = { _, checked ->
+            Load.Ready(ShoppingList(monday, listOf(if (checked) bought.copy(boughtGrams = 1400.0) else bought.copy(checked = false, boughtGrams = null)), staples = emptyList()))
+        }
+        val session = session()
+        session.resume()
+        settle()
+        assertEquals(600.0, session.shown().items.single().moreNeeded()?.grams)
+
+        session.tickAgain("a")
+        settle()
+
+        assertEquals(listOf(false, true), server.ticks.map { it.third })
+        assertNull(session.shown().items.single().moreNeeded())
+        assertTrue(session.shown().items.single().done)
+    }
+
+    @Test
+    fun usingUpABoughtRowPutsItsIngredientOnHandAndFetchesTheList() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+        session.useUp("i7")
+        session.useUp("t:cling film")
+        settle()
+        assertEquals(listOf(7L), server.onHand, "only a catalogue ingredient can be put on hand")
+        assertEquals("list $monday", server.asked.last())
+    }
+
+    @Test
+    fun removingABoughtRowTakesItOffTheListAtOnce() = runTest {
+        val gone = ShoppingItem("i7", "Broccoli", null, null, "Other", emptyList(), onHand = false, checked = true, boughtGrams = 500.0)
+        server.lists[monday] = server.listFor(monday).copy(noLongerNeeded = listOf(gone))
+        val session = session()
+        session.resume()
+        settle()
+        assertEquals(listOf("i7"), session.shown().noLongerNeeded.map { it.key })
+
+        session.tick("i7", false)
+        runCurrent()
+        assertEquals(emptyList(), session.shown().noLongerNeeded)
+    }
 
     @Test
     fun ticksQueuedWhenTheScreenIsLeftStillReachTheServerInOrder() = runTest {

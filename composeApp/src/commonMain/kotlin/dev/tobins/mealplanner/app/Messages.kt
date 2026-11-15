@@ -410,6 +410,14 @@ enum class Msg(private val english: String, private val dutch: String) {
         "Volgende week is nog niet gepland: dit zijn maaltijden die het kan krijgen. Het blijft goed en de aanbieding stopt deze week. Afgevinkt kiest het plan van volgende week liever maaltijden die het gebruiken.",
     ),
     SUGGESTED_MEALS("for e.g. {0}", "bijv. voor {0}"),
+    MORE_NEEDED("{0} more ({1} bought)", "{0} extra nodig ({1} gekocht)"),
+    NO_LONGER_NEEDED_TITLE("Bought, no longer needed", "Gekocht, niet meer nodig"),
+    NO_LONGER_NEEDED_HINT(
+        "The plan changed after you bought these. Use it up and the planner prefers meals that use it; Remove takes it off.",
+        "Het plan veranderde nadat je dit kocht. Opmaken: het plan kiest liever maaltijden die het gebruiken; Verwijderen haalt het weg.",
+    ),
+    USE_IT_UP("Use it up", "Opmaken"),
+    USE_UP_FAILED("Could not put it on hand: {0}", "In huis zetten is niet gelukt: {0}"),
     STOCK_UP_TITLE("Stock up: on offer now", "Inslaan: nu in de aanbieding"),
     STOCK_UP_HINT(
         "Keeps for months; no meal on this list needs it. One pack each; ticked, it goes in the pantry.",

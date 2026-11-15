@@ -183,7 +183,7 @@ internal fun ShoppingScreen(
 
     /** One group's rows; with shopping mode the ticked ones wait in a collapsed "Done" line. */
     fun LazyListScope.groupItems(id: String, items: List<ShoppingItem>, row: @Composable (ShoppingItem) -> Unit) {
-        val (done, open) = if (shoppingMode) items.partition { it.checked } else emptyList<ShoppingItem>() to items
+        val (done, open) = if (shoppingMode) items.partition { it.done } else emptyList<ShoppingItem>() to items
         items(open, key = { it.key }) { row(it) }
         if (done.isNotEmpty()) {
             val doneOpen = "done:$id" in expanded
@@ -299,7 +299,11 @@ internal fun ShoppingScreen(
                     today,
                     shoppingMode,
                     suggested,
-                    onToggle = { if (shoppingMode) tickWithUndo(item) else tick(item.key, !item.checked) },
+                    onToggle = {
+                        // A row that needs more than was bought is ticked again for the new amount, not undone.
+                        if (item.moreNeeded() != null) session.tickAgain(item.key)
+                        else if (shoppingMode) tickWithUndo(item) else tick(item.key, !item.checked)
+                    },
                     onRemove = item.extraId?.let { id -> { session.remove(id) } },
                     onOfferClick = {
                         scope.launch {
@@ -403,6 +407,12 @@ internal fun ShoppingScreen(
                             )
                         }
                     }
+                    if (list.noLongerNeeded.isNotEmpty()) {
+                        item(key = "no-longer-needed") { NoLongerNeededHeader() }
+                        items(list.noLongerNeeded, key = { "n:${it.key}" }) { item ->
+                            NoLongerNeededRow(item, onUseUp = { session.useUp(item.key) }, onRemove = { tick(item.key, false) })
+                        }
+                    }
                     AdviceTexts.entries.forEach { texts ->
                         adviceGroup(texts, list, store, byStore = view == ShoppingView.STORE && store == null) { item ->
                             row(item, suggested = texts == AdviceTexts.BUY_AHEAD && list.buyAheadProvisional)
@@ -462,6 +472,44 @@ private fun PartTitle(title: String, modifier: Modifier = Modifier) {
         modifier = modifier.padding(start = Spacing.ScreenEdge, end = Spacing.ScreenEdge, top = Spacing.InsideCard),
     )
 }
+
+/** The title of the bought items no meal needs any more, with what the two buttons do. */
+@Composable
+private fun NoLongerNeededHeader() {
+    val t = LocalStrings.current
+    Column(Modifier.fillMaxWidth().padding(top = Spacing.InsideCard)) {
+        PartTitle(t(Msg.NO_LONGER_NEEDED_TITLE))
+        Text(
+            t(Msg.NO_LONGER_NEEDED_HINT),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
+        )
+    }
+}
+
+/**
+ * A bought item that no meal needs now: its name and what was bought, and two buttons. "Use it
+ * up" puts it on hand (only for catalogue ingredients not on hand already), "Remove" takes it off.
+ */
+@Composable
+private fun NoLongerNeededRow(item: ShoppingItem, onUseUp: () -> Unit, onRemove: () -> Unit) {
+    val t = LocalStrings.current
+    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = Spacing.Tight)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(item.name, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(item.boughtText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), textAlign = TextAlign.End)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!item.onHand && item.key.startsWith("i")) TextButton(onClick = onUseUp) { Text(t(Msg.USE_IT_UP)) }
+            TextButton(onClick = onRemove) { Text(t(Msg.REMOVE)) }
+        }
+    }
+}
+
+/** `800 g` or `3 ×`: what was bought of a row, empty when the tick remembers no amount. */
+internal fun ShoppingItem.boughtText(locale: FormatLocale): String =
+    listOfNotNull(boughtPieces?.let { "${ceil(it - 1e-9).toInt()} ×" }, boughtGrams?.let { weightText(it, locale) }).joinToString(" · ")
 
 /** An advice group's title, what it is for and saves, and the button that hides it for the week. */
 @Composable
@@ -648,23 +696,28 @@ private fun ToggleHeader(title: String, open: Boolean, onToggle: () -> Unit) {
 @Composable
 private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, today: String, shoppingMode: Boolean, suggested: Boolean, onToggle: () -> Unit, onRemove: (() -> Unit)?, onOfferClick: () -> Unit) {
     val t = LocalStrings.current
+    val more = item.moreNeeded()
     Row(
         Modifier.fillMaxWidth()
-            .toggleable(item.checked, role = Role.Checkbox, onValueChange = { onToggle() })
+            .toggleable(item.done, role = Role.Checkbox, onValueChange = { onToggle() })
             .heightIn(min = if (shoppingMode) 64.dp else 56.dp)
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = item.checked, onCheckedChange = null, modifier = Modifier.padding(12.dp))
-        ProductPicture(item.pictureUrl(offer, shops), item.name, size = if (shoppingMode) 56.dp else 48.dp, dimmed = item.checked)
+        Checkbox(checked = item.done, onCheckedChange = null, modifier = Modifier.padding(12.dp))
+        ProductPicture(item.pictureUrl(offer, shops), item.name, size = if (shoppingMode) 56.dp else 48.dp, dimmed = item.done)
         Column(Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp)) {
             Text(
                 if (item.onHand) t(Msg.ON_HAND_MAYBE, item.name) else item.name,
                 style = if (shoppingMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-                textDecoration = if (item.checked) TextDecoration.LineThrough else null,
+                textDecoration = if (item.done) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            // Bought, and the plan changed since: say how much is still to buy.
+            if (more != null) {
+                Text(more.text(t), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
             // Stock-up advice is for no meal in particular; a provisional buy-ahead meal is only an example.
             if (item.recipes.isNotEmpty()) {
                 Text(
@@ -687,7 +740,8 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, to
             // Long amounts such as "200 g + 1 bag" wrap rather than squeeze the name.
             Text(item.quantityText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), textAlign = TextAlign.End)
             if (offer != null) {
-                item.packsToBuy(offer)?.let {
+                // Packs for the whole need would ignore what is bought already.
+                if (more == null) item.packsToBuy(offer)?.let {
                     Text(
                         it.text(t),
                         style = MaterialTheme.typography.bodySmall.numeric(),
