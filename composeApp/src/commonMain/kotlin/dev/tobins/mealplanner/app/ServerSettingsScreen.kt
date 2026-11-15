@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -29,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -128,12 +130,17 @@ fun ServerSettingsScreen(
                     }
                 }
                 if (systemColorsAvailable()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                    // The whole row switches, so the label is as good a target as the switch itself.
+                    Row(
+                        Modifier.fillMaxWidth().toggleable(systemColors, role = Role.Switch, onValueChange = onSystemColors),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
+                    ) {
                         Column(Modifier.weight(1f)) {
                             Text("Use system colours", style = MaterialTheme.typography.bodyMedium)
                             Text("Take the colours from your wallpaper.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Switch(checked = systemColors, onCheckedChange = onSystemColors)
+                        Switch(checked = systemColors, onCheckedChange = null)
                     }
                 }
             }
