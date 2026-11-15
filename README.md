@@ -107,7 +107,8 @@ those apps read must not gain fields: new data goes in new routes or types. Once
 optional fields is safe. Removing or renaming a field, or changing its meaning, still breaks installed apps.
 The product pictures (`Offer.imageUrl`, `ShoppingItem.imageUrl`) and the recipe pictures
 (`RecipeSummary.imageUrl`) are the first fields added this way, so they are merged together with the
-first app release after v0.1.1.
+first app release after v0.1.1. `OfferSourceStatus.warning` (the Lidl check) is always in the offers
+response, so it too needs that release installed.
 
 ## Screenshot tests
 

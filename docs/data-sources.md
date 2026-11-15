@@ -54,8 +54,9 @@ with a Lidl Plus app discount, and are skipped. The offers page address
 The page can also silently stop showing new offers while its tiles still parse. After each
 fetch the server logs a warning (`LidlGuard`) when every Lidl offer has already ended, or when
 it is Friday or later and no Lidl offer runs into next week. The store keeps its offers. The
-warning is only logged for now: apps released before it fail on fields they do not know, so it
-will be shown in the app's offer source line once apps that tolerate new fields are installed.
+same text is sent as `OfferSourceStatus.warning` and the Offers screen shows it under the
+store's source line, in the warning colour, with the text behind "Details". Apps up to v0.1.1
+reject that field; the first app release after v0.1.1 reads it.
 
 Looking for offers beyond this page (2026-11-13 and 2026-11-15, plain page fetches only) found
 none, so the page is the whole list as far as can be found:

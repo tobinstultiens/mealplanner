@@ -46,6 +46,13 @@ data class OfferSourceStatus(
     val offerCount: Int,
     /** Message of the last failed fetch, cleared by a successful one. */
     val error: String?,
+    /**
+     * A warning about the stored offers, in English, when they look stale although the fetch
+     * worked (today only Lidl's page, see docs/data-sources.md). Null when there is none. It is
+     * always in the response, so apps up to v0.1.1, which reject unknown fields, cannot read
+     * the offers any more.
+     */
+    val warning: String? = null,
 )
 
 @Serializable
