@@ -339,7 +339,7 @@ fun ShoppingScreen(
                             item { ShopsInUse(shops, ::chooseShops) }
                             overview.stores.forEach { group ->
                                 item(key = "s:${group.store.name}") {
-                                    val hint = group.saving?.let { t(Msg.ADVICE_SAVING, formatEuro(it, t.locale)) } ?: t(Msg.TAP_TO_SHOP)
+                                    val hint = group.saving?.let { t(Msg.STORE_SAVING_HINT, formatEuro(it, t.locale)) } ?: t(Msg.TAP_TO_SHOP)
                                     GroupHeader(group.title(t), hint, onClick = { chooseStore(group.store) })
                                 }
                                 groupItems(group.store.name, group.items) { row(it, it.bestOffer(shops)) }
