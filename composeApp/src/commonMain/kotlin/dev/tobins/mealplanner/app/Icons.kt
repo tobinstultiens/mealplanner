@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import dev.tobins.mealplanner.shopping.ShopSection
 
 /**
  * The few icons the app uses, as our own vectors: an icon library would add thousands of
@@ -290,6 +291,150 @@ object AppIcons {
         )
     }
 
+    /** Material Symbol `nutrition`. */
+    val SectionFruitVeg: ImageVector by lazy {
+        symbol(
+            "SectionFruitVeg",
+            "M480-120q-117 0-198.5-81.5T200-400q0-94 55.5-168.5T401-669q-20-5-39-14.5T328-708q-33-33-42.5-78.5T281-879q47-5 92.5 4.5T452-832q23 23 33.5 52t13.5 61q13-31 31.5-58.5T572-828q11-11 28-11t28 11q11 11 11 28t-11 28q-22 22-39 48.5T564-667q88 28 142 101.5T760-400q0 117-81.5 198.5T480-120Zm0-80q83 0 141.5-58.5T680-400q0-83-58.5-141.5T480-600q-83 0-141.5 58.5T280-400q0 83 58.5 141.5T480-200Zm0-200Z",
+        )
+    }
+
+    /** Material Symbol `bakery_dining`. */
+    val SectionBread: ImageVector by lazy {
+        symbol(
+            "SectionBread",
+            "M804-282q17 9 30-4t4-30l-58-108-42 108 66 34Zm-200-38h48l96-238q3-8-1.5-13.5T736-580l-80-32q-9-3-17.5 2T628-596l-24 276Zm-296 0h48l-24-276q-2-11-10.5-15t-17.5-1l-80 32q-8 3-11.5 8.5T212-558l96 238Zm-152 38 66-34-42-108-58 108q-9 17 4 30t30 4Zm280-38h88l30-338q2-9-4.5-15.5T534-680H426q-8 0-14.5 6.5T406-658l30 338ZM138-200q-42 0-70-31.5T40-306q0-12 3.5-23.5T52-352l88-168q-14-40 1-79t53-55l80-32q14-5 28-7t28 1q14-29 39-48.5t57-19.5h108q32 0 57 19.5t39 48.5q14-2 28-.5t28 6.5l80 32q40 16 56 55t-2 77l88 168q6 11 9 23t3 25q0 45-30.5 75.5T814-200q-11 0-22-2.5t-22-7.5l-62-30H250l-56 30q-13 7-27.5 8.5T138-200Zm342-280Z",
+        )
+    }
+
+    /** Material Symbol `lunch_dining`. */
+    val SectionDeli: ImageVector by lazy {
+        symbol(
+            "SectionDeli",
+            "M160-120q-33 0-56.5-23.5T80-200v-120h800v120q0 33-23.5 56.5T800-120H160Zm0-120v40h640v-40H160Zm320-180q-36 0-57 20t-77 20q-56 0-76-20t-56-20q-36 0-57 20t-77 20v-80q36 0 57-20t77-20q56 0 76 20t56 20q36 0 57-20t77-20q56 0 77 20t57 20q36 0 56-20t76-20q56 0 79 20t55 20v80q-56 0-75-20t-55-20q-36 0-58 20t-78 20q-56 0-77-20t-57-20ZM80-560v-40q0-115 108.5-177.5T480-840q183 0 291.5 62.5T880-600v40H80Zm400-200q-124 0-207.5 31T166-640h628q-23-58-106.5-89T480-760Zm0 520Zm0-400Z",
+        )
+    }
+
+    /** Material Symbol `oil_barrel`. */
+    val SectionSauces: ImageVector by lazy {
+        symbol(
+            "SectionSauces",
+            "M160-120q-17 0-28.5-11.5T120-160q0-17 11.5-28.5T160-200h40v-240h-40q-17 0-28.5-11.5T120-480q0-17 11.5-28.5T160-520h40v-240h-40q-17 0-28.5-11.5T120-800q0-17 11.5-28.5T160-840h640q17 0 28.5 11.5T840-800q0 17-11.5 28.5T800-760h-40v240h40q17 0 28.5 11.5T840-480q0 17-11.5 28.5T800-440h-40v240h40q17 0 28.5 11.5T840-160q0 17-11.5 28.5T800-120H160Zm120-80h400v-240q-17 0-28.5-11.5T640-480q0-17 11.5-28.5T680-520v-240H280v240q17 0 28.5 11.5T320-480q0 17-11.5 28.5T280-440v240Zm200-120q50 0 85-34.5t35-83.5q0-39-22.5-67T480-620q-75 86-97.5 114.5T360-438q0 49 35 83.5t85 34.5ZM280-200v-560 560Z",
+        )
+    }
+
+    /** Material Symbol `kebab_dining`. */
+    val SectionMeat: ImageVector by lazy {
+        symbol(
+            "SectionMeat",
+            "M250-40v-160h-30q-42 0-71-29t-29-71q0-42 29-71t71-29h30v-40H120v-200h130v-40h-30q-42 0-71-29t-29-71q0-42 29-71t71-29h30v-40h60v40h30q42 0 71 29t29 71q0 42-29 71t-71 29h-30v40h130v200H310v40h30q42 0 71 29t29 71q0 42-29 71t-71 29h-30v160h-60Zm400 0v-160h-30q-42 0-71-29t-29-71q0-42 29-71t71-29h30v-40H520v-200h130v-40h-30q-42 0-71-29t-29-71q0-42 29-71t71-29h30v-40h60v40h30q42 0 71 29t29 71q0 42-29 71t-71 29h-30v40h130v200H710v40h30q42 0 71 29t29 71q0 42-29 71t-71 29h-30v160h-60ZM220-760h120q8 0 14-6t6-14q0-8-6-14t-14-6H220q-8 0-14 6t-6 14q0 8 6 14t14 6Zm400 0h120q8 0 14-6t6-14q0-8-6-14t-14-6H620q-8 0-14 6t-6 14q0 8 6 14t14 6ZM200-520h160v-40H200v40Zm400 0h160v-40H600v40ZM220-280h120q8 0 14-6t6-14q0-8-6-14t-14-6H220q-8 0-14 6t-6 14q0 8 6 14t14 6Zm400 0h120q8 0 14-6t6-14q0-8-6-14t-14-6H620q-8 0-14 6t-6 14q0 8 6 14t14 6ZM200-760v-40 40Zm400 0v-40 40ZM200-520v-40 40Zm400 0v-40 40ZM200-280v-40 40Zm400 0v-40 40Z",
+        )
+    }
+
+    /** Material Symbol `set_meal`. */
+    val SectionFish: ImageVector by lazy {
+        symbol(
+            "SectionFish",
+            "M120-360q-33 0-56.5-23.5T40-440v-360q0-33 23.5-56.5T120-880h720q33 0 56.5 23.5T920-800v360q0 33-23.5 56.5T840-360H120Zm0-440v360h720v-360H120Zm3 580-3-60 719-38 3 60-719 38Zm-3 99v-60h720v60H120Zm290-379q74 0 142.5-26T672-606q6 42 44 64t84 22v-200q-46 0-84 22.5T672-632q-53-52-120.5-80T410-740q-79 0-152 27.5T140-620q45 65 118 92.5T410-500ZM120-800v360-360Z",
+        )
+    }
+
+    /** Material Symbol `eco`. */
+    val SectionVegetarian: ImageVector by lazy {
+        symbol(
+            "SectionVegetarian",
+            "M216-176q-45-45-70.5-104T120-402q0-63 24-124.5T222-642q35-35 86.5-60t122-39.5Q501-756 591.5-759t202.5 7q8 106 5 195t-16.5 160.5q-13.5 71.5-38 125T684-182q-53 53-112.5 77.5T450-80q-65 0-127-25.5T216-176Zm112-16q29 17 59.5 24.5T450-160q46 0 91-18.5t86-59.5q18-18 36.5-50.5t32-85Q709-426 716-500.5t2-177.5q-49-2-110.5-1.5T485-670q-61 9-116 29t-90 55q-45 45-62 89t-17 85q0 59 22.5 103.5T262-246q42-80 111-153.5T534-520q-72 63-125.5 142.5T328-192Zm0 0Zm0 0Z",
+        )
+    }
+
+    /** Material Symbol `egg_alt`. */
+    val SectionDairy: ImageVector by lazy {
+        symbol(
+            "SectionDairy",
+            "M640-80q-67 0-101.5-22.5T480-150q-19-20-36.5-35T399-200q-45 0-100-15.5t-103.5-51Q147-302 114-359T80-499q-2-167 82.5-274T399-880q71 0 120 20.5t84.5 51.5q35.5 31 60 68.5T710-667q12 20 24 36.5t26 30.5q60 60 90 105t30 136q0 120-74.5 199.5T640-80Zm0-80q57 0 108.5-56.5T800-359q0-66-19.5-97T704-544q-21-20-37.5-44.5T633-639q-41-65-87-113t-147-48q-129 0-185 92.5T160-500q1 67 29 110t66.5 67.5Q294-298 334-289t65 9q51 0 82 24.5t51 45.5q22 23 42.5 36.5T640-160ZM480-340q58 0 99-41t41-99q0-58-41-99t-99-41q-58 0-99 41t-41 99q0 58 41 99t99 41Zm-1-140Z",
+        )
+    }
+
+    /** Material Symbol `takeout_dining`. */
+    val SectionReadyMeals: ImageVector by lazy {
+        symbol(
+            "SectionReadyMeals",
+            "M312-240h338l19-280H292l20 280Zm-26-360h389l3-50-112-110H394L282-650l4 50Zm-76 68L80-662l56-56 64 64-2-24 162-162h240l162 162-2 24 64-64 56 56-130 130H210Zm28 372-28-372h540l-28 372H238Zm242-440Zm1 80Z",
+        )
+    }
+
+    /** Material Symbol `rice_bowl`. */
+    val SectionWorld: ImageVector by lazy {
+        symbol(
+            "SectionWorld",
+            "M320-80v-70q-105-42-172.5-130T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 112-67.5 200T640-150v70H320Zm80-400h160v-310q-20-5-40-7.5t-40-2.5q-20 0-40 2.5t-40 7.5v310Zm-240 0h160v-277q-75 43-117.5 117T160-480Zm480 0h160q0-86-42.5-160T640-757v277ZM400-160h160v-44q72-29 133-76.5T784-400H176q30 72 91 119.5T400-204v44Zm0 0h160-160Z",
+        )
+    }
+
+    /** Material Symbol `inventory_2`. */
+    val SectionTins: ImageVector by lazy {
+        symbol(
+            "SectionTins",
+            "M200-80q-33 0-56.5-23.5T120-160v-451q-18-11-29-28.5T80-680v-120q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v120q0 23-11 40.5T840-611v451q0 33-23.5 56.5T760-80H200Zm0-520v440h560v-440H200Zm-40-80h640v-120H160v120Zm200 280h240v-80H360v80Zm120 20Z",
+        )
+    }
+
+    /** Material Symbol `coffee`. */
+    val SectionBreakfast: ImageVector by lazy {
+        symbol(
+            "SectionBreakfast",
+            "M440-240q-117 0-198.5-81.5T160-520v-240q0-33 23.5-56.5T240-840h500q58 0 99 41t41 99q0 58-41 99t-99 41h-20v40q0 117-81.5 198.5T440-240ZM240-640h400v-120H240v120Zm200 320q83 0 141.5-58.5T640-520v-40H240v40q0 83 58.5 141.5T440-320Zm280-320h20q25 0 42.5-17.5T800-700q0-25-17.5-42.5T740-760h-20v120ZM160-120v-80h640v80H160Zm280-440Z",
+        )
+    }
+
+    /** Material Symbol `cake`. */
+    val SectionBaking: ImageVector by lazy {
+        symbol(
+            "SectionBaking",
+            "M160-80q-17 0-28.5-11.5T120-120v-200q0-33 23.5-56.5T200-400v-160q0-33 23.5-56.5T280-640h160v-58q-18-12-29-29t-11-41q0-15 6-29.5t18-26.5l56-56 56 56q12 12 18 26.5t6 29.5q0 24-11 41t-29 29v58h160q33 0 56.5 23.5T760-560v160q33 0 56.5 23.5T840-320v200q0 17-11.5 28.5T800-80H160Zm120-320h400v-160H280v160Zm-80 240h560v-160H200v160Zm80-240h400-400Zm-80 240h560-560Zm560-240H200h560Z",
+        )
+    }
+
+    /** Material Symbol `cookie`. */
+    val SectionSnacks: ImageVector by lazy {
+        symbol(
+            "SectionSnacks",
+            "M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-75 29-147t81-128.5q52-56.5 125-91T475-881q21 0 43 2t45 7q-9 45 6 85t45 66.5q30 26.5 71.5 36.5t85.5-5q-26 59 7.5 113t99.5 56q1 11 1.5 20.5t.5 20.5q0 82-31.5 154.5t-85.5 127q-54 54.5-127 86T480-80Zm-60-480q25 0 42.5-17.5T480-620q0-25-17.5-42.5T420-680q-25 0-42.5 17.5T360-620q0 25 17.5 42.5T420-560Zm-80 200q25 0 42.5-17.5T400-420q0-25-17.5-42.5T340-480q-25 0-42.5 17.5T280-420q0 25 17.5 42.5T340-360Zm260 40q17 0 28.5-11.5T640-360q0-17-11.5-28.5T600-400q-17 0-28.5 11.5T560-360q0 17 11.5 28.5T600-320ZM480-160q122 0 216.5-84T800-458q-50-22-78.5-60T683-603q-77-11-132-66t-68-132q-80-2-140.5 29t-101 79.5Q201-644 180.5-587T160-480q0 133 93.5 226.5T480-160Zm0-324Z",
+        )
+    }
+
+    /** Material Symbol `local_drink`. */
+    val SectionDrinks: ImageVector by lazy {
+        symbol(
+            "SectionDrinks",
+            "M279-80q-31 0-53.5-20.5T200-151l-80-729h720l-80 729q-3 30-25.5 50.5T681-80H279Zm-43-480 44 400h400l44-400H236Zm-10-80h508l16-160H210l16 160Zm254 360q-14 0-24-10t-10-24q0-15 8.5-34.5T480-393q17 25 25.5 44.5T514-314q0 14-10 24t-24 10Zm0 80q48 0 81-33t33-81q0-41-26.5-89T480-520q-61 69-87.5 117T366-314q0 48 33 81t81 33Zm-244 40h488-488Z",
+        )
+    }
+
+    /** Material Symbol `ac_unit`. */
+    val SectionFrozen: ImageVector by lazy {
+        symbol(
+            "SectionFrozen",
+            "M440-80v-166L310-118l-56-56 186-186v-80h-80L174-254l-56-56 128-130H80v-80h166L118-650l56-56 186 186h80v-80L254-786l56-56 130 128v-166h80v166l130-128 56 56-186 186v80h80l186-186 56 56-128 130h166v80H714l128 130-56 56-186-186h-80v80l186 186-56 56-130-128v166h-80Z",
+        )
+    }
+
+    /** Material Symbol `cleaning_services`. */
+    val SectionNonFood: ImageVector by lazy {
+        symbol(
+            "SectionNonFood",
+            "M120-40v-280q0-83 58.5-141.5T320-520h40v-320q0-33 23.5-56.5T440-920h80q33 0 56.5 23.5T600-840v320h40q83 0 141.5 58.5T840-320v280H120Zm80-80h80v-120q0-17 11.5-28.5T320-280q17 0 28.5 11.5T360-240v120h80v-120q0-17 11.5-28.5T480-280q17 0 28.5 11.5T520-240v120h80v-120q0-17 11.5-28.5T640-280q17 0 28.5 11.5T680-240v120h80v-200q0-50-35-85t-85-35H320q-50 0-85 35t-35 85v200Zm320-400v-320h-80v320h80Zm0 0h-80 80Z",
+        )
+    }
+
+    /** Material Symbol `category`. */
+    val SectionOther: ImageVector by lazy {
+        symbol(
+            "SectionOther",
+            "m260-520 220-360 220 360H260ZM700-80q-75 0-127.5-52.5T520-260q0-75 52.5-127.5T700-440q75 0 127.5 52.5T880-260q0 75-52.5 127.5T700-80Zm-580-20v-320h320v320H120Zm580-60q42 0 71-29t29-71q0-42-29-71t-71-29q-42 0-71 29t-29 71q0 42 29 71t71 29Zm-500-20h160v-160H200v160Zm202-420h156l-78-126-78 126Zm78 0ZM360-340Zm340 80Z",
+        )
+    }
+
     /** Every icon, for checking that all of them can be built. */
     internal val all: List<ImageVector> by lazy {
         listOf(
@@ -297,9 +442,40 @@ object AppIcons {
             Generate, Link, Offer, Pantry, Price,
             Today, TodayFilled, Plan, PlanFilled, Shopping, ShoppingFilled, Recipes, RecipesFilled,
             Progress, ProgressFilled, Lock, LockOpen, Swap, Star, StarFilled, Warning, Error,
+            SectionFruitVeg, SectionBread, SectionDeli, SectionSauces, SectionMeat, SectionFish,
+            SectionVegetarian, SectionDairy, SectionReadyMeals, SectionWorld, SectionTins,
+            SectionBreakfast, SectionBaking, SectionSnacks, SectionDrinks, SectionFrozen,
+            SectionNonFood, SectionOther,
         )
     }
 }
+
+/**
+ * The icon of the shop section called [title] (a shopping item's `category`), "Other" for a
+ * title this version does not know. The API carries the title, not the section's key, so the
+ * lookup is by title; an exhaustive `when` makes a new [ShopSection] fail to compile until it has an icon.
+ */
+fun sectionIcon(title: String): ImageVector =
+    when (ShopSection.entries.firstOrNull { it.title == title } ?: ShopSection.OTHER) {
+        ShopSection.FRUIT_VEG -> AppIcons.SectionFruitVeg
+        ShopSection.BREAD -> AppIcons.SectionBread
+        ShopSection.DELI -> AppIcons.SectionDeli
+        ShopSection.SAUCES -> AppIcons.SectionSauces
+        ShopSection.MEAT -> AppIcons.SectionMeat
+        ShopSection.FISH -> AppIcons.SectionFish
+        ShopSection.VEGETARIAN -> AppIcons.SectionVegetarian
+        ShopSection.DAIRY -> AppIcons.SectionDairy
+        ShopSection.READY_MEALS -> AppIcons.SectionReadyMeals
+        ShopSection.WORLD -> AppIcons.SectionWorld
+        ShopSection.TINS -> AppIcons.SectionTins
+        ShopSection.BREAKFAST -> AppIcons.SectionBreakfast
+        ShopSection.BAKING -> AppIcons.SectionBaking
+        ShopSection.SNACKS -> AppIcons.SectionSnacks
+        ShopSection.DRINKS -> AppIcons.SectionDrinks
+        ShopSection.FROZEN -> AppIcons.SectionFrozen
+        ShopSection.NON_FOOD -> AppIcons.SectionNonFood
+        ShopSection.OTHER -> AppIcons.SectionOther
+    }
 
 /**
  * Builds a 24 dp icon from the path of a Material Symbol's SVG. Those are drawn in a square of
