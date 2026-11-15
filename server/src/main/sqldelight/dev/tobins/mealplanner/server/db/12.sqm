@@ -1,0 +1,46 @@
+-- Version 12 -> 13: the price history (issue 121), so that a later step can tell whether an offer is a
+-- good deal. Only new tables, so no table is rebuilt and no row is touched: the history starts empty and
+-- fills from the first refresh of offers and the first lookup of regular prices after this.
+
+CREATE TABLE offerHistory (
+    id INTEGER PRIMARY KEY,
+    store TEXT NOT NULL,
+    productKey TEXT NOT NULL,
+    packKey TEXT NOT NULL,
+    title TEXT NOT NULL,
+    packSize TEXT,
+    ingredient TEXT COLLATE NOCASE,
+    deal TEXT,
+    dealKind TEXT NOT NULL,
+    dealPacks INTEGER NOT NULL,
+    dealFree INTEGER,
+    dealPercent REAL,
+    dealEuros REAL,
+    price REAL,
+    originalPrice REAL,
+    paidShare REAL,
+    eurosPerKg REAL,
+    eurosPerPiece REAL,
+    validFrom TEXT NOT NULL,
+    validUntil TEXT NOT NULL,
+    firstSeen TEXT NOT NULL,
+    lastSeen TEXT NOT NULL
+);
+
+CREATE INDEX offerHistory_product ON offerHistory(store, productKey, packKey);
+CREATE INDEX offerHistory_seen ON offerHistory(store, lastSeen);
+CREATE INDEX offerHistory_ingredient ON offerHistory(ingredient);
+
+CREATE TABLE regularPriceHistory (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE,
+    store TEXT NOT NULL,
+    product TEXT NOT NULL,
+    packSize TEXT,
+    packPrice REAL,
+    eurosPerKg REAL NOT NULL,
+    firstSeen TEXT NOT NULL,
+    lastSeen TEXT NOT NULL
+);
+
+CREATE INDEX regularPriceHistory_name ON regularPriceHistory(name, store, lastSeen);

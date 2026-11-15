@@ -43,7 +43,7 @@ address to `http://localhost:8080` in the app's settings.
 
 Users log in with an OpenID Connect provider (Authelia in the homelab); every account it knows may
 use the app and gets its own recipes, ingredient catalogue, pantry, profile, plans, shopping lists,
-log and weights. Store offers, regular prices and the NEVO data are shared.
+log and weights. Store offers, regular prices, their history and the NEVO data are shared.
 
 - Clients use the authorization code flow with PKCE as the public client `mealplanner`; the server
   tells them where to log in (`GET /api/auth/config`). The web client returns to `/`, the Android app
