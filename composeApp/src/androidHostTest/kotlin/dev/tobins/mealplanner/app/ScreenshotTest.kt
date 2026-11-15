@@ -59,6 +59,8 @@ enum class Shot(val emptyWeek: Boolean = false, val content: @Composable (ApiCli
             updater = null,
             theme = ThemeMode.SYSTEM,
             onTheme = {},
+            systemColors = false,
+            onSystemColors = {},
             onSave = {},
             onBack = {},
         )

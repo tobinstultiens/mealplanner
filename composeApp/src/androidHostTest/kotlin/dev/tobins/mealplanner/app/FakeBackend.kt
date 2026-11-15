@@ -35,6 +35,7 @@ import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightEntry
 import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.recipes.IngredientLine
+import dev.tobins.mealplanner.shopping.ShopSection
 import dev.tobins.mealplanner.units.Dimension
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -138,18 +139,19 @@ class FakeBackend(private val emptyWeek: Boolean = false) : AutoCloseable {
 
     private fun shopping(weekStart: String): ShoppingList {
         if (emptyWeek) return ShoppingList(weekStart, emptyList(), emptyList())
-        fun item(key: String, name: String, grams: Double?, pieces: Double?, category: String, recipe: String, checked: Boolean = false, offers: List<Offer> = emptyList()) =
-            ShoppingItem(key, name, grams, pieces, category, listOf(recipe), onHand = false, checked = checked, offers = offers)
+        // In walking order, as the server sends it: by shop section, then by name.
+        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String, checked: Boolean = false, offers: List<Offer> = emptyList()) =
+            ShoppingItem(key, name, grams, pieces, section.title, listOf(recipe), onHand = false, checked = checked, offers = offers)
         val chicken = "Slow-cooked chicken thighs with coconut, lemon and spinach"
         val chickpea = "Chickpea salad with feta and roasted peppers"
         return ShoppingList(
             weekStart = weekStart,
             items = listOf(
-                item("spinach", "Spinach", 600.0, null, "Vegetables", chicken),
-                item("pepper", "Red bell pepper", null, 4.0, "Vegetables", chickpea, offers = listOf(offerList[0])),
-                item("chicken", "Chicken thigh fillet", 1400.0, null, "Meat and fish", chicken, checked = true),
-                item("feta", "Feta", 400.0, null, "Dairy", chickpea),
-                item("oats", "Rolled oats", 350.0, null, "Other", "Overnight oats with blueberries"),
+                item("pepper", "Red bell pepper", null, 4.0, ShopSection.FRUIT_VEG, chickpea, offers = listOf(offerList[0])),
+                item("spinach", "Spinach", 600.0, null, ShopSection.FRUIT_VEG, chicken),
+                item("chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true),
+                item("feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea),
+                item("oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries"),
             ),
             staples = listOf("Olive oil", "Salt"),
             toTaste = listOf("Black pepper", "Fresh parsley"),
