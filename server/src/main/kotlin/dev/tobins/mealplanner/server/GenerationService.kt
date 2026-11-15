@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSource
+import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.server.generation.GeneratedRecipe
 import dev.tobins.mealplanner.server.generation.GenerationContext
 import dev.tobins.mealplanner.server.generation.RecipeGenerator
@@ -19,6 +20,8 @@ class GenerationService(
     private val profiles: ProfileRepository,
     private val plans: PlanRepository,
     private val offers: OfferRepository,
+    /** The stores the account shops at: recipes are written around their offers only. */
+    private val shops: () -> Set<Store> = { Store.entries.toSet() },
 ) {
     suspend fun generate(request: GenerateRequest, today: LocalDate = LocalDate.now()): RecipeDetail {
         val context = context(request, today)
@@ -34,7 +37,9 @@ class GenerationService(
             ?: throw ConflictException("Set up your profile first: a recipe is sized to your daily targets")
         val pantry = ingredients.pantry()
         val names = ingredients.list().associate { it.id to it.name }
-        val onOffer = offers.byIngredient(today, today.plusDays(6), ingredients.matchTerms()).keys.mapNotNull(names::get)
+        val inUse = shops()
+        val onOffer = offers.byIngredient(today, today.plusDays(6), ingredients.matchTerms())
+            .filterValues { offers -> offers.any { it.store in inUse } }.keys.mapNotNull(names::get)
         return GenerationContext(
             mode = request.mode,
             slot = request.slot,

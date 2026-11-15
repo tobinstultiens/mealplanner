@@ -3,6 +3,8 @@ package dev.tobins.mealplanner.app
 import dev.tobins.mealplanner.api.Store
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class SettingsStorageTest {
     /** The page reads the choice straight from the browser's storage before the app runs. */
@@ -97,5 +99,9 @@ class SettingsStorageTest {
         assertEquals(Store.entries.toSet(), storage.shops())
         storage.set("shops", "NOPE")
         assertEquals(Store.entries.toSet(), storage.shops())
+
+        assertFalse(storage.shopsMoved(), "a device's own choice is not yet offered to the account")
+        storage.markShopsMoved()
+        assertTrue(storage.shopsMoved())
     }
 }

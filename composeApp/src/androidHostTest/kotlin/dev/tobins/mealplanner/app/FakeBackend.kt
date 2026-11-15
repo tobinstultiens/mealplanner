@@ -29,6 +29,7 @@ import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.TargetSuggestion
 import dev.tobins.mealplanner.api.WeekPlan
@@ -98,6 +99,8 @@ class FakeBackend(
             path == "/api/prices" -> json.encodeToString(if (emptyPrices) PricesState(emptyList(), emptyList(), null) else prices)
             path == "/api/weights" -> json.encodeToString(weights)
             path == "/api/pantry" -> json.encodeToString(Pantry(emptyList(), emptyList()))
+            // Never chosen: every store, as for an account that never opened the per-store list.
+            path == "/api/shops" -> json.encodeToString(ShopsSetting())
             else -> null
         }
     }
@@ -146,19 +149,23 @@ class FakeBackend(
 
     private fun shopping(weekStart: String): ShoppingList {
         if (emptyWeek) return ShoppingList(weekStart, emptyList(), emptyList())
-        // In walking order, as the server sends it: by shop section, then by name.
-        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null) =
-            ShoppingItem(key, name, grams, pieces, section.title, listOf(recipe), onHand = false, checked = checked, offers = offers, imageUrl = imageUrl)
+        // In walking order, as the server sends it: by shop section, then by name. The regular price is the
+        // amount needed at the price per kg of `prices`; the pepper, counted in pieces only, has none.
+        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null) =
+            ShoppingItem(key, name, grams, pieces, section.title, listOf(recipe), onHand = false, checked = checked, offers = offers, imageUrl = imageUrl, regularPrice = regularPrice)
         val chicken = "Slow-cooked chicken thighs with coconut, lemon and spinach"
         val chickpea = "Chickpea salad with feta and roasted peppers"
         return ShoppingList(
             weekStart = weekStart,
             items = listOf(
-                item("pepper", "Red bell pepper", null, 4.0, ShopSection.FRUIT_VEG, chickpea, offers = listOf(offerList[0]), imageUrl = offerList[0].imageUrl),
-                item("spinach", "Spinach", 600.0, null, ShopSection.FRUIT_VEG, chicken),
-                item("chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true, imageUrl = offerList[1].imageUrl),
-                item("feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea, imageUrl = offerList[2].imageUrl),
-                item("oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries"),
+                item("pepper", "Red bell pepper", null, 4.0, ShopSection.FRUIT_VEG, chickpea, offers = listOf(offerList[0].copy(paidShare = 0.75)), imageUrl = offerList[0].imageUrl),
+                item("spinach", "Spinach", 600.0, null, ShopSection.FRUIT_VEG, chicken, regularPrice = 3.98),
+                item(
+                    "chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true,
+                    offers = listOf(offerList[1].copy(paidShare = 0.75)), imageUrl = offerList[1].imageUrl, regularPrice = 13.97,
+                ),
+                item("feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea, offers = listOf(offerList[2].copy(paidShare = 0.5)), imageUrl = offerList[2].imageUrl, regularPrice = 4.60),
+                item("oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries", offers = listOf(offerList[3].copy(paidShare = 0.79)), regularPrice = 0.76),
             ),
             staples = listOf("Olive oil", "Salt"),
             toTaste = listOf("Black pepper", "Fresh parsley"),

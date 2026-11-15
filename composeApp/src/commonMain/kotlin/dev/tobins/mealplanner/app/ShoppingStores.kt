@@ -20,8 +20,27 @@ fun cheapestOffer(offers: List<Offer>): Offer? =
 fun ShoppingItem.bestOffer(shops: Set<Store> = Store.entries.toSet()): Offer? =
     cheapestOffer(offers.filter { it.store in shops })
 
-/** The items whose preferred offer is at [store]. */
-data class StoreGroup(val store: Store, val items: List<ShoppingItem>) {
+/**
+ * What buying this item with [offer] saves in euros: its regular price times the share the offer
+ * takes off. The regular price is AH's, so at another store this is an estimate. Like the plan's
+ * costs it assumes the deal applies to the amount needed (a "1+1 gratis" halves it even when one
+ * pack would do). Null when the server could not work out either part.
+ */
+fun ShoppingItem.saving(offer: Offer): Double? {
+    val regular = regularPrice ?: return null
+    val paid = offer.paidShare ?: return null
+    return regular * (1 - paid)
+}
+
+/**
+ * What [items] save together when each is bought with its preferred offer in [shops]; null when
+ * no saving is known, or it is less than a cent.
+ */
+fun savingOf(items: List<ShoppingItem>, shops: Set<Store>): Double? =
+    items.mapNotNull { item -> item.bestOffer(shops)?.let(item::saving) }.sum().takeIf { it >= 0.005 }
+
+/** The items whose preferred offer is at [store], and what those offers save ([savingOf]). */
+data class StoreGroup(val store: Store, val items: List<ShoppingItem>, val saving: Double? = null) {
     /** `Jumbo · 5 items on offer`. */
     fun title(strings: Strings): String = strings.plural(Plural.STORE_ITEMS_ON_OFFER, items.size, store.shortName())
 }
@@ -39,7 +58,7 @@ data class StoreOverview(val stores: List<StoreGroup>, val anyStore: List<Shoppi
 fun storeOverview(items: List<ShoppingItem>, shops: Set<Store>): StoreOverview {
     val byStore = items.groupBy { it.bestOffer(shops)?.store }
     return StoreOverview(
-        stores = Store.entries.filter { it in shops }.mapNotNull { store -> byStore[store]?.let { StoreGroup(store, it) } },
+        stores = Store.entries.filter { it in shops }.mapNotNull { store -> byStore[store]?.let { StoreGroup(store, it, savingOf(it, shops)) } },
         anyStore = byStore[null].orEmpty(),
     )
 }
@@ -49,9 +68,15 @@ data class CheaperElsewhere(val item: ShoppingItem, val offer: Offer)
 
 /**
  * The list for one visit to [store]: what can be bought there ([sections], in walking order)
- * and what is on offer elsewhere ([elsewhere]). Together they hold every item once.
+ * and what is on offer elsewhere ([elsewhere]). Together they hold every item once. [saving] is
+ * what the store's own offers save on them.
  */
-data class StoreVisit(val store: Store, val sections: List<ShoppingSectionView>, val elsewhere: List<CheaperElsewhere>)
+data class StoreVisit(
+    val store: Store,
+    val sections: List<ShoppingSectionView>,
+    val elsewhere: List<CheaperElsewhere>,
+    val saving: Double? = null,
+)
 
 /**
  * The visit to [store]: its own offer items and everything without an offer, grouped by shop
@@ -64,6 +89,8 @@ fun storeVisit(items: List<ShoppingItem>, store: Store, shops: Set<Store>, shopp
         store,
         shoppingSections(here, shoppingMode),
         elsewhere.map { CheaperElsewhere(it, it.bestOffer(shops)!!) },
+        // Items without an offer here have no preferred offer, so they add nothing.
+        savingOf(here, shops),
     )
 }
 

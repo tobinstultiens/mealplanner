@@ -111,6 +111,10 @@ class PricesTest {
         val pricing = prices.pricing(ingredients, week, week.plusDays(6))
         assertEquals(0.75, pricing.discounts[chicken.id])
         assertNull(pricing.discounts[onion.id])
+        // The offer is AH's: for an account that doesn't shop there it saves nothing, though the
+        // offer itself still says what it takes off.
+        assertNull(prices.pricing(ingredients, week, week.plusDays(6), setOf(Store.JUMBO, Store.LIDL)).discounts[chicken.id])
+        assertEquals(0.75, prices.offers(ingredients, week, week.plusDays(6)).getValue(chicken.id).single().paidShare)
 
         // A second call within the week does nothing.
         store.searched.clear()

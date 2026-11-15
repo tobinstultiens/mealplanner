@@ -84,13 +84,23 @@ fun SettingsStorage.saveShoppingStore(store: Store?) = set(SHOPPING_STORE_KEY, s
 
 private const val SHOPS_KEY = "shops"
 
-/** The stores this device shops at; all of them until narrowed. Only the per-store list uses it. */
+/**
+ * The stores shopped at, as the server last confirmed them for the account ([AccountShops]); all of
+ * them until known. Before the setting moved to the account this was the device's own choice.
+ */
 fun SettingsStorage.shops(): Set<Store> {
     val stored = get(SHOPS_KEY) ?: return Store.entries.toSet()
     return Store.entries.filter { it.name in stored.split(',') }.toSet().ifEmpty { Store.entries.toSet() }
 }
 
 fun SettingsStorage.saveShops(shops: Set<Store>) = set(SHOPS_KEY, shops.joinToString(",") { it.name })
+
+private const val SHOPS_MOVED_KEY = "shopsMovedToAccount"
+
+/** Whether this device's own choice of stores has been offered to the account, which happens once. */
+fun SettingsStorage.shopsMoved(): Boolean = get(SHOPS_MOVED_KEY) == "true"
+
+fun SettingsStorage.markShopsMoved() = set(SHOPS_MOVED_KEY, "true")
 
 private const val PRODUCT_PICTURES_KEY = "productPictures"
 

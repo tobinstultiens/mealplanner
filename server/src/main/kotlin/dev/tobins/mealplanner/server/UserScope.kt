@@ -29,21 +29,24 @@ class UserScope(
     imageDir: File,
 ) {
     val ingredients = IngredientRepository(db, foods, accountId)
-    val recipes = RecipeRepository(db, ingredients, accountId) { from, until -> prices.pricing(ingredients, from, until) }
+    val shops = ShopsRepository(db, accountId)
+    val recipes = RecipeRepository(db, ingredients, accountId) { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) }
     val profiles = ProfileRepository(db, accountId)
     val pictures = RecipePictures(db, imageDir, accountId)
     val sections = ShopSections(ingredients, prices)
     val plans by lazy {
         PlanRepository(
             db, accountId, recipes, profiles,
-            offersByIngredient = { from, until -> offers.byIngredient(from, until, ingredients.matchTerms()) },
-            pricing = { from, until -> prices.pricing(ingredients, from, until) },
+            offersByIngredient = { from, until -> prices.offers(ingredients, from, until) },
+            pricing = { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) },
+            shops = shops::inUse,
+            regularPerKg = { prices.perKg(ingredients) },
             sections = sections::byIngredient,
             productImages = { prices.productImages(ingredients) },
         )
     }
     val tracking by lazy { TrackingRepository(db, accountId, plans, profiles) }
-    val generation by lazy { generator?.let { GenerationService(it, recipes, ingredients, profiles, plans, offers) } }
+    val generation by lazy { generator?.let { GenerationService(it, recipes, ingredients, profiles, plans, offers, shops::inUse) } }
 }
 
 /**

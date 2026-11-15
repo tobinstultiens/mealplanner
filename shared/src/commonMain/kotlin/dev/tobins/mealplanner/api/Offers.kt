@@ -35,7 +35,27 @@ data class Offer(
      * Always https on one of the stores' own image hosts (docs/data-sources.md, "Product pictures").
      */
     val imageUrl: String? = null,
+    /**
+     * The share of the ingredient's regular price still paid with this offer: 0.75 for "25% korting",
+     * 0.5 for "1+1 gratis" ([dev.tobins.mealplanner.pricing.Discounts.factor]). The regular price is
+     * AH's, so for another store's offer this is an estimate. Filled in by the server on shopping
+     * list items only; null when the deal can't be worked out or saves nothing.
+     */
+    val paidShare: Double? = null,
 )
+
+/**
+ * The stores an account shops at (`GET` and `PUT /api/shops`). Offers at other stores don't count
+ * when the server plans meals or costs them.
+ */
+@Serializable
+data class ShopsSetting(
+    /** Null when the account never chose, which means every store. Never empty. */
+    val stores: List<Store>? = null,
+) {
+    /** The stores whose offers count: all of them until the account chose. */
+    fun storesInUse(): Set<Store> = stores?.toSet()?.ifEmpty { null } ?: Store.entries.toSet()
+}
 
 /** How the last fetch for one store went. */
 @Serializable

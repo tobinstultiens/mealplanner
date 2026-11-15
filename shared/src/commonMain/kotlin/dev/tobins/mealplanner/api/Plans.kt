@@ -54,11 +54,11 @@ data class WeekPlan(
 )
 
 /**
- * One thing to buy for a week plan.
+ * One thing to buy for a week plan. The section travels as [category] alone, and its position is
+ * the order the server sends the items in.
  *
- * Apps up to v0.1.1 read responses strictly and fail on a field they don't know, so fields
- * added here break them: the section travels as [category] alone, and its position is the
- * order the server sends the items in.
+ * Apps from v0.1.2 on skip fields they don't know, so optional fields may be added here (see
+ * README, "API compatibility"); removing or renaming one still breaks them.
  */
 @Serializable
 data class ShoppingItem(
@@ -82,6 +82,12 @@ data class ShoppingItem(
      * else the first), or else the AH product its regular price comes from. Null without either.
      */
     val imageUrl: String? = null,
+    /**
+     * Euros the needed amount costs at the regular price (AH's, or one set by hand in the
+     * catalogue): what an offer's saving is measured against, with [Offer.paidShare]. Null when the
+     * ingredient has no regular price or the amount isn't known in grams.
+     */
+    val regularPrice: Double? = null,
 )
 
 /**
