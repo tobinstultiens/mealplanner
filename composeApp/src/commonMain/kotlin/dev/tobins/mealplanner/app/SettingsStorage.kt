@@ -87,3 +87,10 @@ fun SettingsStorage.shops(): Set<Store> {
 }
 
 fun SettingsStorage.saveShops(shops: Set<Store>) = set(SHOPS_KEY, shops.joinToString(",") { it.name })
+
+private const val PRODUCT_PICTURES_KEY = "productPictures"
+
+/** Whether offers and shopping rows load the stores' product pictures; on by default. */
+fun SettingsStorage.productPictures(): Boolean = get(PRODUCT_PICTURES_KEY) != "false"
+
+fun SettingsStorage.saveProductPictures(on: Boolean) = set(PRODUCT_PICTURES_KEY, on.toString())

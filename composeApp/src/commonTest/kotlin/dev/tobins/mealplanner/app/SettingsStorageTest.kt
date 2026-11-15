@@ -27,6 +27,17 @@ class SettingsStorageTest {
     }
 
     @Test
+    fun productPicturesAreOnUntilSwitchedOff() {
+        val storage = MemorySettingsStorage()
+        assertEquals(true, storage.productPictures())
+
+        storage.saveProductPictures(false)
+        assertEquals(false, storage.productPictures())
+        storage.saveProductPictures(true)
+        assertEquals(true, storage.productPictures())
+    }
+
+    @Test
     fun systemColoursAreOffUntilSwitchedOn() {
         val storage = MemorySettingsStorage()
         assertEquals(false, storage.systemColors())

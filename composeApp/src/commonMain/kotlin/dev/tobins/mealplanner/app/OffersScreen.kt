@@ -2,6 +2,8 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -140,15 +142,18 @@ private fun SourceLine(status: OfferSourceStatus) {
 @Composable
 private fun OfferRow(offer: Offer) {
     val t = LocalStrings.current
-    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp)) {
-        offer.ingredientName?.let {
-            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+    Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        ProductPicture(offer.imageUrl, offer.title)
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            offer.ingredientName?.let {
+                Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            Text(offer.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOfNotNull(offer.shortText(t), offer.packSize, t(Msg.UNTIL, dayMonthLabel(offer.validUntil, t.locale))).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        Text(offer.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(
-            listOfNotNull(offer.shortText(t), offer.packSize, t(Msg.UNTIL, dayMonthLabel(offer.validUntil, t.locale))).joinToString(" · "),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }

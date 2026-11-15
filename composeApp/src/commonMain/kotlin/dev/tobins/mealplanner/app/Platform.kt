@@ -2,6 +2,8 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
+import coil3.ImageLoader
+import coil3.PlatformContext
 
 /** Runs [onBack] instead of the platform's default back action while [enabled]. */
 @Composable
@@ -31,3 +33,14 @@ expect fun systemColorScheme(dark: Boolean): ColorScheme?
  */
 @Composable
 expect fun KeepScreenOn(enabled: Boolean)
+
+/**
+ * The loader of product pictures. It sends its own User-Agent (Jumbo resets connections that
+ * carry OkHttp's default), keeps pictures on disk where the platform has room for that, and
+ * ignores the stores' cache headers: AH's bonus pictures say `max-age=0`, yet the shopping list
+ * should show them offline in the shop.
+ */
+expect fun productImageLoader(context: PlatformContext): ImageLoader
+
+/** True in the browser, where a picture can only be drawn when its host sends CORS headers. */
+expect fun runsInBrowser(): Boolean

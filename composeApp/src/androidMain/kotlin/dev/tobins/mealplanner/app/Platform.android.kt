@@ -43,3 +43,20 @@ actual fun KeepScreenOn(enabled: Boolean) {
         onDispose { window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 }
+
+actual fun productImageLoader(context: coil3.PlatformContext): coil3.ImageLoader {
+    val client = io.ktor.client.HttpClient(io.ktor.client.engine.okhttp.OkHttp) {
+        install(io.ktor.client.plugins.UserAgent) { agent = "MealPlanner (Android)" }
+    }
+    return coil3.ImageLoader.Builder(context)
+        .components { add(coil3.network.ktor3.KtorNetworkFetcherFactory(client)) }
+        .diskCache {
+            coil3.disk.DiskCache.Builder()
+                .directory(with(okio.Path) { context.cacheDir.resolve("product_pictures").absolutePath.toPath() })
+                .maxSizeBytes(50L * 1024 * 1024)
+                .build()
+        }
+        .build()
+}
+
+actual fun runsInBrowser(): Boolean = false

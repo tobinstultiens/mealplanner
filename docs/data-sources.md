@@ -201,18 +201,22 @@ from the bytes (Android's decoder and Skia do). AH's anonymous token endpoint re
 the server's own included, from 02:41 to about 03:00 UTC on 2026-11-15 (500, or 400 "Client not
 supported"), then worked again; during such an outage offers and prices keep their previous values.
 
-Recommendation for the apps:
-- **Android: load directly from the stores**, with a disk cache so the shopping list keeps its
-  pictures offline. The image loader must send its own user agent (for example
-  `Mealplanner/<version> (Android)`), not OkHttp's default, or Jumbo's pictures fail. Direct loading
-  tells the stores' CDNs the phone's IP address and which pictures it shows (not who is logged in);
-  the "Show product pictures" setting turns it off.
-- **Web: load AH and Lidl directly** (they allow CORS), and **Jumbo through the server**, which
-  needs a pass-through: `/api/image?url=…`, accepting only URLs that pass `StoreImages`, fetching with
-  its own user agent, caching. Until that exists the web client shows placeholders for Jumbo. The
-  pass-through is not built yet; it belongs with the app's web pictures. Passing every picture
-  through it would also keep the stores from seeing the phone's address, if that is ever wanted on
-  Android.
+What the apps do (Coil 3 with the Ktor network fetcher, `ProductPictures.kt`, `productImageLoader`):
+- **Android loads directly from the stores**, with a 50 MB disk cache so the shopping list keeps its
+  pictures offline. The loader sends its own user agent (`MealPlanner (Android)`), not OkHttp's
+  default, or Jumbo's pictures fail, and ignores the stores' cache headers (Coil's default strategy
+  already serves whatever is on disk), so AH's `max-age=0` bonus pictures stay available offline.
+  Direct loading tells the stores' CDNs the phone's IP address and which pictures it shows (not who
+  is logged in); Settings → Appearance → "Show product pictures" turns it off.
+- **The web client loads AH and Lidl pictures directly** (they allow CORS) **and shows the product's
+  first letter for Jumbo's**, which sends no CORS headers; the app decides by host
+  (`loadablePictureUrl`). A server pass-through (`/api/image?url=…`, accepting only URLs that pass
+  `StoreImages`, fetching with its own user agent, caching) would fix that but also makes the server
+  fetch for every viewer; it is not built. Passing every picture through it would also keep the
+  stores from seeing the phone's address, if that is ever wanted on Android.
+- A row shows the picture in a fixed 48 dp square (56 dp in shopping mode) with the first letter of
+  the product on it until the picture has loaded, when it fails and when there is none, so rows do
+  not change height. Ticked-off shopping items show it dimmed.
 
 ## Nutrition: NEVO
 

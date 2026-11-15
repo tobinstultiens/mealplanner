@@ -85,6 +85,8 @@ in Dutch); with System they follow the device. The texts are in `composeApp/.../
 English and Dutch side by side, and the notification of an update in `androidApp/src/main/res/values*/strings.xml`.
 Texts that come from the server (error messages, store deals, recipes) are shown as they are.
 
+Offers and shopping-list rows show the product's picture from the store (Coil 3; docs/data-sources.md, "Product pictures"), with the first letter of the product as placeholder. Progress → Settings → Appearance → "Show product pictures" turns the loading off. The web app shows no pictures for Jumbo, which sends no CORS headers. The screenshot tests use a fake loader and never touch the network.
+
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):
 
