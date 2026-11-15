@@ -188,8 +188,8 @@ class FakeBackend(
                 item("spinach", "Spinach", null, 1.0, ShopSection.FRUIT_VEG, chicken, knownGrams = 600.0, otherAmounts = listOf("1 bag")),
                 item(
                     // Bought for the 800 g a reroll needed; the meals need 1.4 kg now: 600 g more. 300 g
-                    // bought ahead last week is in the freezer: counted in when the row said 800 g, so it
-                    // shows as an amount only.
+                    // bought ahead last week is in the freezer: counted in when the row said 800 g, so the
+                    // ticked row doesn't name it again.
                     "chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true,
                     offers = listOf(offerList[1].copy(paidShare = 0.75)), imageUrl = offerList[1].imageUrl, regularPrice = 13.97, boughtGrams = 800.0,
                     onHand = true, onHandGrams = 300.0,

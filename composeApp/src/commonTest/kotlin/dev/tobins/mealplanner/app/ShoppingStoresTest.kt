@@ -277,14 +277,19 @@ class ShoppingStoresTest {
         assertEquals("2 × 700 g", unknown.packsStillToBuy(offer)?.text(Strings.English))
         // The need can't be weighed in full: what is at home, without a sum.
         assertEquals("300 g on hand", stocked(300.0, grams = null).onHandText(Strings.English))
-        // Ticked: what it said then counted the stock in, so the amount alone, and packs for the whole
-        // need as before; a row that needs more says what is left to buy in its own line.
+        // Ticked: what it said then counted the stock in, so no second amount and the plain name; packs
+        // for the whole need as before. A row that needs more says the one amount still to buy.
         val ticked = stocked(800.0).copy(checked = true)
-        assertEquals("800 g on hand", ticked.onHandText(Strings.English))
+        assertNull(ticked.onHandText(Strings.English))
+        assertEquals("Chicken", ticked.nameText(Strings.English))
         assertEquals("2 × 700 g", ticked.packsStillToBuy(offer)?.text(Strings.English))
         val grown = stocked(300.0).copy(checked = true, boughtGrams = 800.0)
         assertEquals("600 g more (800 g bought)", grown.moreNeeded()?.text(Strings.English), "the one number still to buy")
-        assertEquals("300 g on hand", grown.onHandText(Strings.English))
+        assertNull(grown.onHandText(Strings.English))
+        // The name asks only when nobody knows how much there is, ticked or not.
+        assertEquals("Chicken  (on hand?)", unknown.nameText(Strings.English))
+        assertEquals("Chicken  (in huis?)", unknown.copy(checked = true).nameText(Strings.Dutch))
+        assertEquals("Chicken", part.nameText(Strings.English))
         // Not on hand: nothing, whatever the amount says.
         assertNull(stocked(800.0).copy(onHand = false).onHandText(Strings.English))
         assertEquals("2 × 700 g", stocked(800.0).copy(onHand = false).packsStillToBuy(offer)?.text(Strings.English))

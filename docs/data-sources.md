@@ -201,9 +201,9 @@ is on hand without an amount, as before.
 week carries the grams left (`ShoppingItem.onHandGrams`), and the app says `300 g on hand, buy 200 g`
 under its name, `600 g on hand: enough` when that covers the need (with no packs to take), or `300 g
 on hand` when the need can't be weighed in full; the packs to take are for what is still to buy.
-A ticked row shows the amount alone: what it said when ticked already counted the stock there was,
-so on a row that needs more the one number still to buy is its "more" line, never that less the
-stock again. The
+A ticked row says nothing of the stock: what it said when ticked already counted the stock there
+was, so on a row that needs more the one number still to buy is its "more" line, never that less
+the stock again (the pantry still shows the amount). The
 pantry gives the grams left of each entry (`Pantry.onHandGrams`, next week's stock included, as it is
 at home) and the app shows `300 g left` under its name. An entry set by hand, or ticked without an
 amount, has no amount: the row says `(on hand?)` as before and the pantry no number, never zero.

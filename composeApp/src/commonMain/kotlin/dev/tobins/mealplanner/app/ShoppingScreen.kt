@@ -120,18 +120,24 @@ internal fun ShoppingItem.gramsToBuy(): Double? {
 }
 
 /**
- * What the row says under its name of what is at home: `300 g on hand, buy 200 g`, `600 g on hand:
- * enough` when it covers the need, or `300 g on hand` when the need's weight is not known or the row
- * is ticked ([gramsToBuy]). Null when
- * not on hand, and when on hand in an amount nobody knows (put there by hand): the name then asks
- * "(on hand?)" as before, never saying none is there.
+ * What a row not ticked yet says under its name of what is at home: `300 g on hand, buy 200 g`,
+ * `600 g on hand: enough` when it covers the need, or `300 g on hand` when the need's weight is not
+ * known. Null when not on hand, and when on hand in an amount nobody knows (put there by hand): the
+ * name then asks "(on hand?)" ([nameText]), never saying none is there. Null on a ticked row too:
+ * its buying is done, or its "more" line ([moreNeeded]) says the one amount still to buy, which a
+ * second amount next to it would only make the reader subtract from again ([gramsToBuy]).
  */
 internal fun ShoppingItem.onHandText(strings: Strings): String? {
+    if (checked) return null
     val left = onHandGrams?.takeIf { onHand } ?: return null
     val amount = weightText(left, strings.locale)
     val toBuy = gramsToBuy() ?: return strings(Msg.ON_HAND_AMOUNT, amount)
     return if (toBuy < SCRAP_GRAMS) strings(Msg.ON_HAND_ENOUGH, amount) else strings(Msg.ON_HAND_BUY, amount, weightText(toBuy, strings.locale))
 }
+
+/** The row's name, asking "(on hand?)" when it is on hand in an amount nobody knows, as before amounts were kept. */
+internal fun ShoppingItem.nameText(strings: Strings): String =
+    if (onHand && onHandGrams == null) strings(Msg.ON_HAND_MAYBE, name) else name
 
 /**
  * [packsToBuy] for what is still to buy ([gramsToBuy]) when part of it is on hand in a known amount,
@@ -751,7 +757,7 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, to
         ProductPicture(item.pictureUrl(offer, shops), item.name, size = if (shoppingMode) 56.dp else 48.dp, dimmed = item.done)
         Column(Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp)) {
             Text(
-                if (item.onHand && stock == null) t(Msg.ON_HAND_MAYBE, item.name) else item.name,
+                item.nameText(t),
                 style = if (shoppingMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
                 textDecoration = if (item.done) TextDecoration.LineThrough else null,
                 maxLines = 2,
@@ -761,8 +767,7 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, to
             if (more != null) {
                 Text(more.text(t), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
-            // How much is at home, when that is known: on a row not ticked yet, also what is left to
-            // buy or that it is enough; on a ticked one the amount alone ([gramsToBuy]).
+            // How much is at home, when that is known and the row is not ticked yet: what is left to buy, or that it is enough.
             if (stock != null) {
                 Text(stock, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
