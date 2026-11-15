@@ -74,7 +74,30 @@ class ShoppingSessionTest {
             return Load.Ready(listFor(weekStart))
         }
 
-        override suspend fun useUp(ingredientId: Long): Load<Unit> {
+        /** False for a server from before ticking again and using up in one step: it has no such routes. */
+        var oneStep = true
+
+        /** Replaces the answer to ticking again or using up, as a refusal. */
+        var oneStepAnswer: Load<ShoppingList>? = null
+
+        override suspend fun tickAgain(weekStart: String, key: String): Load<ShoppingList>? {
+            asked += "again $weekStart $key"
+            if (!oneStep) return null
+            delay(latency)
+            return oneStepAnswer ?: Load.Ready(listFor(weekStart))
+        }
+
+        override suspend fun useUp(weekStart: String, key: String): Load<ShoppingList>? {
+            asked += "use up $weekStart $key"
+            if (!oneStep) return null
+            delay(latency)
+            oneStepAnswer?.let { return it }
+            lists[weekStart] = listFor(weekStart).let { list -> list.copy(noLongerNeeded = list.noLongerNeeded.filter { it.key != key }) }
+            return Load.Ready(listFor(weekStart))
+        }
+
+        override suspend fun putOnHand(ingredientId: Long): Load<Unit> {
+            asked += "on hand $ingredientId"
             delay(latency)
             onHand += ingredientId
             return Load.Ready(Unit)
@@ -133,18 +156,39 @@ class ShoppingSessionTest {
 
     private fun pending(week: String = monday) = ShoppingCache(storage).pending(week)
 
+    /** A row bought for 800 g whose meals need 1.4 kg now, as the server has it. */
+    private val needsMore = ShoppingItem("a", "a", 1400.0, null, "Meat", emptyList(), onHand = false, checked = true, boughtGrams = 800.0)
+
+    /** The list of [monday] with only [items]. */
+    private fun listWith(vararg items: ShoppingItem) = ShoppingList(monday, items.toList(), staples = emptyList())
+
     @Test
-    fun tickingARowThatNeedsMoreUnTicksAndTicksItAgainInOneStep() = runTest {
-        // The server remembers what a tick said: un-ticking forgets it, ticking stores the amount of that moment.
-        val bought = ShoppingItem("a", "a", 1400.0, null, "Meat", emptyList(), onHand = false, checked = true, boughtGrams = 800.0)
-        server.lists[monday] = ShoppingList(monday, listOf(bought), staples = emptyList())
-        server.answer = { _, checked ->
-            Load.Ready(ShoppingList(monday, listOf(if (checked) bought.copy(boughtGrams = 1400.0) else bought.copy(checked = false, boughtGrams = null)), staples = emptyList()))
-        }
+    fun tickingARowThatNeedsMoreAgainIsOneRequest() = runTest {
+        server.lists[monday] = listWith(needsMore)
         val session = session()
         session.resume()
         settle()
         assertEquals(600.0, session.shown().items.single().moreNeeded()?.grams)
+
+        // The server remembers the amount of this moment.
+        server.lists[monday] = listWith(needsMore.copy(boughtGrams = 1400.0))
+        session.tickAgain("a")
+        settle()
+
+        assertEquals("again $monday a", server.asked.single { it.startsWith("again") || it.startsWith("check") })
+        assertNull(session.shown().items.single().moreNeeded())
+        assertTrue(session.shown().items.single().done)
+    }
+
+    @Test
+    fun aServerFromBeforeTickingAgainIsSentAnUnTickAndATick() = runTest {
+        // It remembers what a tick said: un-ticking forgets it, ticking stores the amount of that moment.
+        server.oneStep = false
+        server.lists[monday] = listWith(needsMore)
+        server.answer = { _, checked -> Load.Ready(listWith(if (checked) needsMore.copy(boughtGrams = 1400.0) else needsMore.copy(checked = false, boughtGrams = null))) }
+        val session = session()
+        session.resume()
+        settle()
 
         session.tickAgain("a")
         settle()
@@ -152,18 +196,97 @@ class ShoppingSessionTest {
         assertEquals(listOf(false, true), server.ticks.map { it.third })
         assertNull(session.shown().items.single().moreNeeded())
         assertTrue(session.shown().items.single().done)
+        assertEquals(emptyList(), session.notices.toList())
     }
 
     @Test
-    fun usingUpABoughtRowPutsItsIngredientOnHandAndFetchesTheList() = runTest {
+    fun whenTheTickAfterTheUnTickFailsTheRowShowsWhatTheServerHas() = runTest {
+        server.oneStep = false
+        server.lists[monday] = listWith(needsMore)
+        val session = session()
+        session.resume()
+        settle()
+
+        // The un-tick goes through, the tick does not: the server has the row un-ticked.
+        server.answer = { _, checked ->
+            if (checked) {
+                Load.Failed("Internal server error", 500)
+            } else {
+                server.lists[monday] = listWith(needsMore.copy(checked = false, boughtGrams = null))
+                Load.Ready(server.listFor(monday))
+            }
+        }
+        session.tickAgain("a")
+        settle()
+
+        assertEquals(listOf(Msg.TICK_FAILED to "Internal server error"), session.notices.map { it.msg to it.detail })
+        assertEquals("list $monday", server.asked.last())
+        val row = session.shown().items.single()
+        assertEquals(false to null, row.checked to row.boughtGrams)
+    }
+
+    @Test
+    fun whenTickingAgainIsRefusedTheListIsFetchedAgain() = runTest {
+        server.lists[monday] = listWith(needsMore)
+        val session = session()
+        session.resume()
+        settle()
+
+        // Another phone un-ticked it in the meantime.
+        server.lists[monday] = listWith(needsMore.copy(checked = false, boughtGrams = null))
+        server.oneStepAnswer = Load.Failed("No tick of a in the week of $monday", 404)
+        session.tickAgain("a")
+        settle()
+
+        assertEquals(listOf(Msg.TICK_FAILED to "No tick of a in the week of $monday"), session.notices.map { it.msg to it.detail })
+        assertEquals(emptyList(), server.ticks, "a refusal of the route is no reason to un-tick and tick")
+        assertFalse(session.shown().items.single().checked)
+    }
+
+    /** Bought broccoli that no meal needs any more. */
+    private val broccoli = ShoppingItem("i7", "Broccoli", null, null, "Vegetables", emptyList(), onHand = false, checked = true, boughtGrams = 500.0)
+
+    @Test
+    fun usingUpABoughtRowIsOneRequestAndTheRowLeavesTheGroup() = runTest {
+        server.lists[monday] = server.listFor(monday).copy(noLongerNeeded = listOf(broccoli))
         val session = session()
         session.resume()
         settle()
         session.useUp("i7")
         session.useUp("t:cling film")
         settle()
-        assertEquals(listOf(7L), server.onHand, "only a catalogue ingredient can be put on hand")
+        assertEquals(listOf("use up $monday i7"), server.asked.filter { it.startsWith("use up") || it.startsWith("on hand") }, "only a catalogue ingredient can be put on hand")
+        assertEquals(emptyList(), session.shown().noLongerNeeded)
+        assertEquals(emptyList(), server.onHand)
+    }
+
+    @Test
+    fun aServerFromBeforeUsingUpIsAskedToPutTheIngredientOnHandAndTheListIsFetched() = runTest {
+        server.oneStep = false
+        val session = session()
+        session.resume()
+        settle()
+        session.useUp("i7")
+        settle()
+        assertEquals(listOf(7L), server.onHand)
+        assertEquals(listOf("use up $monday i7", "on hand 7", "list $monday"), server.asked.takeLast(3))
+    }
+
+    @Test
+    fun whenUsingUpFailsItSaysSoAndTheListIsFetchedAgain() = runTest {
+        server.lists[monday] = server.listFor(monday).copy(noLongerNeeded = listOf(broccoli))
+        val session = session()
+        session.resume()
+        settle()
+        server.oneStepAnswer = Load.Failed("The meals of the week of $monday need i7 again", 409)
+        // The plan changed back on another phone: broccoli is a row of the list again.
+        server.lists[monday] = server.listFor(monday).let { it.copy(items = it.items + broccoli, noLongerNeeded = emptyList()) }
+        session.useUp("i7")
+        settle()
+        assertEquals(listOf(Msg.USE_UP_FAILED to "The meals of the week of $monday need i7 again"), session.notices.map { it.msg to it.detail })
         assertEquals("list $monday", server.asked.last())
+        assertTrue(session.shown().items.any { it.key == "i7" })
+        assertEquals(emptyList(), server.onHand)
     }
 
     @Test

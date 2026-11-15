@@ -113,6 +113,19 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     }
 
     /**
+     * [grams] bought of an ingredient that is at home, for meals from [week] on to eat from
+     * ([useUp]): a bought item of the shopping list that no meal needs any more, used up after all.
+     * Added to the stock there is, which then counts from the earlier of the two weeks, as what was
+     * bought ahead for next week is at home already; an amount unknown there stays unknown. Without a
+     * stock it is a new one. An entry put on hand by hand stays as it is, as for [putOnHandFrom].
+     */
+    fun addToStock(id: Long, week: LocalDate, grams: Double) = db.transaction {
+        requireIngredient(id)
+        // The statement that gives back what a meal took: it adds to the stock that is there.
+        if (pantry.giveBackToStock(grams, week.toString(), id, userId).value == 0L) putOnHandFrom(id, week, grams)
+    }
+
+    /**
      * An un-ticked item of the shopping list: takes back what ticking it put on hand from [week]. What
      * was not bought was not eaten either, so un-eating a meal that took from it puts nothing back.
      */

@@ -26,6 +26,7 @@ import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
@@ -266,6 +267,58 @@ class AccountsTest {
         }
         assertEquals(emptyList(), bob.list().noLongerNeeded)
         assertEquals(bought, alice.list().noLongerNeeded)
+    }
+
+    @Test
+    fun onlyTheAccountThatBoughtItUsesItUpOrTicksItAgain() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val week = "2026-11-16"
+        suspend fun HttpClient.list() = get("/api/plans/$week/shopping").body<ShoppingList>()
+        suspend fun HttpClient.tick(key: String) = put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, true)) }
+        suspend fun HttpClient.again(key: String) = put("/api/plans/$week/shopping/again") { setBody(ShoppingRowKey(key)) }
+        suspend fun HttpClient.useUp(key: String) = post("/api/plans/$week/shopping/use-up") { setBody(ShoppingRowKey(key)) }
+        suspend fun HttpClient.dine(subject: String, input: RecipeInput) {
+            val recipe = post("/api/recipes") { setBody(input) }.body<RecipeDetail>().summary
+            val userId = db.userQueries.selectBySubject(subject).executeAsOne().id
+            db.planQueries.upsertMeal(userId, week, 0, "DINNER", recipe.id, recipe.title, 2.0, 1000.0, 50.0, 0, 0, "PLANNED")
+        }
+        // Alice's beef is hers (i<id>); the onion is linked in neither account, so both lists have its row under one key.
+        val beef = alice.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+        val beefKey = "i${beef.id}"
+        alice.dine("sub-alice", recipe)
+        bob.dine("sub-bob", recipe)
+        val onion = alice.list().items.first { it.key.startsWith("t:") }.key
+        alice.tick(onion)
+
+        // Bob has no tick of the onion, so he can't tick hers again; his own tick of it stays apart.
+        assertEquals(HttpStatusCode.NotFound, bob.again(onion).status)
+        assertEquals(HttpStatusCode.NotFound, bob.again(beefKey).status)
+        assertTrue(alice.list().items.single { it.key == onion }.checked)
+        bob.tick(onion)
+        assertEquals(HttpStatusCode.OK, bob.again(onion).status)
+        assertTrue(alice.list().items.single { it.key == onion }.checked)
+
+        // Alice bought the beef, then her plan changed: only she can use it up.
+        alice.tick(beefKey)
+        alice.dine("sub-alice", RecipeInput("Salad", 2, "200 | g | lettuce"))
+        assertEquals(listOf(beefKey), alice.list().noLongerNeeded.filter { it.key == beefKey }.map { it.key })
+        assertEquals(HttpStatusCode.NotFound, bob.useUp(beefKey).status)
+        // Not even after ticking her key himself: his tick is no bought item of his list.
+        bob.tick(beefKey)
+        assertEquals(HttpStatusCode.NotFound, bob.useUp(beefKey).status)
+        assertEquals(emptyList(), alice.get("/api/pantry").body<Pantry>().onHand)
+        assertEquals(emptyList(), bob.get("/api/pantry").body<Pantry>().onHand)
+        assertTrue(alice.list().noLongerNeeded.any { it.key == beefKey })
+
+        // Alice's use-up stocks her pantry with what she bought, and only hers.
+        assertTrue(alice.useUp(beefKey).body<ShoppingList>().noLongerNeeded.none { it.key == beefKey })
+        assertEquals(mapOf(beef.id to 400.0), alice.get("/api/pantry").body<Pantry>().onHandGrams)
+        assertTrue(bob.get("/api/pantry").body<Pantry>().onHandGrams.isEmpty())
+        assertEquals(emptyList(), bob.get("/api/pantry").body<Pantry>().onHand)
     }
 
     @Test

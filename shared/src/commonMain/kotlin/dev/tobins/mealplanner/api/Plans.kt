@@ -173,7 +173,7 @@ data class ShoppingList(
      * the row had it, what was bought ([ShoppingItem.boughtGrams], [ShoppingItem.boughtPieces]),
      * [ShoppingItem.checked] true and [ShoppingItem.onHand] when its ingredient is on hand already; no
      * amounts needed and no recipes. Un-ticking one with its key (the usual `PUT` of the list) takes
-     * it off. Only ticks the server remembers the row of are here: not ticks from before it did,
+     * it off, and so does using it up ([ShoppingRowKey]), which puts it on hand. Only ticks the server remembers the row of are here: not ticks from before it did,
      * the advice's or own items', nor a dismissed group. A separate list, so that apps from before it
      * never take it for something to buy.
      */
@@ -205,6 +205,16 @@ data class ShoppingCheck(
         const val MAX_GRAMS = 10_000.0
     }
 }
+
+/**
+ * One ticked row of a week's list by its [key], for what the server does with it in one step:
+ * ticking a row that needs more again (`PUT /api/plans/{weekStart}/shopping/again`) and using up a
+ * bought item no meal needs any more (`POST /api/plans/{weekStart}/shopping/use-up`). Routes of their
+ * own rather than a field of [ShoppingCheck], so that an app can tell a server from before them by
+ * its 404, where it would refuse an unknown field with the same 400 as a bad tick.
+ */
+@Serializable
+data class ShoppingRowKey(val key: String)
 
 /**
  * An own item to put on the shopping list (`POST /api/plans/{weekStart}/shopping/extras`), such as
