@@ -109,6 +109,10 @@ breakfast and spreads; baking; snacks and sweets; drinks), frozen, household and
 by name, and ticking an item off does not move it. One route serves every store: Jumbo is laid
 out much the same, Lidl a little differently (bakery at the entrance, a non-food middle aisle).
 
+In the app each section's header carries an icon (`sectionIcon` in `composeApp`, chosen so that
+neighbouring sections differ); the app finds it by the section's title, and shows the "Other" one
+for a title it does not know.
+
 An ingredient's section comes from, best first:
 1. **A section set by hand** in the app (Recipes → Link ingredients → Shop sections, or
    `PUT /api/ingredients/{id}/section`). Per account, like the rest of the catalogue; it stays until
