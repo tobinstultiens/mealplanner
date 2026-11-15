@@ -450,3 +450,10 @@ after accepting the conditions of use, so the download is a manual step.
 The main file `NEVO2025_v9.0.csv` is UTF-8, `|`-separated, with decimal commas and one row per
 food (2,328 foods). Values are per 100 g, except for foods marked `per 100ml` (mostly drinks).
 An empty cell means "no value", not zero.
+
+**In the app** the Shopping screen has an "Add an item of your own" field under the view switch (also
+for a week without meals): Enter or the plus button adds it, the field clears and keeps the focus. An
+own row has a remove button at its end (hidden in shopping mode, where the row is one tap target).
+Adding and removing need a connection: while the list shown is the stored copy of a lost
+connection the field is off and says so. A refusal (such as the 101st open item) shows the server's
+message and keeps the typed text. Ticking an own item works offline like any row.

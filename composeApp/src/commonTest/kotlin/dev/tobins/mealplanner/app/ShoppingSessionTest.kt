@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -71,6 +72,28 @@ class ShoppingSessionTest {
         override suspend fun dismiss(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): Load<ShoppingList> {
             delay(latency)
             lists[weekStart] = listFor(weekStart).copy(buyAheadDismissed = dismissed)
+            return Load.Ready(listFor(weekStart))
+        }
+
+        /** The names of own items added, as they came in; [addAnswer] replaces the answer, as a refusal. */
+        val added = mutableListOf<String>()
+        var addAnswer: Load<ShoppingList>? = null
+
+        override suspend fun addExtra(weekStart: String, name: String): Load<ShoppingList> {
+            asked += "add $weekStart $name"
+            if (unreachable) return Load.Failed("Unable to resolve host")
+            delay(latency)
+            addAnswer?.let { return it }
+            added += name
+            val own = ShoppingItem("x:${added.size}", name, null, null, "Other", emptyList(), onHand = false, checked = false)
+            lists[weekStart] = listFor(weekStart).let { it.copy(items = it.items + own) }
+            return Load.Ready(listFor(weekStart))
+        }
+
+        override suspend fun removeExtra(weekStart: String, id: Long): Load<ShoppingList> {
+            asked += "remove $weekStart $id"
+            delay(latency)
+            lists[weekStart] = listFor(weekStart).let { list -> list.copy(items = list.items.filter { it.key != "x:$id" }) }
             return Load.Ready(listFor(weekStart))
         }
     }
@@ -630,5 +653,95 @@ class ShoppingSessionTest {
         assertEquals(Load.Loading, nextAccount.state, "nothing of the previous account is shown")
         settle()
         assertEquals(1, server.ticks.size, "no tick of the previous account is sent again")
+    }
+
+    @Test
+    fun addingAnOwnItemSendsTheTrimmedNameAndShowsTheListWithUnsentTicksLaidOver() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+        // A tick the server has not heard of yet, as after a lost connection.
+        ShoppingCache(storage).choose(monday, "b", true)
+
+        var added = 0
+        session.add("  Coffee ") { added++ }
+        assertTrue(session.adding)
+        settle()
+
+        assertEquals(listOf("Coffee"), server.added)
+        assertEquals(1, added)
+        assertFalse(session.adding)
+        assertEquals(listOf("a", "b", "c", "Coffee"), session.shown().items.map { it.name })
+        assertEquals(listOf(false, true, false, false), session.checked(), "the waiting tick is still laid over the answer")
+    }
+
+    @Test
+    fun aSecondTapWhileAnItemIsOnItsWayAddsNothing() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+
+        session.add("Coffee") {}
+        session.add("Coffee") {}
+        settle()
+
+        assertEquals(listOf("Coffee"), server.added)
+    }
+
+    @Test
+    fun aRefusedItemShowsTheServersMessageAndDoesNotCallBack() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+        server.addAnswer = Load.Failed("Too many open items", 409)
+
+        var added = false
+        session.add("Coffee") { added = true }
+        settle()
+
+        assertFalse(added, "the field keeps its text")
+        assertFalse(session.adding, "and can be used again")
+        assertEquals(listOf(Msg.EXTRA_ADD_FAILED to "Too many open items"), session.notices.map { it.msg to it.detail })
+        assertEquals(listOf("a", "b", "c"), session.shown().items.map { it.name })
+    }
+
+    @Test
+    fun offlineNothingIsAddedOrRemovedAndTheNoticeSaysWhy() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+        server.unreachable = true
+        session.tick("a", true)
+        settle()
+        assertNotNull(session.offlineSince)
+        assertFalse(session.canChangeExtras)
+        server.asked.clear()
+
+        var added = false
+        session.add("Coffee") { added = true }
+        session.remove(1)
+        settle()
+
+        assertFalse(added)
+        assertTrue(server.asked.none { it.startsWith("add") || it.startsWith("remove") })
+        assertEquals(listOf(Msg.EXTRA_NEEDS_CONNECTION, Msg.EXTRA_NEEDS_CONNECTION), session.notices.map { it.msg })
+    }
+
+    @Test
+    fun removingAnOwnItemShowsTheListWithoutItAndDropsItsWaitingTick() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+        session.add("Coffee") {}
+        settle()
+        ShoppingCache(storage).choose(monday, "x:1", true)
+
+        session.remove(1)
+        settle()
+
+        assertEquals(listOf("a", "b", "c"), session.shown().items.map { it.name })
+        assertEquals(emptyMap(), pending())
+        assertEquals(1L, ShoppingItem("x:1", "Coffee", null, null, "Other", emptyList(), onHand = false, checked = false).extraId)
+        assertNull(ShoppingItem("a", "a", null, null, "Other", emptyList(), onHand = false, checked = false).extraId)
     }
 }

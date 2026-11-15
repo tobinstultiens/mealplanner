@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
+import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -26,6 +27,10 @@ internal interface ShoppingServer {
     suspend fun check(weekStart: String, key: String, checked: Boolean): Load<ShoppingList>
 
     suspend fun dismiss(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): Load<ShoppingList>
+
+    suspend fun addExtra(weekStart: String, name: String): Load<ShoppingList>
+
+    suspend fun removeExtra(weekStart: String, id: Long): Load<ShoppingList>
 }
 
 internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServer {
@@ -35,7 +40,14 @@ internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServe
 
     override suspend fun dismiss(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean) =
         load { setShoppingDismissed(weekStart, group, dismissed) }
+
+    override suspend fun addExtra(weekStart: String, name: String) = load { addShoppingExtra(weekStart, name) }
+
+    override suspend fun removeExtra(weekStart: String, id: Long) = load { removeShoppingExtra(weekStart, id) }
 }
+
+/** The id of an own item, the number in its key `x:<id>`; null for a row that comes from the plan. */
+internal val ShoppingItem.extraId: Long? get() = if (key.startsWith("x:")) key.removePrefix("x:").toLongOrNull() else null
 
 /** Something to tell the user in a snackbar the next time the list shows: [msg] filled in with [detail]. */
 internal class Notice(val msg: Msg, val detail: String)
@@ -51,6 +63,10 @@ internal class Notice(val msg: Msg, val detail: String)
  * Every request to the server goes out in [scope], one at a time and in order ([turn]): an answer
  * that overtook a later request could otherwise put an older list on screen. Each gets
  * [TIME_LIMIT], so one that hangs never holds back the rest; no answer counts as no connection.
+ *
+ * Adding and deleting an own item need the server ([canChangeExtras]): they go through the same
+ * queue, their answer is the list like a tick's, and without a connection nothing is queued and a
+ * notice says so. Ticking an own item works offline like any row.
  *
  * Ticks are written to the [cache] before they are sent (see [ShoppingTicks]); the ones left from
  * before, of every week, go out before each list is fetched. [close] ends it all, before logging out.
@@ -115,6 +131,10 @@ internal class ShoppingSession(
     var scrollOffset = place.scrollOffset
 
     val place: Place get() = Place(chosenWeek, expanded, scrollIndex, scrollOffset)
+
+    /** True while an own item is being added, so a second tap or Enter does not add it twice. */
+    var adding: Boolean by mutableStateOf(false)
+        private set
 
     private val waitingNotices = mutableStateListOf<Notice>()
 
@@ -190,6 +210,61 @@ internal class ShoppingSession(
                 }
             }
         }
+    }
+
+    /** Whether own items can be added or deleted: not while the list shown is the stored copy of a lost connection. */
+    val canChangeExtras: Boolean get() = offlineSince == null
+
+    /**
+     * Puts [name] on the list as an own item; [added] is called once the server has it, so the
+     * screen can clear its field, and not on a failure, which is a notice and leaves the typed
+     * text alone. Ignored while an earlier item is still on its way.
+     */
+    fun add(name: String, added: () -> Unit) {
+        if (adding) return
+        if (!canChangeExtras) return needsConnection()
+        val week = weekStart
+        adding = true
+        scope.launch {
+            try {
+                turn.withLock {
+                    when (val result = timed { server.addExtra(week, name.trim()) }) {
+                        is Load.Ready -> {
+                            cache.save(result.value, nowIso())
+                            display(week, ticksOf(week).reset(result.value))
+                            added()
+                        }
+                        is Load.Failed -> waitingNotices += Notice(Msg.EXTRA_ADD_FAILED, result.message)
+                        Load.Loading -> Unit
+                    }
+                }
+            } finally {
+                adding = false
+            }
+        }
+    }
+
+    /** Takes the own item [id] off the list; a tick of it that still waits on the device is dropped with it. */
+    fun remove(id: Long) {
+        if (!canChangeExtras) return needsConnection()
+        val week = weekStart
+        scope.launch {
+            turn.withLock {
+                when (val result = timed { server.removeExtra(week, id) }) {
+                    is Load.Ready -> {
+                        cache.pending(week)["x:$id"]?.let { cache.forget(week, "x:$id", it) }
+                        cache.save(result.value, nowIso())
+                        display(week, ticksOf(week).reset(result.value))
+                    }
+                    is Load.Failed -> waitingNotices += Notice(Msg.EXTRA_REMOVE_FAILED, result.message)
+                    Load.Loading -> Unit
+                }
+            }
+        }
+    }
+
+    private fun needsConnection() {
+        waitingNotices += Notice(Msg.EXTRA_NEEDS_CONNECTION, "")
     }
 
     /** Opens or closes a finished section or a Done group. */

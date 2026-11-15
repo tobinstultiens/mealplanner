@@ -27,6 +27,7 @@ import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.SyncResult
@@ -179,6 +180,17 @@ class ApiClient(
         val path = "api/plans/$weekStart/shopping/dismissed/${group.path}"
         return if (dismissed) http.put(path).body() else http.delete(path).body()
     }
+
+    /** Puts an own item such as "Coffee" on the list from [weekStart] on; the answer is that week's list. */
+    suspend fun addShoppingExtra(weekStart: String, name: String): ShoppingList =
+        http.post("api/plans/$weekStart/shopping/extras") {
+            contentType(ContentType.Application.Json)
+            setBody(ShoppingExtraInput(name))
+        }.body()
+
+    /** Takes the own item [id] (the number in its key `x:<id>`) off the list for good; the answer is [weekStart]'s list. */
+    suspend fun removeShoppingExtra(weekStart: String, id: Long): ShoppingList =
+        http.delete("api/plans/$weekStart/shopping/extras/$id").body()
 
     /** Whether the account's shopping list advises buying ahead and stocking up. */
     suspend fun shoppingAdvice(): ShoppingAdvice = http.get("api/shopping-advice").body()
