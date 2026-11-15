@@ -1,0 +1,7 @@
+-- Version 8 -> 9: what is left of a ticked buy-ahead or stock-up item (issue 79), so that chicken
+-- bought ahead for three meals stays on hand until all three are eaten. Only a new column, so no
+-- table is rebuilt and no row is touched: entries ticked before have no amount and are used up by
+-- the first meal that uses them, as before; entries set by hand never had one and stay as they are.
+
+-- Grams left of what was bought; NULL when not known.
+ALTER TABLE onHand ADD COLUMN grams REAL;

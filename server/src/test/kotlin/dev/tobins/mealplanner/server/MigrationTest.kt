@@ -30,7 +30,13 @@ class MigrationTest {
     /** Version 8 added what keeps, and since when a ticked item is on hand (7.sqm). */
     private fun dropBuyAheadColumns(statement: Statement) {
         statement.execute("ALTER TABLE ingredient DROP COLUMN keeps")
+        dropStockAmountColumn(statement)
         statement.execute("ALTER TABLE onHand DROP COLUMN fromWeek")
+    }
+
+    /** Version 9 added what is left of a ticked item (8.sqm). */
+    private fun dropStockAmountColumn(statement: Statement) {
+        statement.execute("ALTER TABLE onHand DROP COLUMN grams")
     }
 
     @Test
@@ -218,6 +224,41 @@ class MigrationTest {
         // What was on hand was put there by hand: it counts at once, in any week.
         assertEquals(setOf(2L), ingredients.onHandFor(LocalDate.parse("2026-11-16")))
         assertEquals(null, db.pantryQueries.selectOnHandWeeks(1).executeAsOne().fromWeek)
+        driver.close()
+    }
+
+    @Test
+    fun aVersionEightDatabaseKeepsItsTicksWhichTheFirstMealStillUsesUp() {
+        val file = createTempFile("v8", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        // Version 8 is today's schema without the amount left of a ticked item.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropStockAmountColumn(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'sub', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (userId, name, section) VALUES (1, 'Chicken fillet', 'MEAT'), (1, 'Spinach', NULL)")
+                statement.execute(
+                    "INSERT INTO onHand (ingredientId, addedAt, fromWeek) VALUES " +
+                        "(1, '2026-11-01T00:00:00Z', '2026-11-23'), (2, '2026-11-01T00:00:00Z', NULL)",
+                )
+                statement.execute("PRAGMA user_version = 8")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(columns(fresh, "onHand"), columns(url, "onHand"), "table onHand after migration")
+        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        val week = LocalDate.parse("2026-11-23")
+        assertEquals(setOf(1L, 2L), ingredients.onHandFor(week))
+        assertEquals(setOf(2L), ingredients.onHandFor(week.minusDays(7)), "the tick still counts from its week")
+        // Nobody knows how much of the chicken there was: a meal of it uses it up, as before.
+        ingredients.useUp(mapOf(1L to 300.0, 2L to 100.0), week)
+        assertEquals(setOf(2L), ingredients.onHandFor(week), "spinach was put on hand by hand and stays")
         driver.close()
     }
 }

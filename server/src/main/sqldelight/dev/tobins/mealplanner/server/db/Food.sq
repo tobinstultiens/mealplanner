@@ -27,9 +27,6 @@ CREATE TABLE meta (
 selectAllFoods:
 SELECT * FROM food;
 
-selectFood:
-SELECT * FROM food WHERE nevoCode = ?;
-
 countFoods:
 SELECT count(*) FROM food;
 

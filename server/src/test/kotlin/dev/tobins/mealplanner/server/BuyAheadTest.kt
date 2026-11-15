@@ -5,9 +5,12 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.KeepsChoice
+import dev.tobins.mealplanner.api.GenerateRequest
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Pantry
+import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Sex
@@ -18,7 +21,13 @@ import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.recipes.IngredientLine
+import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.generation.GeneratedRecipe
+import dev.tobins.mealplanner.server.generation.GenerationContext
+import dev.tobins.mealplanner.server.generation.RecipeGenerator
 import dev.tobins.mealplanner.server.offers.OfferSource
+import dev.tobins.mealplanner.units.Dimension
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -39,11 +48,13 @@ import io.ktor.server.testing.testApplication
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.time.LocalDate
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -70,6 +81,7 @@ class BuyAheadTest {
         "---\ntitle: $title\n---\n```ingredients\nservings: 4\n1200 | g | $meat\n200 | g | lettuce\n" + (if (rice) "200 | g | rice\n" else "") + "```"
 
     private lateinit var repo: File
+    private lateinit var db: Database
 
     /**
      * This week's offers, all at Jumbo: chicken at 70% off (this week only), lettuce at half price
@@ -94,7 +106,8 @@ class BuyAheadTest {
                 Offer(Store.JUMBO, "Jumbo Olijfolie 1 l", "25% korting", packSize = "1 l", validFrom = week, validUntil = thisWeekOnly),
             ),
         )
-        application { module(config, openDatabase(config.databaseUrl).second, listOf(jumbo), priceSource = null, generator = null, verifier = TestTokens) }
+        db = openDatabase(config.databaseUrl).second
+        application { module(config, db, listOf(jumbo), priceSource = null, generator = null, verifier = TestTokens) }
         return createClient {
             install(ContentNegotiation) { json() }
             defaultRequest {
@@ -102,6 +115,14 @@ class BuyAheadTest {
                 contentType(ContentType.Application.Json)
             }
         }
+    }
+
+    /** The test account's repositories, in this process: for what the API leaves to chance (the planner's seed) or doesn't show. */
+    private fun scope(): UserScope {
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val id = UserRepository(db).resolve(Identity("sub-t", "t", "T")).id
+        return UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
     }
 
     private fun write(name: String, text: String) = File(repo, "content/recipes/$name.md").apply { parentFile.mkdirs() }.writeText(text)
@@ -142,6 +163,9 @@ class BuyAheadTest {
         put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, checked)) }
 
     private suspend fun HttpClient.onHand() = get("/api/pantry").body<Pantry>().onHand.map { it.name }.toSet()
+
+    private suspend fun HttpClient.eat(weekStart: String, meal: PlannedMeal) =
+        put("/api/plans/$weekStart/meals/${meal.day}/${meal.slot}/status") { setBody(MealStatus.EATEN) }
 
     private fun ShoppingItem.saving() = assertNotNull(regularPrice) * (1 - assertNotNull(offers.mapNotNull { it.paidShare }.minOrNull()))
 
@@ -188,10 +212,11 @@ class BuyAheadTest {
         assertTrue(cooked.getValue("Beef") < 5, "$cooked")
         assertTrue(http.list(nextWeek).items.single { it.name == "Chicken fillet" }.onHand, "check the freezer before buying")
 
-        // Eating a chicken meal next week uses it up.
+        // Eating a chicken meal next week eats from it; bought for three, the rest stays on hand
+        // (until it is used up: whatWasBoughtAheadLastsForTheMealsItWasBoughtFor).
         val chickenMeal = next.days.flatMap { it.meals }.first { it.title.startsWith("Chicken") }
-        http.put("/api/plans/$nextWeek/meals/${chickenMeal.day}/${chickenMeal.slot}/status") { setBody(MealStatus.EATEN) }
-        assertFalse("Chicken fillet" in http.onHand())
+        http.eat(nextWeek, chickenMeal)
+        assertTrue("Chicken fillet" in http.onHand())
     }
 
     @Test
@@ -309,6 +334,145 @@ class BuyAheadTest {
         assertEquals(HttpStatusCode.BadRequest, http.tick("ahead:ichicken").status)
         assertEquals(HttpStatusCode.NotFound, http.tick("ahead:i999999").status)
         assertTrue(http.list().buyAhead.none { it.checked }, "nothing was stored")
+    }
+
+    @Test
+    fun whatWasBoughtAheadLastsForTheMealsItWasBoughtFor() = testApplication {
+        val http = start().ready()
+        // Bought ahead: one batch of 1.2 kg for each of three chicken dinners. Stocked up: a 1 kg bag of rice.
+        val chicken = http.list().buyAhead.single()
+        http.tick(chicken.key)
+        http.tick(http.list().stockUp.single { it.name == "White rice" }.key)
+
+        val next = http.post("/api/plans/$nextWeek/generate").body<WeekPlan>()
+        val meals = next.days.flatMap { it.meals }
+        val dinners = meals.filter { it.title.startsWith("Chicken") && !it.leftover }.sortedBy { it.day }
+        assertTrue(dinners.size >= 3, "$dinners")
+        // Each dinner is cooked with its leftovers: 1.2 kg for the four servings of a batch, scaled.
+        var left = assertNotNull(chicken.grams)
+        for (dinner in dinners) {
+            val leftovers = meals.filter { it.leftover && it.recipeId == dinner.recipeId && it.day == dinner.day + 1 && it.slot == MealSlot.LUNCH }
+            http.eat(nextWeek, dinner)
+            http.eat(nextWeek, dinner) // marked eaten twice, it is eaten once
+            left -= 1200.0 * (dinner.portions + leftovers.sumOf { it.portions }) / 4
+            assertEquals(left >= IngredientRepository.USED_UP_GRAMS, "Chicken fillet" in http.onHand(), "$left g left after ${dinner.title}")
+            if (dinner == dinners.first()) {
+                assertTrue("Chicken fillet" in http.onHand(), "the first of its meals leaves the rest")
+                assertTrue("White rice" in http.onHand(), "a meal uses 200 g of the bag at most")
+            }
+            // Its leftovers were cooked with it.
+            leftovers.forEach { http.eat(nextWeek, it) }
+            assertEquals(left >= IngredientRepository.USED_UP_GRAMS, "Chicken fillet" in http.onHand(), "$left g left after the leftovers")
+        }
+    }
+
+    @Test
+    fun withoutAnAmountTheFirstMealUsesItUpAsBefore() = testApplication {
+        val http = start().ready()
+        // The list doesn't advise beef, so a tick of it says nothing about how much was bought: like
+        // an entry ticked before amounts were kept.
+        http.tick("ahead:i${http.ingredient("Beef").id}")
+        val next = http.post("/api/plans/$nextWeek/generate").body<WeekPlan>()
+        val beef = next.days.flatMap { it.meals }.first { it.title.startsWith("Beef") && !it.leftover }
+        assertTrue("Beef" in http.onHand())
+        http.eat(nextWeek, beef)
+        assertFalse("Beef" in http.onHand())
+    }
+
+    @Test
+    fun markedOnHandByHandItStaysWhateverHappensToTheTick() = testApplication {
+        val http = start().ready()
+        val key = http.list().buyAhead.single().key
+        val chicken = http.ingredient("Chicken fillet")
+        http.tick(key)
+        // Already on hand from the tick, the owner marks it on hand in the pantry too.
+        http.put("/api/pantry/on-hand/${chicken.id}")
+        http.tick(key, checked = false)
+        assertTrue("Chicken fillet" in http.onHand(), "un-ticking leaves what was marked by hand")
+        assertTrue(http.list().buyAhead.none { it.name == "Chicken fillet" }, "on hand by hand, it isn't advised any more")
+
+        val next = http.post("/api/plans/$nextWeek/generate").body<WeekPlan>()
+        next.days.flatMap { it.meals }.filter { it.title.startsWith("Chicken") }.forEach { http.eat(nextWeek, it) }
+        assertTrue("Chicken fillet" in http.onHand(), "eating doesn't take away what was marked by hand")
+        http.delete("/api/pantry/on-hand/${chicken.id}")
+        assertFalse("Chicken fillet" in http.onHand(), "removing it by hand does, at once")
+    }
+
+    @Test
+    fun thisWeeksListAndPlanLeaveOutWhatWasBoughtForNextWeek() = testApplication {
+        val http = start().ready()
+        // The list: lettuce ticked as bought ahead is for next week's meals; this week's need their own.
+        val lettuce = http.ingredient("Lettuce")
+        http.tick("ahead:i${lettuce.id}")
+        assertEquals(setOf(lettuce.id), scope().ingredients.onHandFor(LocalDate.parse(nextWeek)))
+        assertEquals(emptySet(), scope().ingredients.onHandFor(LocalDate.parse(week)))
+        assertFalse(http.list().items.single { it.name == "Lettuce" }.onHand)
+        http.post("/api/plans/$nextWeek/generate")
+        assertTrue(http.list(nextWeek).items.single { it.name == "Lettuce" }.onHand)
+        http.tick("ahead:i${lettuce.id}", checked = false)
+
+        // The plan: this week's, with the same seeds, is the same whether or not rice was bought ahead
+        // for next week. Rice on hand this week would change it: the chicken and beef dinners use rice,
+        // the cheaper fillers that end most weeks don't.
+        val plans = scope().plans
+        val seeds = 1L..12L
+        fun plans() = seeds.map { seed -> plans.generate(week, seed).days.flatMap { it.meals }.map { Triple(it.day, it.slot, it.recipeId) } }
+        val without = plans()
+        val rice = http.ingredient("White rice")
+        http.tick("ahead:i${rice.id}")
+        assertEquals(without, plans(), "bought ahead for next week, it isn't on hand this week")
+        http.put("/api/pantry/on-hand/${rice.id}")
+        assertNotEquals(without, plans(), "on hand this week, it would change the plan")
+    }
+
+    @Test
+    fun recipeGenerationIsToldOnlyWhatIsAtHandForThisWeek() = testApplication {
+        val http = start().ready()
+        http.tick(http.list().buyAhead.single().key)
+        http.tick(http.list().stockUp.single { it.name == "White rice" }.key)
+        http.put("/api/pantry/on-hand/${http.ingredient("Lettuce").id}")
+        val user = scope()
+        val notCalled = object : RecipeGenerator {
+            override suspend fun generate(context: GenerationContext): GeneratedRecipe = error("only the context is asked for")
+        }
+        val generation = GenerationService(notCalled, user.recipes, user.ingredients, user.profiles, user.plans, OfferRepository(db, emptyList()))
+        val wednesday = LocalDate.parse(week).plusDays(2)
+
+        // The chicken is in the freezer for next week's meals: not something to use up now.
+        assertEquals(setOf("White rice", "Lettuce"), generation.context(GenerateRequest(), wednesday).onHand.toSet())
+        assertEquals(setOf("Chicken fillet", "White rice", "Lettuce"), generation.context(GenerateRequest(), wednesday.plusDays(7)).onHand.toSet())
+    }
+
+    @Test
+    fun nextWeeksCostStaysAtItsOwnPricesWhenFoodWasBoughtAhead() = testApplication {
+        val http = start().ready()
+        http.post("/api/plans/$nextWeek/generate")
+        val before = http.get("/api/plans/$nextWeek").body<WeekPlan>()
+        assertNotNull(before.cost)
+
+        // The saving shows where the money is spent: on this week's list. Next week's plan prices its
+        // meals at next week's prices, so counting it there as well would show the saving twice.
+        http.tick("ahead:i${http.ingredient("Chicken fillet").id}")
+        val after = http.get("/api/plans/$nextWeek").body<WeekPlan>()
+        assertEquals(before.cost, after.cost)
+        assertEquals(before.costWithoutOffers, after.costWithoutOffers)
+    }
+
+    @Test
+    fun aMealUsesTheWeightOfItsLinesScaledToItsPortions() {
+        val chicken = Ingredient(1, "Chicken fillet", null, null, null, null, null, isStaple = false)
+        val oil = Ingredient(2, "Olive oil", null, null, null, null, null, isStaple = true)
+        val recipe = RecipeLines(
+            servings = 4,
+            lines = listOf(
+                IngredientLine(800.0, "g", Dimension.WEIGHT, 800.0, "chicken fillet", null) to chicken,
+                IngredientLine(400.0, "g", Dimension.WEIGHT, 400.0, "chicken fillet", null) to chicken,
+                IngredientLine(null, null, null, null, "olive oil", null) to oil,
+                IngredientLine(1.0, "g", Dimension.WEIGHT, 1.0, "mystery", null) to null,
+            ),
+        )
+        // Two lines of chicken add up; oil "to taste" has no weight to tell; a line without an ingredient is left out.
+        assertEquals(mapOf(1L to 600.0, 2L to null), gramsUsed(recipe, portions = 2.0))
     }
 
     @Test
