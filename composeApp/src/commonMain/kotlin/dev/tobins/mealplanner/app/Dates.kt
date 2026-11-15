@@ -18,9 +18,13 @@ import kotlin.time.ExperimentalTime
  * the labels follow the device's locale ([FormatLocale]).
  */
 
+/** Where "now" comes from. Only the screenshot tests replace it, so that their pictures show the same date every day. */
+@OptIn(ExperimentalTime::class)
+internal var appClock: Clock = Clock.System
+
 /** Today's date as an ISO string, e.g. `2026-11-12`. */
 @OptIn(ExperimentalTime::class)
-fun todayIso(): String = Clock.System.todayIn(TimeZone.currentSystemDefault()).toString()
+fun todayIso(): String = appClock.todayIn(TimeZone.currentSystemDefault()).toString()
 
 /** The ISO date [days] after [isoDate] (before, when negative). */
 fun plusDays(isoDate: String, days: Int): String = LocalDate.parse(isoDate).plus(DatePeriod(days = days)).toString()
@@ -61,7 +65,7 @@ fun daysBetween(fromIso: String, toIso: String): Int = LocalDate.parse(fromIso).
 
 /** The current moment as an ISO instant, for saving when something happened; show it with [instantLabel]. */
 @OptIn(ExperimentalTime::class)
-fun nowIso(): String = Clock.System.now().toString()
+fun nowIso(): String = appClock.now().toString()
 
 /** An ISO instant in local time, e.g. `today 12:40` or `Fri 13 Nov 12:40`. */
 @OptIn(ExperimentalTime::class)

@@ -1,6 +1,6 @@
 name: CI
 
-# Three jobs run side by side; the server image is pushed only when all of them pass on main.
+# Four jobs run side by side; the server image is pushed only when all of them pass on main.
 on:
   push:
     branches: [main]
@@ -54,6 +54,33 @@ jobs:
           name: profile-android
           path: build/reports/profile/
 
+  # Screenshot tests: the screens rendered on the JVM (Robolectric), compared with the pictures in
+  # composeApp/src/androidHostTest/screenshots. A separate job, so the test job doesn't get longer.
+  # When a picture differs, the artifact holds the new picture and a reference | difference | new image.
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compare screenshots
+        run: ./gradlew :composeApp:verifyScreenshots --profile
+      - name: Upload screenshot differences
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-differences
+          path: composeApp/build/outputs/roborazzi/
+      - name: Upload build profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-screenshots
+          path: build/reports/profile/
+
   # The server jar with the web client (Wasm production build) inside.
   server-jar:
     runs-on: ubuntu-latest
@@ -82,7 +109,7 @@ jobs:
   # Same registry and secrets as the cooking site. The homelab is amd64 only.
   image:
     if: github.ref == 'refs/heads/main'
-    needs: [test, android, server-jar]
+    needs: [test, android, screenshots, server-jar]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

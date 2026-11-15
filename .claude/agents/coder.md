@@ -19,6 +19,7 @@ You implement one change in the meal planner repository (`/home/tobins/Projects/
 - Every behaviour change gets a test next to the existing ones (`server/src/test`, `shared/src/commonTest`, `composeApp/src/commonTest`). Server tests use `TestTokens` as the token verifier (a token names its account).
 - Run the tests of the modules you touched (`:shared:allTests`, `:server:test :server:verifyMainDatabaseMigration`, `:composeApp:allTests`, `:androidApp:assembleDebug :androidApp:lintDebug`), not everything: other agents build at the same time and this machine runs out of memory. CI runs the full check on your pull request; if it fails there, fix it.
   Report failures honestly with the output; never weaken a test to make it pass.
+- Check layout (truncation, font scale 1.3, dark mode) with `./gradlew :composeApp:verifyScreenshots` instead of the emulator; read the `*_compare.png` it leaves in `composeApp/build/outputs/roborazzi`. When a changed look is intended, run `recordScreenshots` and commit the changed pictures; mention them in the PR. A new screen gets a `Shot` in `ScreenshotTest`. The emulator is for flows (login, updates).
 - Gradle may report success without rerunning tests; when in doubt check the XML in `*/build/test-results/`.
 
 ## Branch and pull request
