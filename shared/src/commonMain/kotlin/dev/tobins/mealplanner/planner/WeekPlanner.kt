@@ -58,6 +58,8 @@ data class PlanRequest(
  * - Portions are adjusted in quarter servings to fit the slot's share of the calories.
  * - A lunch with neither leftovers nor a lunch recipe is cooked from a dinner recipe.
  * - A breakfast or snack slot with no suitable recipe stays empty.
+ * - An excluded recipe is never planned, not even as a pinned routine or as leftovers;
+ *   only locked meals keep it.
  */
 object WeekPlanner {
     private val portionSteps = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
@@ -70,7 +72,9 @@ object WeekPlanner {
 
         // Routines: the best breakfast and snack, every day.
         for (slot in listOf(MealSlot.BREAKFAST, MealSlot.SNACK)) {
-            val pinned = request.routines[slot]?.let { id -> request.candidates.firstOrNull { it.recipeId == id } }
+            // An excluded pin is being swapped out on a reroll: the planner chooses instead.
+            val pinned = request.routines[slot]?.takeIf { it !in request.excluded }
+                ?.let { id -> request.candidates.firstOrNull { it.recipeId == id } }
             val routine = pinned ?: usable.filter { slot in it.slots }
                 .maxByOrNull { score(it, slot, request, uses = 0, sameTagAsYesterday = false, jitter = random.nextDouble()) }
                 ?: continue
@@ -84,7 +88,8 @@ object WeekPlanner {
         var leftoverForLunch: Pair<PlanCandidate, Double>? = null
         for (day in 0 until request.days) {
             if (!taken(day, MealSlot.LUNCH)) {
-                val leftover = leftoverForLunch
+                // Leftovers of an excluded recipe are what a reroll is replacing, so they are not offered again.
+                val leftover = leftoverForLunch?.takeIf { it.first.recipeId !in request.excluded }
                 // Without leftovers or a lunch recipe, cook a dinner recipe for lunch rather than skip the meal.
                 val lunch = leftover?.first
                     ?: pick(MealSlot.LUNCH, usable, meals, request, yesterdaysDinner, random)

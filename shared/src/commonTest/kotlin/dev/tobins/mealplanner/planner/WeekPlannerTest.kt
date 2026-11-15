@@ -170,6 +170,38 @@ class WeekPlannerTest {
     }
 
     @Test
+    fun anExcludedLeftoverLunchIsReplacedByAFreshlyCookedOne() {
+        // A reroll of a leftover lunch: every other meal locked, its recipe excluded.
+        val week = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes))
+        val old = week.at(3, LUNCH)
+        assertTrue(old.leftover)
+        val plan = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes, locked = week - old, excluded = setOf(old.recipeId)))
+
+        val lunch = plan.at(3, LUNCH)
+        assertNotEquals(old.recipeId, lunch.recipeId)
+        assertFalse(lunch.leftover, "with no lunch recipes, a dinner recipe is cooked for lunch")
+        assertEquals((week - old).map { it.copy(locked = true) }, plan - lunch, "the rest of the week is untouched")
+    }
+
+    @Test
+    fun anExcludedPinnedRoutineGivesWayOnTheRerolledDayOnly() {
+        val week = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes, routines = mapOf(BREAKFAST to 2L)))
+        val old = week.at(4, BREAKFAST)
+        assertEquals(2L, old.recipeId)
+        val plan = WeekPlanner.plan(
+            PlanRequest(targets, pantryOfRecipes, locked = week - old, excluded = setOf(2L), routines = mapOf(BREAKFAST to 2L)),
+        )
+
+        assertEquals(1L, plan.at(4, BREAKFAST).recipeId, "the other breakfast takes the rerolled day")
+        assertEquals((0..6).map { if (it == 4) 1L else 2L }, plan.filter { it.slot == BREAKFAST }.map { it.recipeId })
+
+        // Without another breakfast recipe the slot stays empty rather than repeating the excluded one.
+        val onlyPin = pantryOfRecipes.filter { it.recipeId != 1L }
+        val empty = WeekPlanner.plan(PlanRequest(targets, onlyPin, locked = week - old, excluded = setOf(2L), routines = mapOf(BREAKFAST to 2L)))
+        assertTrue(empty.none { it.day == 4 && it.slot == BREAKFAST })
+    }
+
+    @Test
     fun ratingsPullARecipeForwardAndPushOneBack() {
         val rated = pantryOfRecipes.map {
             when (it.recipeId) {

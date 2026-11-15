@@ -30,6 +30,7 @@ import dev.tobins.mealplanner.server.generation.GenerationException
 import dev.tobins.mealplanner.server.generation.RecipeGenerator
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
@@ -49,6 +50,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -170,6 +172,41 @@ class PlanTest {
             plan.days.flatMap { it.meals }.filterNot { (it.day == 1 && it.slot == MealSlot.DINNER) || (it.day == 2 && it.slot == MealSlot.LUNCH) }
         }
         assertEquals(untouched(before), untouched(after))
+    }
+
+    @Test
+    fun rerollingALeftoverLunchCooksSomethingElse() = testApplication {
+        val http = start().ready()
+        val before = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        val old = before.days[2].meals.first { it.slot == MealSlot.LUNCH }
+        assertTrue(old.leftover)
+
+        val after = http.post("/api/plans/$week/meals/2/lunch/reroll").body<WeekPlan>()
+        val lunch = after.days[2].meals.first { it.slot == MealSlot.LUNCH }
+        assertNotEquals(old.recipeId, lunch.recipeId)
+        assertFalse(lunch.leftover)
+        val others = { plan: WeekPlan -> plan.days.flatMap { it.meals }.filterNot { it.day == 2 && it.slot == MealSlot.LUNCH } }
+        assertEquals(others(before), others(after))
+    }
+
+    @Test
+    fun rerollingAPinnedBreakfastNeedsAnotherBreakfastRecipe() = testApplication {
+        val http = start().ready()
+        val pin = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 0" }
+        http.put("/api/recipes/${pin.id}/settings") { setBody(RecipeSettings(RecipeKind.MEAL, listOf(MealSlot.BREAKFAST))) }
+        http.put("/api/routines") { setBody(Routines(breakfast = pin.id)) }
+        val before = http.post("/api/plans/$week/generate").body<WeekPlan>()
+
+        // The pin is the only breakfast recipe: the swap is refused and the meal kept.
+        val refused = http.post("/api/plans/$week/meals/3/breakfast/reroll")
+        assertEquals(HttpStatusCode.Conflict, refused.status)
+        assertTrue("No other recipe fits this meal" in refused.bodyAsText())
+        assertEquals(before, http.get("/api/plans/$week").body<WeekPlan>())
+
+        http.post("/api/recipes") { setBody(RecipeInput("Beef bowl", 1, "300 | g | beef", mealSlots = listOf(MealSlot.BREAKFAST))) }
+        val after = http.post("/api/plans/$week/meals/3/breakfast/reroll").body<WeekPlan>()
+        val breakfasts = after.days.map { day -> day.meals.first { it.slot == MealSlot.BREAKFAST }.title }
+        assertEquals((0..6).map { if (it == 3) "Beef bowl" else "Dinner 0" }, breakfasts, "only the rerolled day changes")
     }
 
     @Test

@@ -55,7 +55,8 @@ class PlanRepository(
 
     /**
      * Picks a different recipe for one meal and keeps the rest of the week. When a dinner
-     * changes, the next day's lunch made of its leftovers changes with it.
+     * changes, the next day's lunch made of its leftovers changes with it. When no other
+     * recipe fits the meal, it is kept and a [ConflictException] says so.
      */
     fun reroll(weekStart: String, day: Int, slot: MealSlot, seed: Long = Random.nextLong()): WeekPlan {
         val start = parse(weekStart)
@@ -69,6 +70,8 @@ class PlanRepository(
         val planned = WeekPlanner.plan(
             request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = setOf(target.recipeId)),
         )
+        val replacement = planned.firstOrNull { it.day == day && it.slot == slot }
+        if (replacement == null || replacement.recipeId == target.recipeId) throw ConflictException("No other recipe fits this meal")
         db.transaction {
             for (old in replaced) {
                 q.deleteMeal(userId, start.toString(), old.day.toLong(), old.slot.name)
