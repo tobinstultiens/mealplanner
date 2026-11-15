@@ -40,5 +40,6 @@ fun ShoppingItem.bestOffer(): Offer? = offers.filter { it.price != null }.minByO
 /** `AH €1.99`, or `AH 1+1 gratis` when the store states no price: short enough for the row's edge. */
 fun Offer.badgeText(locale: FormatLocale = FormatLocale.device): String {
     val shop = store.label.substringBefore(' ').let { if (it == "Albert") "AH" else it }
-    return "$shop ${price?.let { formatEuro(it, locale) } ?: deal?.takeIf { it.isNotBlank() } ?: "offer"}"
+    // Some stores shout their deals in capitals; in a badge that is too loud.
+    return "$shop ${price?.let { formatEuro(it, locale) } ?: deal?.takeIf { it.isNotBlank() }?.lowercase() ?: "offer"}"
 }

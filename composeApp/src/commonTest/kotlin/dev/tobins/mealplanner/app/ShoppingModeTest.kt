@@ -68,6 +68,7 @@ class ShoppingModeTest {
         assertEquals("AH €1.99", offer(Store.AH, 1.99).badgeText(FormatLocale.English))
         assertEquals("AH €1,99", offer(Store.AH, 1.99).badgeText(FormatLocale.Dutch))
         assertEquals("Jumbo 1+1 gratis", offer(Store.JUMBO, null, "1+1 gratis").badgeText())
+        assertEquals("AH 2 voor 2.49", offer(Store.AH, null, "2 VOOR 2.49").badgeText())
         assertEquals("Lidl offer", offer(Store.LIDL, null).badgeText())
     }
 }
