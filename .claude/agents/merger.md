@@ -42,7 +42,7 @@ Stop and report instead of resolving when the two sides change the same logic, w
 ## Release (only when the brief says the owner asked for one)
 After the last merge, and only when every PR in the brief was merged or closed as included:
 1. Wait for CI on `main` for the last merge commit: `gh run list --branch main --workflow CI --limit 1 --json databaseId,headSha,status,conclusion`, then `gh run watch <id>`. The head must be the commit you just merged. A failing run means no release: report its first real error.
-2. Start it with `gh workflow run release.yml --ref main`, adding `-f version=<x.y.z>` only when the brief names a version; without it the workflow raises the patch number. The owner may be asked to approve this command; if it is refused, report that and stop.
+2. Start it with `gh workflow run release.yml --ref main`, adding `-f version=<x.y.z>` only when the brief names a version; without it the workflow raises the patch number. Run it as a Bash call of its own, in exactly that form: only that form is approved for you without a prompt (`.claude/hooks/gate-pr-merge.sh`), because the owner approved the release beforehand. If it is refused, report that and stop.
 3. Find the run (`gh run list --workflow release.yml --limit 1 --json databaseId,status`), `gh run watch <id>`, then `gh release view --json tagName,url,assets` and report the tag, the link and the APK's name.
 If you stopped anywhere before the last merge, do not release: a release without the app changes it was meant to carry helps nobody, and the server may already send what the old app cannot read. Say so first in your report.
 

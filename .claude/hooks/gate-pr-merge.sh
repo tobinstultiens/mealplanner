@@ -7,8 +7,11 @@
 # - `gh pr merge` from anyone else (the main session, coders) is blocked.
 # - From those two, the plain form `gh pr merge <number> [--squash] [--delete-branch]`
 #   is approved without a prompt; anything fancier goes through the normal permission flow.
-# - `gh workflow run` (the Android release) is blocked for everyone but the merger. For the
-#   merger it goes through the normal permission flow, where the owner is asked.
+# - `gh workflow run` is blocked for everyone but the merger. From the merger, the plain release
+#   start `gh workflow run release.yml --ref main [-f version=X.Y.Z]` is approved without a
+#   prompt: the owner approves the release beforehand, when asking for it, and the merger only
+#   releases when its brief quotes that. Any other workflow run goes through the normal
+#   permission flow.
 # - Every other command is left alone.
 #
 # The owner can still merge by hand from their own terminal.
@@ -23,6 +26,9 @@ if grep -Eq '(^|[;&|(])[[:space:]]*gh[[:space:]]+workflow[[:space:]]+run([[:spac
   if [[ "$agent" != "merger" ]]; then
     echo "Only the merger agent starts workflows in this repo, and only when the owner asked for a release (.claude/hooks/gate-pr-merge.sh). The owner can also start it from the Actions page." >&2
     exit 2
+  fi
+  if grep -Eq '^[[:space:]]*gh workflow run release\.yml --ref main( -f version=[0-9]+\.[0-9]+\.[0-9]+)?[[:space:]]*$' <<<"$command"; then
+    jq -n '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "The merger starts the release the owner asked for beforehand"}}'
   fi
   exit 0
 fi
