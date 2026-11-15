@@ -13,3 +13,6 @@ local.properties
 # Licensed datasets (NEVO) are imported from a local file, never committed
 data/
 NEVO*
+
+# Worktrees of Claude Code sub-agents
+.claude/worktrees/
