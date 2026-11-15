@@ -15,6 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 private val en = FormatLocale.English
+private val nl = FormatLocale.Dutch
 
 /** English texts with the decimal comma of a German device, as the "System" language gives. */
 private val germanFormats = Strings.of(AppLanguage.SYSTEM, "de-DE")
@@ -63,6 +64,24 @@ class FormattingTest {
     }
 
     @Test
+    fun shoppingQuantitiesKeepWhatCannotBeWeighed() {
+        fun item(knownGrams: Double?, pieces: Double?, vararg other: String) =
+            dev.tobins.mealplanner.api.ShoppingItem(
+                "k", "x", null, pieces, "c", emptyList(), onHand = false, checked = false,
+                knownGrams = knownGrams, otherAmounts = other.toList(),
+            )
+
+        assertEquals("200 g + 1 bag", item(200.0, 1.0, "1 bag").quantityText(en))
+        assertEquals("1.25 kg + 2 can + 3 clove", item(1250.0, 5.0, "2 can", "3 clove").quantityText(en))
+        assertEquals("1,25 kg + 1 bag", item(1250.0, 1.0, "1 bag").quantityText(nl))
+        assertEquals("250 ml", item(null, null, "250 ml").quantityText(en))
+        assertEquals("2 can", item(null, 2.0, "2 can").quantityText(nl))
+        // Weight known, and a piece count that has no unit of its own.
+        assertEquals("2 × · 200 g", item(200.0, 2.0).quantityText(en))
+        assertEquals("", item(null, null).quantityText(en))
+    }
+
+    @Test
     fun offersAreSummarisedPerStore() {
         fun offer(store: dev.tobins.mealplanner.api.Store, deal: String?, price: Double? = null, was: Double? = null) =
             dev.tobins.mealplanner.api.Offer(store, "x", deal, price, was, validFrom = "a", validUntil = "b")
@@ -78,7 +97,6 @@ class FormattingTest {
 
     @Test
     fun moneyAndAmountsFollowTheDecimalSeparator() {
-        val nl = FormatLocale.Dutch
         assertEquals("€2,11", formatEuro(2.11, nl))
         assertEquals("1,5", formatAmount(1.5, nl))
         assertEquals("1,25 kg", item(1250.0).quantityText(nl))

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -47,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,12 +61,17 @@ import kotlinx.coroutines.launch
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
-/** `3 × · 330 g`, `450 g`, `2 ×`, or empty when the recipes give no quantity. */
-fun ShoppingItem.quantityText(locale: FormatLocale): String = listOfNotNull(
+/**
+ * `3 × · 330 g`, `450 g`, `2 ×`, `200 g + 1 bag`, `250 ml`, or empty when the recipes give no
+ * quantity. What could not be weighed ([ShoppingItem.otherAmounts]) follows the known weight; the
+ * piece count is left out then, as it would count those amounts a second time.
+ */
+fun ShoppingItem.quantityText(locale: FormatLocale): String {
+    val weight = (grams ?: knownGrams)?.let { if (it >= 1000) "${formatAmount(it / 1000, locale)} kg" else "${it.roundToInt()} g" }
+    if (otherAmounts.isNotEmpty()) return (listOfNotNull(weight) + otherAmounts).joinToString(" + ")
     // Pieces are rounded up: nobody buys 1.5 onions.
-    pieces?.let { "${ceil(it - 1e-9).toInt()} ×" },
-    grams?.let { if (it >= 1000) "${formatAmount(it / 1000, locale)} kg" else "${it.roundToInt()} g" },
-).joinToString(" · ")
+    return listOfNotNull(pieces?.let { "${ceil(it - 1e-9).toInt()} ×" }, weight).joinToString(" · ")
+}
 
 /**
  * What to buy for a week's plan, grouped by shop section in the order you walk the shop, with
@@ -620,8 +627,9 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, sh
                 )
             }
         }
-        Column(Modifier.padding(horizontal = 12.dp), horizontalAlignment = Alignment.End) {
-            Text(item.quantityText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), softWrap = false)
+        Column(Modifier.padding(horizontal = 12.dp).widthIn(max = 128.dp), horizontalAlignment = Alignment.End) {
+            // Long amounts such as "200 g + 1 bag" wrap rather than squeeze the name.
+            Text(item.quantityText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), textAlign = TextAlign.End)
             if (offer != null) {
                 // A tap shows the full deal; the rest of the row keeps ticking. The badge looks small
                 // but its touch area is 48 dp, as Material asks.

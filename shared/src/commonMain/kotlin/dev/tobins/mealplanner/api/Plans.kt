@@ -88,6 +88,17 @@ data class ShoppingItem(
      * ingredient has no regular price or the amount isn't known in grams.
      */
     val regularPrice: Double? = null,
+    /**
+     * The weight of the uses that could be converted to grams, set only when [grams] is null
+     * because other uses could not (see [otherAmounts]) and some weight is known.
+     */
+    val knownGrams: Double? = null,
+    /**
+     * What could not be converted to grams, summed per unit as written, scaled to the planned
+     * portions and rounded up to whole units: `1 bag`, `250 ml`, `2 can`. Counts whose unit is the
+     * ingredient itself (`1 | onion`) are not here; they stay in [pieces].
+     */
+    val otherAmounts: List<String> = emptyList(),
 )
 
 /**
