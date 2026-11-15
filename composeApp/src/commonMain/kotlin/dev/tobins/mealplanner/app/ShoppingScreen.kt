@@ -38,13 +38,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,19 +85,20 @@ fun ShoppingItem.quantityText(locale: FormatLocale): String {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShoppingScreen(
-    api: ApiClient,
-    cache: ShoppingCache,
+internal fun ShoppingScreen(
+    session: ShoppingSession,
     settings: SettingsStorage,
     accountShops: AccountShops,
     onOpenPantry: () -> Unit,
     onOpenOffers: () -> Unit,
 ) {
     val t = LocalStrings.current
-    var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
-    var state by remember { mutableStateOf<Load<ShoppingList>>(Load.Loading) }
-    // Set when showing the stored copy because the server could not be reached.
-    var offlineSince by remember { mutableStateOf<String?>(null) }
+    // The week, the list with its ticks, the opened groups and the scroll position live in the
+    // session, which the app keeps: leaving the screen for a recipe or another tab loses none of it.
+    val weekStart = session.weekStart
+    val state = session.state
+    val offlineSince = session.offlineSince
+    val expanded = session.expanded
     var reload by remember { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -105,34 +106,26 @@ fun ShoppingScreen(
     var view by remember { mutableStateOf(settings.shoppingView()) }
     var chosenStore by remember { mutableStateOf(settings.shoppingStore()) }
     val shops = accountShops.stores
-    val listState = rememberLazyListState()
-    // Finished sections and Done groups the user opened; everything else stays collapsed.
-    var expanded by remember { mutableStateOf(emptySet<String>()) }
+    val listState = rememberLazyListState(session.scrollIndex, session.scrollOffset)
+    DisposableEffect(listState) {
+        onDispose {
+            session.scrollIndex = listState.firstVisibleItemIndex
+            session.scrollOffset = listState.firstVisibleItemScrollOffset
+        }
+    }
     KeepScreenOn(shoppingMode)
+    LaunchedEffect(session) { session.resume() }
 
-    // One per week: a tick still on its way must not touch another week's list.
-    val ticks = remember(weekStart) {
-        val week = weekStart
-        ShoppingTicks(
-            scope,
-            send = { key, checked -> load { api.setShoppingChecked(week, key, checked) } },
-            isOffline = { offlineSince != null },
-            show = { if (week == weekStart) state = Load.Ready(it) },
-            saved = { cache.save(it, nowIso()) },
-            offline = { list, key, checked ->
-                // The first tick without a connection stores the list as it is, for the shop without reception.
-                if (offlineSince == null) {
-                    cache.save(list, nowIso())
-                    offlineSince = nowIso()
-                }
-                cache.tickOffline(week, key, checked)
-            },
-            rejected = { snackbar.showSnackbar(t(Msg.TICK_FAILED, it)) },
-        )
+    // What the session has to tell, also from while the screen was not shown.
+    val notice = session.notices.firstOrNull()
+    LaunchedEffect(notice) {
+        if (notice == null) return@LaunchedEffect
+        snackbar.showSnackbar(t(notice.msg, notice.detail))
+        session.shown(notice)
     }
 
     /** Sets one item's tick: shown at once, the server hears of it in the background. */
-    fun tick(key: String, checked: Boolean) = ticks.choose(key, checked)
+    fun tick(key: String, checked: Boolean) = session.tick(key, checked)
 
     /** In shopping mode a mis-tap is one tap from undone. */
     fun tickWithUndo(item: ShoppingItem) {
@@ -161,7 +154,7 @@ fun ShoppingScreen(
         items(open, key = { it.key }) { row(it) }
         if (done.isNotEmpty()) {
             val doneOpen = "done:$id" in expanded
-            item(key = "d:$id") { DoneGroupHeader(done.size, doneOpen) { expanded = expanded.toggled("done:$id") } }
+            item(key = "d:$id") { DoneGroupHeader(done.size, doneOpen) { session.toggle("done:$id") } }
             if (doneOpen) items(done, key = { it.key }) { row(it) }
         }
     }
@@ -176,7 +169,7 @@ fun ShoppingScreen(
             val id = group + title
             val sectionOpen = !section.finished || id in expanded
             item(key = "h:$id") {
-                SectionHeaderRow(title, section, sectionOpen) { expanded = expanded.toggled(id) }
+                SectionHeaderRow(title, section, sectionOpen) { session.toggle(id) }
             }
             items(section.open, key = { it.key }) { item -> row(item) }
             if (section.finished && sectionOpen) {
@@ -184,7 +177,7 @@ fun ShoppingScreen(
             } else if (section.done.isNotEmpty() && !section.finished) {
                 val doneOpen = "done:$id" in expanded
                 item(key = "d:$id") {
-                    DoneGroupHeader(section.done.size, doneOpen) { expanded = expanded.toggled("done:$id") }
+                    DoneGroupHeader(section.done.size, doneOpen) { session.toggle("done:$id") }
                 }
                 if (doneOpen) items(section.done, key = { it.key }) { item -> row(item) }
             }
@@ -192,19 +185,7 @@ fun ShoppingScreen(
     }
 
     /** Hides one advice group for the week, or shows it again; the list comes back from the server. */
-    fun dismiss(group: ShoppingAdviceGroup, dismissed: Boolean) {
-        val week = weekStart
-        scope.launch {
-            when (val result = load { api.setShoppingDismissed(week, group, dismissed) }) {
-                is Load.Ready -> if (week == weekStart) {
-                    state = Load.Ready(ticks.reset(result.value))
-                    cache.save(result.value, nowIso())
-                }
-                is Load.Failed -> snackbar.showSnackbar(t(Msg.ADVICE_CHANGE_FAILED, result.message))
-                Load.Loading -> Unit
-            }
-        }
-    }
+    fun dismiss(group: ShoppingAdviceGroup, dismissed: Boolean) = session.dismiss(group, dismissed)
 
     /**
      * One advice group below this week's list: its title with what it is for and saves, a way to
@@ -244,23 +225,10 @@ fun ShoppingScreen(
         }
     }
 
-    LaunchedEffect(weekStart, reload) {
-        if (state !is Load.Ready) state = Load.Loading
-        // Ticks made offline go to the server first, so the fresh list includes them.
-        val result = load {
-            cache.pending(weekStart).forEach { (key, checked) -> api.setShoppingChecked(weekStart, key, checked) }
-            cache.clearPending(weekStart)
-            api.shoppingList(weekStart)
-        }
-        val stored = cache.load(weekStart)
-        if (result is Load.Failed && result.status == null && stored != null) {
-            state = Load.Ready(ticks.reset(stored.first))
-            offlineSince = stored.second
-        } else {
-            state = if (result is Load.Ready) Load.Ready(ticks.reset(result.value)) else result
-            offlineSince = null
-            (result as? Load.Ready)?.let { cache.save(it.value, nowIso()) }
-        }
+    /** Tries the server again: the list, and the stores in case another device changed them. */
+    fun retry() {
+        session.retry()
+        reload++
     }
 
     Scaffold(
@@ -271,8 +239,8 @@ fun ShoppingScreen(
                         label = t(Msg.WEEK_OF, dayMonthLabel(weekStart, t.locale)),
                         previous = t(Msg.PREVIOUS_WEEK),
                         next = t(Msg.NEXT_WEEK),
-                        onPrevious = { weekStart = plusDays(weekStart, -7) },
-                        onNext = { weekStart = plusDays(weekStart, 7) },
+                        onPrevious = { session.open(plusDays(weekStart, -7)) },
+                        onNext = { session.open(plusDays(weekStart, 7)) },
                     )
                 },
                 actions = {
@@ -286,7 +254,7 @@ fun ShoppingScreen(
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.SHOPPING_LOAD_FAILED), current.message) { reload++ }
+                ErrorMessage(t(Msg.SHOPPING_LOAD_FAILED), current.message) { retry() }
             }
             is Load.Ready -> {
                 val list = current.value
@@ -326,7 +294,7 @@ fun ShoppingScreen(
                                     color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.weight(1f),
                                 )
-                                TextButton(onClick = { reload++ }) { Text(t(Msg.RETRY)) }
+                                TextButton(onClick = { retry() }) { Text(t(Msg.RETRY)) }
                             }
                         }
                     }
@@ -369,7 +337,7 @@ fun ShoppingScreen(
                             if (visit.elsewhere.isNotEmpty()) {
                                 val open = "elsewhere" in expanded
                                 item(key = "elsewhere") {
-                                    ToggleHeader(t(Msg.CHEAPER_ELSEWHERE, visit.elsewhere.size), open) { expanded = expanded.toggled("elsewhere") }
+                                    ToggleHeader(t(Msg.CHEAPER_ELSEWHERE, visit.elsewhere.size), open) { session.toggle("elsewhere") }
                                 }
                                 if (open) items(visit.elsewhere, key = { it.item.key }) { row(it.item, it.offer) }
                             }
@@ -401,8 +369,6 @@ fun ShoppingScreen(
         }
     }
 }
-
-private fun Set<String>.toggled(entry: String) = if (entry in this) this - entry else this + entry
 
 /** The title of one part of the list: this week's, or an advice group's. */
 @Composable

@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -68,7 +69,9 @@ private fun shopping(api: ApiClient, shoppingMode: Boolean, view: ShoppingView =
             it.saveShoppingStore(store)
         }
     }
-    ShoppingScreen(api, ShoppingCache(storage), storage, remember { AccountShops(storage, { shops?.let { ShopsSetting(it.toList()) } ?: api.shops() }, { it }) }, {}, {})
+    val scope = rememberCoroutineScope()
+    val session = remember { ShoppingSession(scope, api.shoppingServer(), ShoppingCache(storage)) }
+    ShoppingScreen(session, storage, remember { AccountShops(storage, { shops?.let { ShopsSetting(it.toList()) } ?: api.shops() }, { it }) }, {}, {})
 }
 
 /** Controls of three kinds; the test gives the one tagged [FOCUSED] keyboard focus, to see the ring on each. */

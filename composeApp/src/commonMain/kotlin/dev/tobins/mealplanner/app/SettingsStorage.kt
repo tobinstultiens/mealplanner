@@ -98,10 +98,15 @@ fun SettingsStorage.saveShops(shops: Set<Store>) = set(SHOPS_KEY, shops.joinToSt
 /** Forgets the stores shown, for when another account may log in on this device; all stores until the server answers. */
 fun SettingsStorage.clearShops() = set(SHOPS_KEY, "")
 
-/** Ends the session and forgets what belongs to the account, so the next login starts clean. */
+/**
+ * Ends the session and forgets what belongs to the account, so the next login starts clean: the
+ * stores shown, and the stored shopping lists with their unsent ticks, which must never reach the
+ * next account's list.
+ */
 fun SettingsStorage.logOut() {
     saveSession(null)
     clearShops()
+    ShoppingCache(this).clear()
 }
 
 private const val SHOPS_MOVED_KEY = "shopsMovedToAccount"

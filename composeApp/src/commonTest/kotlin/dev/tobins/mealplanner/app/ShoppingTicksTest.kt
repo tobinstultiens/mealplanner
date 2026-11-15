@@ -36,14 +36,16 @@ class ShoppingTicksTest {
         var shown: ShoppingList? = null
         val shownHistory = mutableListOf<List<Boolean>>()
         val rejections = mutableListOf<String>()
-        val offlineTicks = mutableListOf<Triple<List<Boolean>, String, Boolean>>()
+        val offlineTicks = mutableListOf<Pair<String, Boolean>>()
+        val cache = ShoppingCache(MemorySettingsStorage()).also { it.save(server.list, "earlier") }
         val ticks = ShoppingTicks(
             scope,
+            server.list.weekStart,
+            cache,
             send = { key, checked -> server.put(key, checked) },
             isOffline = { offline },
             show = { shown = it; shownHistory += it.items.map { item -> item.checked } },
-            saved = {},
-            offline = { list, key, checked -> offlineTicks += Triple(list.items.map { it.checked }, key, checked) },
+            offline = { key, checked -> offlineTicks += key to checked },
             rejected = { rejections += it },
         ).also { shown = it.reset(server.list) }
 
@@ -104,7 +106,7 @@ class ShoppingTicksTest {
         h.ticks.choose("a", true)
         advanceUntilIdle()
         assertEquals(listOf(true, true), h.checked())
-        assertEquals(listOf(Triple(listOf(true, true), "a", true)), h.offlineTicks)
+        assertEquals(listOf("a" to true), h.offlineTicks)
         assertEquals(emptyList(), h.rejections)
     }
 
@@ -115,7 +117,40 @@ class ShoppingTicksTest {
         h.ticks.choose("b", false)
         runCurrent()
         assertEquals(emptyList(), h.server.received)
-        assertEquals(listOf("a", "b"), h.offlineTicks.map { it.second })
+        assertEquals(listOf("a", "b"), h.offlineTicks.map { it.first })
         assertEquals(listOf(true, false), h.checked())
+    }
+
+    @Test
+    fun aTickIsStoredBeforeItIsSentAndTakenOffWhenTheServerHasIt() = runTest {
+        val h = Harness(this, FakeServer(start))
+        h.ticks.choose("a", true)
+        assertEquals(mapOf("a" to true), h.cache.pending(start.weekStart), "stored while the request is still on its way")
+        advanceUntilIdle()
+        assertEquals(emptyMap(), h.cache.pending(start.weekStart))
+        assertEquals(listOf(true, true), h.cache.load(start.weekStart)!!.first.items.map { it.checked }, "the server's answer is the stored copy")
+    }
+
+    @Test
+    fun aTickWithoutAnAnswerStaysStoredAndARefusedOneIsDropped() = runTest {
+        val h = Harness(this, FakeServer(start) { key, _ -> if (key == "a") Load.Failed("timeout") else Load.Failed("No such item", 404) })
+        h.ticks.choose("a", true)
+        h.ticks.choose("b", false)
+        advanceUntilIdle()
+        assertEquals(mapOf("a" to true), h.cache.pending(start.weekStart), "a waits for later; b was refused")
+        assertEquals(listOf(true, true), h.checked())
+        assertEquals(listOf("No such item"), h.rejections)
+    }
+
+    @Test
+    fun aChoiceChangedWhileItsRequestWasUnderWayStaysStored() = runTest {
+        val h = Harness(this, FakeServer(start))
+        h.ticks.choose("a", true)
+        advanceTimeBy(1000)
+        h.ticks.choose("a", false)
+        advanceTimeBy(1500)
+        assertEquals(mapOf("a" to false), h.cache.pending(start.weekStart), "the first answer confirms only the first choice")
+        advanceUntilIdle()
+        assertEquals(emptyMap(), h.cache.pending(start.weekStart))
     }
 }

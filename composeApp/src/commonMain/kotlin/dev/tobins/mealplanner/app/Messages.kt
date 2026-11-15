@@ -352,6 +352,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     // --- Errors made by the app (the server's own messages are shown as they come)
     SERVER_ANSWERED("The server answered {0} {1}", "De server antwoordde met {0} {1}"),
     UNKNOWN_ERROR("Unknown error", "Onbekende fout"),
+    NO_ANSWER("The server did not answer in time", "De server antwoordde niet op tijd"),
 
     // --- Shopping
     TICK_FAILED("Could not save the tick: {0}", "Afvinken opslaan is niet gelukt: {0}"),

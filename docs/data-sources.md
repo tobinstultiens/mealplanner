@@ -187,6 +187,16 @@ shown. Each advice group says what its offers save and has a Hide button for the
 to show it again. The two switches are under Settings, Shopping; whether an ingredient keeps is
 corrected in the same dialog as its shop section (Recipes → Link ingredients → Shop sections).
 
+**Ticks in the app.** A tick shows at once and is stored on the device before it is sent
+(`ShoppingCache`); it is taken off when the server has it. The app keeps the list's state for as
+long as it is logged in (`ShoppingSession`), so leaving the Shopping screen for a recipe, another
+tab, the pantry or the offers cancels nothing, and coming back shows the same week, scroll position
+and opened groups. Requests go out one at a time, each with 10 seconds to answer. Without an answer
+or with a server error (5xx) the tick stays stored and the list says it is offline; stored ticks go
+out first the next time their week's list is opened, also after the app was closed. A tick the
+server refuses (another 4xx than 401, 408 or 429) goes back, and the snackbar says why. Logging out
+forgets the stored lists and their unsent ticks, so they never reach another account's list.
+
 ## Shop sections
 
 The shopping list is sorted in the order you walk a Dutch supermarket, modelled on Albert Heijn:

@@ -91,7 +91,7 @@ class ShoppingAdviceTest {
     fun anOfflineTickOfAdviceIsKeptAndShown() {
         val cache = ShoppingCache(MemorySettingsStorage())
         cache.save(week.copy(buyAhead = listOf(beef)), "earlier")
-        cache.tickOffline(week.weekStart, beef.key, true)
+        cache.choose(week.weekStart, beef.key, true)
         assertTrue(cache.load(week.weekStart)!!.first.buyAhead.single().checked)
         assertEquals(mapOf(beef.key to true), cache.pending(week.weekStart))
     }
@@ -103,11 +103,12 @@ class ShoppingAdviceTest {
         val server = week.copy(stockUp = listOf(rice))
         val ticks = ShoppingTicks(
             this,
+            server.weekStart,
+            ShoppingCache(MemorySettingsStorage()).also { it.save(server, "earlier") },
             send = { key, checked -> sent += key to checked; Load.Ready(server.withTicks(mapOf(key to checked))) },
             isOffline = { false },
             show = { shown = it },
-            saved = {},
-            offline = { _, _, _ -> },
+            offline = { _, _ -> },
             rejected = {},
         )
         ticks.reset(server)
