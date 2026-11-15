@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.planner.BuyAhead
 import dev.tobins.mealplanner.recipes.IngredientLine
@@ -258,11 +259,62 @@ class ShoppingListRepository(
         val row = if (check.checked) neededRow(start, key) else null
         db.transaction {
             onHandFromTick(start, key, check.checked, bought)
-            if (check.checked) {
-                q.insertCheck(userId, start.toString(), key.toString(), row?.name, row?.let { it.grams ?: it.knownGrams }, row?.pieces)
-            } else {
-                q.deleteCheck(userId, start.toString(), key.toString())
-            }
+            if (check.checked) insertTick(start, key, row) else q.deleteCheck(userId, start.toString(), key.toString())
+        }
+        return get(weekStart)
+    }
+
+    /** Stores the tick of [key] with what [row] says, the weight the known part when not all could be weighed; a tick there already stays as it is. */
+    private fun insertTick(start: LocalDate, key: ShoppingKey, row: ShoppingItem?) =
+        q.insertCheck(userId, start.toString(), key.toString(), row?.name, row?.let { it.grams ?: it.knownGrams }, row?.pieces)
+
+    /**
+     * Ticks a ticked row of what the meals need (keys `i<id>` and `t:<text>`) again, so that it
+     * remembers what the row says now: the plan came to need more since it was bought, and the rest
+     * was bought. In one step, so that no failed request can leave the row un-ticked with what was
+     * bought forgotten, as un-ticking and ticking it could. Advice and own items are refused (400):
+     * their ticks remember no row. One the account has no tick of in that week is a 404, which
+     * keeps another account's ticks out of reach; one no meal needs any more a 409, as ticking it
+     * again would forget what was bought of it.
+     */
+    fun tickAgain(weekStart: String, input: ShoppingRowKey): ShoppingList {
+        val start = parseWeekStart(weekStart)
+        val key = ShoppingKey.parse(input.key)
+        require(key is ShoppingKey.Ingredient || key is ShoppingKey.Text) { "Only rows of what the meals need are ticked again, not ${input.key}" }
+        val row = neededRow(start, key)
+        db.transaction {
+            if (q.deleteCheck(userId, start.toString(), key.toString()).value == 0L) throw NotFoundException("No tick of ${input.key} in the week of $start")
+            if (row == null) throw ConflictException("No meal of the week of $start needs ${input.key} any more")
+            insertTick(start, key, row)
+        }
+        return get(weekStart)
+    }
+
+    /**
+     * Puts a bought item no meal needs any more ([ShoppingList.noLongerNeeded], key `i<id>`) on hand
+     * and takes it out of that group, in one step. What its tick remembers was bought is stock from
+     * the list's week on ([IngredientRepository.addToStock]), which meals eat from and the pantry and
+     * the list count; without a remembered weight it is put on hand by hand, as the pantry does. Then
+     * the tick goes: the pantry has it now. Only an item of that group is used up: another kind of
+     * key is refused (400), one the meals need again is a 409, as it is a row of the list then, and
+     * any other (not bought in that week, a staple, another account's ingredient) a 404.
+     */
+    fun useUp(weekStart: String, input: ShoppingRowKey): ShoppingList {
+        val start = parseWeekStart(weekStart)
+        val key = ShoppingKey.parse(input.key) as? ShoppingKey.Ingredient
+            ?: throw IllegalArgumentException("Only ingredients of the catalogue are put on hand, not ${input.key}")
+        // Only what the group lists, by its own rules: not a plain tick from before ticks remembered their row, nor a staple.
+        if (get(weekStart).noLongerNeeded.none { it.key == input.key }) {
+            if (neededRow(start, key) != null) throw ConflictException("The meals of the week of $start need ${input.key} again")
+            throw NotFoundException("Nothing bought of ${input.key} in the week of $start that no meal needs")
+        }
+        db.transaction {
+            // Un-ticked by another request in the meantime.
+            val tick = ticks(start)[key] ?: throw NotFoundException("Nothing bought of ${input.key} in the week of $start")
+            val grams = tick.grams?.takeIf { it >= IngredientRepository.USED_UP_GRAMS }
+            // Both refuse an ingredient of another account (NotFoundException), and the transaction takes it all back.
+            if (grams == null) ingredients.setOnHand(key.id, true) else ingredients.addToStock(key.id, start, grams)
+            q.deleteCheck(userId, start.toString(), key.toString())
         }
         return get(weekStart)
     }

@@ -258,13 +258,26 @@ that moment.
 **What the app shows of it.** A ticked row whose need grew since it was bought (the weight by more
 than 5 % and at least 25 g, or at least one more piece) is shown open, with `600 g more (800 g
 bought)`, and counts as not ticked in the progress line, the sections and shopping mode's Done
-groups; tapping it un-ticks and ticks it in one step, so the server remembers the new amount. A
-row without bought amounts is a plain tick. `noLongerNeeded` is the group "Bought, no longer
-needed" below the list, with "Use it up" (puts the ingredient on hand, catalogue ingredients only)
-and "Remove" (un-ticks it). "Use it up" puts it on hand by hand, the pantry's own route, so it has
-no amount: the pantry shows no number for it, and meals don't eat from it. A staple is never in the
-group: an ingredient made a staple after it was bought is always at home, and when it is on offer it
-shows as stock-up advice, the moment to buy more.
+groups; tapping it ticks it again (`PUT /api/plans/{weekStart}/shopping/again` with `{"key":
+"i12"}`), so the server remembers the new amount. That is one step in one transaction, so a failed
+request never leaves the row un-ticked with what was bought forgotten; only a ticked row of what
+the meals need can be ticked again (another key is a 400, one without a tick of the account in that
+week a 404, one no meal needs any more a 409). A row without bought amounts is a plain tick.
+`noLongerNeeded` is the group "Bought, no longer needed" below the list, with "Use it up"
+(catalogue ingredients only, not on hand already) and "Remove" (un-ticks it). "Use it up" (`POST
+/api/plans/{weekStart}/shopping/use-up` with the key) puts what the tick remembers was bought on
+hand as stock counted from the list's week, which meals eat from, and the pantry and the list say
+how much is left; added to a stock there already (such as one bought ahead for next week), which
+then counts from the earlier week. Without a remembered weight (counted in pieces with no weight
+per piece) it is put on hand by hand, as the pantry does, with no number. Either way the tick goes,
+so the item leaves the group, all in one transaction. An item the group does not have is refused:
+one the meals of the week need again (409), and one not bought in that week or another account's
+(404). After a failure of either the app fetches the list, so the row shows what the server has.
+Against a server from before these two routes, which answers 404 without an error, the app does
+what it did before: it un-ticks and ticks, and puts the ingredient on hand by hand (`PUT
+/api/pantry/on-hand/{id}`). A staple is never in the group: an ingredient made a staple after it
+was bought is always at home, and when it is on offer it shows as stock-up advice, the moment to
+buy more.
 
 **Ticks in the app.** A tick shows at once and is stored on the device before it is sent
 (`ShoppingCache`); it is taken off when the server has it. The app keeps the list's state for as

@@ -29,6 +29,7 @@ import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.CookingSyncStatus
@@ -45,6 +46,7 @@ import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.timeout
@@ -54,10 +56,13 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 /** Where the server is. */
 data class ServerSettings(val url: String)
@@ -175,6 +180,38 @@ class ApiClient(
             contentType(ContentType.Application.Json)
             setBody(ShoppingCheck(key, checked, grams))
         }.body()
+
+    /** Ticks the ticked row [key] again for what it needs now, in one step; null from a server from before that. */
+    suspend fun tickShoppingAgain(weekStart: String, key: String): ShoppingList? = unlessUnknown {
+        http.put("api/plans/$weekStart/shopping/again") {
+            contentType(ContentType.Application.Json)
+            setBody(ShoppingRowKey(key))
+        }.body()
+    }
+
+    /** Puts what was bought of [key], which no meal needs any more, on hand; null from a server from before that. */
+    suspend fun useUpShopping(weekStart: String, key: String): ShoppingList? = unlessUnknown {
+        http.post("api/plans/$weekStart/shopping/use-up") {
+            contentType(ContentType.Application.Json)
+            setBody(ShoppingRowKey(key))
+        }.body()
+    }
+
+    /**
+     * What [request] answers, or null when the server has no such route: a server from before it
+     * answers 404 without an error, as Ktor does for any path it does not know, where the route's own
+     * 404 says what was not found. The caller then does what it did before the route.
+     */
+    private suspend fun <T : Any> unlessUnknown(request: suspend () -> T): T? = try {
+        request()
+    } catch (e: ClientRequestException) {
+        if (e.response.status != HttpStatusCode.NotFound || saysWhy(e.response.bodyAsText())) throw e
+        null
+    }
+
+    /** Whether [body] is the server's own explanation of an error, `{"error": "..."}`. */
+    private fun saysWhy(body: String): Boolean =
+        runCatching { (Json.parseToJsonElement(body) as? JsonObject)?.containsKey("error") == true }.getOrDefault(false)
 
     /** Hides the buy-ahead or stock-up advice of one week's list, or with [dismissed] false shows it again. */
     suspend fun setShoppingDismissed(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): ShoppingList {

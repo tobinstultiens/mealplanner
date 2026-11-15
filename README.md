@@ -127,7 +127,10 @@ with v0.1.2's types). How much is on hand came the same way (`ShoppingItem.onHan
 `Pantry.onHandGrams` as a map next to the `onHand` list those apps read). A tick still needs only its key, as
 those apps send it; the grams newer apps send with an advice tick (`ShoppingCheck.grams`) are optional and
 left out when unknown, so a server from before them, which refuses fields it does not know, still takes
-every other tick.
+every other tick. Ticking a row again and using up a bought item came the other way round, as new routes
+(`shopping/again`, `shopping/use-up`) rather than fields: an app tells a server from before them by the bare
+404 of a path it has no route for, where the routes' own 404s say what was not found, and then does what it
+did before (`ApiClientTest`, `ShoppingSessionTest`).
 
 ## Screenshot tests
 
@@ -262,7 +265,9 @@ and daily targets), `/api/shops` (the stores the account shops at; only their of
 `/api/shopping-advice` (whether the shopping list advises buying ahead and stocking up; see
 `docs/data-sources.md`, "Buying ahead and stocking up"), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`
 with `shopping/dismissed/{group}` and the account's own items, `POST shopping/extras` with `{"name": "Coffee"}` and
-`DELETE shopping/extras/{id}`, rows of the list with keys `x:<id>`; see `docs/data-sources.md`, "Own items on the shopping list",
+`DELETE shopping/extras/{id}`, rows of the list with keys `x:<id>`; see `docs/data-sources.md`, "Own items on the shopping list";
+`PUT shopping/again` and `POST shopping/use-up` with `{"key": "i12"}` tick a row that needs more again and put a bought item
+no meal needs on hand, see "What the app shows of it" there,
 and per meal `reroll`, `lock`, `status` and delete), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion), `/api/offers` (weekly store offers;
 `POST /api/offers/refresh` fetches them now) and `/api/prices` (regular AH prices per ingredient, the

@@ -33,8 +33,14 @@ internal interface ShoppingServer {
 
     suspend fun removeExtra(weekStart: String, id: Long): Load<ShoppingList>
 
-    /** Puts the ingredient on hand in the pantry. */
-    suspend fun useUp(ingredientId: Long): Load<Unit>
+    /** Ticks the ticked row [key] again for what it needs now, in one step; null from a server from before that. */
+    suspend fun tickAgain(weekStart: String, key: String): Load<ShoppingList>?
+
+    /** Puts what was bought of [key], which no meal needs any more, on hand and out of that group; null from a server from before that. */
+    suspend fun useUp(weekStart: String, key: String): Load<ShoppingList>?
+
+    /** Puts the ingredient on hand in the pantry, as set by hand: how the app used up a bought item before [useUp]. */
+    suspend fun putOnHand(ingredientId: Long): Load<Unit>
 }
 
 internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServer {
@@ -50,7 +56,18 @@ internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServe
 
     override suspend fun removeExtra(weekStart: String, id: Long) = load { removeShoppingExtra(weekStart, id) }
 
-    override suspend fun useUp(ingredientId: Long) = load { setOnHand(ingredientId, true); Unit }
+    override suspend fun tickAgain(weekStart: String, key: String) = loadUnlessOld { tickShoppingAgain(weekStart, key) }
+
+    override suspend fun useUp(weekStart: String, key: String) = loadUnlessOld { useUpShopping(weekStart, key) }
+
+    override suspend fun putOnHand(ingredientId: Long) = load { setOnHand(ingredientId, true); Unit }
+}
+
+/** [load] of a call that answers null from a server from before its route; then null as well. */
+private suspend fun <T : Any> loadUnlessOld(block: suspend () -> T?): Load<T>? = when (val result = load(block)) {
+    is Load.Ready -> result.value?.let { Load.Ready(it) }
+    is Load.Failed -> result
+    Load.Loading -> Load.Loading
 }
 
 /** The id of an own item, the number in its key `x:<id>`; null for a row that comes from the plan. */
@@ -204,51 +221,73 @@ internal class ShoppingSession(
 
     /**
      * The user ticks a row again whose need grew since it was bought: the server keeps what a tick
-     * said first, so the row is un-ticked and ticked in one step, and then remembers the new amount.
-     * Not shown at once, as the amount comes from the server's answer; offline it is reported, not
-     * kept for later. No advised grams go with it: only rows of the meals' needs can need more (an
-     * advice row remembers no bought amount), and the server weighs those itself, as it answers now.
+     * said first, so it is asked to tick it again for what it needs now, in one step. Not shown at
+     * once, as the amount comes from the server's answer; offline it is reported, not kept for later.
+     * A server from before that step gets what the app sent then: an un-tick and a tick
+     * ([untickAndTick]). On a failure the list is fetched again, so the row shows what the server has.
      */
     fun tickAgain(key: String) {
         val week = weekStart
         scope.launch {
             turn.withLock {
-                var answer: ShoppingList? = null
-                for (checked in listOf(false, true)) {
-                    when (val result = timed { server.check(week, key, checked, grams = null) }) {
-                        is Load.Ready -> answer = result.value
-                        is Load.Failed -> {
-                            waitingNotices += Notice(Msg.TICK_FAILED, result.message)
-                            break
-                        }
-                        Load.Loading -> Unit
-                    }
-                }
-                answer?.let {
-                    cache.save(it, nowIso())
-                    display(week, ticksOf(week).reset(it))
-                }
+                val result = timedUnlessOld { server.tickAgain(week, key) } ?: untickAndTick(week, key)
+                showAnswer(week, result, Msg.TICK_FAILED)
             }
         }
     }
 
     /**
-     * Puts the ingredient of a bought row that no meal needs any more on hand, so that the planner
-     * prefers meals that use it; the list is fetched again. Only rows of catalogue ingredients
-     * (key `i<id>`) have one to put on hand.
+     * How a server from before ticking again in one step is asked to: un-ticking forgets what the
+     * row said, ticking stores what it says now. The answer to the last request sent, as the tick
+     * is not sent when the un-tick failed. No advised grams go with it: only rows of the meals' needs
+     * can need more (an advice row remembers no bought amount), and the server weighs those itself.
+     */
+    private suspend fun untickAndTick(week: String, key: String): Load<ShoppingList> {
+        val unticked = timed { server.check(week, key, false, grams = null) }
+        return if (unticked !is Load.Ready) unticked else timed { server.check(week, key, true, grams = null) }
+    }
+
+    /**
+     * Puts a bought row that no meal needs any more on hand, so that the planner prefers meals that
+     * use it: the server stocks what was bought of it and takes it out of the group, and answers
+     * with the list. Only rows of catalogue ingredients (key `i<id>`) have one to put on hand. A
+     * server from before that gets what the app did then ([putOnHand]).
      */
     fun useUp(key: String) {
         val id = key.takeIf { it.startsWith("i") }?.drop(1)?.toLongOrNull() ?: return
         val week = weekStart
         scope.launch {
             turn.withLock {
-                val result = withTimeoutOrNull(TIME_LIMIT) { server.useUp(id) } ?: Load.Failed(Strings.current(Msg.NO_ANSWER))
-                when (result) {
-                    is Load.Ready -> load(week)
-                    is Load.Failed -> waitingNotices += Notice(Msg.USE_UP_FAILED, result.message)
-                    Load.Loading -> Unit
-                }
+                val result = timedUnlessOld { server.useUp(week, key) }
+                if (result == null) putOnHand(week, id) else showAnswer(week, result, Msg.USE_UP_FAILED)
             }
+        }
+    }
+
+    /** How the app used up a bought row before the server did: the ingredient on hand as set by hand, without an amount, and the list fetched again. */
+    private suspend fun putOnHand(week: String, id: Long) {
+        when (val result = withTimeoutOrNull(TIME_LIMIT) { server.putOnHand(id) } ?: Load.Failed(Strings.current(Msg.NO_ANSWER))) {
+            is Load.Ready -> load(week)
+            is Load.Failed -> waitingNotices += Notice(Msg.USE_UP_FAILED, result.message)
+            Load.Loading -> Unit
+        }
+    }
+
+    /**
+     * Shows the list the server answered with; or says why it failed ([failed]) and fetches the list
+     * again, so that the screen shows what the server has, whatever part of the change went through.
+     */
+    private suspend fun showAnswer(week: String, result: Load<ShoppingList>, failed: Msg) {
+        when (result) {
+            is Load.Ready -> {
+                cache.save(result.value, nowIso())
+                display(week, ticksOf(week).reset(result.value))
+            }
+            is Load.Failed -> {
+                waitingNotices += Notice(failed, result.message)
+                load(week)
+            }
+            Load.Loading -> Unit
         }
     }
 
@@ -487,6 +526,13 @@ internal class ShoppingSession(
 
     private suspend fun timed(request: suspend () -> Load<ShoppingList>): Load<ShoppingList> =
         withTimeoutOrNull(TIME_LIMIT) { request() } ?: Load.Failed(Strings.current(Msg.NO_ANSWER))
+
+    /** [request] to a route a server from before it lacks, with the time limit of [timed]; null when the server is from before it. */
+    private suspend fun timedUnlessOld(request: suspend () -> Load<ShoppingList>?): Load<ShoppingList>? {
+        var old = false
+        val result = withTimeoutOrNull(TIME_LIMIT) { request().also { old = it == null } }
+        return if (old) null else result ?: Load.Failed(Strings.current(Msg.NO_ANSWER))
+    }
 
     private fun thisWeek() = mondayOf(today())
 

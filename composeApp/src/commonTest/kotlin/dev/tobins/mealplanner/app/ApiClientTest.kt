@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.ShoppingList
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
@@ -9,6 +10,8 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class ApiClientTest {
     private fun client(body: String) = ApiClient(
@@ -47,5 +50,34 @@ class ApiClientTest {
         // A fraction, which every platform writes alike; a whole 1000.0 may come out as 1000.
         api.setShoppingChecked("2026-11-16", "stock:i7", true, grams = 1000.5)
         assertEquals(listOf("""{"key":"i1","checked":true}""", """{"key":"stock:i7","checked":true,"grams":1000.5}"""), bodies)
+    }
+
+    /** A client whose server answers every request with [status] and [body], noting each path asked for. */
+    private fun answering(status: HttpStatusCode, body: String, paths: MutableList<String> = mutableListOf()) = ApiClient(
+        ServerSettings("http://localhost"),
+        engine = MockEngine { request ->
+            paths += "${request.method.value} ${request.url.encodedPath}"
+            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
+        },
+    ).shoppingServer()
+
+    @Test
+    fun aServerWithoutTheOneStepRoutesIsToldApartByItsBare404() = runTest {
+        val paths = mutableListOf<String>()
+        // Ktor's answer to a path it has no route for: 404 and nothing else.
+        val old = answering(HttpStatusCode.NotFound, "", paths)
+        assertNull(old.tickAgain("2026-11-16", "i1"))
+        assertNull(old.useUp("2026-11-16", "i7"))
+        assertEquals(listOf("PUT /api/plans/2026-11-16/shopping/again", "POST /api/plans/2026-11-16/shopping/use-up"), paths)
+    }
+
+    @Test
+    fun aRefusalOfTheOneStepRoutesIsAFailureWithTheServersReason() = runTest {
+        val refused = answering(HttpStatusCode.NotFound, """{"error":"No tick of i1 in the week of 2026-11-16"}""")
+        assertEquals(Load.Failed("No tick of i1 in the week of 2026-11-16", 404), refused.tickAgain("2026-11-16", "i1"))
+        val conflict = answering(HttpStatusCode.Conflict, """{"error":"The meals of the week of 2026-11-16 need i7 again"}""")
+        assertEquals(Load.Failed("The meals of the week of 2026-11-16 need i7 again", 409), conflict.useUp("2026-11-16", "i7"))
+        val list = answering(HttpStatusCode.OK, """{"weekStart":"2026-11-16","items":[],"staples":[]}""")
+        assertEquals("2026-11-16", assertIs<Load.Ready<ShoppingList>>(list.tickAgain("2026-11-16", "i1")).value.weekStart)
     }
 }

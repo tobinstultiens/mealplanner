@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
@@ -12,6 +13,7 @@ import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.client.HttpClient
@@ -99,6 +101,10 @@ class ShoppingTicksTest {
     private suspend fun HttpClient.tick(key: String, checked: Boolean = true) =
         put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, checked)) }
 
+    private suspend fun HttpClient.again(key: String) = put("/api/plans/$week/shopping/again") { setBody(ShoppingRowKey(key)) }
+
+    private suspend fun HttpClient.useUp(key: String) = post("/api/plans/$week/shopping/use-up") { setBody(ShoppingRowKey(key)) }
+
     private suspend fun HttpClient.ingredient(name: String) = get("/api/ingredients").body<List<Ingredient>>().single { it.name == name }
 
     private fun ShoppingList.item(name: String): ShoppingItem = items.single { it.name == name }
@@ -130,6 +136,140 @@ class ShoppingTicksTest {
         assertNull(http.list().item("Chicken fillet").boughtGrams)
         assertEquals(300.0, assertNotNull(http.tick(chicken.key).body<ShoppingList>().item("Chicken fillet").boughtGrams), 1e-9)
         assertEquals(emptyList(), http.list().noLongerNeeded)
+    }
+
+    @Test
+    fun tickingARowAgainRemembersWhatItNeedsNowInOneStep() = testApplication {
+        val http = start().planned()
+        val chicken = http.list().item("Chicken fillet")
+        http.tick(chicken.key)
+        assertEquals("Chicken salad", http.rerollMonday())
+        assertEquals(175.0, assertNotNull(http.list().item("Chicken fillet").boughtGrams), 1e-9)
+
+        val again = http.again(chicken.key)
+        assertEquals(HttpStatusCode.OK, again.status)
+        val ticked = again.body<ShoppingList>().item("Chicken fillet")
+        assertTrue(ticked.checked)
+        assertEquals(300.0, assertNotNull(ticked.boughtGrams), 1e-9)
+        assertEquals(300.0, assertNotNull(http.list().item("Chicken fillet").boughtGrams), 1e-9)
+    }
+
+    @Test
+    fun aRowIsTickedAgainOnlyWhenItIsTickedAndTheMealsStillNeedIt() = testApplication {
+        val http = start().planned()
+        assertEquals("Chicken salad", http.rerollMonday())
+        val lettuce = http.list().item("Lettuce")
+        assertEquals(HttpStatusCode.NotFound, http.again(lettuce.key).status, "not ticked")
+        assertTrue(http.list().items.none { it.checked }, "and still not ticked")
+        // Advice and own items remember no row; a key that is none is refused as for a tick.
+        val id = lettuce.key.removePrefix("i")
+        for (key in listOf("stock:i$id", "ahead:i$id", "x:1", "dismissed:stock-up", "nonsense")) {
+            assertEquals(HttpStatusCode.BadRequest, http.again(key).status, key)
+        }
+
+        // Bought, and then no meal needs it: ticking it again would forget what was bought.
+        http.tick(lettuce.key)
+        assertEquals("Rice bowl", http.rerollMonday())
+        assertEquals(HttpStatusCode.Conflict, http.again(lettuce.key).status)
+        assertEquals(100.0, assertNotNull(http.list().noLongerNeeded.single().boughtGrams), 1e-9)
+    }
+
+    @Test
+    fun usingUpABoughtItemStocksWhatWasBoughtFromTheListsWeekAndTakesItOutOfTheGroup() = testApplication {
+        val http = start().planned()
+        assertEquals("Chicken salad", http.rerollMonday())
+        val lettuce = http.list().item("Lettuce")
+        http.tick(lettuce.key)
+        assertEquals("Rice bowl", http.rerollMonday())
+        assertEquals(listOf(lettuce.key), http.list().noLongerNeeded.map { it.key })
+
+        val used = http.useUp(lettuce.key)
+        assertEquals(HttpStatusCode.OK, used.status)
+        assertEquals(emptyList(), used.body<ShoppingList>().noLongerNeeded)
+        assertEquals(emptyList(), http.list().noLongerNeeded)
+        val id = http.ingredient("Lettuce").id
+        assertEquals(100.0, assertNotNull(http.get("/api/pantry").body<Pantry>().onHandGrams[id]), 1e-9)
+        // Stock counted from the list's week, which its meals eat from; the tick is gone.
+        val stock = db.pantryQueries.selectStock(userId(), week, listOf(id)).executeAsOne()
+        assertEquals(week to 100.0, stock.fromWeek to stock.grams)
+        assertTrue(db.shoppingQueries.selectChecks(userId(), week).executeAsList().none { it.itemKey == lettuce.key })
+
+        assertEquals(HttpStatusCode.NotFound, http.useUp(lettuce.key).status, "used up already")
+    }
+
+    @Test
+    fun usingUpAddsToTheStockBoughtAheadAndCountsItFromTheListsWeek() = testApplication {
+        val http = start().planned()
+        assertEquals("Chicken salad", http.rerollMonday())
+        val lettuce = http.list().item("Lettuce")
+        http.tick(lettuce.key)
+        assertEquals("Rice bowl", http.rerollMonday())
+        val id = http.ingredient("Lettuce").id
+        // Bought ahead for next week, so not on hand for this week's list: the button shows.
+        db.pantryQueries.insertOnHandFrom("2026-11-15T10:00:00Z", "2026-11-23", 200.0, id, userId())
+        assertEquals(false, http.list().noLongerNeeded.single().onHand)
+
+        http.useUp(lettuce.key)
+        val stock = db.pantryQueries.selectStock(userId(), week, listOf(id)).executeAsOne()
+        assertEquals(week to 300.0, stock.fromWeek to stock.grams)
+    }
+
+    @Test
+    fun usingUpAnItemBoughtWithoutAWeightPutsItOnHandByHand() = testApplication {
+        val http = start().planned()
+        // Counted in pieces, with no weight per piece: what was bought has no grams.
+        val fruit = http.post("/api/ingredients") { setBody(IngredientInput("Pomegranate")) }.body<Ingredient>()
+        val bowl = http.post("/api/recipes") { setBody(RecipeInput("Fruit", 1, "2 | pomegranate | ripe")) }.body<RecipeDetail>().summary
+        db.planQueries.upsertMeal(userId(), week, 6, "DINNER", bowl.id, bowl.title, 1.0, 200.0, 2.0, 0, 0, "PLANNED")
+        http.tick("i${fruit.id}")
+        http.delete("/api/plans/$week/meals/6/dinner")
+        val gone = http.list().noLongerNeeded.single()
+        assertEquals(2.0 to null, gone.boughtPieces to gone.boughtGrams)
+
+        assertEquals(emptyList(), http.useUp(gone.key).body<ShoppingList>().noLongerNeeded)
+        val pantry = http.get("/api/pantry").body<Pantry>()
+        assertEquals(listOf("Pomegranate"), pantry.onHand.map { it.name })
+        assertNull(pantry.onHandGrams[fruit.id], "how much is not known")
+        assertEquals(emptyList(), db.pantryQueries.selectStock(userId(), week, listOf(fruit.id)).executeAsList(), "set by hand, not stock")
+    }
+
+    @Test
+    fun onlyABoughtIngredientNoMealNeedsIsUsedUp() = testApplication {
+        val http = start().planned()
+        val chicken = http.list().item("Chicken fillet")
+        http.tick(chicken.key)
+        assertEquals(HttpStatusCode.Conflict, http.useUp(chicken.key).status, "the meals need it: a row of the list")
+        assertEquals(HttpStatusCode.NotFound, http.useUp("i${http.ingredient("Lettuce").id}").status, "not bought")
+        assertEquals(HttpStatusCode.BadRequest, http.useUp("t:leek").status, "no ingredient to put on hand")
+        assertEquals(emptyList(), http.get("/api/pantry").body<Pantry>().onHand)
+        assertTrue(http.list().item("Chicken fillet").checked)
+    }
+
+    @Test
+    fun aStapleBoughtBeforeItWasOneIsNotUsedUpAsTheGroupDoesNotListIt() = testApplication {
+        val http = start().planned()
+        assertEquals("Chicken salad", http.rerollMonday())
+        val lettuce = http.list().item("Lettuce")
+        http.tick(lettuce.key)
+        assertEquals("Rice bowl", http.rerollMonday())
+        http.put("/api/pantry/staples/${http.ingredient("Lettuce").id}")
+        assertEquals(emptyList(), http.list().noLongerNeeded)
+
+        assertEquals(HttpStatusCode.NotFound, http.useUp(lettuce.key).status)
+        assertEquals(emptyList(), http.get("/api/pantry").body<Pantry>().onHand)
+    }
+
+    @Test
+    fun aRouteTheServerDoesNotHaveAnswers404WithoutSayingWhatWasNotFound() = testApplication {
+        // How a server from before tick-again and use-up answers them: the app falls back on that, and
+        // only on that, as a 404 of the routes themselves says what was not found.
+        val http = start()
+        val unknown = http.put("/api/plans/$week/shopping/not-a-route") { setBody(ShoppingRowKey("i1")) }
+        assertEquals(HttpStatusCode.NotFound, unknown.status)
+        assertTrue("error" !in unknown.bodyAsText())
+        val known = http.again("i1")
+        assertEquals(HttpStatusCode.NotFound, known.status)
+        assertTrue("\"error\"" in known.bodyAsText())
     }
 
     @Test

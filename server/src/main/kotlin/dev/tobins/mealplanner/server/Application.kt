@@ -20,6 +20,7 @@ import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingExtraInput
+import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.server.db.Database
@@ -359,6 +360,12 @@ fun Application.module(
 
                 // Ticks an item of the shopping list off, or back on.
                 put("/shopping") { call.respond(call.user.shopping.setChecked(call.week(), call.receive<ShoppingCheck>())) }
+
+                // Ticks a ticked row that needs more again, for what it needs now, in one step.
+                put("/shopping/again") { call.respond(call.user.shopping.tickAgain(call.week(), call.receive<ShoppingRowKey>())) }
+
+                // Puts a bought item no meal needs any more on hand with what was bought of it; answers with the week's list.
+                post("/shopping/use-up") { call.respond(call.user.shopping.useUp(call.week(), call.receive<ShoppingRowKey>())) }
 
                 // Puts an own item (coffee, toilet paper) on the list from this week on; answers with the week's list.
                 post("/shopping/extras") {
