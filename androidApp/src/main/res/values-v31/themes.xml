@@ -1,0 +1,8 @@
+<resources>
+    <!-- Android 12+ shows its own splash screen: the mark on the app's green. Older versions only show the window background. -->
+    <style name="Theme.Mealplanner" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFF7FBF1</item>
+        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>

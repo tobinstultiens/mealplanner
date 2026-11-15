@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.shopping.ShopSection
 import kotlin.test.Test
@@ -30,5 +31,17 @@ class IconsTest {
         assertEquals(AppIcons.SectionOther, sectionIcon("Dairy"))
         assertEquals(AppIcons.SectionOther, sectionIcon(""))
         assertEquals(AppIcons.SectionFrozen, sectionIcon(ShopSection.FROZEN.title))
+    }
+
+    @Test
+    fun theMarkAndEverySpotIllustrationBuild() {
+        assertEquals(96.dp, Illustrations.Mark.defaultWidth)
+        Spot.entries.forEach { spot ->
+            val image = spot.build(Color.Black, Color.LightGray)
+            assertEquals(96.dp, image.defaultWidth, spot.name)
+            assertEquals(96.dp, image.defaultHeight, spot.name)
+            assertEquals(spot.name, image.name)
+        }
+        assertEquals(4, Spot.entries.size)
     }
 }

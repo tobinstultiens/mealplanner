@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -109,7 +111,11 @@ fun ServerSettingsScreen(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (!loggedIn) server()
+            if (!loggedIn) {
+                // The mark greets whoever has not logged in yet; once logged in the screen is only settings.
+                Image(Illustrations.Mark, contentDescription = null, Modifier.align(Alignment.CenterHorizontally).size(96.dp))
+                server()
+            }
             SettingsCard("Account") {
                 if (loggedIn) {
                     Text(if (account != null) "Logged in as $account." else "Logged in.", style = MaterialTheme.typography.bodyMedium)

@@ -110,7 +110,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, onOpenPantry: () -> Uni
             is Load.Ready -> {
                 val list = current.value
                 if (list.items.isEmpty()) {
-                    EmptyState(AppIcons.Shopping, "Nothing to buy: no meals are planned for this week.", Modifier.padding(padding))
+                    EmptyState(Spot.NothingToBuy, "Nothing to buy: no meals are planned for this week.", Modifier.padding(padding))
                     return@Scaffold
                 }
                 LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
