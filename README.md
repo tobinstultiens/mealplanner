@@ -157,7 +157,7 @@ runs that for the given issues; the session you type it in directs the work and 
 | `coder` | Sonnet, medium | One well-scoped issue, opens the pull request |
 | `coder-deep` | Opus, high | The same for schema migrations, login, account separation, concurrency, cross-module refactors |
 | `reviewer` | Sonnet, high (Opus for `coder-deep`'s work) | Checks a pull request against its issue; merges when all is met and CI is green |
-| `merger` | Sonnet, medium | Works out the order for pull requests that wait for you, and on your approval merges them and rebases the rest in between |
+| `merger` | Sonnet, medium | Works out the order for pull requests that wait for you, and on your approval merges them, rebases the rest in between and, when you ask for it, starts the app release afterwards |
 | `emulator-tester` | Sonnet, medium | Looks at a UI change on the Android emulator |
 | `ci-triage` | Haiku, low | Finds the first real error of a failed build |
 | `price-auditor` | Sonnet, medium | Flags wrongly matched AH prices |
@@ -169,7 +169,8 @@ app only after a release, so every pull request states whether the app must be r
 reviewer labels those `needs-app-release`, reports it first, and leaves a pull request whose server
 change would break the installed app for you to merge together with a release. When several wait, the `merger` agent says in
 which order they must go (a pull request built on another one merges after it), and once you say
-which ones to merge it merges them and fixes the conflicts in between. Only the reviewer and the
+which ones to merge it merges them and fixes the conflicts in between; ask for a release in the
+same breath and it starts the Release workflow once CI on `main` is green. Only the reviewer and the
 merger can run `gh pr merge` (`.claude/hooks/gate-pr-merge.sh`).
 
 ## Releases
