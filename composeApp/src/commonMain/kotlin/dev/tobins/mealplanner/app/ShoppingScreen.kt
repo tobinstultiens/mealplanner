@@ -90,33 +90,29 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
     var expanded by remember { mutableStateOf(emptySet<String>()) }
     KeepScreenOn(shoppingMode)
 
-    /** Sets one item's tick: shown at once, then confirmed or corrected by the server's answer. */
-    fun tick(key: String, checked: Boolean) {
-        val list = (state as? Load.Ready)?.value ?: return
-        state = Load.Ready(list.copy(items = list.items.map { if (it.key == key) it.copy(checked = checked) else it }))
-        if (offlineSince != null) {
-            cache.tickOffline(weekStart, key, checked)
-            return
-        }
-        scope.launch {
-            when (val result = load { api.setShoppingChecked(weekStart, key, checked) }) {
-                is Load.Ready -> {
-                    state = result
-                    cache.save(result.value, nowIso())
-                }
-                // No connection: keep the tick and send it later.
-                is Load.Failed -> if (result.status == null) {
-                    cache.save((state as? Load.Ready)?.value ?: list, offlineSince ?: nowIso())
-                    cache.tickOffline(weekStart, key, checked)
+    // One per week: a tick still on its way must not touch another week's list.
+    val ticks = remember(weekStart) {
+        val week = weekStart
+        ShoppingTicks(
+            scope,
+            send = { key, checked -> load { api.setShoppingChecked(week, key, checked) } },
+            isOffline = { offlineSince != null },
+            show = { if (week == weekStart) state = Load.Ready(it) },
+            saved = { cache.save(it, nowIso()) },
+            offline = { list, key, checked ->
+                // The first tick without a connection stores the list as it is, for the shop without reception.
+                if (offlineSince == null) {
+                    cache.save(list, nowIso())
                     offlineSince = nowIso()
-                } else {
-                    state = Load.Ready(list)
-                    snackbar.showSnackbar(t(Msg.TICK_FAILED, result.message))
                 }
-                Load.Loading -> Unit
-            }
-        }
+                cache.tickOffline(week, key, checked)
+            },
+            rejected = { snackbar.showSnackbar(t(Msg.TICK_FAILED, it)) },
+        )
     }
+
+    /** Sets one item's tick: shown at once, the server hears of it in the background. */
+    fun tick(key: String, checked: Boolean) = ticks.choose(key, checked)
 
     /** In shopping mode a mis-tap is one tap from undone. */
     fun tickWithUndo(item: ShoppingItem) {
@@ -181,10 +177,10 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
         }
         val stored = cache.load(weekStart)
         if (result is Load.Failed && result.status == null && stored != null) {
-            state = Load.Ready(stored.first)
+            state = Load.Ready(ticks.reset(stored.first))
             offlineSince = stored.second
         } else {
-            state = result
+            state = if (result is Load.Ready) Load.Ready(ticks.reset(result.value)) else result
             offlineSince = null
             (result as? Load.Ready)?.let { cache.save(it.value, nowIso()) }
         }
