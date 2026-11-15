@@ -2,6 +2,8 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,8 +22,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,8 +50,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.Store
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -60,7 +67,8 @@ fun ShoppingItem.quantityText(locale: FormatLocale = FormatLocale.device): Strin
 
 /**
  * What to buy for a week's plan, grouped by shop section in the order you walk the shop, with
- * items to tick off. The server sends the items in that order, so grouping keeps it.
+ * items to tick off. The server sends the items in that order, so grouping keeps it. A second
+ * view groups by the store to buy at, and one store can be chosen as the shop you are in.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,6 +81,10 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var shoppingMode by remember { mutableStateOf(settings.shoppingMode()) }
+    var view by remember { mutableStateOf(settings.shoppingView()) }
+    var chosenStore by remember { mutableStateOf(settings.shoppingStore()) }
+    var shops by remember { mutableStateOf(settings.shops()) }
+    val listState = rememberLazyListState()
     // Finished sections and Done groups the user opened; everything else stays collapsed.
     var expanded by remember { mutableStateOf(emptySet<String>()) }
     KeepScreenOn(shoppingMode)
@@ -116,6 +128,45 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                 duration = SnackbarDuration.Short,
             )
             if (answer == SnackbarResult.ActionPerformed) tick(item.key, item.checked)
+        }
+    }
+
+    fun chooseStore(store: Store?) {
+        chosenStore = store
+        settings.saveShoppingStore(store)
+        // The list changes completely; start at its top.
+        scope.launch { listState.scrollToItem(0) }
+    }
+
+    /** One group's rows; with shopping mode the ticked ones wait in a collapsed "Done" line. */
+    fun LazyListScope.groupItems(id: String, items: List<ShoppingItem>, row: @Composable (ShoppingItem) -> Unit) {
+        val (done, open) = if (shoppingMode) items.partition { it.checked } else emptyList<ShoppingItem>() to items
+        items(open, key = { it.key }) { row(it) }
+        if (done.isNotEmpty()) {
+            val doneOpen = "done:$id" in expanded
+            item(key = "d:$id") { DoneGroupHeader(done.size, doneOpen) { expanded = expanded.toggled("done:$id") } }
+            if (doneOpen) items(done, key = { it.key }) { row(it) }
+        }
+    }
+
+    /** The shop sections in walking order, each with its icon and, in shopping mode, its Done group. */
+    fun LazyListScope.sectionItems(sections: List<ShoppingSectionView>, row: @Composable (ShoppingItem) -> Unit) {
+        sections.forEach { section ->
+            val title = section.title
+            val sectionOpen = !section.finished || title in expanded
+            item(key = "h:$title") {
+                SectionHeaderRow(title, section, sectionOpen) { expanded = expanded.toggled(title) }
+            }
+            items(section.open, key = { it.key }) { item -> row(item) }
+            if (section.finished && sectionOpen) {
+                items(section.done, key = { it.key }) { item -> row(item) }
+            } else if (section.done.isNotEmpty() && !section.finished) {
+                val doneOpen = "done:$title" in expanded
+                item(key = "d:$title") {
+                    DoneGroupHeader(section.done.size, doneOpen) { expanded = expanded.toggled("done:$title") }
+                }
+                if (doneOpen) items(section.done, key = { it.key }) { item -> row(item) }
+            }
         }
     }
 
@@ -166,8 +217,9 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
             is Load.Ready -> {
                 val list = current.value
                 @Composable
-                fun row(item: ShoppingItem) = ShoppingRow(
+                fun row(item: ShoppingItem, offer: Offer? = item.bestOffer()) = ShoppingRow(
                     item,
+                    offer,
                     shoppingMode,
                     onToggle = { if (shoppingMode) tickWithUndo(item) else tick(item.key, !item.checked) },
                     onOfferClick = {
@@ -181,13 +233,14 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                     EmptyState(Spot.NothingToBuy, "Nothing to buy: no meals are planned for this week.", Modifier.padding(padding))
                     return@Scaffold
                 }
-                LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
+                LazyColumn(Modifier.padding(padding).fillMaxSize(), listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                     item {
                         ShoppingModeSwitch(shoppingMode) {
                             shoppingMode = it
                             settings.saveShoppingMode(it)
                         }
                     }
+                    item { ViewSwitch(view) { view = it; settings.saveShoppingView(it) } }
                     offlineSince?.let { since ->
                         item {
                             Row(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalAlignment = Alignment.CenterVertically) {
@@ -209,21 +262,40 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                             modifier = Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                         )
                     }
-                    shoppingSections(list.items, shoppingMode).forEach { section ->
-                        val title = section.title
-                        val sectionOpen = !section.finished || title in expanded
-                        item(key = "h:$title") {
-                            SectionHeaderRow(title, section, sectionOpen) { expanded = expanded.toggled(title) }
-                        }
-                        items(section.open, key = { it.key }) { item -> row(item) }
-                        if (section.finished && sectionOpen) {
-                            items(section.done, key = { it.key }) { item -> row(item) }
-                        } else if (section.done.isNotEmpty() && !section.finished) {
-                            val doneOpen = "done:$title" in expanded
-                            item(key = "d:$title") {
-                                DoneGroupHeader(section.done.size, doneOpen) { expanded = expanded.toggled("done:$title") }
+                    val store = chosenStore?.takeIf { view == ShoppingView.STORE && it in shops }
+                    when {
+                        view == ShoppingView.SECTION -> sectionItems(shoppingSections(list.items, shoppingMode)) { row(it) }
+                        store == null -> {
+                            val overview = storeOverview(list.items, shops)
+                            item { ShopsInUse(shops) { shops = it; settings.saveShops(it) } }
+                            overview.stores.forEach { group ->
+                                item(key = "s:${group.store.name}") {
+                                    GroupHeader(group.title, "Tap to shop here", onClick = { chooseStore(group.store) })
+                                }
+                                groupItems(group.store.name, group.items) { row(it) }
                             }
-                            if (doneOpen) items(section.done, key = { it.key }) { item -> row(item) }
+                            if (overview.anyStore.isNotEmpty()) {
+                                item(key = "s:any") {
+                                    GroupHeader(
+                                        "Any store · ${overview.anyStore.size} ${if (overview.anyStore.size == 1) "item" else "items"}",
+                                        "Free to buy wherever you go",
+                                        onClick = null,
+                                    )
+                                }
+                                groupItems("any", overview.anyStore) { row(it) }
+                            }
+                        }
+                        else -> {
+                            val visit = storeVisit(list.items, store, shops, shoppingMode)
+                            item(key = "visit") { ShopIAmIn(store) { chooseStore(null) } }
+                            sectionItems(visit.sections) { row(it) }
+                            if (visit.elsewhere.isNotEmpty()) {
+                                val open = "elsewhere" in expanded
+                                item(key = "elsewhere") {
+                                    ToggleHeader("Cheaper elsewhere (${visit.elsewhere.size})", open) { expanded = expanded.toggled("elsewhere") }
+                                }
+                                if (open) items(visit.elsewhere, key = { it.item.key }) { row(it.item, it.offer) }
+                            }
                         }
                     }
                     if (list.toTaste.isNotEmpty()) {
@@ -313,9 +385,82 @@ private fun DoneGroupHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
     }
 }
 
+/** "By section" or "Per store": how the list is grouped. */
 @Composable
-private fun ShoppingRow(item: ShoppingItem, shoppingMode: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
-    val offer = item.bestOffer()
+private fun ViewSwitch(view: ShoppingView, onChange: (ShoppingView) -> Unit) {
+    Row(Modifier.padding(horizontal = Spacing.ScreenEdge), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ShoppingView.entries.forEach { option ->
+            FilterChip(selected = view == option, onClick = { onChange(option) }, label = { Text(option.label) })
+        }
+    }
+}
+
+/** The stores this device shops at; the last one stays on, as the list needs at least one. */
+@Composable
+private fun ShopsInUse(shops: Set<Store>, onChange: (Set<Store>) -> Unit) {
+    Column(Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = Spacing.Tight)) {
+        Text("Stores I shop at", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Store.entries.forEach { store ->
+                FilterChip(
+                    selected = store in shops,
+                    onClick = { if (store !in shops) onChange(shops + store) else if (shops.size > 1) onChange(shops - store) },
+                    label = { Text(store.shortName()) },
+                )
+            }
+        }
+    }
+}
+
+/** A group's title with a hint; with an [onClick] it is a button that chooses the store. */
+@Composable
+private fun GroupHeader(title: String, hint: String, onClick: (() -> Unit)?) {
+    Row(
+        Modifier.fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .heightIn(min = 56.dp)
+            .padding(horizontal = Spacing.ScreenEdge, vertical = Spacing.Tight),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            SectionHeader(title)
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (onClick != null) Icon(AppIcons.ChevronRight, contentDescription = null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Which shop the list is for, with the way back to all stores. */
+@Composable
+private fun ShopIAmIn(store: Store, onAllStores: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = Spacing.ScreenEdge, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Shopping at ${store.shortName()}", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Its offers and everything without one",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = onAllStores) { Text("All stores") }
+    }
+}
+
+/** A collapsed group's title line with a chevron; tapping opens or closes it. */
+@Composable
+private fun ToggleHeader(title: String, open: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(open, role = Role.Button, onValueChange = { onToggle() }).heightIn(min = 56.dp).padding(horizontal = Spacing.ScreenEdge),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(AppIcons.ChevronRight, contentDescription = null, Modifier.size(20.dp).rotate(if (open) 90f else 0f), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shoppingMode: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth()
             .toggleable(item.checked, role = Role.Checkbox, onValueChange = { onToggle() })
@@ -343,17 +488,23 @@ private fun ShoppingRow(item: ShoppingItem, shoppingMode: Boolean, onToggle: () 
         Column(Modifier.padding(horizontal = 12.dp), horizontalAlignment = Alignment.End) {
             Text(item.quantityText(), style = MaterialTheme.typography.bodyMedium.numeric(), softWrap = false)
             if (offer != null) {
-                // A tap shows the full deal; the rest of the row keeps ticking.
-                Text(
-                    offer.badgeText(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    softWrap = false,
-                    modifier = Modifier.padding(top = 2.dp).clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .clickable(role = Role.Button, onClickLabel = "Show the deal", onClick = onOfferClick)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                )
+                // A tap shows the full deal; the rest of the row keeps ticking. The badge looks small
+                // but its touch area is 48 dp, as Material asks.
+                Box(
+                    Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                        .clickable(role = Role.Button, onClickLabel = "Show the deal", onClick = onOfferClick),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        offer.badgeText(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        softWrap = false,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
             }
         }
     }

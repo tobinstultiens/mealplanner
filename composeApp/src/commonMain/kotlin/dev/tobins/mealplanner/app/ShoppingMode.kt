@@ -34,12 +34,8 @@ fun shoppingProgress(items: List<ShoppingItem>): String {
     return "$ticked of ${items.size} · $sectionsToGo ${if (sectionsToGo == 1) "section" else "sections"} to go"
 }
 
-/** The cheapest offer that states a price; when none does, the first one. Null without offers. */
-fun ShoppingItem.bestOffer(): Offer? = offers.filter { it.price != null }.minByOrNull { it.price!! } ?: offers.firstOrNull()
-
 /** `AH €1.99`, or `AH 1+1 gratis` when the store states no price: short enough for the row's edge. */
 fun Offer.badgeText(locale: FormatLocale = FormatLocale.device): String {
-    val shop = store.label.substringBefore(' ').let { if (it == "Albert") "AH" else it }
     // Some stores shout their deals in capitals; in a badge that is too loud.
-    return "$shop ${price?.let { formatEuro(it, locale) } ?: deal?.takeIf { it.isNotBlank() }?.lowercase() ?: "offer"}"
+    return "${store.shortName()} ${price?.let { formatEuro(it, locale) } ?: deal?.takeIf { it.isNotBlank() }?.lowercase() ?: "offer"}"
 }

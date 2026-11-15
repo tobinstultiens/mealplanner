@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.Store
+
 /** Small key-value storage on the device, for settings such as the server address. */
 interface SettingsStorage {
     fun get(key: String): String?
@@ -50,3 +52,30 @@ private const val SHOPPING_MODE_KEY = "shoppingMode"
 fun SettingsStorage.shoppingMode(): Boolean = get(SHOPPING_MODE_KEY) == "true"
 
 fun SettingsStorage.saveShoppingMode(on: Boolean) = set(SHOPPING_MODE_KEY, on.toString())
+
+/** How the shopping list is grouped: by shop section, or by the store to buy at. */
+enum class ShoppingView(val label: String) { SECTION("By section"), STORE("Per store") }
+
+private const val SHOPPING_VIEW_KEY = "shoppingView"
+
+fun SettingsStorage.shoppingView(): ShoppingView =
+    get(SHOPPING_VIEW_KEY)?.let { stored -> ShoppingView.entries.firstOrNull { it.name == stored } } ?: ShoppingView.SECTION
+
+fun SettingsStorage.saveShoppingView(view: ShoppingView) = set(SHOPPING_VIEW_KEY, view.name)
+
+private const val SHOPPING_STORE_KEY = "shoppingStore"
+
+/** The store chosen as "the shop I'm in" in the per-store view, or null for the overview. */
+fun SettingsStorage.shoppingStore(): Store? = get(SHOPPING_STORE_KEY)?.let { stored -> Store.entries.firstOrNull { it.name == stored } }
+
+fun SettingsStorage.saveShoppingStore(store: Store?) = set(SHOPPING_STORE_KEY, store?.name ?: "")
+
+private const val SHOPS_KEY = "shops"
+
+/** The stores this device shops at; all of them until narrowed. Only the per-store list uses it. */
+fun SettingsStorage.shops(): Set<Store> {
+    val stored = get(SHOPS_KEY) ?: return Store.entries.toSet()
+    return Store.entries.filter { it.name in stored.split(',') }.toSet().ifEmpty { Store.entries.toSet() }
+}
+
+fun SettingsStorage.saveShops(shops: Set<Store>) = set(SHOPS_KEY, shops.joinToString(",") { it.name })
