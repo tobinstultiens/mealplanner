@@ -7,6 +7,8 @@
 # - `gh pr merge` from anyone else (the main session, coders) is blocked.
 # - From those two, the plain form `gh pr merge <number> [--squash] [--delete-branch]`
 #   is approved without a prompt; anything fancier goes through the normal permission flow.
+# - `gh workflow run` (the Android release) is blocked for everyone but the merger. For the
+#   merger it goes through the normal permission flow, where the owner is asked.
 # - Every other command is left alone.
 #
 # The owner can still merge by hand from their own terminal.
@@ -15,6 +17,15 @@ set -euo pipefail
 input=$(cat)
 command=$(jq -r '.tool_input.command // ""' <<<"$input")
 agent=$(jq -r '.agent_type // ""' <<<"$input")
+
+# `gh workflow run` at the start of the command or of a chained part: the merger only.
+if grep -Eq '(^|[;&|(])[[:space:]]*gh[[:space:]]+workflow[[:space:]]+run([[:space:]]|$)' <<<"$command"; then
+  if [[ "$agent" != "merger" ]]; then
+    echo "Only the merger agent starts workflows in this repo, and only when the owner asked for a release (.claude/hooks/gate-pr-merge.sh). The owner can also start it from the Actions page." >&2
+    exit 2
+  fi
+  exit 0
+fi
 
 # `gh pr merge` at the start of the command or of a chained part (after ; & | or an opening bracket).
 if ! grep -Eq '(^|[;&|(])[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' <<<"$command"; then

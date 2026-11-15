@@ -171,7 +171,8 @@ change would break the installed app for you to merge together with a release. W
 which order they must go (a pull request built on another one merges after it), and once you say
 which ones to merge it merges them and fixes the conflicts in between; ask for a release in the
 same breath and it starts the Release workflow once CI on `main` is green. Only the reviewer and the
-merger can run `gh pr merge` (`.claude/hooks/gate-pr-merge.sh`).
+merger can run `gh pr merge`, and only the merger can start a workflow, which still asks you first
+(`.claude/hooks/gate-pr-merge.sh`).
 
 ## Releases
 
