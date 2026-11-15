@@ -181,11 +181,25 @@ plan is not fixed in advance; only what was ticked carries over.
 three batches of chicken for three meals, one pack of rice). Each meal of that week or later that
 uses it is eaten from it when it is marked eaten: a dinner takes what it was cooked with, its
 leftover lunch included (which then takes nothing more), and marking a meal eaten twice takes it
-once. The item stays on hand until less than a gram is left, or until it is removed in the pantry,
-which works at once as always. Without an amount (an item the list no longer advised, or one ticked
-before amounts were kept) or when a meal's use of it can't be weighed ("to taste"), that meal uses
-it up, as before. Marking an item on hand in the pantry makes it one set by hand, even if a tick put
-it there: those stay until removed by hand, whatever is ticked or eaten.
+once. A leftover lunch eaten while its dinner is not (skipped, say) was cooked for itself and takes
+its own share. The item stays on hand until less than a gram is left, or until it is removed in the
+pantry, which works at once as always. A line whose weight can't be told ("olive oil to taste", "1
+bunch" without a weight per piece) takes nothing: there is no amount to go by, and taking the whole
+stock would empty a litre of oil on its first use; a volume without a density counts as water, as
+for nutrition. An item without an amount (one the list no longer advised, or one ticked before
+amounts were kept) is used up by the first meal that uses a weighed amount of it, as before.
+
+**Un-eating.** What each meal took is kept (`stockUse`, under the meal whose portions it was for), so
+marking an eaten meal skipped or planned again puts exactly that back, also when it had used the
+item up; eaten again, it takes it again. A dinner un-eaten while its leftover lunch stays eaten gives
+back only its own share, and a leftover lunch un-eaten while its dinner stays eaten gives back
+nothing (the leftovers were cooked): whatever order the two are marked in, the stock ends the same.
+Nothing comes back once the owner has said otherwise: after the item was un-ticked (not bought) or
+put on hand or removed by hand in the pantry. A meal replaced or removed in the plan leaves what it
+took taken, and meals eaten before version 11 of the database have nothing kept to give back.
+
+Marking an item on hand in the pantry makes it one set by hand, even if a tick put it there: those
+stay until removed by hand, whatever is ticked or eaten.
 
 **The plan's cost** stays at the week's own prices, bought-ahead food included. The saving shows
 where the money is spent, on the buy-ahead item of the week it is bought in; pricing next week's

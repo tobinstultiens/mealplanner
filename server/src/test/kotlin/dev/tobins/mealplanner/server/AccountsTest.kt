@@ -11,6 +11,8 @@ import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.Me
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
@@ -271,24 +273,100 @@ class AccountsTest {
         val db = openDatabase("jdbc:sqlite::memory:").second
         val foods = FoodRepository(db)
         val users = UserRepository(db)
-        val alice = IngredientRepository(db, foods, users.resolve(Identity("sub-alice", "alice")).id)
-        val bob = IngredientRepository(db, foods, users.resolve(Identity("sub-bob", "bob")).id)
-        val week = java.time.LocalDate.parse("2026-11-23")
         val aliceId = users.resolve(Identity("sub-alice", "alice")).id
+        val bobId = users.resolve(Identity("sub-bob", "bob")).id
+        val alice = IngredientRepository(db, foods, aliceId)
+        val bob = IngredientRepository(db, foods, bobId)
+        val week = java.time.LocalDate.parse("2026-11-23")
+        // Both have a dinner on Monday: the same place in the plan, so the same key for what it took.
+        val dinner = MealRef(week, 0, MealSlot.DINNER)
+        for (id in listOf(aliceId, bobId)) {
+            db.planQueries.upsertMeal(id, week.toString(), 0, "DINNER", 1, "Stew", 2.0, 800.0, 40.0, 0, 0, "EATEN")
+        }
         val chicken = alice.create(IngredientInput("Chicken thigh"))
         alice.putOnHandFrom(chicken.id, week, grams = 1000.0)
         fun left() = db.pantryQueries.selectStock(aliceId, week.toString(), listOf(chicken.id)).executeAsOneOrNull()?.grams
 
         // Bob naming Alice's ingredient as one his meal used takes nothing from her pantry, nor does
         // his marking it on hand by hand make her tick one set by hand.
-        bob.useUp(mapOf(chicken.id to 400.0), week)
-        bob.useUp(mapOf(chicken.id to null), week)
+        bob.useUp(dinner, mapOf(chicken.id to 400.0))
         assertFailsWith<NotFoundException> { bob.setOnHand(chicken.id, true) }
         assertEquals(1000.0, left())
-        alice.useUp(mapOf(chicken.id to 400.0), week)
+        alice.useUp(dinner, mapOf(chicken.id to 400.0))
         assertEquals(600.0, left())
-        alice.useUp(mapOf(chicken.id to null), week)
-        assertEquals(emptySet(), alice.onHandFor(week))
+
+        // Un-eating his dinner gives nothing of hers back and leaves what hers took to give back;
+        // he can't take her stock off either, by hand or by un-ticking.
+        bob.giveBack(dinner)
+        assertFailsWith<NotFoundException> { bob.setOnHand(chicken.id, false) }
+        assertFailsWith<NotFoundException> { bob.takeBackOnHand(chicken.id, week) }
+        assertEquals(600.0, left())
+        alice.giveBack(dinner)
+        assertEquals(1000.0, left())
+    }
+
+    @Test
+    fun theStatementsThatChangeThePantryNameTheAccount() {
+        val db = openDatabase("jdbc:sqlite::memory:").second
+        val users = UserRepository(db)
+        val aliceId = users.resolve(Identity("sub-alice", "alice")).id
+        val bobId = users.resolve(Identity("sub-bob", "bob")).id
+        val alice = IngredientRepository(db, FoodRepository(db), aliceId)
+        val week = "2026-11-23"
+        val chicken = alice.create(IngredientInput("Chicken thigh")).id
+        val rice = alice.create(IngredientInput("Rice")).id
+        alice.putOnHandFrom(chicken, java.time.LocalDate.parse(week), grams = 1000.0)
+        val p = db.pantryQueries
+        fun pantry() = p.selectStock(aliceId, week, listOf(chicken, rice)).executeAsList()
+        val before = pantry()
+
+        // Called with Bob's account and Alice's ingredients, as a caller that forgot its own check would.
+        assertEquals(0L, p.insertOnHand("2026-11-15T00:00:00Z", rice, bobId).value)
+        assertEquals(0L, p.insertOnHandFrom("2026-11-15T00:00:00Z", week, 500.0, rice, bobId).value)
+        assertEquals(0L, p.restoreStock("2026-11-15T00:00:00Z", week, 500.0, rice, bobId).value)
+        assertEquals(0L, p.giveBackToStock(500.0, week, chicken, bobId).value)
+        assertEquals(0L, p.setStockGrams(1.0, chicken, bobId).value)
+        assertEquals(0L, p.setOnHandByHand(chicken, bobId).value)
+        assertEquals(0L, p.deleteOnHandFrom(chicken, week, bobId).value)
+        assertEquals(0L, p.deleteUsedUp(chicken, bobId).value)
+        assertEquals(0L, p.deleteOnHand(chicken, bobId).value)
+        assertEquals(before, pantry())
+        assertEquals(emptyList(), p.selectOnHand(bobId).executeAsList())
+    }
+
+    @Test
+    fun eatingAndUnEatingTouchOnlyTheAccountsOwnStock() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val week = "2026-11-16"
+        // Each has a stew of their own on Monday (400 g of beef for 2 servings) and 1 kg of beef bought for it.
+        val accounts = listOf("alice", "bob").associateWith { name ->
+            val client = clientFor(name)
+            client.put("/api/profile") { setBody(Profile(80.0, 175.0, 40, Sex.FEMALE, ActivityLevel.LIGHT)) }
+            val beef = client.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+            val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+            val id = db.userQueries.selectBySubject("sub-$name").executeAsOne().id
+            db.planQueries.upsertMeal(id, week, 0, "DINNER", stew.id, stew.title, 2.0, 800.0, 40.0, 0, 0, "PLANNED")
+            IngredientRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 1000.0)
+            Triple(client, id, beef.id)
+        }
+        fun left(name: String): Double? {
+            val (_, id, beef) = accounts.getValue(name)
+            return db.pantryQueries.selectStock(id, week, listOf(beef)).executeAsOneOrNull()?.grams
+        }
+        suspend fun mark(name: String, status: MealStatus) =
+            assertEquals(HttpStatusCode.OK, accounts.getValue(name).first.put("/api/plans/$week/meals/0/dinner/status") { setBody(status) }.status)
+
+        mark("bob", MealStatus.EATEN)
+        assertEquals(600.0, left("bob"))
+        assertEquals(1000.0, left("alice"), "Bob's dinner is eaten from his beef only")
+        mark("alice", MealStatus.EATEN)
+        mark("bob", MealStatus.SKIPPED)
+        assertEquals(1000.0, left("bob"))
+        assertEquals(600.0, left("alice"), "un-eating Bob's dinner gives back only what his took")
+        mark("alice", MealStatus.PLANNED)
+        assertEquals(1000.0, left("alice"))
     }
 
     @Test

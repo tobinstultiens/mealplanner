@@ -117,18 +117,20 @@ private fun gramsOf(line: IngredientLine, ingredient: Ingredient?): Double? =
     ingredient?.let { NutritionCalculator.quantityOf(line, it)?.grams } ?: line.baseAmount.takeIf { line.dimension == Dimension.WEIGHT }
 
 /**
- * Grams of each ingredient that [portions] of [recipe]'s servings use, by ingredient id; null for one
- * with a line whose weight can't be told ("olive oil to taste"). Staples and spices count too: this
- * is what a meal takes from the pantry, not what the list buys.
+ * Grams of each ingredient that [portions] of [recipe]'s servings use, by ingredient id. Staples and
+ * spices count too: this is what a meal takes from the pantry, not what the list buys. A volume
+ * without a density counts as water, as for nutrition. A line whose weight can't be told ("olive oil
+ * to taste", "1 bunch of coriander" without a weight per piece) adds nothing: guessing would invent an
+ * amount, and taking the whole stock for it (as before issue 84) would empty a litre of oil on its
+ * first use. An ingredient with no weighed line is left out, so a meal takes nothing of it.
  */
-fun gramsUsed(recipe: RecipeLines, portions: Double): Map<Long, Double?> {
+fun gramsUsed(recipe: RecipeLines, portions: Double): Map<Long, Double> {
     val factor = portions / recipe.servings
-    val known = HashMap<Long, Double>()
-    val unknown = HashSet<Long>()
+    val grams = HashMap<Long, Double>()
     for ((line, ingredient) in recipe.lines) {
         if (ingredient == null) continue
-        val grams = line.amount?.let { gramsOf(line, ingredient) }
-        if (grams == null) unknown += ingredient.id else known.merge(ingredient.id, grams * factor, Double::plus)
+        val weight = line.amount?.let { gramsOf(line, ingredient) }?.takeIf { it > 0 } ?: continue
+        grams.merge(ingredient.id, weight * factor, Double::plus)
     }
-    return (known.keys + unknown).associateWith { if (it in unknown) null else known[it] }
+    return grams
 }

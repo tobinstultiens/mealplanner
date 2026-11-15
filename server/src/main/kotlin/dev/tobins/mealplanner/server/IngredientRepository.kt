@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.recipes.IngredientLine
@@ -16,9 +17,13 @@ import dev.tobins.mealplanner.server.db.Ingredient as IngredientRow
 /** Thrown for requests that refer to something that does not exist; mapped to 404. */
 class NotFoundException(message: String) : RuntimeException(message)
 
+/** A planned meal by where it is in the plan: what a meal takes from the stock is kept under it. */
+data class MealRef(val week: LocalDate, val day: Int, val slot: MealSlot)
+
 /** One account's ingredient catalogue and the remembered links from its recipe line texts to it. */
 class IngredientRepository(private val db: Database, private val foods: FoodRepository, private val userId: Long) {
     private val q = db.ingredientQueries
+    private val pantry = db.pantryQueries
 
     fun list(): List<Ingredient> = q.selectAllIngredients(userId).executeAsList().map { it.toIngredient() }
 
@@ -51,25 +56,28 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         val byId = all.associateBy { it.id }
         return Pantry(
             staples = all.filter { it.isStaple },
-            onHand = db.pantryQueries.selectOnHand(userId).executeAsList().mapNotNull(byId::get),
+            onHand = pantry.selectOnHand(userId).executeAsList().mapNotNull(byId::get),
         )
     }
 
-    fun setStaple(id: Long, staple: Boolean) = requireIngredient(id).also { db.pantryQueries.setStaple(if (staple) 1 else 0, userId, id) }
+    fun setStaple(id: Long, staple: Boolean) = requireIngredient(id).also { pantry.setStaple(if (staple) 1 else 0, userId, id) }
 
     /**
      * Puts an ingredient on hand by hand, or takes it off. Marked by hand, an entry that a tick of
      * the shopping list put there becomes one set by hand (see [putOnHandFrom]): the owner says it is
      * at home, so neither un-ticking nor eating meals takes it away; only removing it by hand does.
+     * Either way the owner says what is at home, so un-eating a meal no longer puts back what it
+     * took from the stock ([giveBack]): taken off, it would come back; on hand, it is there already.
      */
     fun setOnHand(id: Long, onHand: Boolean) = db.transaction {
         requireIngredient(id)
         if (onHand) {
-            db.pantryQueries.insertOnHand(id, java.time.Instant.now().toString())
-            db.pantryQueries.setOnHandByHand(id, userId)
+            pantry.insertOnHand(java.time.Instant.now().toString(), id, userId)
+            pantry.setOnHandByHand(id, userId)
         } else {
-            db.pantryQueries.deleteOnHand(id)
+            pantry.deleteOnHand(id, userId)
         }
+        pantry.deleteStockUsesOf(userId, id)
     }
 
     /**
@@ -77,7 +85,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      * by hand, and the ticked buy-ahead and stock-up items that count from that week or earlier. An
      * item bought ahead for next week is at home already, but this week's meals need their own.
      */
-    fun onHandFor(week: LocalDate): Set<Long> = db.pantryQueries.selectOnHandWeeks(userId).executeAsList()
+    fun onHandFor(week: LocalDate): Set<Long> = pantry.selectOnHandWeeks(userId).executeAsList()
         .filter { it.fromWeek == null || LocalDate.parse(it.fromWeek) <= week }
         .mapTo(HashSet()) { it.ingredientId }
 
@@ -88,35 +96,65 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      */
     fun putOnHandFrom(id: Long, week: LocalDate, grams: Double? = null) {
         requireIngredient(id)
-        db.pantryQueries.insertOnHandFrom(id, java.time.Instant.now().toString(), week.toString(), grams)
-    }
-
-    /** An un-ticked item of the shopping list: takes back what ticking it put on hand from [week]. */
-    fun takeBackOnHand(id: Long, week: LocalDate) {
-        requireIngredient(id)
-        db.pantryQueries.deleteOnHandFrom(id, week.toString())
+        pantry.insertOnHandFrom(java.time.Instant.now().toString(), week.toString(), grams, id, userId)
     }
 
     /**
-     * A meal of the week starting [week] was eaten, using [grams] of each ingredient by id (null when
-     * not known). It is eaten from what was bought ahead or stocked up for that week or before: what
-     * is left goes down by what the meal used, and the entry goes once less than [USED_UP_GRAMS] is
-     * left. Without an amount on either side there is no telling what is left, so the meal uses it up,
-     * as it did before amounts were kept. What was put on hand by hand stays, as it always has.
+     * An un-ticked item of the shopping list: takes back what ticking it put on hand from [week]. What
+     * was not bought was not eaten either, so un-eating a meal that took from it puts nothing back.
      */
-    fun useUp(grams: Map<Long, Double?>, week: LocalDate) {
+    fun takeBackOnHand(id: Long, week: LocalDate) = db.transaction {
+        requireIngredient(id)
+        pantry.deleteOnHandFrom(id, week.toString(), userId)
+        pantry.deleteStockUsesFrom(userId, id, week.toString())
+    }
+
+    /**
+     * [meal] was eaten, using [grams] of each ingredient by id. It is eaten from what was bought ahead
+     * or stocked up for its week or before: what is left goes down by what the meal used, and the
+     * entry goes once less than [USED_UP_GRAMS] is left. Of a stock whose amount is not known there is
+     * no telling what is left, so the meal uses it up, as it did before amounts were kept. What was
+     * put on hand by hand stays, as it always has. What was taken is kept under [meal], for [giveBack];
+     * a meal that has taken its share already takes nothing more.
+     */
+    fun useUp(meal: MealRef, grams: Map<Long, Double>) {
         if (grams.isEmpty()) return
         db.transaction {
-            for (stock in db.pantryQueries.selectStock(userId, week.toString(), grams.keys).executeAsList()) {
-                val left = stock.grams?.let { have -> grams[stock.ingredientId]?.let { have - it } }
-                if (left != null && left >= USED_UP_GRAMS) {
-                    db.pantryQueries.setStockGrams(left, stock.ingredientId, userId)
+            if (uses(meal).isNotEmpty()) return@transaction
+            for (stock in pantry.selectStock(userId, meal.week.toString(), grams.keys).executeAsList()) {
+                val used = grams.getValue(stock.ingredientId)
+                val left = stock.grams?.minus(used)
+                val taken = if (left != null && left >= USED_UP_GRAMS) {
+                    pantry.setStockGrams(left, stock.ingredientId, userId)
+                    used
                 } else {
-                    db.pantryQueries.deleteUsedUp(week.toString(), listOf(stock.ingredientId), userId)
+                    pantry.deleteUsedUp(stock.ingredientId, userId)
+                    stock.grams
                 }
+                pantry.insertStockUse(
+                    userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, stock.ingredientId,
+                    checkNotNull(stock.fromWeek) { "selectStock has only ticked entries" }, stock.addedAt, taken,
+                )
             }
         }
     }
+
+    /**
+     * [meal] was not eaten after all: puts back what [useUp] took for it, so eating and un-eating
+     * leave the stock as it was. A stock that is there gets the amount added; one the meal used up
+     * comes back as it was. An ingredient put on hand by hand in the meantime stays as it is.
+     */
+    fun giveBack(meal: MealRef) = db.transaction {
+        for (use in uses(meal)) {
+            if (pantry.giveBackToStock(use.grams, use.fromWeek, use.ingredientId, userId).value == 0L) {
+                pantry.restoreStock(use.addedAt, use.fromWeek, use.grams, use.ingredientId, userId)
+            }
+        }
+        pantry.deleteStockUses(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name)
+    }
+
+    private fun uses(meal: MealRef) =
+        pantry.selectStockUses(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name).executeAsList()
 
     /** Whether ingredients keep until next week, where the account set it by hand, by id. */
     fun keepsByHand(): Map<Long, Boolean> = q.selectKeepsByHand(userId).executeAsList().associate { it.id to (it.keeps != 0L) }
