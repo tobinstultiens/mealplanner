@@ -155,12 +155,26 @@ list already. One pack of the best offer each, with its saving; the six saving m
 €0.25 a pack), in walking order. Advice only: it never changes the plan.
 
 **Ticked items go to the pantry.** Ticking a buy-ahead item puts its ingredient on hand from next
-week (`onHand.fromWeek`), so this week's meals still get their own amount and next week's plan
-prefers the meals that use it (the planner's on-hand bonus); ticking a stock-up item puts it on hand
-from this week. Un-ticking takes back only what that tick put there. Such an item stops being on
-hand when a meal of that week or later that uses it is marked eaten, or when it is removed in the
-pantry. Items put on hand by hand behave as before: they stay until removed by hand. Next week's
+week (`onHand.fromWeek`), so this week's meals, list and recipe ideas still get their own amount and
+next week's plan prefers the meals that use it (the planner's on-hand bonus); ticking a stock-up item
+puts it on hand from this week. Un-ticking takes back only what that tick put there. Next week's
 plan is not fixed in advance; only what was ticked carries over.
+
+**Eating from it.** A ticked item is on hand in the amount the list advised buying (`onHand.grams`:
+three batches of chicken for three meals, one pack of rice). Each meal of that week or later that
+uses it is eaten from it when it is marked eaten: a dinner takes what it was cooked with, its
+leftover lunch included (which then takes nothing more), and marking a meal eaten twice takes it
+once. The item stays on hand until less than a gram is left, or until it is removed in the pantry,
+which works at once as always. Without an amount (an item the list no longer advised, or one ticked
+before amounts were kept) or when a meal's use of it can't be weighed ("to taste"), that meal uses
+it up, as before. Marking an item on hand in the pantry makes it one set by hand, even if a tick put
+it there: those stay until removed by hand, whatever is ticked or eaten.
+
+**The plan's cost** stays at the week's own prices, bought-ahead food included. The saving shows
+where the money is spent, on the buy-ahead item of the week it is bought in; pricing next week's
+meals at this week's offer as well would count it twice, would make the week's cost change as the
+stock is eaten, and when more meals use the food than it was bought for, there is no telling which
+of them were made from it.
 
 In the app the list then has three parts: "For this week", "Buy ahead for next week (on offer now)"
 and "Stock up: on offer now", each by shop section in walking order, in shopping mode (ticked items

@@ -47,6 +47,7 @@ import io.ktor.server.testing.testApplication
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
@@ -167,6 +168,11 @@ class AccountsTest {
         alice.put("/api/ingredients/${chicken.id}/keeps") { setBody(KeepsChoice(true)) }
         assertTrue(bob.get("/api/ingredients/sections").body<List<IngredientSection>>().none { it.ingredientId == chicken.id })
 
+        // Bob can't make her tick one set by hand: un-ticking still takes it back.
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/pantry/on-hand/${chicken.id}").status)
+        alice.put("/api/plans/$week/shopping") { setBody(ShoppingCheck("ahead:i${chicken.id}", false)) }
+        assertEquals(emptyList(), alice.get("/api/pantry").body<Pantry>().onHand)
+
         // The switch and a dismissed group are per account.
         alice.put("/api/shopping-advice") { setBody(ShoppingAdvice(buyAhead = false, stockUp = false)) }
         assertEquals(ShoppingAdvice(), bob.get("/api/shopping-advice").body<ShoppingAdvice>())
@@ -184,13 +190,20 @@ class AccountsTest {
         val alice = IngredientRepository(db, foods, users.resolve(Identity("sub-alice", "alice")).id)
         val bob = IngredientRepository(db, foods, users.resolve(Identity("sub-bob", "bob")).id)
         val week = java.time.LocalDate.parse("2026-11-23")
+        val aliceId = users.resolve(Identity("sub-alice", "alice")).id
         val chicken = alice.create(IngredientInput("Chicken thigh"))
-        alice.putOnHandFrom(chicken.id, week)
+        alice.putOnHandFrom(chicken.id, week, grams = 1000.0)
+        fun left() = db.pantryQueries.selectStock(aliceId, week.toString(), listOf(chicken.id)).executeAsOneOrNull()?.grams
 
-        // Bob naming Alice's ingredient as one his meal used takes nothing from her pantry.
-        bob.useUp(listOf(chicken.id), week)
-        assertEquals(setOf(chicken.id), alice.onHandFor(week))
-        alice.useUp(listOf(chicken.id), week)
+        // Bob naming Alice's ingredient as one his meal used takes nothing from her pantry, nor does
+        // his marking it on hand by hand make her tick one set by hand.
+        bob.useUp(mapOf(chicken.id to 400.0), week)
+        bob.useUp(mapOf(chicken.id to null), week)
+        assertFailsWith<NotFoundException> { bob.setOnHand(chicken.id, true) }
+        assertEquals(1000.0, left())
+        alice.useUp(mapOf(chicken.id to 400.0), week)
+        assertEquals(600.0, left())
+        alice.useUp(mapOf(chicken.id to null), week)
         assertEquals(emptySet(), alice.onHandFor(week))
     }
 

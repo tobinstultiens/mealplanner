@@ -57,9 +57,19 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
 
     fun setStaple(id: Long, staple: Boolean) = requireIngredient(id).also { db.pantryQueries.setStaple(if (staple) 1 else 0, userId, id) }
 
-    fun setOnHand(id: Long, onHand: Boolean) {
+    /**
+     * Puts an ingredient on hand by hand, or takes it off. Marked by hand, an entry that a tick of
+     * the shopping list put there becomes one set by hand (see [putOnHandFrom]): the owner says it is
+     * at home, so neither un-ticking nor eating meals takes it away; only removing it by hand does.
+     */
+    fun setOnHand(id: Long, onHand: Boolean) = db.transaction {
         requireIngredient(id)
-        if (onHand) db.pantryQueries.insertOnHand(id, java.time.Instant.now().toString()) else db.pantryQueries.deleteOnHand(id)
+        if (onHand) {
+            db.pantryQueries.insertOnHand(id, java.time.Instant.now().toString())
+            db.pantryQueries.setOnHandByHand(id, userId)
+        } else {
+            db.pantryQueries.deleteOnHand(id)
+        }
     }
 
     /**
@@ -72,12 +82,13 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         .mapTo(HashSet()) { it.ingredientId }
 
     /**
-     * A ticked item of the shopping list: on hand from [week] on. When the ingredient is on hand
-     * already, it stays as it was, so un-ticking never takes away what was put there by hand.
+     * A ticked item of the shopping list: [grams] of it (null when not known) on hand from [week] on,
+     * for meals to be eaten from ([useUp]). When the ingredient is on hand already, it stays as it
+     * was, so un-ticking never takes away what was put there by hand.
      */
-    fun putOnHandFrom(id: Long, week: LocalDate) {
+    fun putOnHandFrom(id: Long, week: LocalDate, grams: Double? = null) {
         requireIngredient(id)
-        db.pantryQueries.insertOnHandFrom(id, java.time.Instant.now().toString(), week.toString())
+        db.pantryQueries.insertOnHandFrom(id, java.time.Instant.now().toString(), week.toString(), grams)
     }
 
     /** An un-ticked item of the shopping list: takes back what ticking it put on hand from [week]. */
@@ -87,11 +98,24 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     }
 
     /**
-     * A meal of the week starting [week] that uses [ids] was eaten: what was bought ahead or stocked
-     * up for that week or before is used up. What was put on hand by hand stays, as it always has.
+     * A meal of the week starting [week] was eaten, using [grams] of each ingredient by id (null when
+     * not known). It is eaten from what was bought ahead or stocked up for that week or before: what
+     * is left goes down by what the meal used, and the entry goes once less than [USED_UP_GRAMS] is
+     * left. Without an amount on either side there is no telling what is left, so the meal uses it up,
+     * as it did before amounts were kept. What was put on hand by hand stays, as it always has.
      */
-    fun useUp(ids: Collection<Long>, week: LocalDate) {
-        if (ids.isNotEmpty()) db.pantryQueries.deleteUsedUp(week.toString(), ids, userId)
+    fun useUp(grams: Map<Long, Double?>, week: LocalDate) {
+        if (grams.isEmpty()) return
+        db.transaction {
+            for (stock in db.pantryQueries.selectStock(userId, week.toString(), grams.keys).executeAsList()) {
+                val left = stock.grams?.let { have -> grams[stock.ingredientId]?.let { have - it } }
+                if (left != null && left >= USED_UP_GRAMS) {
+                    db.pantryQueries.setStockGrams(left, stock.ingredientId, userId)
+                } else {
+                    db.pantryQueries.deleteUsedUp(week.toString(), listOf(stock.ingredientId), userId)
+                }
+            }
+        }
     }
 
     /** Whether ingredients keep until next week, where the account set it by hand, by id. */
@@ -324,6 +348,9 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         IngredientInput(name, food?.nevoCode, gramsPerPiece, gramsPerMl, category, pricePerKg, isStaple, negligible)
 
     companion object {
+        /** Less than this left of what was bought ahead is a scrap, not something to plan or shop around. */
+        const val USED_UP_GRAMS = 1.0
+
         private fun singular(word: String): String = if (word.length > 3 && word.endsWith("s")) word.dropLast(1) else word
 
         private val neutralWords = setOf("raw", "rauw", "av", "gem", "fresh", "vers", "verse")

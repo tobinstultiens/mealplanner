@@ -79,8 +79,7 @@ fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, s
             }
             need.recipes += planned.title
             val amount = line.amount ?: continue // "salt to taste": needed, but no quantity
-            val grams = ingredient?.let { NutritionCalculator.quantityOf(line, it)?.grams }
-                ?: line.baseAmount.takeIf { line.dimension == Dimension.WEIGHT }
+            val grams = gramsOf(line, ingredient)
             if (grams != null) need.grams += grams * factor else need.gramsKnown = false
             if (line.dimension == Dimension.COUNT) need.pieces += amount * factor
         }
@@ -90,6 +89,27 @@ fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, s
         staples = staples.toList(),
         toTaste = toTaste.toList(),
     )
+}
+
+/** The weight of a line with an amount, by the ingredient's conversions or else its own; null when it can't be told. */
+private fun gramsOf(line: IngredientLine, ingredient: Ingredient?): Double? =
+    ingredient?.let { NutritionCalculator.quantityOf(line, it)?.grams } ?: line.baseAmount.takeIf { line.dimension == Dimension.WEIGHT }
+
+/**
+ * Grams of each ingredient that [portions] of [recipe]'s servings use, by ingredient id; null for one
+ * with a line whose weight can't be told ("olive oil to taste"). Staples and spices count too: this
+ * is what a meal takes from the pantry, not what the list buys.
+ */
+fun gramsUsed(recipe: RecipeLines, portions: Double): Map<Long, Double?> {
+    val factor = portions / recipe.servings
+    val known = HashMap<Long, Double>()
+    val unknown = HashSet<Long>()
+    for ((line, ingredient) in recipe.lines) {
+        if (ingredient == null) continue
+        val grams = line.amount?.let { gramsOf(line, ingredient) }
+        if (grams == null) unknown += ingredient.id else known.merge(ingredient.id, grams * factor, Double::plus)
+    }
+    return (known.keys + unknown).associateWith { if (it in unknown) null else known[it] }
 }
 
 /**

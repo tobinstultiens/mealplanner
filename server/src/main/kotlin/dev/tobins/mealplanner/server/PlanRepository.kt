@@ -134,20 +134,33 @@ class PlanRepository(
     }
 
     /**
-     * Marks a meal eaten, skipped or planned again. Eating it uses up what was bought ahead or
-     * stocked up for it (see [IngredientRepository.useUp]); planning it again does not bring that back.
+     * Marks a meal eaten, skipped or planned again. Eating it is eating from what was bought ahead or
+     * stocked up for it ([IngredientRepository.useUp]); planning it again does not bring that back,
+     * and marking it eaten when it already is takes nothing more.
      */
     fun setStatus(weekStart: String, day: Int, slot: MealSlot, status: MealStatus): WeekPlan {
         val start = parse(weekStart)
         db.transaction {
+            val meals = stored(start)
+            val meal = meals.firstOrNull { it.day == day && it.slot == slot }
             q.setStatus(status.name, userId, start.toString(), day.toLong(), slot.name)
-            val eaten = stored(start).firstOrNull { it.day == day && it.slot == slot }?.takeIf { status == MealStatus.EATEN }
-            if (eaten != null) {
-                val used = recipes.linesWithIngredients(listOf(eaten.recipeId))[eaten.recipeId]?.lines.orEmpty().mapNotNull { it.second?.id }
-                ingredients.useUp(used.distinct(), start)
+            if (meal != null && status == MealStatus.EATEN && meal.status != MealStatus.EATEN) {
+                ingredients.useUp(gramsCooked(meal, meals), start)
             }
         }
         return view(start)
+    }
+
+    /**
+     * What cooking [meal] took from the pantry, by ingredient id ([gramsUsed]). A dinner is cooked
+     * with its leftovers, so it takes the next day's leftover lunch's share too, and that lunch takes
+     * nothing more: whether the leftovers are eaten or not, they were cooked.
+     */
+    private fun gramsCooked(meal: PlannedMeal, week: List<PlannedMeal>): Map<Long, Double?> {
+        if (meal.leftover) return emptyMap()
+        val leftovers = week.filter { it.leftover && it.recipeId == meal.recipeId && it.day == meal.day + 1 && it.slot == MealSlot.LUNCH }
+        val recipe = recipes.linesWithIngredients(listOf(meal.recipeId))[meal.recipeId] ?: return emptyMap()
+        return gramsUsed(recipe, meal.portions + leftovers.sumOf { it.portions })
     }
 
     /** The meals planned for one date; the plan week is the one starting on that date's Monday. */
@@ -264,26 +277,36 @@ class PlanRepository(
 
     /**
      * Ticks an item off, or back on. A buy-ahead item ticked is on hand from next week, a stock-up
-     * item from this week; un-ticking takes that back (see [IngredientRepository.putOnHandFrom]).
+     * item from this week, in the amount the list advises buying; un-ticking takes that back (see
+     * [IngredientRepository.putOnHandFrom]).
      */
     fun setChecked(weekStart: String, check: ShoppingCheck): ShoppingList {
         val start = parse(weekStart)
         require(!check.key.startsWith(DISMISSED_PREFIX)) { "Groups are dismissed at /shopping/dismissed/{group}" }
+        val bought = if (check.checked) adviceItem(weekStart, check.key) else null
         db.transaction {
-            onHandFromTick(start, check)
+            onHandFromTick(start, check, bought?.grams)
             if (check.checked) q.insertCheck(userId, start.toString(), check.key) else q.deleteCheck(userId, start.toString(), check.key)
         }
         return shoppingList(weekStart)
     }
 
-    private fun onHandFromTick(start: LocalDate, check: ShoppingCheck) {
+    /** The buy-ahead or stock-up item under [key] on the week's list as it is; null for any other key. */
+    private fun adviceItem(weekStart: String, key: String): ShoppingItem? {
+        if (!key.startsWith(ShoppingAdvisor.AHEAD_PREFIX) && !key.startsWith(ShoppingAdvisor.STOCK_PREFIX)) return null
+        val list = shoppingList(weekStart)
+        return (list.buyAhead + list.stockUp).firstOrNull { it.key == key }
+    }
+
+    /** [grams] is the amount bought; null when not known, such as for an item the list no longer advises. */
+    private fun onHandFromTick(start: LocalDate, check: ShoppingCheck, grams: Double?) {
         val (id, from) = when {
             check.key.startsWith(ShoppingAdvisor.AHEAD_PREFIX) -> ingredientIn(check.key, ShoppingAdvisor.AHEAD_PREFIX) to start.plusDays(DAYS.toLong())
             check.key.startsWith(ShoppingAdvisor.STOCK_PREFIX) -> ingredientIn(check.key, ShoppingAdvisor.STOCK_PREFIX) to start
             else -> return
         }
         // Both refuse an ingredient of another account (NotFoundException), before anything is stored.
-        if (check.checked) ingredients.putOnHandFrom(id, from) else ingredients.takeBackOnHand(id, from)
+        if (check.checked) ingredients.putOnHandFrom(id, from, grams) else ingredients.takeBackOnHand(id, from)
     }
 
     private fun ingredientIn(key: String, prefix: String): Long =

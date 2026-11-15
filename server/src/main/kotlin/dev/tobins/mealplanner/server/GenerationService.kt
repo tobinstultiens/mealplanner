@@ -9,7 +9,9 @@ import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.server.generation.GeneratedRecipe
 import dev.tobins.mealplanner.server.generation.GenerationContext
 import dev.tobins.mealplanner.server.generation.RecipeGenerator
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 import kotlin.math.roundToInt
 
 /** Gathers what a generator should know, runs it, and stores the result as a GENERATED recipe. */
@@ -36,6 +38,8 @@ class GenerationService(
         val targets = profiles.state().targets
             ?: throw ConflictException("Set up your profile first: a recipe is sized to your daily targets")
         val pantry = ingredients.pantry()
+        // What was bought ahead for a later week is at home, but meant for that week's meals.
+        val onHandNow = ingredients.onHandFor(today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)))
         val names = ingredients.list().associate { it.id to it.name }
         val inUse = shops()
         val onOffer = offers.byIngredient(today, today.plusDays(6), ingredients.matchTerms())
@@ -48,7 +52,7 @@ class GenerationService(
             proteinPerServing = (targets.proteinG * request.slot.share).roundToInt(),
             servings = servingsFor(request.slot),
             staples = pantry.staples.map { it.name },
-            onHand = pantry.onHand.map { it.name },
+            onHand = pantry.onHand.filter { it.id in onHandNow }.map { it.name },
             onOffer = onOffer.sorted(),
             recent = plans.recentTitles(today),
             existing = recipes.allTitles(),

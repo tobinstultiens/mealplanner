@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.FoodDataset
 import dev.tobins.mealplanner.api.Nutrition
 import dev.tobins.mealplanner.server.db.Database
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import dev.tobins.mealplanner.server.db.Food as FoodRow
 
 /**
@@ -15,18 +16,34 @@ import dev.tobins.mealplanner.server.db.Food as FoodRow
 class FoodRepository(private val db: Database) {
     private val q = db.foodQueries
 
-    /** All foods, cached: the dataset is small (about 2,300 rows) and only changes on import. */
-    @Volatile
-    private var cache: List<Food>? = null
+    /** The foods as loaded, by NEVO code too; [version] counts the imports, so a load from before one is never kept. */
+    private class Loaded(val version: Long, val all: List<Food>?) {
+        val byCode: Map<Int, Food> = all.orEmpty().associateBy { it.nevoCode }
+    }
 
-    fun all(): List<Food> = cache ?: q.selectAllFoods().executeAsList().map { it.toFood() }.also { cache = it }
+    /**
+     * All foods, cached: the dataset is small (about 2,300 rows) and only changes on import. Every
+     * ingredient of every list and plan is looked up here, so a query each would be most of their work.
+     */
+    private val cache = AtomicReference(Loaded(0, null))
+
+    private fun loaded(): Loaded {
+        val current = cache.get()
+        if (current.all != null) return current
+        val fresh = Loaded(current.version, q.selectAllFoods().executeAsList().map { it.toFood() })
+        // Kept only when no import finished meanwhile: then it might be from before that import.
+        cache.compareAndSet(current, fresh)
+        return fresh
+    }
+
+    fun all(): List<Food> = loaded().all.orEmpty()
 
     fun dataset(): FoodDataset = FoodDataset(
         foodCount = q.countFoods().executeAsOne().toInt(),
         reference = q.selectMeta(VERSION_KEY).executeAsOneOrNull()?.let(::referenceFor),
     )
 
-    fun find(nevoCode: Int): Food? = q.selectFood(nevoCode.toLong()).executeAsOneOrNull()?.toFood()
+    fun find(nevoCode: Int): Food? = loaded().byCode[nevoCode]
 
     /**
      * Foods whose Dutch name, English name or synonym contains every word of [query].
@@ -101,7 +118,7 @@ class FoodRepository(private val db: Database) {
             }
             rows.firstOrNull()?.let { q.upsertMeta(VERSION_KEY, it[version]) }
         }
-        cache = null
+        cache.updateAndGet { Loaded(it.version + 1, null) }
         return rows.size
     }
 
