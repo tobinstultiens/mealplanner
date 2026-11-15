@@ -230,6 +230,14 @@ show as needing more, and are not listed when their row goes. What is remembered
 server has it when the tick arrives, so a tick an app sends late (offline first) remembers the plan of
 that moment.
 
+**What the app shows of it.** A ticked row whose need grew since it was bought (the weight by more
+than 5 % and at least 25 g, or at least one more piece) is shown open, with `600 g more (800 g
+bought)`, and counts as not ticked in the progress line, the sections and shopping mode's Done
+groups; tapping it un-ticks and ticks it in one step, so the server remembers the new amount. A
+row without bought amounts is a plain tick. `noLongerNeeded` is the group "Bought, no longer
+needed" below the list, with "Use it up" (puts the ingredient on hand, catalogue ingredients only)
+and "Remove" (un-ticks it).
+
 **Ticks in the app.** A tick shows at once and is stored on the device before it is sent
 (`ShoppingCache`); it is taken off when the server has it. The app keeps the list's state for as
 long as it is logged in (`ShoppingSession`), so leaving the Shopping screen for a recipe, another

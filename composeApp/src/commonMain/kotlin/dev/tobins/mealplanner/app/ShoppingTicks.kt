@@ -110,10 +110,13 @@ internal val Load.Failed.refused: Boolean
 
 /**
  * The list with [ticks] (checked or not, by item key) laid over every group that can be ticked:
- * this week's items and the buy-ahead and stock-up advice.
+ * this week's items and the buy-ahead and stock-up advice; an un-ticked row leaves the group of
+ * bought items no meal needs any more.
  */
 internal fun ShoppingList.withTicks(ticks: Map<String, Boolean>): ShoppingList {
     if (ticks.isEmpty()) return this
     fun List<ShoppingItem>.ticked() = map { item -> ticks[item.key]?.let { item.copy(checked = it) } ?: item }
-    return copy(items = items.ticked(), buyAhead = buyAhead.ticked(), stockUp = stockUp.ticked())
+    // An un-ticked row of the bought-but-no-longer-needed group goes at once, as the server takes it off.
+    val stillBought = noLongerNeeded.filter { ticks[it.key] != false }
+    return copy(items = items.ticked(), buyAhead = buyAhead.ticked(), stockUp = stockUp.ticked(), noLongerNeeded = stillBought)
 }

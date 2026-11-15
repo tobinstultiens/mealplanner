@@ -153,8 +153,8 @@ class FakeBackend(
         if (emptyWeek) return ShoppingList(weekStart, emptyList(), emptyList())
         // In walking order, as the server sends it: by shop section, then by name. The regular price is the
         // amount needed at the price per kg of `prices`; the pepper, counted in pieces only, has none.
-        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String?, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null, knownGrams: Double? = null, otherAmounts: List<String> = emptyList()) =
-            ShoppingItem(key, name, grams, pieces, section.title, listOfNotNull(recipe), onHand = false, checked = checked, knownGrams = knownGrams, otherAmounts = otherAmounts, offers = offers, imageUrl = imageUrl, regularPrice = regularPrice)
+        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String?, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null, knownGrams: Double? = null, otherAmounts: List<String> = emptyList(), boughtGrams: Double? = null) =
+            ShoppingItem(key, name, grams, pieces, section.title, listOfNotNull(recipe), onHand = false, checked = checked, knownGrams = knownGrams, otherAmounts = otherAmounts, offers = offers, imageUrl = imageUrl, regularPrice = regularPrice, boughtGrams = boughtGrams)
         // Offers that end this week, for the advice: with their share already worked out, as the server sends them.
         fun deal(store: Store, title: String, deal: String, price: Double, paidShare: Double) =
             Offer(store, title, deal, price, null, null, null, "2026-11-16", "2026-11-22", paidShare = paidShare)
@@ -167,8 +167,9 @@ class FakeBackend(
                 // Weighed in one recipe and counted in bags in another: the weight is known only in part.
                 item("spinach", "Spinach", null, 1.0, ShopSection.FRUIT_VEG, chicken, knownGrams = 600.0, otherAmounts = listOf("1 bag")),
                 item(
+                    // Bought for the 800 g a reroll needed; the meals need 1.4 kg now: 600 g more.
                     "chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true,
-                    offers = listOf(offerList[1].copy(paidShare = 0.75)), imageUrl = offerList[1].imageUrl, regularPrice = 13.97,
+                    offers = listOf(offerList[1].copy(paidShare = 0.75)), imageUrl = offerList[1].imageUrl, regularPrice = 13.97, boughtGrams = 800.0,
                 ),
                 item("feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea, offers = listOf(offerList[2].copy(paidShare = 0.5)), imageUrl = offerList[2].imageUrl, regularPrice = 4.60),
                 // Lidl's second week starts on Thursday, two days after the fixed "today": a badge with its day, nothing in the saving.
@@ -181,6 +182,8 @@ class FakeBackend(
                 item("x:1", "Coffee", null, null, ShopSection.DRINKS, null),
                 item("x:2", "Birthday candles", null, null, ShopSection.OTHER, null),
             ),
+            // Bought, then the meal that needed it was swapped out.
+            noLongerNeeded = listOf(item("i31", "Broccoli", null, null, ShopSection.FRUIT_VEG, null, checked = true, boughtGrams = 500.0)),
             staples = listOf("Olive oil", "Salt"),
             toTaste = listOf("Black pepper", "Fresh parsley"),
             // Two meals of next week, provisional: one item for both, one for one; the second is ticked.

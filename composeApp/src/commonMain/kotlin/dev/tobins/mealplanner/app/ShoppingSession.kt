@@ -31,6 +31,9 @@ internal interface ShoppingServer {
     suspend fun addExtra(weekStart: String, name: String): Load<ShoppingList>
 
     suspend fun removeExtra(weekStart: String, id: Long): Load<ShoppingList>
+
+    /** Puts the ingredient on hand in the pantry. */
+    suspend fun useUp(ingredientId: Long): Load<Unit>
 }
 
 internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServer {
@@ -44,6 +47,8 @@ internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServe
     override suspend fun addExtra(weekStart: String, name: String) = load { addShoppingExtra(weekStart, name) }
 
     override suspend fun removeExtra(weekStart: String, id: Long) = load { removeShoppingExtra(weekStart, id) }
+
+    override suspend fun useUp(ingredientId: Long) = load { setOnHand(ingredientId, true); Unit }
 }
 
 /** The id of an own item, the number in its key `x:<id>`; null for a row that comes from the plan. */
@@ -194,6 +199,55 @@ internal class ShoppingSession(
 
     /** The user ticks or un-ticks an item of the week shown: shown at once, kept, sent in turn. */
     fun tick(key: String, checked: Boolean) = ticksOf(weekStart).choose(key, checked)
+
+    /**
+     * The user ticks a row again whose need grew since it was bought: the server keeps what a tick
+     * said first, so the row is un-ticked and ticked in one step, and then remembers the new amount.
+     * Not shown at once, as the amount comes from the server's answer; offline it is reported, not
+     * kept for later.
+     */
+    fun tickAgain(key: String) {
+        val week = weekStart
+        scope.launch {
+            turn.withLock {
+                var answer: ShoppingList? = null
+                for (checked in listOf(false, true)) {
+                    when (val result = timed { server.check(week, key, checked) }) {
+                        is Load.Ready -> answer = result.value
+                        is Load.Failed -> {
+                            waitingNotices += Notice(Msg.TICK_FAILED, result.message)
+                            break
+                        }
+                        Load.Loading -> Unit
+                    }
+                }
+                answer?.let {
+                    cache.save(it, nowIso())
+                    display(week, ticksOf(week).reset(it))
+                }
+            }
+        }
+    }
+
+    /**
+     * Puts the ingredient of a bought row that no meal needs any more on hand, so that the planner
+     * prefers meals that use it; the list is fetched again. Only rows of catalogue ingredients
+     * (key `i<id>`) have one to put on hand.
+     */
+    fun useUp(key: String) {
+        val id = key.takeIf { it.startsWith("i") }?.drop(1)?.toLongOrNull() ?: return
+        val week = weekStart
+        scope.launch {
+            turn.withLock {
+                val result = withTimeoutOrNull(TIME_LIMIT) { server.useUp(id) } ?: Load.Failed(Strings.current(Msg.NO_ANSWER))
+                when (result) {
+                    is Load.Ready -> load(week)
+                    is Load.Failed -> waitingNotices += Notice(Msg.USE_UP_FAILED, result.message)
+                    Load.Loading -> Unit
+                }
+            }
+        }
+    }
 
     /** Hides one advice group for the week, or shows it again; the list comes back from the server. */
     fun dismiss(group: ShoppingAdviceGroup, dismissed: Boolean) {
