@@ -44,10 +44,27 @@ A GraphQL endpoint (`www.jumbo.com/api/graphql`) answers too, but its queries ar
 Each product tile on the offers page carries a `data-grid-data` attribute holding HTML-escaped
 JSON: `fullTitle`, `price.price`, `price.oldPrice`, `price.packaging.text`, `storeStartDate`,
 `storeEndDate` (Unix seconds), `category`, `keyfacts.wonCategoryPrimary`. The page holds only
-the first batch of tiles (47 when checked); paging through the rest is not explored yet. Only the
+the week's tiles (47 on 2026-11-13, 46 on 2026-11-15) and makes no paging request. Only the
 tile categories `Food` and `F+V` are used. Tiles without `storeStartDate` are regular-priced items
 with a Lidl Plus app discount, and are skipped. The offers page address
 (`/c/aanbiedingen/a10008785`) may change; the fetch reports an error when it finds no tiles.
+
+Looking for offers beyond this page (2026-11-13 and 2026-11-15, plain page fetches only) found
+none, so the page is the whole list as far as can be found:
+- `/q/api/search` and `/q/api/category` return no items for the offers category.
+- The page already holds both of the week's batches: on 2026-11-15, 45 food tiles (39 `Food`,
+  6 `F+V`), all dated, 32 from Monday 16 and 13 from Thursday 19, all until Sunday 22 November.
+  Offers starting later in the week are therefore not missed.
+- `/c/store/aanbiedingen/a10008785` is the same page (46 tiles, same products).
+- Next week's offers are not published yet: the folder `hah-wk48-2026` does not exist, and the
+  current folder `hah-wk47-2026` (`/l/folders/…/view/flyer/page/1`) is a script-rendered viewer
+  without tiles.
+- Other pages linked from the offers page: `/c/pre-black-week/s10080606` has 48 tiles, none with a
+  food category or store dates (webshop non-food); the supermarket assortment pages
+  (`assortiment-supermarkt-in-groente-en-fruit`, `-in-vlees`) hold no offer tiles (0 and 2
+  non-food). The navigation links only to non-food campaign pages.
+Next week's offers should appear on the same page once they start, so the fetch picks them up
+without changes.
 
 ## Regular prices (AH)
 
