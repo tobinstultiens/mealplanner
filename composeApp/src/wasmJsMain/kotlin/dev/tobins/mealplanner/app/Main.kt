@@ -14,11 +14,22 @@ private object LocalStorageSettings : SettingsStorage {
     override fun set(key: String, value: String) = localStorage.setItem(key, value)
 }
 
+/** The open screen lives in the address fragment; changing it adds no history entry, so the back button is untouched. */
+private object AddressRoutes : RouteStore {
+    override fun read(): String = window.location.hash
+
+    override fun write(hash: String) = window.history.replaceState(window.history.state, "", hash)
+}
+
+private const val ROUTE_AFTER_LOGIN = "route.afterLogin"
+
 /** Logs in in the same tab: the login page sends the browser back to the app's address. */
 private object SameTabLogin : LoginLauncher {
     override fun redirectUri(serverUrl: String): String = window.location.origin + "/"
 
     override fun open(url: String) {
+        // The trip through the login page drops the fragment; the app restores it on the way back.
+        window.sessionStorage.setItem(ROUTE_AFTER_LOGIN, window.location.hash)
         window.location.href = url
     }
 }
@@ -29,8 +40,12 @@ fun main() {
     val defaults = ServerSettings(url = window.location.origin)
     // Coming back from the login page: hand the answer to the app and tidy the address bar.
     val callback = window.location.href.takeIf { "code=" in it || "error=" in it }
-    if (callback != null) window.history.replaceState(null, "", window.location.pathname)
+    if (callback != null) {
+        val route = window.sessionStorage.getItem(ROUTE_AFTER_LOGIN).orEmpty()
+        window.sessionStorage.removeItem(ROUTE_AFTER_LOGIN)
+        window.history.replaceState(null, "", window.location.pathname + route)
+    }
     ComposeViewport(document.body!!) {
-        App(defaults, LocalStorageSettings, SameTabLogin, listOfNotNull(callback).asFlow())
+        App(defaults, LocalStorageSettings, SameTabLogin, listOfNotNull(callback).asFlow(), routes = AddressRoutes)
     }
 }

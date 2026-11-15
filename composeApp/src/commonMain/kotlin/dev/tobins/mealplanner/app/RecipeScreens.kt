@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -361,41 +362,46 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                             scope.launch { (load { api.saveRoutines(updated) } as? Load.Ready)?.let { routines = it.value } }
                         }
                     }
-                    if (recipe.ingredients.isEmpty()) {
-                        Text(
-                            t(Msg.NO_STRUCTURED_INGREDIENTS),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        Text(t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
-                        var group: String? = null
-                        for (mapped in recipe.ingredients) {
-                            val line = mapped.line
-                            if (line.group != group) {
-                                group = line.group
-                                group?.let { SectionHeader(it) }
-                            }
-                            Column {
-                                Text("•  ${line.displayText(t.locale)}")
-                                mapped.ingredientName?.let { name ->
-                                    Text(
-                                        "     $name" + when {
-                                            mapped.negligible -> " · " + t(Msg.NOT_COUNTED)
-                                            mapped.grams != null -> " · ${formatGrams(mapped.grams, t.locale)}"
-                                            mapped.line.amount == null -> ""
-                                            else -> " · " + t(Msg.WEIGHT_UNKNOWN)
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                    // The reading content can be selected and copied; the controls above stay out of it.
+                    SelectionContainer {
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
+                            if (recipe.ingredients.isEmpty()) {
+                                Text(
+                                    t(Msg.NO_STRUCTURED_INGREDIENTS),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                Text(t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
+                                var group: String? = null
+                                for (mapped in recipe.ingredients) {
+                                    val line = mapped.line
+                                    if (line.group != group) {
+                                        group = line.group
+                                        group?.let { SectionHeader(it) }
+                                    }
+                                    Column {
+                                        Text("•  ${line.displayText(t.locale)}")
+                                        mapped.ingredientName?.let { name ->
+                                            Text(
+                                                "     $name" + when {
+                                                    mapped.negligible -> " · " + t(Msg.NOT_COUNTED)
+                                                    mapped.grams != null -> " · ${formatGrams(mapped.grams, t.locale)}"
+                                                    mapped.line.amount == null -> ""
+                                                    else -> " · " + t(Msg.WEIGHT_UNKNOWN)
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
                                 }
                             }
+                            if (recipe.instructions.isNotBlank()) {
+                                HorizontalDivider()
+                                MarkdownText(recipe.instructions)
+                            }
                         }
-                    }
-                    if (recipe.instructions.isNotBlank()) {
-                        HorizontalDivider()
-                        MarkdownText(recipe.instructions)
                     }
                 }
             }

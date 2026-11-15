@@ -8,9 +8,29 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <title>Meal planner</title>
     <style>
-        html, body { height: 100%; margin: 0; background: #f7fbf1; }
-        @media (prefers-color-scheme: dark) { html, body { background: #10140f; } }
+        /* The page's colour until the app has drawn itself: the device's, or the choice made in Settings (see the script below). */
+        :root { --page: #f7fbf1; }
+        @media (prefers-color-scheme: dark) { :root { --page: #10140f; } }
+        :root[data-theme="light"] { --page: #f7fbf1; }
+        :root[data-theme="dark"] { --page: #10140f; }
+        html, body { height: 100%; margin: 0; background: var(--page); }
     </style>
+    <script>
+        // The app keeps the Light/Dark choice in localStorage under "theme" (SettingsStorage.themeMode) as
+        // LIGHT, DARK or SYSTEM, and writes it as soon as it changes, so this reads the current one.
+        try {
+            var theme = localStorage.getItem("theme");
+            if (theme === "LIGHT" || theme === "DARK") {
+                theme = theme.toLowerCase();
+                document.documentElement.dataset.theme = theme;
+                // Browser chrome (the address bar on a phone) follows too.
+                document.querySelectorAll('meta[name="theme-color"]').forEach(function (meta) {
+                    if (meta.media.indexOf(theme) < 0) meta.remove();
+                    else meta.removeAttribute("media");
+                });
+            }
+        } catch (e) { /* storage blocked: the device's setting applies */ }
+    </script>
     <script type="application/javascript" src="composeApp.js"></script>
 </head>
 <body></body>

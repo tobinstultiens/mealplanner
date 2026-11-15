@@ -2,7 +2,22 @@ package dev.tobins.mealplanner.app
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.requestFocus
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -44,6 +59,22 @@ private fun shopping(api: ApiClient, shoppingMode: Boolean) {
     val storage = remember { MemorySettingsStorage().also { it.saveShoppingMode(shoppingMode) } }
     ShoppingScreen(api, ShoppingCache(storage), storage, {}, {})
 }
+
+/** Controls of three kinds; the test gives the one tagged [FOCUSED] keyboard focus, to see the ring on each. */
+@Composable
+private fun focusRing(focused: Int) {
+    // Controls only take focus when the last input was the keyboard, as when someone tabs through the screen.
+    @OptIn(ExperimentalComposeUiApi::class)
+    LocalInputModeManager.current.requestInputMode(InputMode.Keyboard)
+    fun Modifier.tagged(index: Int) = if (index == focused) testTag(FOCUSED) else this
+    Column(Modifier.fillMaxSize().focusRing().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Button(onClick = {}, Modifier.tagged(0)) { Text("Save") }
+        OutlinedButton(onClick = {}, Modifier.tagged(1)) { Text("Cancel") }
+        Row { IconButton(onClick = {}, Modifier.tagged(2)) { Icon(AppIcons.Edit, contentDescription = "Edit") } }
+    }
+}
+
+private const val FOCUSED = "focused"
 
 /** The whole app as it starts for someone who is logged in: the bottom bar lives here, not in a screen. */
 @Composable
@@ -90,6 +121,9 @@ enum class Shot(
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
+    FOCUS_FILLED_BUTTON(heightDp = 200, content = { _, _ -> focusRing(0) }),
+    FOCUS_OUTLINED_BUTTON(heightDp = 200, content = { _, _ -> focusRing(1) }),
+    FOCUS_ICON_BUTTON(heightDp = 200, content = { _, _ -> focusRing(2) }),
     SHELL(content = { _, settings -> shell(settings) }),
     SETTINGS(heightDp = 900, content = { _, _ ->
         ServerSettingsScreen(
@@ -162,6 +196,10 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
             // Some screens load a second thing after the first; give it a moment, then let the UI settle.
             Thread.sleep(300)
             compose.waitForIdle()
+            if (shot.name.startsWith("FOCUS")) {
+                compose.onNodeWithTag(FOCUSED).requestFocus().assertIsFocused()
+                compose.waitForIdle()
+            }
             compose.onNodeWithTag(FRAME).captureRoboImage(
                 filePath = "src/androidHostTest/screenshots/${shot.name.lowercase()}_${look.name}.png",
                 roborazziOptions = options(),
