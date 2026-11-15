@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,15 +86,31 @@ fun App(
         ApiClient(settings, session) {
             val current = storage.session() ?: return@ApiClient null
             login.refresh(settings.url, current) ?: run {
+                // Whoever logs in next may be someone else: what was the account's goes, as on logging out.
+                // The shopping session of this client is closed when the client is replaced; until then
+                // its requests fail for want of a login, and it stores nothing over the cleared copy.
                 if (storage.session() == null) {
-                    storage.clearShops()
+                    storage.logOut()
                     session = null
                 }
                 null
             }
         }
     }
-    val shoppingCache = remember(storage) { ShoppingCache(storage) }
+    // The shopping list's state lives as long as the client, so one login: leaving the Shopping
+    // screen cancels none of its requests, and the next account starts with a session of its own.
+    // Its place in the list is kept in the saved state, as the screen's own state was before.
+    fun shoppingSession(place: ShoppingSession.Place = ShoppingSession.Place()) =
+        ShoppingSession(scope, api.shoppingServer(), ShoppingCache(storage), place = place)
+    val shopping = rememberSaveable(api, storage, saver = shoppingPlaceSaver(::shoppingSession)) { shoppingSession() }
+    DisposableEffect(shopping) { onDispose { shopping.close() } }
+
+    /** Logs out; the shopping requests still going stop first, so nothing of the account is written back afterwards. */
+    fun endSession() {
+        shopping.close()
+        storage.logOut()
+        session = null
+    }
     val accountShops = remember(api, storage) { AccountShops(storage, api::shops, api::saveShops) }
     // On start, so a device's choice of stores from before they were an account setting reaches
     // the planner even before the shopping list is opened.
@@ -190,10 +207,7 @@ fun App(
                                 .onFailure { loginError = strings(Msg.LOGIN_START_FAILED, it.message) }
                         }
                     },
-                    onLogout = {
-                        storage.logOut()
-                        session = null
-                    },
+                    onLogout = ::endSession,
                     updater = updater,
                     theme = theme,
                     onTheme = {
@@ -220,10 +234,7 @@ fun App(
                     saveShoppingAdvice = api::saveShoppingAdvice,
                     onSave = {
                         // Another server has its own accounts: the session doesn't carry over.
-                        if (it.url != settings.url) {
-                            storage.logOut()
-                            session = null
-                        }
+                        if (it.url != settings.url) endSession()
                         storage.saveServerSettings(it)
                         settings = it
                         if (session != null) serverOpen = false
@@ -294,7 +305,7 @@ fun App(
                             when (tab) {
                                 Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenPlan = { tab = Tab.PLAN })
                                 Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { profileOpen = true })
-                                Tab.SHOPPING -> ShoppingScreen(api, shoppingCache, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
+                                Tab.SHOPPING -> ShoppingScreen(shopping, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
                                 Tab.RECIPES -> RecipeListScreen(
                                     api,
                                     onOpen = { openRecipeId = it },
@@ -317,6 +328,14 @@ fun App(
     }
     }
 }
+
+/** Saves a shopping session's [ShoppingSession.Place] as values Android can keep, and makes a new session at that place. */
+private fun shoppingPlaceSaver(create: (ShoppingSession.Place) -> ShoppingSession) = listSaver<ShoppingSession, Any?>(
+    save = { with(it.place) { listOf(chosenWeek, ArrayList(expanded), scrollIndex, scrollOffset) } },
+    restore = { (week, expanded, index, offset) ->
+        create(ShoppingSession.Place(week as String?, (expanded as List<*>).map { it as String }.toSet(), index as Int, offset as Int))
+    },
+)
 
 /** The five tabs; the icon is filled in for the one that is open. */
 enum class Tab(val slug: String, val label: Msg, val icon: ImageVector, val selectedIcon: ImageVector) {
