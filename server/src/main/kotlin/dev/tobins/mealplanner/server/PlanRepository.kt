@@ -165,17 +165,6 @@ class PlanRepository(
         ingredients.useUp(MealRef(start, meal.day, meal.slot), gramsUsed(recipe, meal.portions))
     }
 
-    /** The next day's leftover lunch cooked with [meal], when it is a dinner that has one. */
-    private fun leftoversOf(meal: PlannedMeal, week: List<PlannedMeal>): PlannedMeal? = week.firstOrNull {
-        meal.slot == MealSlot.DINNER && !meal.leftover &&
-            it.leftover && it.recipeId == meal.recipeId && it.day == meal.day + 1 && it.slot == MealSlot.LUNCH
-    }
-
-    /** The dinner [meal] is the leftovers of, when it is a leftover lunch and that dinner is in the plan. */
-    private fun dinnerOf(meal: PlannedMeal, week: List<PlannedMeal>): PlannedMeal? = week.firstOrNull {
-        meal.slot == MealSlot.LUNCH && meal.leftover &&
-            !it.leftover && it.recipeId == meal.recipeId && it.day == meal.day - 1 && it.slot == MealSlot.DINNER
-    }
 
     /** The meals planned for one date; the plan week is the one starting on that date's Monday. */
     fun mealsOn(date: LocalDate): Triple<LocalDate, Int, List<PlannedMeal>> {
@@ -275,6 +264,35 @@ class PlanRepository(
     companion object {
         /** The days of a plan week, Monday first. */
         const val DAYS = 7
+
+        /**
+         * The meals of [week] whose portions are still to be cooked, which is what is still to buy
+         * for: the shopping list's [dev.tobins.mealplanner.api.ShoppingItem.toComeGrams]. It goes by
+         * the rules of [eatFromStock], so the list never counts a share the stock went down for: an
+         * eaten meal is cooked, and so is a leftover lunch whose dinner was eaten; a skipped meal is
+         * not cooked, unless it is a leftover lunch whose dinner still is, as that dinner is cooked
+         * with its leftovers (and takes their share when eaten). Un-eating a meal brings it back.
+         */
+        fun toCook(week: List<PlannedMeal>): List<PlannedMeal> = week.filter { meal ->
+            val dinner = dinnerOf(meal, week)
+            when {
+                meal.status == MealStatus.EATEN -> false
+                dinner == null -> meal.status == MealStatus.PLANNED
+                else -> dinner.status != MealStatus.EATEN && MealStatus.PLANNED in setOf(meal.status, dinner.status)
+            }
+        }
+
+        /** The next day's leftover lunch cooked with [meal], when it is a dinner that has one. */
+        private fun leftoversOf(meal: PlannedMeal, week: List<PlannedMeal>): PlannedMeal? = week.firstOrNull {
+            meal.slot == MealSlot.DINNER && !meal.leftover &&
+                it.leftover && it.recipeId == meal.recipeId && it.day == meal.day + 1 && it.slot == MealSlot.LUNCH
+        }
+
+        /** The dinner [meal] is the leftovers of, when it is a leftover lunch and that dinner is in the plan. */
+        private fun dinnerOf(meal: PlannedMeal, week: List<PlannedMeal>): PlannedMeal? = week.firstOrNull {
+            meal.slot == MealSlot.LUNCH && meal.leftover &&
+                !it.leftover && it.recipeId == meal.recipeId && it.day == meal.day - 1 && it.slot == MealSlot.DINNER
+        }
     }
 }
 

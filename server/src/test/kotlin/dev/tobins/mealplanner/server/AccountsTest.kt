@@ -484,6 +484,45 @@ class AccountsTest {
     }
 
     @Test
+    fun whatIsStillToBuyGoesByTheAccountsOwnMealsAndStock() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val week = "2026-11-16"
+        // Each has the same two stews this week (400 g of beef each); only Alice has 500 g of beef at home.
+        val clients = listOf("alice", "bob").associateWith { name ->
+            val client = clientFor(name)
+            client.put("/api/profile") { setBody(Profile(80.0, 175.0, 40, Sex.FEMALE, ActivityLevel.LIGHT)) }
+            val beef = client.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+            val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+            val id = db.userQueries.selectBySubject("sub-$name").executeAsOne().id
+            for (day in 0L..1L) db.planQueries.upsertMeal(id, week, day, "DINNER", stew.id, stew.title, 2.0, 800.0, 40.0, 0, 0, "PLANNED")
+            if (name == "alice") IngredientRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 500.0)
+            client
+        }
+        // What each is told the meals to come need, and what is at home: their own amounts only.
+        suspend fun shown(name: String) =
+            clients.getValue(name).get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef" }
+                .let { it.toComeGrams to it.onHandGrams }
+        suspend fun eat(name: String, day: Int) = assertEquals(
+            HttpStatusCode.OK,
+            clients.getValue(name).put("/api/plans/$week/meals/$day/dinner/status") { setBody(MealStatus.EATEN) }.status,
+        )
+        assertEquals(800.0 to 500.0, shown("alice"))
+        assertEquals(800.0 to null, shown("bob"))
+
+        // Alice's Monday stew eaten from her beef: 400 g to come for her, and Bob's list is as it was.
+        eat("alice", 0)
+        assertEquals(400.0 to 100.0, shown("alice"))
+        assertEquals(800.0 to null, shown("bob"), "Alice's meal is not his")
+        // Bob eats both of his, without any stock: nothing to come for him, nothing changes for her.
+        eat("bob", 0)
+        eat("bob", 1)
+        assertEquals(0.0 to null, shown("bob"))
+        assertEquals(400.0 to 100.0, shown("alice"))
+    }
+
+    @Test
     fun accountNamesAndLoginConfig() = testApplication {
         start()
         assertEquals(Me("alice", "Alice"), clientFor("alice").get("/api/me").body<Me>())

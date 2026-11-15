@@ -34,6 +34,12 @@ fun ShoppingItem.bestOffer(shops: Set<Store>, today: String): Offer? {
 fun ShoppingItem.savingOffer(shops: Set<Store>, today: String): Offer? = bestOffer(shops, today)?.takeIf { it.paidShare != null }
 
 /**
+ * The store whose group this item is in: that of its [savingOffer], but none for a row with nothing
+ * left to buy ([covered]), as there is nothing to go there for.
+ */
+private fun ShoppingItem.groupStore(shops: Set<Store>, today: String): Store? = if (covered) null else savingOffer(shops, today)?.store
+
+/**
  * The full deals of the item's offers in [shops] for the row's snackbar, one per line: those valid
  * today as they are, those that start later with their day. Ended offers are left out, as they
  * are everywhere on the list.
@@ -48,25 +54,34 @@ fun ShoppingItem.dealText(shops: Set<Store>, today: String, strings: Strings): S
 
 /**
  * What buying this item with [offer] saves in euros: its regular price times the share the offer
- * takes off. The regular price is AH's, so at another store this is an estimate. It assumes the
- * deal applies to the amount needed, which [savingOf] checks against the packs. Null when the
- * server could not work out either part.
+ * takes off, for the part of the need still to buy ([leftToBuyGrams], ticked or not, so ticking a
+ * row changes nothing; nothing for a row the stock or the meals done cover). The regular
+ * price is AH's, so at another store this is an estimate. It assumes the deal applies to that
+ * amount, which [savingOf] checks against the packs. Null when the server could not work out
+ * either part.
  */
 fun ShoppingItem.saving(offer: Offer): Double? {
     val regular = regularPrice ?: return null
     val paid = offer.paidShare ?: return null
-    return regular * (1 - paid)
+    return regular * shareToBuy() * (1 - paid)
+}
+
+/** The share of the need ([ShoppingItem.grams]) still to buy ([leftToBuyGrams]); all of it when that is not known, as for advice. */
+private fun ShoppingItem.shareToBuy(): Double {
+    val toBuy = leftToBuyGrams() ?: return 1.0
+    val need = grams?.takeIf { it > 0 } ?: return 1.0
+    return (toBuy / need).coerceIn(0.0, 1.0)
 }
 
 /**
  * What [items] save together when each is bought with its preferred offer in [shops] on [today];
  * null when no saving is known, or it is less than a cent. An offer that only starts later saves
  * nothing today, so it is left out of the sum although its badge stays on the row. So is a deal
- * that wants more packs than the amount needs ("1+1 gratis" for one pack): the saving would only
- * be had by buying more than needed.
+ * that wants more packs than what is left to buy needs ("1+1 gratis" for one pack): the saving
+ * would only be had by buying more than needed.
  */
 fun savingOf(items: List<ShoppingItem>, shops: Set<Store>, today: String): Double? =
-    items.mapNotNull { item -> item.bestOffer(shops, today)?.takeIf { it.validOn(today) && item.packsToBuy(it)?.dealFits != false }?.let(item::saving) }.sum().takeIf { it >= 0.005 }
+    items.mapNotNull { item -> item.bestOffer(shops, today)?.takeIf { it.validOn(today) && item.packsLeftToBuy(it)?.dealFits != false }?.let(item::saving) }.sum().takeIf { it >= 0.005 }
 
 /** The items whose saving offer ([savingOffer]) is at [store], and what those offers save ([savingOf]). */
 data class StoreGroup(val store: Store, val items: List<ShoppingItem>, val saving: Double? = null) {
@@ -75,20 +90,24 @@ data class StoreGroup(val store: Store, val items: List<ShoppingItem>, val savin
 }
 
 /**
- * The list split by where to buy: a group per store for what saves most there this week, and
- * [anyStore] for everything without an offer known to save at a store in use, which any shop sells.
+ * The list split by where to buy: a group per store for what saves most there this week, [anyStore]
+ * for everything without an offer known to save at a store in use, which any shop sells, and
+ * [covered] for the rows with nothing left to buy. Those are in neither, so the groups' counts add
+ * up to what the progress line counts ([shoppingProgress]).
  */
-data class StoreOverview(val stores: List<StoreGroup>, val anyStore: List<ShoppingItem>)
+data class StoreOverview(val stores: List<StoreGroup>, val anyStore: List<ShoppingItem>, val covered: List<ShoppingItem> = emptyList())
 
 /**
- * Splits [items] by their saving offer among the stores in [shops]. Stores without items
- * get no group. Each item lands in exactly one group, in the order of the list.
+ * Splits [items] by their saving offer among the stores in [shops] ([groupStore]). Stores without
+ * items get no group. Each item lands in exactly one group, in the order of the list.
  */
 fun storeOverview(items: List<ShoppingItem>, shops: Set<Store>, today: String): StoreOverview {
-    val byStore = items.groupBy { it.savingOffer(shops, today)?.store }
+    val (covered, toBuy) = items.partition { it.covered }
+    val byStore = toBuy.groupBy { it.savingOffer(shops, today)?.store }
     return StoreOverview(
         stores = Store.entries.filter { it in shops }.mapNotNull { store -> byStore[store]?.let { StoreGroup(store, it, savingOf(it, shops, today)) } },
         anyStore = byStore[null].orEmpty(),
+        covered = covered,
     )
 }
 
@@ -110,10 +129,10 @@ data class StoreVisit(
 /**
  * The visit to [store]: its own offer items and everything without an offer, grouped by shop
  * section as in [shoppingSections]; the items whose saving offer is at another store in
- * [shops] are set apart as [StoreVisit.elsewhere].
+ * [shops] are set apart as [StoreVisit.elsewhere], unless nothing of them is left to buy.
  */
 fun storeVisit(items: List<ShoppingItem>, store: Store, shops: Set<Store>, today: String, shoppingMode: Boolean): StoreVisit {
-    val (here, elsewhere) = items.partition { (it.savingOffer(shops, today)?.store ?: store) == store }
+    val (here, elsewhere) = items.partition { (it.groupStore(shops, today) ?: store) == store }
     return StoreVisit(
         store,
         shoppingSections(here, shoppingMode),

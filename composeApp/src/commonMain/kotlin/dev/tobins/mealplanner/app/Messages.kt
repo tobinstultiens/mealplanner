@@ -381,7 +381,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     STAPLES_NOTE("Staples this plan uses (not on the list): {0}", "Basisproducten die dit plan gebruikt (niet op de lijst): {0}"),
     SHOPPING_MODE("Shopping mode", "Winkelmodus"),
     SHOPPING_MODE_HINT("Big rows, the screen stays on, ticked items step aside", "Grote rijen, het scherm blijft aan, afgevinkte producten gaan opzij"),
-    TICKED_COUNT("✓ {0} ticked", "✓ {0} afgevinkt"),
+    SECTION_DONE("✓ {0} done", "✓ {0} klaar"),
     DONE_COUNT("Done ({0})", "Klaar ({0})"),
     STORES_I_SHOP_AT("Stores I shop at", "Winkels waar ik kom"),
     SHOPS_NOTE(
@@ -402,6 +402,12 @@ enum class Msg(private val english: String, private val dutch: String) {
     ON_HAND_AMOUNT("{0} on hand", "{0} in huis"),
     ON_HAND_BUY("{0} on hand, buy {1}", "{0} in huis, koop {1}"),
     ON_HAND_ENOUGH("{0} on hand: enough", "{0} in huis: genoeg"),
+    ON_HAND_BUY_TO_COME("{0} on hand, buy {1} for the meals to come", "{0} in huis, koop {1} voor de maaltijden die nog komen"),
+    ON_HAND_ENOUGH_TO_COME("{0} on hand: enough for the meals to come", "{0} in huis: genoeg voor de maaltijden die nog komen"),
+    FOR_MEALS_TO_COME("For the meals to come", "Voor de maaltijden die nog komen"),
+    NOTHING_LEFT_HINT("On hand, or the meals that need it are done", "In huis, of de maaltijden die het nodig hebben zijn klaar"),
+    NOTHING_TO_COME("Nothing to buy: the meals that need it are done", "Niets te kopen: de maaltijden die het nodig hebben zijn klaar"),
+    NOTHING_LEFT_TO_BUY("Nothing left to buy", "Niets meer te kopen"),
     SHOW_DEAL("Show the deal", "Toon de aanbieding"),
     FOR_THIS_WEEK("For this week", "Voor deze week"),
     BUY_AHEAD_TITLE("Buy ahead for next week (on offer now)", "Nu kopen voor volgende week (nu in de aanbieding)"),
@@ -616,6 +622,10 @@ enum class Plural(
         "Onvolledig: {0} ingrediënt is nog niet meegeteld ({1}).", "Onvolledig: {0} ingrediënten zijn nog niet meegeteld ({1}).",
     ),
     ANY_STORE_ITEMS("Any store · {0} item", "Any store · {0} items", "Elke winkel · {0} product", "Elke winkel · {0} producten"),
+    NOTHING_LEFT_ITEMS(
+        "Nothing left to buy · {0} item", "Nothing left to buy · {0} items",
+        "Niets meer te kopen · {0} product", "Niets meer te kopen · {0} producten",
+    ),
     USED_IN_RECIPES("Used in {0} recipe, e.g. {1}", "Used in {0} recipes, e.g. {1}", "Gebruikt in {0} recept, bijv. {1}", "Gebruikt in {0} recepten, bijv. {1}"),
     // --- end of plurals
     ;

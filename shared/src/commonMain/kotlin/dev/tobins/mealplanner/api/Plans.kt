@@ -119,6 +119,17 @@ data class ShoppingItem(
      * without an amount), which is not none, and whenever [onHand] is false.
      */
     val onHandGrams: Double? = null,
+    /**
+     * On a row of what the week's meals need: the weight the meals still to cook need of it, the
+     * meals to come. A meal eaten, a meal skipped and a leftover lunch cooked with its eaten dinner
+     * need nothing more, as the stock went down for what they ate; [grams] stays the whole week's
+     * need, as before, and so does what a tick remembers. What is still to buy is this less
+     * [onHandGrams]. Exactly 0 when no meal still to cook uses it, whatever its unit (a row counted
+     * in pieces or without an amount too): nothing to buy. Null when it can't be told: some meal to
+     * come uses it but the need can't be weighed in full, or only without an amount; null too on
+     * own items, advice and [ShoppingList.noLongerNeeded].
+     */
+    val toComeGrams: Double? = null,
 )
 
 /**

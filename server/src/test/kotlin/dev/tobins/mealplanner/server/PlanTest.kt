@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RatingInput
@@ -298,6 +299,30 @@ class PlanTest {
         list = http.get("/api/plans/$week/shopping").body()
         assertTrue(list.items.none { it.key == beef.key })
         assertEquals(listOf("Beef raw"), list.staples)
+    }
+
+    @Test
+    fun theMealsStillToCookAreThoseWhoseShareTheStockStillHas() {
+        fun meal(day: Int, slot: MealSlot, status: MealStatus, leftover: Boolean = false, recipeId: Long = 1) =
+            PlannedMeal(day, slot, recipeId, "Stew", 2.0, 800.0, 40.0, leftover = leftover, status = status)
+        fun toCook(dinner: MealStatus, lunch: MealStatus) =
+            PlanRepository.toCook(listOf(meal(0, MealSlot.DINNER, dinner), meal(1, MealSlot.LUNCH, lunch, leftover = true))).map { it.slot }
+        val p = MealStatus.PLANNED
+        val e = MealStatus.EATEN
+        val s = MealStatus.SKIPPED
+
+        assertEquals(listOf(MealSlot.DINNER, MealSlot.LUNCH), toCook(p, p))
+        // Eaten, a dinner was cooked with its leftovers, whatever the lunch says.
+        assertEquals(emptyList(), toCook(e, p))
+        assertEquals(emptyList(), toCook(e, s))
+        // A lunch eaten first was cooked for itself; the dinner still is to cook.
+        assertEquals(listOf(MealSlot.DINNER), toCook(p, e))
+        // A skipped lunch is cooked with a dinner still to cook; a skipped dinner leaves the lunch to cook for itself.
+        assertEquals(listOf(MealSlot.DINNER, MealSlot.LUNCH), toCook(p, s))
+        assertEquals(listOf(MealSlot.LUNCH), toCook(s, p))
+        assertEquals(emptyList(), toCook(s, s))
+        // A leftover lunch of another recipe is no leftover of this dinner: on its own, skipped is not cooked.
+        assertEquals(listOf(MealSlot.DINNER), PlanRepository.toCook(listOf(meal(0, MealSlot.DINNER, p), meal(1, MealSlot.LUNCH, s, leftover = true, recipeId = 2))).map { it.slot })
     }
 
     @Test
