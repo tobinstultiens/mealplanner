@@ -124,7 +124,8 @@ and `boughtPieces` are optional fields of a row that stays `checked`, so older a
 come back un-ticked when the plan needs more, and `ShoppingList.noLongerNeeded` (bought items no meal needs
 any more) is a separate list, so they never take it for something to buy (`ShoppingTicksTest` decodes it
 with v0.1.2's types). How much is on hand came the same way (`ShoppingItem.onHandGrams`, and
-`Pantry.onHandGrams` as a map next to the `onHand` list those apps read). A tick still needs only its key, as
+`Pantry.onHandGrams` as a map next to the `onHand` list those apps read), and so did what is still to buy
+(`ShoppingItem.toBuyGrams`, next to `grams`, which keeps meaning the whole week's need). A tick still needs only its key, as
 those apps send it; the grams newer apps send with an advice tick (`ShoppingCheck.grams`) are optional and
 left out when unknown, so a server from before them, which refuses fields it does not know, still takes
 every other tick. Ticking a row again and using up a bought item came the other way round, as new routes

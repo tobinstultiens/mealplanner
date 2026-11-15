@@ -20,6 +20,8 @@ private const val MIN_MORE_GRAMS = 25.0
 /**
  * Whether the meals need more of this ticked row than was bought: the weight grew by more than 5 %
  * and at least 25 g, or the pieces (counted rounded up, as the list shows them) by at least one.
+ * Never more than the meals still to cook need less the stock ([ShoppingItem.toBuyGrams]): a meal
+ * eaten since was made with what was at home, so once its meals are done a row needs nothing more.
  * Null for a row that is not ticked, one that remembers no bought amount (a tick from before the
  * server kept it: no claim) and one whose amount is within a rounding step. The one rule behind
  * the row, the progress line and the sections, so they never disagree.
@@ -27,10 +29,12 @@ private const val MIN_MORE_GRAMS = 25.0
 fun ShoppingItem.moreNeeded(): MoreNeeded? {
     // An own item has no amounts to compare.
     if (!checked || extraId != null) return null
+    val left = toBuyGrams ?: Double.MAX_VALUE
+    if (left < SCRAP_GRAMS) return null
     val needed = grams ?: knownGrams
     val boughtWeight = boughtGrams
     if (needed != null && boughtWeight != null) {
-        val more = needed - boughtWeight
+        val more = minOf(needed - boughtWeight, left)
         if (more >= MIN_MORE_GRAMS && more > MORE_SHARE * boughtWeight) return MoreNeeded(grams = more, boughtGrams = boughtWeight)
     }
     val boughtCount = boughtPieces
@@ -42,8 +46,11 @@ fun ShoppingItem.moreNeeded(): MoreNeeded? {
     return null
 }
 
-/** Ticked and nothing more needed since: what counts as done in the progress line and the Done groups. */
+/** Ticked and nothing more needed since: what the row's checkbox shows, and what counts as ticked off in the progress line. */
 val ShoppingItem.done: Boolean get() = checked && moreNeeded() == null
+
+/** [done], or [covered]: nothing to buy for this row, so shopping mode's Done groups hold it. */
+val ShoppingItem.nothingLeftToBuy: Boolean get() = done || covered
 
 /** `600 g more (600 g bought)` or `2 more (3 bought)`. */
 fun MoreNeeded.text(strings: Strings): String =
@@ -51,8 +58,9 @@ fun MoreNeeded.text(strings: Strings): String =
     else strings(Msg.MORE_NEEDED, pieces ?: 0, boughtPieces ?: 0)
 
 /**
- * One shop section of the list as the screen shows it. With shopping mode on, ticked items sit
- * in [done]; with it off [done] is empty and [open] holds every item, in the server's order.
+ * One shop section of the list as the screen shows it. With shopping mode on, the items with
+ * nothing left to buy ([nothingLeftToBuy]) sit in [done]; with it off [done] is empty and [open]
+ * holds every item, in the server's order.
  */
 data class ShoppingSectionView(val title: String, val open: List<ShoppingItem>, val done: List<ShoppingItem>) {
     /** True when shopping mode is on and nothing is left to buy in this section. */
@@ -61,24 +69,29 @@ data class ShoppingSectionView(val title: String, val open: List<ShoppingItem>, 
 
 /**
  * Groups [items] by section, keeping the order of the list (the route through the shop). With
- * [shoppingMode] the ticked ones are split off so the rest stay together.
+ * [shoppingMode] the ones with nothing left to buy are split off so the rest stay together.
  */
 fun shoppingSections(items: List<ShoppingItem>, shoppingMode: Boolean): List<ShoppingSectionView> =
     items.groupBy { it.category }.map { (title, group) ->
         if (shoppingMode) {
-            val (done, open) = group.partition { it.done }
+            val (done, open) = group.partition { it.nothingLeftToBuy }
             ShoppingSectionView(title, open, done)
         } else {
             ShoppingSectionView(title, group, emptyList())
         }
     }
 
-/** `12 of 43 · 3 sections to go`, or `All 43 ticked off` when nothing is left. */
+/**
+ * `12 of 43 · 3 sections to go`, or `All 43 ticked off` when nothing is left. A row the stock or the
+ * meals done leave nothing to buy of ([covered]) is no item to buy, so it counts neither way.
+ */
 fun shoppingProgress(items: List<ShoppingItem>, strings: Strings): String {
-    val ticked = items.count { it.done }
-    if (ticked == items.size) return strings(Msg.ALL_TICKED_OFF, items.size)
-    val sectionsToGo = items.filter { !it.done }.map { it.category }.toSet().size
-    return strings.plural(Plural.SECTIONS_TO_GO, sectionsToGo, ticked, items.size)
+    val toBuy = items.filterNot { it.covered }
+    if (toBuy.isEmpty()) return strings(Msg.NOTHING_LEFT_TO_BUY)
+    val ticked = toBuy.count { it.done }
+    if (ticked == toBuy.size) return strings(Msg.ALL_TICKED_OFF, toBuy.size)
+    val sectionsToGo = toBuy.filter { !it.done }.map { it.category }.toSet().size
+    return strings.plural(Plural.SECTIONS_TO_GO, sectionsToGo, ticked, toBuy.size)
 }
 
 /**

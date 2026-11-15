@@ -54,7 +54,8 @@ class ShoppingListRepository(
      * leftovers included; staples are left out and only named as a reminder. Items come in
      * the order of the walk through the shop, by section and then by name; whether an item
      * is ticked or on hand does not move it; one on hand says how much is left of it when that is
-     * known ([ShoppingItem.onHandGrams]). The account's own items ([addExtra]) are among them,
+     * known ([ShoppingItem.onHandGrams]), and each says how much is still to buy for the meals still
+     * to cook ([ShoppingItem.toBuyGrams]). The account's own items ([addExtra]) are among them,
      * also when the week has no meals. Next to it, the advice of [ShoppingList.buyAhead] and
      * [ShoppingList.stockUp], unless switched off or dismissed for the week, and what was bought
      * that the meals no longer need ([ShoppingList.noLongerNeeded]).
@@ -63,7 +64,10 @@ class ShoppingListRepository(
         val start = parseWeekStart(weekStart)
         val meals = plans.meals(start)
         val sectionOf = sections()
-        val week = needsOf(meals, sectionOf)
+        val lines = recipes.linesWithIngredients(meals.map { it.recipeId })
+        val week = needsOf(meals, sectionOf, lines)
+        // The stock went down for the meals eaten, so what is still to buy goes by the meals still to cook.
+        val toCook = needsOf(PlanRepository.toCook(meals), sectionOf, lines).needs.associateBy { it.key }
         val ownRows = q.selectExtrasForWeek(userId, start.toString()).executeAsList()
         val own = ownNeeds(ownRows, sectionOf)
         val ticks = ticks(start)
@@ -82,6 +86,7 @@ class ShoppingListRepository(
             need.toItem(need.key, need.key in ticked, id in onHand, id?.let { offers[it] }.orEmpty(), id?.let { images[it] }, id?.let { perKg[it] })
                 .withBought(ticks[need.key])
                 .withStock(id, stock)
+                .copy(toBuyGrams = toBuyGrams(need, toCook[need.key], id, stock))
         }
 
         val wanted = advice()
@@ -122,9 +127,29 @@ class ShoppingListRepository(
         )
     }
 
-    /** What the week's [meals] need, in walking order, with the staples and to-taste names apart. */
-    private fun needsOf(meals: List<PlannedMeal>, sectionOf: Map<Long, ShopSection>): ShoppingNeeds =
-        shoppingNeeds(planned(meals), recipes.linesWithIngredients(meals.map { it.recipeId }), sectionOf)
+    /**
+     * What [meals] need, in walking order, with the staples and to-taste names apart. [lines] are their
+     * recipes' lines, which the list reads once for the week's meals and for those still to cook.
+     */
+    private fun needsOf(
+        meals: List<PlannedMeal>,
+        sectionOf: Map<Long, ShopSection>,
+        lines: Map<Long, RecipeLines> = recipes.linesWithIngredients(meals.map { it.recipeId }),
+    ): ShoppingNeeds = shoppingNeeds(planned(meals), lines, sectionOf)
+
+    /**
+     * What is still to buy of [need], the week's row of ingredient [id] (null for one without): what
+     * the meals still to cook need of it ([toCook], null when none uses it, so nothing), less the grams
+     * left of it in [stock], at least 0. Null when that can't be told: the week's need has no total
+     * weight, the stock's amount is not known, or the meals still to cook use it only without an
+     * amount ("salt to taste"), which says nothing about how much is enough.
+     */
+    private fun toBuyGrams(need: ShoppingNeed, toCook: ShoppingNeed?, id: Long?, stock: Map<Long, Double?>): Double? {
+        if (need.totalGrams == null) return null
+        val left = if (id != null && id in stock) stock[id] ?: return null else 0.0
+        val needed = if (toCook == null) 0.0 else toCook.totalGrams ?: return null
+        return (needed - left).coerceAtLeast(0.0)
+    }
 
     /**
      * What a tick in `shoppingCheck` remembers of its row of the meals' needs when it was ticked. All

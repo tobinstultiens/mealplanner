@@ -697,6 +697,80 @@ class BuyAheadTest {
     }
 
     @Test
+    fun whatIsStillToBuyLeavesOutTheMealsEatenFromTheStock() = testApplication {
+        val http = start().ready()
+        val chicken = http.ingredient("Chicken fillet")
+        // Three meals of 600 g of chicken this week: a dinner with its leftover lunch the next day, and
+        // another dinner. 1.5 kg of it bought ahead last week.
+        val dinner = http.plan(week, 0, MealSlot.DINNER, "Chicken 0", 2.0)
+        val lunch = http.plan(week, 1, MealSlot.LUNCH, "Chicken 0", 2.0, leftover = true)
+        val other = http.plan(week, 2, MealSlot.DINNER, "Chicken 1", 2.0)
+        scope().ingredients.putOnHandFrom(chicken.id, LocalDate.parse(week), grams = 1500.0)
+        suspend fun row() = http.list().items.single { it.name == "Chicken fillet" }
+        assertEquals(1800.0, assertNotNull(row().grams), 1e-9)
+        assertEquals(300.0, assertNotNull(row().toBuyGrams), 1e-9)
+
+        // The dinner eaten, cooked with its leftovers: 1.2 kg less in the freezer, and those two meals
+        // need nothing more. Still 300 g to buy, not the 1.5 kg the whole week's need less the stock says.
+        http.mark(week, dinner, MealStatus.EATEN)
+        assertEquals(300.0, assertNotNull(row().onHandGrams), 1e-9)
+        assertEquals(1800.0, assertNotNull(row().grams), 1e-9, "the week's need, as installed apps read it")
+        assertEquals(300.0, assertNotNull(row().toBuyGrams), 1e-9)
+        http.mark(week, lunch, MealStatus.EATEN)
+        assertEquals(300.0, assertNotNull(row().toBuyGrams), 1e-9, "the leftovers were cooked with the dinner")
+
+        // Un-eaten, exactly as before; a skipped meal needs nothing.
+        http.mark(week, lunch, MealStatus.PLANNED)
+        http.mark(week, dinner, MealStatus.PLANNED)
+        assertEquals(1500.0, assertNotNull(row().onHandGrams), 1e-9)
+        assertEquals(300.0, assertNotNull(row().toBuyGrams), 1e-9)
+        http.mark(week, other, MealStatus.SKIPPED)
+        assertEquals(0.0, row().toBuyGrams, "1.2 kg for the two meals still to cook, 1.5 kg at home")
+
+        // A leftover lunch skipped while its dinner is still to cook is cooked with that dinner: it counts.
+        http.mark(week, other, MealStatus.PLANNED)
+        http.mark(week, lunch, MealStatus.SKIPPED)
+        assertEquals(300.0, assertNotNull(row().toBuyGrams), 1e-9)
+
+        // Every meal eaten: nothing to buy, and the row stays on the list rather than becoming "no longer needed".
+        http.mark(week, dinner, MealStatus.EATEN)
+        http.mark(week, other, MealStatus.EATEN)
+        val list = http.list()
+        assertEquals(0.0, list.items.single { it.name == "Chicken fillet" }.toBuyGrams)
+        assertTrue(list.noLongerNeeded.isEmpty())
+    }
+
+    @Test
+    fun aMealEatenWithoutAStockOrATickNeedsNothingMoreAndATickStaysAsItWas() = testApplication {
+        val http = start().ready()
+        // Lettuce is never on hand: 100 g for each of the two meals below, and the fillers' own.
+        val dinner = http.plan(week, 0, MealSlot.DINNER, "Chicken 0", 2.0)
+        http.plan(week, 1, MealSlot.LUNCH, "Chicken 0", 2.0, leftover = true)
+        suspend fun row(name: String) = http.list().items.single { it.name == name }
+        val lettuce = row("Lettuce")
+        assertEquals(assertNotNull(lettuce.grams), assertNotNull(lettuce.toBuyGrams), 1e-9, "nothing eaten, nothing at home")
+
+        // Eaten without the row ticked: whatever it was made with, those meals need no more.
+        http.mark(week, dinner, MealStatus.EATEN)
+        assertEquals(lettuce.grams, row("Lettuce").grams)
+        assertEquals(lettuce.toBuyGrams!! - 200.0, assertNotNull(row("Lettuce").toBuyGrams), 1e-9)
+
+        // Ticked, then a meal eaten: the tick and what it remembers stay as they were, so the row
+        // needs no "more" and doesn't leave the list.
+        val rice = row("White rice")
+        http.tick(rice.key)
+        http.mark(week, dinner, MealStatus.PLANNED)
+        val ticked = row("White rice")
+        http.mark(week, dinner, MealStatus.EATEN)
+        val after = row("White rice")
+        assertTrue(after.checked)
+        assertEquals(ticked.grams, after.grams)
+        assertEquals(ticked.grams, after.boughtGrams)
+        assertEquals(ticked.toBuyGrams!! - 200.0, assertNotNull(after.toBuyGrams), 1e-9)
+        assertTrue(http.list().noLongerNeeded.isEmpty())
+    }
+
+    @Test
     fun aLateAdviceTickCarriesTheGramsTheAppWasAdvised() = testApplication {
         val http = start().ready()
         val beef = http.ingredient("Beef")

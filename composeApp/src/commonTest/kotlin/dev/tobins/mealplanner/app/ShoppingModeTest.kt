@@ -117,6 +117,39 @@ class ShoppingModeTest {
     }
 
     @Test
+    fun aRowWithNothingLeftToBuyIsNoOpenItem() {
+        // The stock covers what the meals still to cook need: not ticked, but nothing to buy.
+        val covered = ShoppingItem("yoghurt", "yoghurt", 500.0, null, "Dairy", emptyList(), onHand = true, checked = false, onHandGrams = 650.0, toBuyGrams = 0.0)
+        val withIt = items + covered
+        assertEquals("3 of 5 · 2 sections to go", shoppingProgress(withIt, Strings.English), "neither ticked nor to go")
+        assertEquals("All 5 ticked off", shoppingProgress(withIt.map { if (it.key == "yoghurt") it else it.copy(checked = true) }, Strings.English))
+        assertEquals("Nothing left to buy", shoppingProgress(listOf(covered), Strings.English))
+        assertEquals("Niets meer te kopen", shoppingProgress(listOf(covered), Strings.Dutch))
+        // Ticked, it counts as any ticked row.
+        assertEquals("4 of 6 · 2 sections to go", shoppingProgress(items + covered.copy(checked = true), Strings.English))
+
+        // In shopping mode it waits with the done ones, so the section is finished, but its box stays empty.
+        val dairy = shoppingSections(withIt, shoppingMode = true).single { it.title == "Dairy" }
+        assertEquals(listOf("milk", "yoghurt"), dairy.done.map { it.key })
+        assertTrue(dairy.finished)
+        assertFalse(covered.done)
+        assertEquals(listOf("milk", "yoghurt"), shoppingSections(withIt, shoppingMode = false).single { it.title == "Dairy" }.open.map { it.key })
+    }
+
+    @Test
+    fun aTickedRowNeedsNoMoreThanTheMealsStillToCook() {
+        // Bought 800 g, the plan needs 1.4 kg since: 600 g more, unless meals were eaten since.
+        assertEquals(600.0, bought(grams = 1400.0, boughtGrams = 800.0).copy(toBuyGrams = 1100.0).moreNeeded()?.grams)
+        assertEquals(200.0, bought(grams = 1400.0, boughtGrams = 800.0).copy(toBuyGrams = 200.0).moreNeeded()?.grams)
+        // Every meal that needs it eaten: nothing more, and done.
+        val eaten = bought(grams = 1400.0, boughtGrams = 800.0, pieces = 7.0, boughtPieces = 4.0).copy(toBuyGrams = 0.0)
+        assertNull(eaten.moreNeeded())
+        assertTrue(eaten.done)
+        // A meal eaten while the need stays as bought changes nothing.
+        assertNull(bought(grams = 800.0, boughtGrams = 800.0).copy(toBuyGrams = 400.0).moreNeeded())
+    }
+
+    @Test
     fun aRowThatNeedsMoreIsOpenNotDoneAndItsSectionNotFinished() {
         val chicken = bought(grams = 1400.0, boughtGrams = 800.0).copy(key = "chicken")
         val sections = shoppingSections(listOf(chicken), shoppingMode = true)

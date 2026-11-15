@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.Store
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -266,42 +267,119 @@ class ShoppingStoresTest {
     @Test
     fun theRowSaysHowMuchIsOnHandAndWhatIsLeftToBuy() {
         val offer = packOffer("700 g", "25% korting", 0.75)
-        fun stocked(left: Double?, grams: Double? = 1400.0) =
-            packItem(grams, null, offer).copy(onHand = true, onHandGrams = left)
+        // As the server sends it with nothing eaten yet: what is to buy is the need less the stock.
+        fun stocked(left: Double?, grams: Double? = 1400.0) = packItem(grams, null, offer).copy(
+            onHand = true,
+            onHandGrams = left,
+            toBuyGrams = left?.let { grams?.minus(it)?.coerceAtLeast(0.0) },
+        )
 
         // Part of it at home: what is left to buy, and the packs for that alone.
         val part = stocked(800.0)
-        assertEquals("800 g on hand, buy 600 g", part.onHandText(Strings.English))
-        assertEquals("800 g in huis, koop 600 g", part.onHandText(Strings.Dutch))
+        assertEquals("800 g on hand, buy 600 g", part.toBuyText(Strings.English))
+        assertEquals("800 g in huis, koop 600 g", part.toBuyText(Strings.Dutch))
         assertEquals("1 × 700 g", part.packsStillToBuy(offer)?.text(Strings.English))
         // All of it at home: enough, and nothing to pick up.
         val enough = stocked(1500.0)
-        assertEquals("1,5 kg in huis: genoeg", enough.onHandText(Strings.Dutch))
-        assertEquals("1.5 kg on hand: enough", enough.onHandText(Strings.English))
+        assertEquals("1,5 kg in huis: genoeg", enough.toBuyText(Strings.Dutch))
+        assertEquals("1.5 kg on hand: enough", enough.toBuyText(Strings.English))
         assertNull(enough.packsStillToBuy(offer))
-        assertEquals("1.4 kg on hand: enough", stocked(1399.5).onHandText(Strings.English), "half a gram short is nothing to buy")
+        assertEquals("1.4 kg on hand: enough", stocked(1399.5).toBuyText(Strings.English), "half a gram short is nothing to buy")
         // The amount at home is not known (put on hand by hand): no number at all, and the packs for the whole need.
         val unknown = stocked(null)
-        assertNull(unknown.onHandText(Strings.English))
+        assertNull(unknown.toBuyText(Strings.English))
         assertEquals("2 × 700 g", unknown.packsStillToBuy(offer)?.text(Strings.English))
         // The need can't be weighed in full: what is at home, without a sum.
-        assertEquals("300 g on hand", stocked(300.0, grams = null).onHandText(Strings.English))
-        // Ticked: what it said then counted the stock in, so no second amount and the plain name; packs
-        // for the whole need as before. A row that needs more says the one amount still to buy.
+        assertEquals("300 g on hand", stocked(300.0, grams = null).toBuyText(Strings.English))
+        // Ticked: what it said then counted the stock in, so no second amount and the plain name, and
+        // no packs, as what was bought is not known in packs. A row that needs more says the one
+        // amount still to buy.
         val ticked = stocked(800.0).copy(checked = true)
-        assertNull(ticked.onHandText(Strings.English))
+        assertNull(ticked.toBuyText(Strings.English))
         assertEquals("Chicken", ticked.nameText(Strings.English))
-        assertEquals("2 × 700 g", ticked.packsStillToBuy(offer)?.text(Strings.English))
+        assertNull(ticked.packsStillToBuy(offer))
         val grown = stocked(300.0).copy(checked = true, boughtGrams = 800.0)
         assertEquals("600 g more (800 g bought)", grown.moreNeeded()?.text(Strings.English), "the one number still to buy")
-        assertNull(grown.onHandText(Strings.English))
+        assertNull(grown.toBuyText(Strings.English))
         // The name asks only when nobody knows how much there is, ticked or not.
         assertEquals("Chicken  (on hand?)", unknown.nameText(Strings.English))
         assertEquals("Chicken  (in huis?)", unknown.copy(checked = true).nameText(Strings.Dutch))
         assertEquals("Chicken", part.nameText(Strings.English))
-        // Not on hand: nothing, whatever the amount says.
-        assertNull(stocked(800.0).copy(onHand = false).onHandText(Strings.English))
-        assertEquals("2 × 700 g", stocked(800.0).copy(onHand = false).packsStillToBuy(offer)?.text(Strings.English))
+        // Not on hand, nothing eaten: the whole need is to buy, so nothing to say, and the packs for all of it.
+        val notOnHand = packItem(1400.0, null, offer).copy(toBuyGrams = 1400.0)
+        assertNull(notOnHand.toBuyText(Strings.English))
+        assertEquals("2 × 700 g", notOnHand.packsStillToBuy(offer)?.text(Strings.English))
+    }
+
+    @Test
+    fun mealsDoneLeaveOnlyWhatTheMealsToComeNeed() {
+        val offer = packOffer("400 g", "25% korting", 0.75)
+        // 482 g for the week; 650 g was at home, and the dinner and its leftover lunch ate 481 g of it.
+        val eaten = packItem(482.0, null, offer).copy(onHand = true, onHandGrams = 169.0, toBuyGrams = 0.0)
+        assertEquals("169 g on hand: enough for the meals to come", eaten.toBuyText(Strings.English))
+        assertEquals("169 g in huis: genoeg voor de maaltijden die nog komen", eaten.toBuyText(Strings.Dutch))
+        assertNull(eaten.packsStillToBuy(offer))
+        assertTrue(eaten.covered)
+        // Part of it still to buy: the amount and the packs for that alone.
+        val part = packItem(1200.0, null, offer).copy(onHand = true, onHandGrams = 100.0, toBuyGrams = 500.0)
+        assertEquals("100 g on hand, buy 500 g for the meals to come", part.toBuyText(Strings.English))
+        assertEquals("100 g in huis, koop 500 g voor de maaltijden die nog komen", part.toBuyText(Strings.Dutch))
+        assertEquals("2 × 400 g", part.packsStillToBuy(offer)?.text(Strings.English))
+        assertFalse(part.covered)
+        // Nothing at home: only the meals done lessen it.
+        val noStock = packItem(1200.0, null, offer).copy(toBuyGrams = 600.0)
+        assertEquals("Buy 600 g for the meals to come", noStock.toBuyText(Strings.English))
+        assertEquals("Koop 600 g voor de maaltijden die nog komen", noStock.toBuyText(Strings.Dutch))
+        assertEquals("2 × 400 g", noStock.packsStillToBuy(offer)?.text(Strings.English))
+        val allDone = noStock.copy(toBuyGrams = 0.0)
+        assertEquals("Nothing to buy: the meals that need it are done", allDone.toBuyText(Strings.English))
+        assertEquals("Niets te kopen: de maaltijden die het nodig hebben zijn klaar", allDone.toBuyText(Strings.Dutch))
+        assertTrue(allDone.covered)
+        // Ticked, it is done whatever was eaten since; an own item or advice row has no such number.
+        assertFalse(allDone.copy(checked = true).covered)
+        assertNull(allDone.copy(checked = true).toBuyText(Strings.English))
+        assertFalse(packItem(1200.0, null, offer).covered)
+    }
+
+    @Test
+    fun aCoveredRowIsInNoStoreGroupAndSavesNothing() {
+        val lidl = Offer(Store.LIDL, "Yoghurt", "25% korting", 1.19, validFrom = "2026-01-01", validUntil = "2026-01-07", paidShare = 0.75)
+        fun yoghurt(key: String, toBuy: Double?) =
+            ShoppingItem(key, key, 500.0, null, "Dairy", emptyList(), onHand = true, checked = false, offers = listOf(lidl), regularPrice = 2.0, onHandGrams = 650.0, toBuyGrams = toBuy)
+        val covered = yoghurt("covered", 0.0)
+        val open = yoghurt("open", null).copy(onHand = false, onHandGrams = null, toBuyGrams = 500.0)
+
+        // The store header counts only the open row, and the saving is its own.
+        val overview = storeOverview(listOf(covered, open), all, today)
+        val group = overview.stores.single()
+        assertEquals(listOf("open"), keys(group.items))
+        assertEquals("Lidl · 1 item on offer", group.title(Strings.English))
+        assertEquals(0.5, group.saving!!, 1e-9)
+        assertEquals(listOf("covered"), keys(overview.anyStore))
+        assertNull(savingOf(listOf(covered), all, today))
+        assertEquals(0.0, covered.saving(lidl))
+        // At another store it is not "cheaper elsewhere": there is nothing to buy of it.
+        val visit = storeVisit(listOf(covered, open), Store.AH, all, today, shoppingMode = true)
+        assertEquals(listOf("open"), visit.elsewhere.map { it.item.key })
+        assertEquals(listOf("covered"), keys(visit.sections.single().done))
+        // Ticked, it is in its store's group again, as bought there.
+        assertEquals(listOf("covered", "open"), keys(storeOverview(listOf(covered.copy(checked = true), open), all, today).stores.single().items))
+    }
+
+    @Test
+    fun theSavingGoesByWhatIsStillToBuyTickedOrNot() {
+        val offer = packOffer("500 g", "25% korting", 0.75)
+        // €4 for 1 kg; 600 g of it is at home or eaten: a quarter off the 400 g still to buy.
+        val row = packItem(1000.0, null, offer).copy(toBuyGrams = 400.0)
+        assertEquals(0.4, row.saving(offer)!!, 1e-9)
+        assertEquals(0.4, savingOf(listOf(row), all, today)!!, 1e-9)
+        assertEquals(0.4, savingOf(listOf(row.copy(checked = true)), all, today)!!, 1e-9, "ticking it changes nothing")
+        // A deal is checked against the packs of what is still to buy: "1+1 gratis" wants two packs, 400 g needs one.
+        val deal = packItem(1000.0, null, packOffer("500 g", "1+1 gratis"))
+        assertEquals(2.0, savingOf(listOf(deal), all, today))
+        assertNull(savingOf(listOf(deal.copy(toBuyGrams = 400.0)), all, today))
+        // Without the server's number (advice, own items) the whole need counts, as before.
+        assertEquals(1.0, packItem(1000.0, null, offer).saving(offer)!!, 1e-9)
     }
 
     @Test

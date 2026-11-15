@@ -279,9 +279,39 @@ is on hand without an amount, as before.
 week carries the grams left (`ShoppingItem.onHandGrams`), and the app says `300 g on hand, buy 200 g`
 under its name, `600 g on hand: enough` when that covers the need (with no packs to take), or `300 g
 on hand` when the need can't be weighed in full; the packs to take are for what is still to buy.
+
+**What is still to buy** is the server's number (`ShoppingItem.toBuyGrams`): what the meals still to
+cook need, less the grams on hand. The stock goes down for a meal as it is eaten, so the meals eaten
+are left out of the need too, else mid-week a row would ask to buy again what the eaten meals took.
+The meals still to cook go by the rules of eating from the stock: an eaten meal is cooked, and so is a
+leftover lunch whose dinner was eaten; a skipped meal is not, unless it is a leftover lunch whose
+dinner is still to cook (the dinner is cooked with its leftovers). So, for a row not ticked:
+- a meal eaten from what was bought ahead or stocked up: the stock went down by what it took and its
+  need is gone, so what is still to buy stays as it was;
+- a meal eaten without the row ticked or a stock: it was made with what was at home, so only the
+  meals to come are still to buy;
+- a skipped meal needs nothing; un-eating or un-skipping a meal brings back its need and (above) what
+  it took, so the number is as before.
+
+`ShoppingItem.grams` stays the whole week's need, as apps before it read it, and what a tick
+remembers is that, so a meal eaten never makes a ticked row "need more" or leave the list for
+"no longer needed". Null when it can't be told: no total weight, on hand in an amount nobody knows,
+or the meals to come use it only without an amount ("salt to taste"); never on own items or advice.
+When meals were eaten or skipped, the app says the amount is for the meals to come (`169 g on hand:
+enough for the meals to come`, `Buy 400 g for the meals to come`, or `Nothing to buy: the meals that
+need it are done`), as it no longer adds up with the week's need next to the name. A row with nothing
+left to buy that is not ticked is no item to buy: the progress line leaves it out (`Nothing left to buy`
+when that leaves none), the per-store view lists it under any store rather than in a store's group, the
+savings leave it out, and shopping mode puts it in the Done group (a finished section says `✓ 3 done`,
+as not all of them need a tick). It stays on the list, and can be ticked as before.
+
+The savings go by what is still to buy, ticked or not, so ticking a row doesn't change them; the deal
+check ("1+1 gratis" wanting two packs) goes by the packs for that amount. A ticked row has no packs
+line: what was bought is not known in packs, and the whole need would count what was at home.
 A ticked row says nothing of the stock: what it said when ticked already counted the stock there
 was, so on a row that needs more the one number still to buy is its "more" line, never that less
-the stock again (the pantry still shows the amount). The
+the stock again (the pantry still shows the amount); that "more" is never more than what is still to
+buy, so once the meals that need it are eaten, it needs nothing more. The
 pantry gives the grams left of each entry (`Pantry.onHandGrams`, next week's stock included, as it is
 at home) and the app shows `300 g left` under its name. An entry set by hand, or ticked without an
 amount, has no amount: the row says `(on hand?)` as before and the pantry no number, never zero.
