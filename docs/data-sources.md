@@ -128,6 +128,11 @@ The server sends every offer that overlaps the plan week, so the app judges each
 (the stores' weeks differ): an offer that has ended is ignored everywhere on the list; one that
 starts later keeps its badge with the day (`Lidl €1.79 / from Thu`) and stays under its store,
 but is left out of the saving, and an offer valid today always wins over one that starts later.
+A row with an offer also says what to pick up (`PackSize.toBuy`, in the app only): the packs to take
+(`2 × 700 g`), from the offer's pack size and the weight (or, for packs in pieces, the pieces) the
+recipes need. When the deal wants more packs than that (`1+1 gratis` for one pack: `1 × 500 g · deal
+needs 2`) its saving is left out of the sums. Nothing is said when the pack cannot be read, or the item
+has no weighed amount.
 Regular prices are AH's, so for Jumbo and Lidl that saving is an estimate against AH's price, and the
 app says so.
 
