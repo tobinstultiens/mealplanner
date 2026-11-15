@@ -31,6 +31,14 @@ sealed interface ShoppingKey {
         override fun toString() = "$STOCK$id"
     }
 
+    /**
+     * An own item: something the account put on the list itself, by its id in `shoppingExtra`. Its
+     * tick is kept with the item, not in `shoppingCheck`.
+     */
+    data class Extra(val id: Long) : ShoppingKey {
+        override fun toString() = "$EXTRA$id"
+    }
+
     /** Not a row: a dismissed advice group is kept with the week's ticks, under a key no row has. */
     data class Dismissed(val group: ShoppingAdviceGroup) : ShoppingKey {
         override fun toString() = "$DISMISSED${group.path}"
@@ -41,6 +49,7 @@ sealed interface ShoppingKey {
         private const val TEXT = "t:"
         private const val AHEAD = "ahead:i"
         private const val STOCK = "stock:i"
+        private const val EXTRA = "x:"
         private const val DISMISSED = "dismissed:"
 
         /** The key [key] stands for; an [IllegalArgumentException] (a 400) when it is no key a list has. */
@@ -54,6 +63,7 @@ sealed interface ShoppingKey {
             val parsed = when {
                 key.startsWith(AHEAD) -> key.removePrefix(AHEAD).toLongOrNull()?.let(::Ahead)
                 key.startsWith(STOCK) -> key.removePrefix(STOCK).toLongOrNull()?.let(::Stock)
+                key.startsWith(EXTRA) -> key.removePrefix(EXTRA).toLongOrNull()?.let(::Extra)
                 key.startsWith(DISMISSED) -> ShoppingAdviceGroup.fromPath(key.removePrefix(DISMISSED))?.let(::Dismissed)
                 key.startsWith(TEXT) -> Text(key.removePrefix(TEXT))
                 key.startsWith(INGREDIENT) -> key.removePrefix(INGREDIENT).toLongOrNull()?.let(::Ingredient)

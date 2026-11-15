@@ -26,6 +26,7 @@ class ShoppingKeyTest {
         "t:olive oil" to ShoppingKey.Text("olive oil"),
         "ahead:i7" to ShoppingKey.Ahead(7),
         "stock:i8" to ShoppingKey.Stock(8),
+        "x:5" to ShoppingKey.Extra(5),
         "dismissed:buy-ahead" to ShoppingKey.Dismissed(ShoppingAdviceGroup.BUY_AHEAD),
         "dismissed:stock-up" to ShoppingKey.Dismissed(ShoppingAdviceGroup.STOCK_UP),
     )
@@ -48,10 +49,10 @@ class ShoppingKeyTest {
     @Test
     fun aKeyNoListHasIsRefused() {
         val unknown = listOf(
-            "ahead:ix", "ahead:ichicken", "ahead:i", "stock:i1.5", "ix", "i", "",
+            "ahead:ix", "ahead:ichicken", "ahead:i", "stock:i1.5", "ix", "i", "", "x:", "x:coffee", "x5",
             "nonsense", "dismissed:everything", "dismissed:",
             // Another spelling of a key names no row: a tick under it would never show.
-            "ahead:i007", "i+5", "i 5",
+            "ahead:i007", "i+5", "i 5", "x:05",
         )
         for (text in unknown) {
             assertNull(ShoppingKey.parseOrNull(text), text)

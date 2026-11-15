@@ -37,6 +37,12 @@ class MigrationTest {
     /** Version 9 added what is left of a ticked item (8.sqm). */
     private fun dropStockAmountColumn(statement: Statement) {
         statement.execute("ALTER TABLE onHand DROP COLUMN grams")
+        dropOwnItems(statement)
+    }
+
+    /** Version 10 added the own items of the shopping list (9.sqm); dropping the table drops its index. */
+    private fun dropOwnItems(statement: Statement) {
+        statement.execute("DROP TABLE shoppingExtra")
     }
 
     @Test
@@ -63,7 +69,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         val tables = listOf(
             "appUser", "userMeta", "recipe", "recipeIngredient", "ingredient", "ingredientAlias", "onHand",
-            "ingredientPrice", "planMeal", "shoppingCheck", "offer", "foodLog", "weight",
+            "ingredientPrice", "planMeal", "shoppingCheck", "shoppingExtra", "offer", "foodLog", "weight",
         )
         for (table in tables) {
             assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
@@ -259,6 +265,34 @@ class MigrationTest {
         // Nobody knows how much of the chicken there was: a meal of it uses it up, as before.
         ingredients.useUp(mapOf(1L to 300.0, 2L to 100.0), week)
         assertEquals(setOf(2L), ingredients.onHandFor(week), "spinach was put on hand by hand and stays")
+        driver.close()
+    }
+
+    @Test
+    fun aVersionNineDatabaseKeepsItsListsAndStartsWithoutOwnItems() {
+        val file = createTempFile("v9", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        // Version 9 is today's schema without the own items.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropOwnItems(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'sub', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO shoppingCheck (userId, weekStart, itemKey) VALUES (1, '2026-11-16', 'i12'), (1, '2026-11-16', 'dismissed:stock-up')")
+                statement.execute("PRAGMA user_version = 9")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(columns(fresh, "shoppingExtra"), columns(url, "shoppingExtra"), "table shoppingExtra after migration")
+        assertEquals(setOf("i12", "dismissed:stock-up"), db.planQueries.selectChecks(1, "2026-11-16").executeAsList().toSet())
+        assertEquals(0L, db.shoppingQueries.countOpenExtras(1).executeAsOne())
+        db.shoppingQueries.insertExtra(1, "Coffee", "2026-11-16")
+        assertEquals(listOf("Coffee"), db.shoppingQueries.selectExtrasForWeek(1, "2026-11-23").executeAsList().map { it.name })
         driver.close()
     }
 }

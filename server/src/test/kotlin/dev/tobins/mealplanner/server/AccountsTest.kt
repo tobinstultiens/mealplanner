@@ -22,11 +22,13 @@ import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
+import dev.tobins.mealplanner.shopping.ShopSection
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -217,6 +219,51 @@ class AccountsTest {
         alice.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(first, false)) }
         bob.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(first, true)) }
         assertFalse(alice.list().items.single { it.key == first }.checked)
+    }
+
+    @Test
+    fun ownShoppingItemsStayWithTheirAccount() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val week = "2026-11-16"
+        suspend fun HttpClient.list() = get("/api/plans/$week/shopping").body<ShoppingList>()
+        suspend fun HttpClient.add(name: String) = post("/api/plans/$week/shopping/extras") { setBody(ShoppingExtraInput(name)) }
+        val coffee = alice.add("Coffee").body<ShoppingList>().items.single()
+        val id = coffee.key.removePrefix("x:")
+
+        // Bob doesn't see it, and can neither tick it off, un-tick it nor delete it.
+        assertEquals(emptyList(), bob.list().items)
+        alice.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(coffee.key, true)) }
+        for (checked in listOf(true, false)) {
+            assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(coffee.key, checked)) }.status)
+        }
+        assertEquals(HttpStatusCode.NotFound, bob.delete("/api/plans/$week/shopping/extras/$id").status)
+        assertEquals(listOf("Coffee" to true), alice.list().items.map { it.name to it.checked })
+        alice.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(coffee.key, false)) }
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(coffee.key, true)) }.status)
+        assertEquals(listOf("Coffee" to false), alice.list().items.map { it.name to it.checked })
+        assertEquals(emptyList(), bob.list().items)
+
+        // An own item of the same name is his alone, and its section comes from his catalogue, not hers.
+        val shallot = alice.post("/api/ingredients") { setBody(IngredientInput("Shallot")) }.body<Ingredient>()
+        alice.put("/api/ingredients/${shallot.id}/section") { setBody(SectionChoice("FRUIT_VEG")) }
+        bob.add("Coffee")
+        val bobs = bob.add("Shallot").body<ShoppingList>().items
+        assertEquals(listOf("Coffee", "Shallot"), bobs.map { it.name })
+        assertTrue(bobs.all { it.category == ShopSection.OTHER.title })
+        val alices = alice.add("Shallot").body<ShoppingList>().items
+        assertEquals(listOf(ShopSection.FRUIT_VEG.title to "Shallot", ShopSection.OTHER.title to "Coffee"), alices.map { it.category to it.name })
+        assertTrue(alices.none { it.key in bobs.map { b -> b.key } })
+
+        // The limit on open items is per account: Bob's full list doesn't stop Alice.
+        val bobId = db.userQueries.selectBySubject("sub-bob").executeAsOne().id
+        repeat(ShoppingExtraInput.MAX_OPEN - 2) { db.shoppingQueries.insertExtra(bobId, "Item $it", week) }
+        assertEquals(HttpStatusCode.Conflict, bob.add("Tea").status)
+        assertEquals(HttpStatusCode.Created, alice.add("Tea").status)
+        assertEquals(3, alice.list().items.size)
     }
 
     @Test

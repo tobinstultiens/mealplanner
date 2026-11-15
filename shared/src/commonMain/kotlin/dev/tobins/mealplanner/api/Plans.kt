@@ -105,6 +105,13 @@ data class ShoppingItem(
  * Everything the week's meals need, without the staples that are always at home. [items] come
  * in walking order: by shop section, then by name; ticking an item off does not move it.
  *
+ * [items] also hold the account's own items (`POST /api/plans/{weekStart}/shopping/extras`), keys
+ * `x:<id>`, without amounts or recipes: on the list of every week from the one they were added in
+ * until ticked off, and once ticked off on that week's list only. One whose name is an ingredient of
+ * the catalogue has that ingredient's section, offers, picture and [ShoppingItem.onHand], as a row
+ * of its own next to the meals' row for it; any other is in section Other. They are rows of [items]
+ * so that apps from before them (v0.1.2) show and tick them.
+ *
  * Next to it, two kinds of advice that the week's meals don't need, each in walking order too and
  * ticked off like [items]: [buyAhead] and [stockUp]. They are separate lists so that apps from
  * before them (v0.1.2), which only read [items], never take them for things this week needs.
@@ -138,6 +145,19 @@ data class ShoppingList(
 
 @Serializable
 data class ShoppingCheck(val key: String, val checked: Boolean)
+
+/**
+ * An own item to put on the shopping list (`POST /api/plans/{weekStart}/shopping/extras`), such as
+ * coffee. The name is trimmed and must then be 1 to [MAX_NAME_LENGTH] characters; an account has at
+ * most [MAX_OPEN] that are not ticked off.
+ */
+@Serializable
+data class ShoppingExtraInput(val name: String) {
+    companion object {
+        const val MAX_NAME_LENGTH = 80
+        const val MAX_OPEN = 100
+    }
+}
 
 /** The extra groups of the shopping list, as named in the dismiss route `/shopping/dismissed/{group}`. */
 enum class ShoppingAdviceGroup(val path: String) {

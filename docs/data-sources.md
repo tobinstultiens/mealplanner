@@ -197,6 +197,35 @@ out first the next time their week's list is opened, also after the app was clos
 server refuses (another 4xx than 401, 408 or 429) goes back, and the snackbar says why. Logging out
 forgets the stored lists and their unsent ticks, so they never reach another account's list.
 
+## Own items on the shopping list
+
+Things no recipe needs, such as coffee or toilet paper, can be put on the list by hand, so the
+household needs no second list: `POST /api/plans/{weekStart}/shopping/extras` with
+`{"name": "Coffee"}` (trimmed, 1 to 80 characters), and `DELETE
+/api/plans/{weekStart}/shopping/extras/{id}` to take one off for good. Both answer with the week's
+shopping list. They are per account (table `shoppingExtra`); another account's id is a 404.
+
+**Which weeks.** An own item is on the list of every week from the one it was added in, until it
+is ticked off. Ticked off in a week (the usual `PUT /api/plans/{weekStart}/shopping` with its key),
+it belongs to that week: ticked there, and on no list before or after it. Un-ticking it there puts
+it back on every list from the week it was added in. Ticking it on a list it is not on (a week
+before it was added, or after it was bought) is refused (409); un-ticking it there changes nothing.
+Own items show also when the week has no meals.
+
+**On the list** an own item is a row of `ShoppingList.items` with key `x:<id>`, no amounts and no
+recipes, so apps from before own items (v0.1.2) show and tick it. When its name is an ingredient of
+the account's catalogue, found the way a recipe line's text is (a link or alias, the name, a plural
+s), it takes that ingredient's shop section, offers, picture and on-hand mark; it stays a row of
+its own next to the meals' row for the same ingredient, so the meals' amounts stay readable, and
+stock-up advice leaves that ingredient out, as it is on the list already. Any other name is in
+section Other, at the end of the walk.
+
+**Limits.** An account has at most 100 own items that are not ticked off; the 101st is refused (409)
+until one is ticked off or deleted. The limit holds when adds arrive at once: each is counted after
+it is stored, under the database's write lock, and taken back if it is one too many. Amounts, a
+section chosen by hand and items that come back every week are left out until the plain version has
+been used.
+
 ## Shop sections
 
 The shopping list is sorted in the order you walk a Dutch supermarket, modelled on Albert Heijn:

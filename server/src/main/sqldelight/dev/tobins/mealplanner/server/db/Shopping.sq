@@ -1,0 +1,39 @@
+-- Things the account put on its shopping list itself (coffee, toilet paper), apart from what the
+-- recipes need. One is on the list of every week from fromWeek on until it is ticked off; ticked
+-- off in a week it belongs to that week (boughtWeek) and is on no other list.
+CREATE TABLE shoppingExtra (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    fromWeek TEXT NOT NULL,            -- ISO date of the plan week it was added in
+    boughtWeek TEXT                    -- ISO date of the plan week it was ticked off in; NULL while open
+);
+
+CREATE INDEX shoppingExtra_user ON shoppingExtra(userId, boughtWeek);
+
+-- The own items on the list of the week starting :week: added then or before, and not ticked off in another week.
+selectExtrasForWeek:
+SELECT * FROM shoppingExtra
+WHERE userId = :userId AND fromWeek <= :week AND (boughtWeek IS NULL OR boughtWeek = :week)
+ORDER BY id;
+
+selectExtra:
+SELECT * FROM shoppingExtra WHERE userId = ? AND id = ?;
+
+countOpenExtras:
+SELECT count(*) FROM shoppingExtra WHERE userId = ? AND boughtWeek IS NULL;
+
+insertExtra:
+INSERT INTO shoppingExtra (userId, name, fromWeek) VALUES (?, ?, ?);
+
+-- Ticks an own item off in :week, only if it is on that week's list.
+tickExtra:
+UPDATE shoppingExtra SET boughtWeek = :week
+WHERE userId = :userId AND id = :id AND fromWeek <= :week AND (boughtWeek IS NULL OR boughtWeek = :week);
+
+-- Un-ticks an own item ticked off in :week; one ticked in another week stays as it is.
+untickExtra:
+UPDATE shoppingExtra SET boughtWeek = NULL WHERE userId = :userId AND id = :id AND boughtWeek = :week;
+
+deleteExtra:
+DELETE FROM shoppingExtra WHERE userId = ? AND id = ?;
