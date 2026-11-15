@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
+import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
@@ -148,6 +149,14 @@ enum class Shot(
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(LocalStrings.current(Msg.UPDATE_AVAILABLE, update.version), style = MaterialTheme.typography.headlineSmall)
             UpdateBody(update, "0.1.1")
+        }
+    }),
+    // The correction dialog of an ingredient's section and "keeps": its body, for the same reason.
+    SECTION_CHOICES(heightDp = 1050, content = { _, _ ->
+        val entry = IngredientSection(7, "Minced beef", "MEAT", "MEAT", "Albert Heijn: Rundergehakt", byHand = false, keeps = true, keepsAutomatic = true)
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(LocalStrings.current(Msg.SECTION_FOR, entry.name), style = MaterialTheme.typography.headlineSmall)
+            SectionChoices(entry, choice = null, onChoice = {}, keeps = true, onKeeps = {})
         }
     }),
     SETTINGS(heightDp = 1350, content = { _, _ ->
