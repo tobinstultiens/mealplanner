@@ -35,6 +35,7 @@ class UserScope(
             offersByIngredient = { from, until -> offers.byIngredient(from, until, ingredients.matchTerms()) },
             pricing = { from, until -> prices.pricing(ingredients, from, until) },
             sections = sections::byIngredient,
+            productImages = { prices.productImages(ingredients) },
         )
     }
     val tracking by lazy { TrackingRepository(db, accountId, plans, profiles) }

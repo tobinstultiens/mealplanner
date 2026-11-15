@@ -1,0 +1,10 @@
+-- Version 5 -> 6: product pictures. Only new columns, so no table is rebuilt and no row is touched.
+
+-- The store's picture of an offer. Offers from before have none until their store is fetched
+-- again, at most a day later.
+ALTER TABLE offer ADD COLUMN imageUrl TEXT;
+
+-- The picture of the product priced for an ingredient name, shared like the price. Prices from
+-- before have none until the next weekly lookup; unlike the shop sections (4.sqm) nothing is
+-- looked up early for it, since the shopping list shows the offer's picture where there is one.
+ALTER TABLE ingredientPrice ADD COLUMN imageUrl TEXT;

@@ -30,6 +30,11 @@ data class Offer(
     /** The catalogue ingredient this offer is for, when it matches one. Filled in by the server. */
     val ingredientId: Long? = null,
     val ingredientName: String? = null,
+    /**
+     * The store's picture of the product, at least 200 px wide where the store offers a choice.
+     * Always https on one of the stores' own image hosts (docs/data-sources.md, "Product pictures").
+     */
+    val imageUrl: String? = null,
 )
 
 /** How the last fetch for one store went. */

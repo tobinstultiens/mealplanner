@@ -100,6 +100,8 @@ Installed apps outlive server deployments. App releases up to and including v0.1
 they do not know, so until a release containing the lenient client (`ApiClient`) is installed, responses
 those apps read must not gain fields: new data goes in new routes or types. Once it is installed, adding
 optional fields is safe. Removing or renaming a field, or changing its meaning, still breaks installed apps.
+The product pictures (`Offer.imageUrl`, `ShoppingItem.imageUrl`) are the first fields added this way, so
+they are merged together with the first app release after v0.1.1.
 
 ## Screenshot tests
 

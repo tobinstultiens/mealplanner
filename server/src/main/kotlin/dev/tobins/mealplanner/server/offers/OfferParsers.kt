@@ -77,6 +77,7 @@ object AhParser {
             validFrom = p.str("bonusStartDate") ?: return null,
             validUntil = p.str("bonusEndDate") ?: return null,
             url = (p["webshopId"] as? JsonPrimitive)?.longOrNull?.let { "https://www.ah.nl/producten/product/wi$it" },
+            imageUrl = image(p),
         )
     }
 
@@ -88,11 +89,27 @@ object AhParser {
         validFrom = g.str("bonusStartDate") ?: return null,
         validUntil = g.str("bonusEndDate") ?: return null,
         url = g.str("id")?.let { "https://www.ah.nl/bonus/groep/$it" },
+        imageUrl = image(g),
     )
 
     private fun firstLabel(o: JsonObject): String? =
         o["discountLabels"]?.jsonArray?.firstOrNull()?.obj?.str("defaultDescription")
+
+    /**
+     * The picture of an AH product or bonus group. AH's app API lists each picture in several
+     * sizes (`images[]` with `width` and `url`; not yet checked against a live response, see
+     * docs/data-sources.md); the narrowest of at least [MIN_IMAGE_WIDTH] is sharp enough
+     * without loading more than needed.
+     */
+    fun image(o: JsonObject): String? {
+        val sizes = (o["images"] as? JsonArray).orEmpty().mapNotNull { it.obj }
+            .mapNotNull { image -> image.str("url")?.let { url -> (image.num("width") ?: 0.0) to url } }
+        return (sizes.filter { it.first >= MIN_IMAGE_WIDTH }.minByOrNull { it.first } ?: sizes.maxByOrNull { it.first })?.second
+    }
 }
+
+/** A 48 dp thumbnail is 192 px wide on the densest phone screens; narrower pictures look blurred. */
+private const val MIN_IMAGE_WIDTH = 200
 
 object JumboParser {
     private val reactive = setOf("Reactive", "ShallowReactive", "Ref", "ShallowRef")
@@ -140,6 +157,8 @@ object JumboParser {
             validFrom = p["start"].obj?.str("iso")?.take(10) ?: return null,
             validUntil = p["end"].obj?.str("iso")?.take(10) ?: return null,
             url = p.str("url")?.let { "https://www.jumbo.com$it" },
+            // One 300 by 300 picture per promotion, no other sizes.
+            imageUrl = p.str("image"),
         )
     }
 }
@@ -172,6 +191,8 @@ object LidlParser {
             validFrom = date(t["storeStartDate"]) ?: return null,
             validUntil = date(t["storeEndDate"]) ?: return null,
             url = t.str("canonicalUrl")?.let { "https://www.lidl.nl$it" },
+            // The tile's own picture: the small 4:3 rendition, 380 by 285 (the medium one is 772 wide).
+            imageUrl = t.str("image"),
         )
     }
 

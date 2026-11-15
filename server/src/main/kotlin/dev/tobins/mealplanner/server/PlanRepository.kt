@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.ShoppingCheck
@@ -33,11 +34,13 @@ class PlanRepository(
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
     /** Offers valid between two dates, grouped by ingredient id. */
-    private val offersByIngredient: (LocalDate, LocalDate) -> Map<Long, List<dev.tobins.mealplanner.api.Offer>> = { _, _ -> emptyMap() },
+    private val offersByIngredient: (LocalDate, LocalDate) -> Map<Long, List<Offer>> = { _, _ -> emptyMap() },
     /** Prices with the offers valid between two dates. */
     private val pricing: (LocalDate, LocalDate) -> Pricing = { _, _ -> Pricing.NONE },
     /** The shop section of each of the account's ingredients, by id. */
     private val sections: () -> Map<Long, ShopSection> = { emptyMap() },
+    /** The picture of the product each of the account's ingredients is priced with, by id. */
+    private val productImages: () -> Map<Long, String> = { emptyMap() },
 ) {
     private val q = db.planQueries
 
@@ -200,9 +203,12 @@ class PlanRepository(
         }
         val checked = q.selectChecks(userId, start.toString()).executeAsList().toSet()
         val offers = offersByIngredient(start, start.plusDays(DAYS - 1L))
+        val images = productImages()
         return ShoppingList(
             weekStart = start.toString(),
             items = needs.entries.sortedWith(compareBy({ it.value.section.ordinal }, { it.value.name.lowercase() })).map { (key, need) ->
+                val ingredientId = key.removePrefix("i").toLongOrNull()?.takeIf { key.startsWith("i") }
+                val itemOffers = ingredientId?.let { offers[it] }.orEmpty()
                 ShoppingItem(
                     key = key,
                     name = need.name,
@@ -212,13 +218,21 @@ class PlanRepository(
                     recipes = need.recipes.toList(),
                     onHand = need.onHand,
                     checked = key in checked,
-                    offers = key.removePrefix("i").toLongOrNull()?.takeIf { key.startsWith("i") }?.let { offers[it] }.orEmpty(),
+                    offers = itemOffers,
+                    imageUrl = bestOffer(itemOffers)?.imageUrl ?: ingredientId?.let { images[it] },
                 )
             },
             staples = staples.toList(),
             toTaste = toTaste.toList(),
         )
     }
+
+    /**
+     * The offer the app shows on the item's row, so its picture matches the badge: the cheapest
+     * that states a price, else the first. The same rule as `bestOffer` in the app's ShoppingMode.kt.
+     */
+    private fun bestOffer(offers: List<Offer>): Offer? =
+        offers.filter { it.price != null }.minByOrNull { it.price!! } ?: offers.firstOrNull()
 
     fun setChecked(weekStart: String, check: ShoppingCheck): ShoppingList {
         val start = parse(weekStart)

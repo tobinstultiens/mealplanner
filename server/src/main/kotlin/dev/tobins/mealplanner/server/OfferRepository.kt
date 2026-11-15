@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.LidlGuard
 import dev.tobins.mealplanner.server.offers.OfferMatcher
 import dev.tobins.mealplanner.server.offers.OfferSource
+import dev.tobins.mealplanner.server.offers.StoreImages
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.time.Duration
@@ -59,7 +60,7 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
     }
 
     private fun dev.tobins.mealplanner.server.db.Offer.toOffer() =
-        Offer(Store.valueOf(store), title, deal, price, originalPrice, packSize, category, validFrom, validUntil, url)
+        Offer(Store.valueOf(store), title, deal, price, originalPrice, packSize, category, validFrom, validUntil, url, imageUrl = imageUrl)
 
     /**
      * Fetches every store, or only those whose last successful fetch is older than
@@ -76,7 +77,11 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                 db.transaction {
                     q.deleteOffers(source.store.name)
                     offers.forEach {
-                        q.insertOffer(it.store.name, it.title, it.deal, it.price, it.originalPrice, it.packSize, it.category, it.validFrom, it.validUntil, it.url)
+                        q.insertOffer(
+                            it.store.name, it.title, it.deal, it.price, it.originalPrice, it.packSize, it.category, it.validFrom, it.validUntil, it.url,
+                            // The apps load it: only a picture on a store's image host, whatever the page said.
+                            StoreImages.accept(it.imageUrl),
+                        )
                     }
                     q.ensureSource(source.store.name)
                     q.recordSuccess(now.toString(), source.store.name)

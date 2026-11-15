@@ -16,10 +16,17 @@ import io.ktor.server.testing.testApplication
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.contentType
+import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.RecipeInput
+import io.ktor.client.HttpClient
+import io.ktor.server.testing.ApplicationTestBuilder
 import kotlinx.coroutines.runBlocking
 import java.time.Duration
 import java.time.Instant
@@ -105,8 +112,8 @@ class OffersApiTest {
         assertEquals(2, ah.calls)
     }
 
-    @Test
-    fun shoppingListShowsOffersForItsIngredients() = testApplication {
+    /** The owner's cooking site holds one chili of minced beef, and NEVO knows minced beef. */
+    private fun chiliConfig(): ServerConfig {
         val nevo = listOf(
             "\"NEVO-versie/NEVO-version\"|\"Voedingsmiddelgroep\"|\"Food group\"|\"NEVO-code\"|\"Voedingsmiddelnaam/Dutch food name\"|\"Engelse naam/Food name\"|\"Synoniem\"|\"Hoeveelheid/Quantity\"|\"ENERCC (kcal)\"|\"PROT (g)\"|\"FAT (g)\"|\"FASAT (g)\"|\"CHO (g)\"|\"SUGAR (g)\"|\"FIBT (g)\"|\"NA (mg)\"",
             "NEVO-Online 2025 9.0|Vlees|Meat|1405|Rundergehakt rauw|Minced beef raw||per 100g|200|20|13|5|0|0|0|60",
@@ -114,23 +121,30 @@ class OffersApiTest {
         val repo = kotlin.io.path.createTempDirectory("cooking").toFile()
         java.io.File(repo, "content/recipes/chili.md").apply { parentFile.mkdirs() }
             .writeText("---\ntitle: Chili\n---\n```ingredients\nservings: 4\n1200 | g | ground beef\n```")
-        val config = ServerConfig(
+        return ServerConfig(
             port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
             nevoFile = kotlin.io.path.createTempFile("nevo", ".csv").toFile().apply { writeText(nevo) },
         )
+    }
+
+    private fun ApplicationTestBuilder.clientFor(token: String) = createClient {
+        install(ContentNegotiation) { json() }
+        defaultRequest {
+            bearerAuth(token)
+            contentType(io.ktor.http.ContentType.Application.Json)
+        }
+    }
+
+    @Test
+    fun shoppingListShowsOffersForItsIngredients() = testApplication {
+        val config = chiliConfig()
         val ah = FakeSource(Store.AH, listOf(
             Offer(Store.AH, "AH Gemengd gehakt 500 gram", "VOOR 3.49", price = 3.49, category = "Vlees", validFrom = "2026-11-09", validUntil = "2026-11-15"),
             Offer(Store.AH, "Kwekkeboom gehaktballen", "2 voor 5.99", category = "Diepvries", validFrom = "2026-11-09", validUntil = "2026-11-15"),
         ))
         val lidl = FakeSource(Store.LIDL, listOf(Offer(Store.LIDL, "Rundergehakt", null, price = 4.29, validFrom = "2026-11-17", validUntil = "2026-11-22")))
         application { module(config, openDatabase(config.databaseUrl).second, listOf(ah, lidl), verifier = TestTokens) }
-        val http = createClient {
-            install(ContentNegotiation) { json() }
-            defaultRequest {
-                bearerAuth("t")
-                contentType(io.ktor.http.ContentType.Application.Json)
-            }
-        }
+        val http = clientFor("t")
         http.post("/api/sync/cooking")
         http.post("/api/offers/refresh")
         http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
@@ -142,5 +156,61 @@ class OffersApiTest {
         http.post("/api/plans/2026-11-16/generate")
         val nextWeek = http.get("/api/plans/2026-11-16/shopping").body<ShoppingList>().items.single { it.name == "Minced beef" }
         assertEquals(listOf(Store.LIDL), nextWeek.offers.map { it.store }, "the AH offer ends on the 15th")
+    }
+
+    @Test
+    fun shoppingListItemsShowTheBestOffersPictureElseTheProducts() = testApplication {
+        val config = chiliConfig()
+        val db = openDatabase(config.databaseUrl).second
+        val ahPicture = "https://static.ah.nl/dam/product/AHI_4354523130303533393736?revLabel=1&rendition=200x200_JPG&fileType=binary"
+        val jumboPicture = "https://www.jumbo.com/INTERSHOP/static/WFS/Jumbo-Grocery-Site/-/Jumbo-Grocery/nl_NL/Images_Aanbiedingen/2026/Weekaanbiedingen/Week%2046/Weekaanbiedingen-Week-46_56.png"
+        val productPicture = "https://static.ah.nl/dam/product/AHI_4354523130303237393132?revLabel=1&rendition=200x200_JPG&fileType=binary"
+        val ah = FakeSource(Store.AH, listOf(
+            Offer(Store.AH, "AH Gemengd gehakt 500 gram", "VOOR 3.49", price = 3.49, validFrom = "2026-11-09", validUntil = "2026-11-15", imageUrl = ahPicture),
+        ))
+        // No price stated, so not the best offer, although it has a picture too.
+        val jumbo = FakeSource(Store.JUMBO, listOf(
+            Offer(Store.JUMBO, "Jumbo Rundergehakt", "1+1 gratis", validFrom = "2026-11-09", validUntil = "2026-11-15", imageUrl = jumboPicture),
+        ))
+        // A picture somewhere else than Lidl's image host is not stored.
+        val lidl = FakeSource(Store.LIDL, listOf(
+            Offer(Store.LIDL, "Rundergehakt", null, price = 4.29, validFrom = "2026-11-17", validUntil = "2026-11-22", imageUrl = "https://tracker.example/rundergehakt.png"),
+        ))
+        application { module(config, db, listOf(ah, jumbo, lidl), verifier = TestTokens) }
+        val owner = clientFor("t")
+        val bob = clientFor("bob")
+        owner.post("/api/sync/cooking")
+        owner.post("/api/offers/refresh")
+        // The regular price's product, as the weekly lookup stores it for every account.
+        db.priceQueries.upsertPrice("Minced beef", "AH", "AH Rundergehakt", "300 g", 3.0, 10.0, "2026-11-15T00:00:00Z", "Vlees", null, productPicture)
+        val profile = Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)
+        owner.put("/api/profile") { setBody(profile) }
+        bob.put("/api/profile") { setBody(profile) }
+        // Bob's chili uses the minced beef of his own catalogue.
+        bob.post("/api/recipes") { setBody(RecipeInput("Bob's chili", 4, "1200 | g | minced beef", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER))) }
+        for (week in listOf("2026-11-09", "2026-11-16")) {
+            owner.post("/api/plans/$week/generate")
+            bob.post("/api/plans/$week/generate")
+        }
+        suspend fun HttpClient.mince(week: String): ShoppingItem {
+            val items = get("/api/plans/$week/shopping").body<ShoppingList>().items
+            return assertNotNull(items.singleOrNull { it.name == "Minced beef" }, "the list holds ${items.map { it.name }}")
+        }
+
+        val thisWeek = owner.mince("2026-11-09")
+        assertEquals(listOf(Store.AH, Store.JUMBO), thisWeek.offers.map { it.store })
+        assertEquals(ahPicture, thisWeek.imageUrl, "the cheapest offer with a price is the one shown")
+        val nextWeek = owner.mince("2026-11-16")
+        assertNull(nextWeek.offers.single().imageUrl)
+        assertEquals(productPicture, nextWeek.imageUrl, "the offer has no picture, so the product's")
+
+        // The owner prices minced beef by hand: the product is no longer the one that counts.
+        val beef = owner.get("/api/ingredients").body<List<Ingredient>>().single { it.name == "Minced beef" }
+        owner.put("/api/ingredients/${beef.id}") {
+            setBody(IngredientInput(beef.name, beef.food?.nevoCode, beef.gramsPerPiece, beef.gramsPerMl, beef.category, pricePerKg = 9.0, beef.isStaple, beef.negligible))
+        }
+        assertNull(owner.mince("2026-11-16").imageUrl)
+        assertEquals(ahPicture, owner.mince("2026-11-09").imageUrl, "an offer's picture still shows")
+        assertEquals(productPicture, bob.mince("2026-11-16").imageUrl, "another account's hand price changes nothing for Bob")
     }
 }

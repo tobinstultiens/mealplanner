@@ -37,6 +37,15 @@ class PricesTest {
         ).single()
         assertEquals("Bakkerij", flour.category)
         assertEquals("Tarwebloem", flour.subCategory)
+        assertNull(flour.imageUrl, "no pictures listed")
+
+        // The shape of AH's `images` list (not recorded: see OfferParsersTest.ahTakesTheNarrowestPictureAtLeast200Wide).
+        val pictured = AhProductParser.products(
+            """{"products":[{"title":"AH Tarwebloem","priceBeforeBonus":0.99,"images":[
+                {"width":400,"height":400,"url":"https://static.ah.nl/dam/product/AHI_1?rendition=400x400_JPG"},
+                {"width":200,"height":200,"url":"https://static.ah.nl/dam/product/AHI_1?rendition=200x200_JPG"}]}]}""",
+        ).single()
+        assertEquals("https://static.ah.nl/dam/product/AHI_1?rendition=200x200_JPG", pictured.imageUrl)
     }
 
     private class FakeStore(val products: Map<String, List<StoreProduct>>) : PriceSource {
@@ -118,6 +127,37 @@ class PricesTest {
         bob.create(IngredientInput("Tofu", pricePerKg = 9.0))
         assertEquals(12.0, prices.state(bob).prices.single { it.ingredientId == bobsChicken.id }.eurosPerKg)
         assertEquals(6.0, prices.state(ingredients).prices.single { it.ingredientId == tofu.id }.eurosPerKg, "alice's tofu is unchanged")
+    }
+
+    @Test
+    fun theLookupKeepsThePricedProductsPictureFromTheStoresImageHostOnly() = runBlocking {
+        val db = openDatabase("jdbc:sqlite::memory:").second
+        val foods = FoodRepository(db)
+        val users = UserRepository(db)
+        val alice = IngredientRepository(db, foods, users.resolve(Identity("a", "alice")).id)
+        val chicken = alice.create(IngredientInput("Kipfilet"))
+        val onion = alice.create(IngredientInput("Uien"))
+        val tofu = alice.create(IngredientInput("Tofu", pricePerKg = 6.0))
+        val chickenPicture = "https://static.ah.nl/dam/product/AHI_4354523130303237393132?revLabel=1&rendition=200x200_JPG&fileType=binary"
+        val tofuPicture = "https://static.ah.nl/dam/product/AHI_4354523130303135363739?revLabel=1&rendition=200x200_JPG&fileType=binary"
+        val store = FakeStore(
+            mapOf(
+                "kipfilet" to listOf(StoreProduct("AH Kipfilet", "500 g", 6.0, null, null, imageUrl = chickenPicture)),
+                "uien" to listOf(StoreProduct("AH Uien", "1 kg", 1.5, null, null, imageUrl = "https://tracker.example/uien.png")),
+                "tofu" to listOf(StoreProduct("AH Tofu naturel", "375 g", 2.5, null, null, imageUrl = tofuPicture)),
+            ),
+        )
+        PriceRepository(db, store, foods, OfferRepository(db, emptyList())).refresh(pause = Duration.ZERO)
+        val prices = PriceRepository(db, null, foods, OfferRepository(db, emptyList()))
+
+        assertEquals(mapOf(chicken.id to chickenPicture), prices.productImages(alice), "not the onion's foreign picture, nor tofu priced by hand")
+        assertEquals(null, db.priceQueries.selectPrices().executeAsList().single { it.name == "Uien" }.imageUrl, "never stored")
+        // Shared like the price: Bob's tofu has no hand price, so the product's picture is his.
+        val bob = IngredientRepository(db, foods, users.resolve(Identity("b", "bob")).id)
+        val bobsTofu = bob.create(IngredientInput("Tofu"))
+        assertEquals(tofuPicture, prices.productImages(bob)[bobsTofu.id])
+        assertNull(prices.productImages(alice)[tofu.id], "Alice's hand price still holds for her")
+        assertNull(prices.productImages(bob)[onion.id], "Alice's ingredient ids mean nothing in Bob's catalogue")
     }
 
     @Test

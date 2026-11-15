@@ -29,7 +29,8 @@ On 2026-11-13 it returned 111 AH, 137 Jumbo and 39 Lidl offers.
    `/mobile-services/` and holds `bonusGroupOrProducts`: a `product`, or a `bonusGroup` covering
    several products (no single price).
 4. Relevant product fields: `title`, `salesUnitSize`, `isBonus`, `bonusMechanism`,
-   `currentPrice`, `priceBeforeBonus`, `bonusStartDate`, `bonusEndDate`, `mainCategory`, `subCategory`.
+   `currentPrice`, `priceBeforeBonus`, `bonusStartDate`, `bonusEndDate`, `mainCategory`, `subCategory`,
+   `images` (see "Product pictures" below).
 
 The product search with `filters=bonus%3Dtrue` also works but is capped at 10,000 results.
 "Volume voordeel" entries (3–5% off multi-packs) are flagged as bonus and should be filtered out.
@@ -37,13 +38,14 @@ The product search with `filters=bonus%3Dtrue` also works but is capped at 10,00
 ### Jumbo
 The old `mobileapi.jumbo.com` endpoints return 404. The offers page embeds its data in
 `<script id="__NUXT_DATA__">`: a flat JSON array in which objects refer to other entries by
-index. Promotion objects have `title`, `subtitle`, `tags[].text`, `start.iso`, `end.iso`, `url`.
+index. Promotion objects have `title`, `subtitle`, `tags[].text`, `start.iso`, `end.iso`, `url`,
+`image`.
 A GraphQL endpoint (`www.jumbo.com/api/graphql`) answers too, but its queries are not explored yet.
 
 ### Lidl
 Each product tile on the offers page carries a `data-grid-data` attribute holding HTML-escaped
 JSON: `fullTitle`, `price.price`, `price.oldPrice`, `price.packaging.text`, `storeStartDate`,
-`storeEndDate` (Unix seconds), `category`, `keyfacts.wonCategoryPrimary`. The page holds only
+`storeEndDate` (Unix seconds), `category`, `keyfacts.wonCategoryPrimary`, `image`. The page holds only
 the week's tiles (47 on 2026-11-13, 46 on 2026-11-15) and makes no paging request. Only the
 tile categories `Food` and `F+V` are used. Tiles without `storeStartDate` are regular-priced items
 with a Lidl Plus app discount, and are skipped. The offers page address
@@ -61,7 +63,8 @@ none, so the page is the whole list as far as can be found:
 - The page already holds both of the week's batches: on 2026-11-15, 45 food tiles (39 `Food`,
   6 `F+V`), all dated, 32 from Monday 16 and 13 from Thursday 19, all until Sunday 22 November.
   Offers starting later in the week are therefore not missed.
-- `/c/store/aanbiedingen/a10008785` is the same page (46 tiles, same products).
+- `/c/store/aanbiedingen/a10008785` is the same page (46 tiles, same products). Since 2026-11-15 the
+  old address redirects there (301); the fetch follows the redirect.
 - Next week's offers are not published yet: the folder `hah-wk48-2026` does not exist, and the
   current folder `hah-wk47-2026` (`/l/folders/…/view/flyer/page/1`) is a script-rendered viewer
   without tiles.
@@ -150,6 +153,60 @@ What AH's app API offers here, checked on 2026-11-15 with the anonymous token an
   answer 404 now.
 - The AH app sorts "Mijn lijst" in a chosen store's walking order, but that lives in the logged-in
   shopping list; no anonymous endpoint for a store's route was found, so the route is fixed here.
+
+## Product pictures
+
+Offers and shopping-list items carry the URL of the store's own picture (`Offer.imageUrl`,
+`ShoppingItem.imageUrl`); the server stores only the URL, never the picture, and the apps load it.
+Referencing the stores' pictures in this private, non-commercial app is the same kind of use as
+reading their offers; they are never copied or redistributed.
+
+Where the URLs come from:
+
+| Store | Field | Renditions | Used |
+|---|---|---|---|
+| AH | `images[]` of a product (offers and product search) and of a bonus group | several, each with `width` and `url` | the narrowest at least 200 px wide, else the widest |
+| Jumbo | `image` of a promotion in the offers page payload | one, 300 × 300 PNG (about 130 KB) | that one |
+| Lidl | `image` of a tile's `data-grid-data` | `imageList_V2[].variants[]` per ratio (4:3, 3:4), each `smallUrl` 380 × 285 (about 160 KB PNG) and `mediumUrl` 772 × 579 (about 630 KB); `image` is the 4:3 `smallUrl` | `image` |
+
+A shopping-list item shows the picture of its best offer in the plan's week (the cheapest that
+states a price, else the first, the rule the app uses for the row's badge), or else the picture
+of the AH product its regular price comes from (stored with the price, shared like it), or none.
+An account that set the ingredient's price by hand gets no product picture: that price is not the
+product's, and a hand price often means the product found was the wrong one. Offers stored before
+pictures existed get theirs at their store's next fetch (within a day), prices at the next weekly
+lookup (`POST /api/prices/refresh` does it now).
+
+The apps load these URLs, so the server keeps only https URLs on the stores' image hosts and paths
+(`StoreImages`): `static.ah.nl/dam/product/`, `www.jumbo.com/INTERSHOP/static/`,
+`www.lidl.nl/assets/`. Anything else a page might hold (another host, plain http, `..` in the path)
+is dropped, so a changed or hostile page cannot make the apps fetch an arbitrary address.
+
+What the image hosts allow, checked on 2026-11-15 with a handful of plain GETs (no referrer, no
+cookies; an `Origin` header to see CORS):
+
+| Host | Without referrer | CORS (`Access-Control-Allow-Origin`) | Stable for a week |
+|---|---|---|---|
+| `www.lidl.nl/assets/` (myracloud) | yes (tried with OkHttp's `okhttp/…`) | `*` | yes: content-addressed names (`gcp` + 32 hex), `Cache-Control: max-age` one year, `Last-Modified` two months back |
+| `www.jumbo.com/INTERSHOP/static/` (Akamai Image Manager) | yes for a browser, Android's own (`Dalvik/…`), `ktor-client` or an app's own user agent; **the connection is reset for OkHttp's default `okhttp/…`** | none | yes: a fixed path per week and promotion (`…/Week%2046/Weekaanbiedingen-Week-46_56.png`), no query string, `max-age` about 22 days |
+| `static.ah.nl` | not checked | not checked | not checked |
+
+AH could not be checked: from 02:41 UTC on 2026-11-15 AH's anonymous token endpoint answered every
+request 500 or 400 "Client not supported", including the server's own client, and the web shop
+answers 403 to plain requests, so no product image URL could be obtained. The parser follows the
+`images[]` list AH's app API gives products; check it against a real response (and the host above)
+before relying on AH pictures.
+
+What this means for the apps:
+- **Android** can load the pictures directly from the stores, with a disk cache so the shopping
+  list keeps them offline. Its image loader must send its own user agent (for example
+  `Mealplanner/<version> (Android)`), not OkHttp's default, or Jumbo's pictures fail. Direct loading
+  tells the stores' CDNs the phone's IP address and which pictures it shows; the "Show product
+  pictures" setting turns that off.
+- **The web client** decodes pictures itself and so needs CORS: Lidl's work directly, Jumbo's do
+  not. It needs the server to pass pictures through (`/api/image?url=…`, accepting only URLs that
+  pass `StoreImages`, sending its own user agent, caching), or placeholders. The pass-through is not
+  built yet; it belongs with the app's web pictures.
 
 ## Nutrition: NEVO
 
