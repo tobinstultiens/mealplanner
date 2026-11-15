@@ -229,7 +229,8 @@ class PlanRepository(
 
     /**
      * The offer the app shows on the item's row, so its picture matches the badge: the cheapest
-     * that states a price, else the first. The same rule as `bestOffer` in the app's ShoppingMode.kt.
+     * that states a price, else the first. The same rule as `cheapestOffer` in the app's
+     * ShoppingStores.kt, over every store's offers (the app may leave out stores it isn't shopping at).
      */
     private fun bestOffer(offers: List<Offer>): Offer? =
         offers.filter { it.price != null }.minByOrNull { it.price!! } ?: offers.firstOrNull()
