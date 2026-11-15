@@ -176,7 +176,7 @@ private fun TrendSummary(log: WeightLog) {
             val change = last.trendKg - first.trendKg
             if (log.entries.size >= 2) {
                 Text(
-                    "${if (change <= 0) "Down" else "Up"} ${kg(abs(change))} since ${dayLabel(first.date).substringAfter(' ')}",
+                    "${if (change <= 0) "Down" else "Up"} ${kg(abs(change))} since ${dayMonthLabel(first.date)}",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -273,8 +273,8 @@ private fun WeightChart(entries: List<WeightEntry>) {
                 val label = measurer.measure(formatAmount(tick), labelStyle)
                 drawText(label, topLeft = Offset(left - label.size.width - 6.dp.toPx(), y(tick) - label.size.height / 2))
             }
-            val firstLabel = measurer.measure(dayLabel(entries.first().date).substringAfter(' '), labelStyle)
-            val lastLabel = measurer.measure(dayLabel(entries.last().date).substringAfter(' '), labelStyle)
+            val firstLabel = measurer.measure(dayMonthLabel(entries.first().date), labelStyle)
+            val lastLabel = measurer.measure(dayMonthLabel(entries.last().date), labelStyle)
             drawText(firstLabel, topLeft = Offset(left, bottom + 4.dp.toPx()))
             drawText(lastLabel, topLeft = Offset(right - lastLabel.size.width, bottom + 4.dp.toPx()))
 

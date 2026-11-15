@@ -105,7 +105,7 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text(ingredient.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(ingredient.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 FilterChip(
                                     selected = ingredient.id in staples,
                                     onClick = { update { api.setStaple(ingredient.id, ingredient.id !in staples) } },

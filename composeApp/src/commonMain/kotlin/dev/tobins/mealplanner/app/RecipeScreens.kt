@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,7 +23,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ListItem
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -219,23 +221,15 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
  */
 @Composable
 private fun SyncLine(status: CookingSyncStatus, onEdit: () -> Unit) {
-    val text = buildString {
-        if (status.repoUrl == null && status.syncedAt == null) {
-            append("No cooking site set. Tap to import recipes from a cooking site repository.")
-            return@buildString
-        }
-        append(status.syncedAt?.let { "Cooking site synced ${instantLabel(it)}" } ?: "Cooking site not synced yet")
-        status.everyHours?.let { append(" · automatically every $it hours") }
-        status.error?.let { append(". Last sync failed: $it") }
+    val text = when {
+        status.repoUrl == null && status.syncedAt == null -> "No cooking site set. Tap to import recipes from one."
+        status.syncedAt == null -> "Cooking site not synced yet"
+        else -> "Cooking site synced ${instantLabel(status.syncedAt!!)}"
     }
-    Text(
-        text,
-        modifier = Modifier.clickable(onClick = onEdit).padding(horizontal = 16.dp, vertical = 4.dp),
-        style = MaterialTheme.typography.bodySmall,
-        color = if (status.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-    )
+    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onEdit).padding(horizontal = 16.dp), verticalArrangement = Arrangement.Center) {
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        status.error?.let { ErrorBanner("Last sync failed", it) }
+    }
 }
 
 /** Sets the git repository of the account's cooking site (Hugo recipes), or clears it. */
@@ -257,7 +251,7 @@ private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: s
         title = { Text("Cooking site") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("The git repository of your cooking site. Its recipes are imported now and every 6 hours.")
+                Text("The git repository of your cooking site. Its recipes are imported now and then automatically every 6 hours.")
                 OutlinedTextField(
                     url, { url = it; error = null },
                     label = { Text("Repository URL") },
@@ -280,26 +274,26 @@ private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: s
     )
 }
 
+/** A recipe in the list: the title, then nutrition left and cost right, then details and a warning badge. */
 @Composable
 private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
-    val details = buildList {
-        if (recipe.tags.isNotEmpty()) add(recipe.tags.joinToString(" · "))
-        recipe.servings?.let { add(if (it == 1) "1 serving" else "$it servings") }
-        recipe.rating?.let { add("★".repeat(it)) }
-        val nutrition = recipe.nutrition
-        when {
-            !recipe.plannable || nutrition == null -> add("no amounts yet")
-            nutrition.complete && nutrition.unquantified.isNotEmpty() -> add("${nutrition.headline()} (missing amounts)")
-            nutrition.complete -> add(nutrition.headline())
-            else -> add("${nutrition.uncounted.size} ingredients to link")
+    val text = recipe.rowText()
+    Column(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(recipe.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (text.nutrition != null || text.cost != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(text.nutrition.orEmpty(), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                text.cost?.let { Text(it, style = MaterialTheme.typography.bodyMedium, softWrap = false) }
+            }
         }
-        recipe.cost?.let { add("≈ ${formatEuro(it.perServingWithOffers)}") }
+        text.details?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        text.warning?.let { WarningBadge(it) }
     }
-    ListItem(
-        headlineContent = { Text(recipe.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text(details.joinToString("  ·  "), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        modifier = Modifier.clickable(onClick = onClick),
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -410,17 +404,18 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
     }
 }
 
-/** Five stars; tapping the current rating clears it. */
+/** Five stars, each a 48 dp target; tapping the current rating clears it. */
 @Composable
 private fun RatingRow(rating: Int?, onRate: (Int?) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Rating", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = 8.dp))
         for (star in 1..5) {
-            TextButton(onClick = { onRate(if (rating == star) null else star) }, contentPadding = PaddingValues(4.dp)) {
-                Text(
-                    if (rating != null && star <= rating) "★" else "☆",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.primary,
+            val filled = rating != null && star <= rating
+            IconButton(onClick = { onRate(if (rating == star) null else star) }) {
+                Icon(
+                    if (filled) AppIcons.StarFilled else AppIcons.Star,
+                    contentDescription = if (star == 1) "Rate 1 star" else "Rate $star stars",
+                    tint = MaterialTheme.colorScheme.primary,
                 )
             }
         }
@@ -560,7 +555,12 @@ internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // A long technical message gets a one-line summary and a "Details" button.
+        if (detail.length <= 100 && '\n' !in detail) {
+            Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            ErrorBanner(summary = detail.lineSequence().first().take(100) + "…", details = detail, modifier = Modifier.fillMaxWidth())
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onRetry) { Text("Try again") }
             if (openServer != null) TextButton(onClick = openServer) { Text("Server settings") }

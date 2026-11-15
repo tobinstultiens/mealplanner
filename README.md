@@ -71,6 +71,9 @@ The server address and the login are under Progress → Settings. Until another 
 build's default applies: `http://10.0.2.2:8080` (the host machine, seen from an emulator), which
 `-PserverUrl=…` changes at build time. The tokens are kept in the app's private storage.
 
+Numbers, prices and dates follow the device's language (a decimal comma, `vr 13 nov`); the app's own texts are
+English. The web app uses the browser's language.
+
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):
 

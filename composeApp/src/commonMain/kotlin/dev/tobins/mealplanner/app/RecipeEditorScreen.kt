@@ -40,7 +40,7 @@ import kotlinx.coroutines.launch
 
 /** An ingredient line back in the `amount | unit | item` form the editor works with. */
 private fun IngredientLine.asInputLine(): String =
-    "${amount?.let(::formatAmount).orEmpty()} | ${unit.orEmpty()} | $item"
+    "${amount?.let { formatAmount(it, FormatLocale.English) }.orEmpty()} | ${unit.orEmpty()} | $item"
 
 /**
  * Creates a recipe of the user's own, or edits one ([recipeId] set). Meant for simple

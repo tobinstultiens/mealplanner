@@ -91,7 +91,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
             TopAppBar(
                 title = {
                     PeriodStepper(
-                        label = "Week of ${dayLabel(weekStart).substringAfter(' ')}",
+                        label = "Week of ${dayMonthLabel(weekStart)}",
                         previous = "Previous week",
                         next = "Next week",
                         onPrevious = { weekStart = plusDays(weekStart, -7) },
@@ -198,31 +198,39 @@ private fun DayCard(
                 Text("Nothing planned", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             for (meal in day.meals) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f).clickable { onOpenRecipe(meal.recipeId) }) {
-                        Text(
-                            meal.slot.name.lowercase().replaceFirstChar { it.uppercase() } + if (meal.leftover) " · leftovers" else "",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // The whole meal opens its recipe; the two icon buttons take their own taps.
+                Column(Modifier.fillMaxWidth().clickable { onOpenRecipe(meal.recipeId) }) {
+                    // The title gets the full width left of the icon buttons; the numbers sit below.
+                    Row(verticalAlignment = Alignment.Top) {
+                        Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
+                            Text(
+                                meal.slot.name.lowercase().replaceFirstChar { it.uppercase() } + if (meal.leftover) " · leftovers" else "",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(meal.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                        BarAction(
+                            if (meal.locked) AppIcons.Lock else AppIcons.LockOpen,
+                            if (meal.locked) "Unlock ${meal.slot.name.lowercase()}" else "Lock ${meal.slot.name.lowercase()}",
+                            onClick = { onToggleLock(meal) },
+                            enabled = enabled,
                         )
-                        Text(meal.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "${formatAmount(meal.portions)} ${if (meal.portions == 1.0) "serving" else "servings"} · " +
-                                "${meal.kcal.roundToInt()} kcal · ${meal.proteinG.roundToInt()} g protein" +
-                                (meal.cost?.let { " · ≈ ${formatEuro(it)}" } ?: ""),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    TextButton(enabled = enabled, onClick = { onToggleLock(meal) }) { Text(if (meal.locked) "Unlock" else "Lock") }
-                    Box {
-                        var menu by remember { mutableStateOf(false) }
-                        TextButton(enabled = enabled && !meal.locked, onClick = { menu = true }) { Text("Swap") }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text("Another recipe") }, onClick = { menu = false; onReroll(meal) })
-                            DropdownMenuItem(text = { Text("Write a new recipe…") }, onClick = { menu = false; onGenerate(meal) })
+                        Box {
+                            var menu by remember { mutableStateOf(false) }
+                            BarAction(
+                                AppIcons.Swap,
+                                "Swap ${meal.slot.name.lowercase()}",
+                                onClick = { menu = true },
+                                enabled = enabled && !meal.locked,
+                            )
+                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(text = { Text("Another recipe") }, onClick = { menu = false; onReroll(meal) })
+                                DropdownMenuItem(text = { Text("Write a new recipe…") }, onClick = { menu = false; onGenerate(meal) })
+                            }
                         }
                     }
+                    MealNumbers(meal.macrosText(), meal.cost?.let { "≈ ${formatEuro(it)}" }, Modifier.padding(bottom = 4.dp))
                 }
             }
         }

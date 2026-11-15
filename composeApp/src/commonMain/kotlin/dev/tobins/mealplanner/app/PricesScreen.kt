@@ -26,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.PricesState
 import kotlinx.coroutines.delay
@@ -92,7 +91,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                                 when {
                                     prices.refreshing -> "Looking up prices at Albert Heijn; this takes a few minutes."
                                     prices.fetchedAt == null -> "No prices looked up yet. Tap Refresh."
-                                    else -> "${prices.prices.size} ingredients priced from Albert Heijn, looked up ${dayLabel(prices.fetchedAt!!.take(10))}."
+                                    else -> "${prices.prices.size} ingredients priced from Albert Heijn, looked up ${dayMonthLabel(prices.fetchedAt!!.take(10))}."
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                             )
@@ -114,8 +113,6 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                                         price.packSize,
                                         price.packPrice?.let { formatEuro(it) },
                                     ).joinToString(" · "),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             },
                         )
