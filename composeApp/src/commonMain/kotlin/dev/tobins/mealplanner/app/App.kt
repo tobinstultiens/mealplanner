@@ -247,7 +247,7 @@ fun App(
                             when (tab) {
                                 Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenPlan = { tab = Tab.PLAN })
                                 Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { profileOpen = true })
-                                Tab.SHOPPING -> ShoppingScreen(api, shoppingCache, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
+                                Tab.SHOPPING -> ShoppingScreen(api, shoppingCache, storage, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
                                 Tab.RECIPES -> RecipeListScreen(
                                     api,
                                     onOpen = { openRecipeId = it },

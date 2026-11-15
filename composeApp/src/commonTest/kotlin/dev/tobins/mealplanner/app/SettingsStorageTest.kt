@@ -15,6 +15,17 @@ class SettingsStorageTest {
     }
 
     @Test
+    fun shoppingModeIsOffUntilSwitchedOn() {
+        val storage = MemorySettingsStorage()
+        assertEquals(false, storage.shoppingMode())
+
+        storage.saveShoppingMode(true)
+        assertEquals(true, storage.shoppingMode())
+        storage.saveShoppingMode(false)
+        assertEquals(false, storage.shoppingMode())
+    }
+
+    @Test
     fun systemColoursAreOffUntilSwitchedOn() {
         val storage = MemorySettingsStorage()
         assertEquals(false, storage.systemColors())

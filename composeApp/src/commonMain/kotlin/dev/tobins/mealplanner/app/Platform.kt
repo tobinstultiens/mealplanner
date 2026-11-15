@@ -23,3 +23,11 @@ expect fun systemColorsAvailable(): Boolean
 /** The wallpaper-based colour scheme, or null where [systemColorsAvailable] is false. */
 @Composable
 expect fun systemColorScheme(dark: Boolean): ColorScheme?
+
+/**
+ * Keeps the screen from dimming and locking while [enabled] and this call is part of the
+ * composition; leaving the composition (or the app) restores the normal behaviour. The browser
+ * does nothing.
+ */
+@Composable
+expect fun KeepScreenOn(enabled: Boolean)

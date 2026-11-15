@@ -43,3 +43,10 @@ private const val SYSTEM_COLORS_KEY = "systemColors"
 fun SettingsStorage.systemColors(): Boolean = get(SYSTEM_COLORS_KEY) == "true"
 
 fun SettingsStorage.saveSystemColors(on: Boolean) = set(SYSTEM_COLORS_KEY, on.toString())
+
+private const val SHOPPING_MODE_KEY = "shoppingMode"
+
+/** Whether the Shopping screen is in shopping mode (big rows, screen kept on); off by default. */
+fun SettingsStorage.shoppingMode(): Boolean = get(SHOPPING_MODE_KEY) == "true"
+
+fun SettingsStorage.saveShoppingMode(on: Boolean) = set(SHOPPING_MODE_KEY, on.toString())
