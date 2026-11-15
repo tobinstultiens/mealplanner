@@ -171,6 +171,11 @@ class FakeBackend(
                     offers = listOf(offerList[1].copy(paidShare = 0.75)), imageUrl = offerList[1].imageUrl, regularPrice = 13.97,
                 ),
                 item("feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea, offers = listOf(offerList[2].copy(paidShare = 0.5)), imageUrl = offerList[2].imageUrl, regularPrice = 4.60),
+                // Lidl's second week starts on Thursday, two days after the fixed "today": a badge with its day, nothing in the saving.
+                item(
+                    "yoghurt", "Greek yoghurt", 500.0, null, ShopSection.DAIRY, chickpea,
+                    offers = listOf(Offer(Store.LIDL, "Griekse yoghurt 500 g", "voor 1,19", 1.19, 1.79, "500 g", null, "2026-11-19", "2026-11-25", paidShare = 0.66)), regularPrice = 1.79,
+                ),
                 item("oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries", offers = listOf(offerList[3].copy(paidShare = 0.79)), regularPrice = 0.76),
             ),
             staples = listOf("Olive oil", "Salt"),

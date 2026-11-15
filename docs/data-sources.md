@@ -124,6 +124,10 @@ The shopping list gives each item's regular price for the amount needed (`Shoppi
 and each offer's share (`Offer.paidShare`, as above), so the app can show what a store's offers save:
 the sum of regular price times the share taken off, for the items whose best offer is there. An item whose offers have no share (the deal can't be valued)
 keeps its badge but is listed under "Any store".
+The server sends every offer that overlaps the plan week, so the app judges each against today
+(the stores' weeks differ): an offer that has ended is ignored everywhere on the list; one that
+starts later keeps its badge with the day (`Lidl €1.79 / from Thu`) and stays under its store,
+but is left out of the saving, and an offer valid today always wins over one that starts later.
 Regular prices are AH's, so for Jumbo and Lidl that saving is an estimate against AH's price, and the
 app says so.
 

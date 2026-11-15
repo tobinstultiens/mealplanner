@@ -117,6 +117,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     VIEW_STORE("Per store", "Per winkel"),
     ALL_TICKED_OFF("All {0} ticked off", "Alle {0} afgevinkt"),
     BADGE_OFFER("offer", "aanbieding"),
+    OFFER_FROM("from {0}", "vanaf {0}"),
 
     // --- App shell and login
     YOUR_ACCOUNT("your account", "je account"),

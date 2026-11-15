@@ -28,17 +28,17 @@ enum class AdviceTexts(val group: ShoppingAdviceGroup, val title: Msg, val hint:
  * one (say its store was switched off since the list was made) is left out in every view, and at
  * another store it is left out rather than set apart like this week's items.
  */
-fun adviceAt(items: List<ShoppingItem>, store: Store?, shops: Set<Store>): List<ShoppingItem> =
-    items.filter { item -> item.bestOffer(shops)?.let { store == null || it.store == store } == true }
+fun adviceAt(items: List<ShoppingItem>, store: Store?, shops: Set<Store>, today: String): List<ShoppingItem> =
+    items.filter { item -> item.bestOffer(shops, today)?.let { store == null || it.store == store } == true }
 
 /**
  * True when an advice group follows this week's part in the view for [store]: one with items to
  * show, or a line saying it was hidden. Only then does this week's part get a title.
  */
-fun ShoppingList.hasAdvice(store: Store?, shops: Set<Store>): Boolean =
-    AdviceTexts.entries.any { it.dismissed(this) || adviceAt(it.items(this), store, shops).isNotEmpty() }
+fun ShoppingList.hasAdvice(store: Store?, shops: Set<Store>, today: String): Boolean =
+    AdviceTexts.entries.any { it.dismissed(this) || adviceAt(it.items(this), store, shops, today).isNotEmpty() }
 
 /** The hint under an advice group's title: what it is for, and what its offers save when that is known. */
-fun adviceHint(texts: AdviceTexts, items: List<ShoppingItem>, shops: Set<Store>, strings: Strings): String =
-    listOfNotNull(strings(texts.hint), savingOf(items, shops)?.let { strings(Msg.ADVICE_SAVING, formatEuro(it, strings.locale)) })
+fun adviceHint(texts: AdviceTexts, items: List<ShoppingItem>, shops: Set<Store>, today: String, strings: Strings): String =
+    listOfNotNull(strings(texts.hint), savingOf(items, shops, today)?.let { strings(Msg.ADVICE_SAVING, formatEuro(it, strings.locale)) })
         .joinToString(" ")

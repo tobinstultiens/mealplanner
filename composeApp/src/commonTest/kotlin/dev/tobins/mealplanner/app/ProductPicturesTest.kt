@@ -8,6 +8,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class ProductPicturesTest {
+    private val today = "2026-01-02"
+    private val all = Store.entries.toSet()
+
     private val ah = "https://static.ah.nl/dam/product/p.webp"
     private val jumbo = "https://www.jumbo.com/INTERSHOP/static/Week%2046/p.png"
     private val lidl = "https://www.lidl.nl/assets/gcp1.png"
@@ -47,7 +50,7 @@ class ProductPicturesTest {
         // The item's own picture is the cheapest offer's, Lidl's here; the AH-only view shows AH's badge.
         val item = ShoppingItem("pear", "Pear", null, null, "Fruit", emptyList(), false, false, listOf(ahOffer, lidlOffer), imageUrl = lidl)
 
-        assertEquals(ah, item.pictureUrl(item.bestOffer(setOf(Store.AH))))
+        assertEquals(ah, item.pictureUrl(item.bestOffer(setOf(Store.AH), today)))
         assertEquals(lidl, item.pictureUrl(null))
         assertEquals(lidl, item.pictureUrl(offer(Store.AH, 1.49, null)))
     }
@@ -59,7 +62,7 @@ class ProductPicturesTest {
         val item = ShoppingItem("pear", "Pear", null, null, "Fruit", emptyList(), false, false, listOf(offer(Store.AH, 1.49, null), offer(Store.LIDL, 1.19, lidl)), imageUrl = lidl)
         val withoutLidl = setOf(Store.AH, Store.JUMBO)
 
-        assertNull(item.pictureUrl(item.bestOffer(withoutLidl), withoutLidl))
-        assertEquals(lidl, item.pictureUrl(item.bestOffer(), Store.entries.toSet()))
+        assertNull(item.pictureUrl(item.bestOffer(withoutLidl, today), withoutLidl))
+        assertEquals(lidl, item.pictureUrl(item.bestOffer(all, today), Store.entries.toSet()))
     }
 }

@@ -7,19 +7,42 @@ import dev.tobins.mealplanner.api.Store
 /** The store as the app names it in short: `AH` rather than `Albert Heijn`. */
 fun Store.shortName(): String = label.substringBefore(' ').let { if (it == "Albert") "AH" else it }
 
+/** True when the offer can be had on [today] (ISO date): it has started and not ended. */
+fun Offer.validOn(today: String): Boolean = validFrom <= today && today <= validUntil
+
+/** True when the offer starts after [today]: shown with its day, but not something to buy for yet. */
+fun Offer.startsAfter(today: String): Boolean = validFrom > today
+
 /**
- * The preferred offer among those of the stores in [shops]; all stores by default. Which one is
- * the shared [dev.tobins.mealplanner.shopping.bestOffer]: the one that saves most.
+ * The preferred offer among those of the stores in [shops]. Which one is the shared
+ * [dev.tobins.mealplanner.shopping.bestOffer]: the one that saves most. Offers that ended before
+ * [today] are ignored. One that is valid today wins over any that starts later, so the list never
+ * promises what the till will not give; only an item with nothing valid today shows the best of
+ * its coming offers (with the day it starts, see [badgeText]).
  */
-fun ShoppingItem.bestOffer(shops: Set<Store> = Store.entries.toSet()): Offer? =
-    dev.tobins.mealplanner.shopping.bestOffer(offers.filter { it.store in shops })
+fun ShoppingItem.bestOffer(shops: Set<Store>, today: String): Offer? {
+    val notEnded = offers.filter { it.store in shops && it.validUntil >= today }
+    return dev.tobins.mealplanner.shopping.bestOffer(notEnded.filter { it.validOn(today) })
+        ?: dev.tobins.mealplanner.shopping.bestOffer(notEnded)
+}
 
 /**
  * The offer that puts this item under a store: the preferred one when it is known to save
  * something. An item whose offers are only deals nobody could value (no share) is not claimed by
  * their store; it keeps its badge but is listed under any store.
  */
-fun ShoppingItem.savingOffer(shops: Set<Store>): Offer? = bestOffer(shops)?.takeIf { it.paidShare != null }
+fun ShoppingItem.savingOffer(shops: Set<Store>, today: String): Offer? = bestOffer(shops, today)?.takeIf { it.paidShare != null }
+
+/**
+ * The full deals of the item's offers in [shops] for the row's snackbar, one per line: those valid
+ * today as they are, those that start later with their day. Ended offers are left out, as they
+ * are everywhere on the list.
+ */
+fun ShoppingItem.dealText(shops: Set<Store>, today: String, strings: Strings): String =
+    offers.filter { it.store in shops && it.validUntil >= today }.distinctBy { it.store to it.deal }.joinToString("\n") {
+        val later = if (it.startsAfter(today)) " ${it.startLabel(today, strings)}" else ""
+        "${it.shortText(strings)}$later (${it.title})"
+    }
 
 /**
  * What buying this item with [offer] saves in euros: its regular price times the share the offer
@@ -34,11 +57,12 @@ fun ShoppingItem.saving(offer: Offer): Double? {
 }
 
 /**
- * What [items] save together when each is bought with its preferred offer in [shops]; null when
- * no saving is known, or it is less than a cent.
+ * What [items] save together when each is bought with its preferred offer in [shops] on [today];
+ * null when no saving is known, or it is less than a cent. An offer that only starts later saves
+ * nothing today, so it is left out of the sum although its badge stays on the row.
  */
-fun savingOf(items: List<ShoppingItem>, shops: Set<Store>): Double? =
-    items.mapNotNull { item -> item.bestOffer(shops)?.let(item::saving) }.sum().takeIf { it >= 0.005 }
+fun savingOf(items: List<ShoppingItem>, shops: Set<Store>, today: String): Double? =
+    items.mapNotNull { item -> item.bestOffer(shops, today)?.takeIf { it.validOn(today) }?.let(item::saving) }.sum().takeIf { it >= 0.005 }
 
 /** The items whose saving offer ([savingOffer]) is at [store], and what those offers save ([savingOf]). */
 data class StoreGroup(val store: Store, val items: List<ShoppingItem>, val saving: Double? = null) {
@@ -56,10 +80,10 @@ data class StoreOverview(val stores: List<StoreGroup>, val anyStore: List<Shoppi
  * Splits [items] by their saving offer among the stores in [shops]. Stores without items
  * get no group. Each item lands in exactly one group, in the order of the list.
  */
-fun storeOverview(items: List<ShoppingItem>, shops: Set<Store>): StoreOverview {
-    val byStore = items.groupBy { it.savingOffer(shops)?.store }
+fun storeOverview(items: List<ShoppingItem>, shops: Set<Store>, today: String): StoreOverview {
+    val byStore = items.groupBy { it.savingOffer(shops, today)?.store }
     return StoreOverview(
-        stores = Store.entries.filter { it in shops }.mapNotNull { store -> byStore[store]?.let { StoreGroup(store, it, savingOf(it, shops)) } },
+        stores = Store.entries.filter { it in shops }.mapNotNull { store -> byStore[store]?.let { StoreGroup(store, it, savingOf(it, shops, today)) } },
         anyStore = byStore[null].orEmpty(),
     )
 }
@@ -70,7 +94,7 @@ data class CheaperElsewhere(val item: ShoppingItem, val offer: Offer)
 /**
  * The list for one visit to [store]: what can be bought there ([sections], in walking order)
  * and what is on offer elsewhere ([elsewhere]). Together they hold every item once. [saving] is
- * what the store's own offers save on them.
+ * what the store's own offers save on them today.
  */
 data class StoreVisit(
     val store: Store,
@@ -84,16 +108,16 @@ data class StoreVisit(
  * section as in [shoppingSections]; the items whose saving offer is at another store in
  * [shops] are set apart as [StoreVisit.elsewhere].
  */
-fun storeVisit(items: List<ShoppingItem>, store: Store, shops: Set<Store>, shoppingMode: Boolean): StoreVisit {
-    val (here, elsewhere) = items.partition { (it.savingOffer(shops)?.store ?: store) == store }
+fun storeVisit(items: List<ShoppingItem>, store: Store, shops: Set<Store>, today: String, shoppingMode: Boolean): StoreVisit {
+    val (here, elsewhere) = items.partition { (it.savingOffer(shops, today)?.store ?: store) == store }
     return StoreVisit(
         store,
         shoppingSections(here, shoppingMode),
-        elsewhere.map { CheaperElsewhere(it, it.savingOffer(shops)!!) },
+        elsewhere.map { CheaperElsewhere(it, it.savingOffer(shops, today)!!) },
         // Items without a saving offer here add nothing.
-        savingOf(here, shops),
+        savingOf(here, shops, today),
     )
 }
 
 /** `Jumbo €1,99`: where an item is cheaper and for how much. */
-fun CheaperElsewhere.where(strings: Strings): String = offer.badgeText(strings)
+fun CheaperElsewhere.where(strings: Strings, today: String): String = offer.badgeText(strings, today)
