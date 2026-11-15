@@ -87,7 +87,7 @@ class ShoppingAdviceTest {
             adviceHint(AdviceTexts.BUY_AHEAD, listOf(beef, spinach), all, today, Strings.English, provisional = true),
         )
         assertEquals(
-            "Volgende week is nog niet gepland: dit zijn maaltijden die het kan krijgen. Het blijft goed en de aanbieding stopt deze week. Afgevinkt kiest het plan van volgende week liever maaltijden die het gebruiken. Bespaart ongeveer € 4,50.",
+            "Volgende week is nog niet gepland: dit zijn maaltijden die het kan krijgen. Het blijft goed en de aanbieding stopt deze week. Afgevinkt kiest het plan van volgende week liever maaltijden die het gebruiken. Bespaart ongeveer €4,50.",
             adviceHint(AdviceTexts.BUY_AHEAD, listOf(beef, spinach), all, today, Strings.Dutch, provisional = true),
         )
         // Stock-up advice has no meals, so nothing changes for it.
