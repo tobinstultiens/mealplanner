@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.shopping.ShopSection
 import dev.tobins.mealplanner.units.Dimension
+import kotlin.math.ceil
 
 /** A recipe in the amount to shop for: [portions] of its servings, leftovers included. */
 data class PlannedRecipe(val recipeId: Long, val title: String, val portions: Double)
@@ -16,10 +17,24 @@ class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: 
     var grams = 0.0
     var gramsKnown = true
     var pieces = 0.0
+
+    /** What could not be converted to grams and is not the ingredient itself, summed per unit as written, scaled. */
+    private val others = linkedMapOf<String, Double>()
     val recipes = linkedSetOf<String>()
 
     /** The total weight, when every use could be converted to grams and there is some. */
     val totalGrams: Double? get() = grams.takeIf { gramsKnown && it > 0 }
+
+    /** The weight of the lines that could be converted, when [totalGrams] is null because other lines could not. */
+    val knownGrams: Double? get() = grams.takeIf { !gramsKnown && it > 0 }
+
+    /** `1 bag`, `250 ml`: [others] rounded up to whole units, in the order first met. */
+    val otherAmounts: List<String> get() = others.map { (unit, amount) -> "${ceil(amount - 1e-9).toInt()} $unit" }
+
+    /** Adds a line that has no weight: a count in a container or a volume without a density. */
+    fun addOther(unit: String, amount: Double) {
+        others.merge(unit.lowercase(), amount, Double::plus)
+    }
 
     /** The row on the list, with what is known about buying it. */
     fun toItem(
@@ -33,6 +48,8 @@ class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: 
         key = key.toString(),
         name = name,
         grams = totalGrams,
+        knownGrams = knownGrams,
+        otherAmounts = otherAmounts,
         pieces = pieces.takeIf { it > 0 },
         category = section.title,
         recipes = recipes.toList(),
@@ -83,6 +100,8 @@ fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, s
             val grams = gramsOf(line, ingredient)
             if (grams != null) need.grams += grams * factor else need.gramsKnown = false
             if (line.dimension == Dimension.COUNT) need.pieces += amount * factor
+            val unit = line.unit
+            if (grams == null && unit != null && !line.unitIsTheIngredient) need.addOther(unit, amount * factor)
         }
     }
     return ShoppingNeeds(

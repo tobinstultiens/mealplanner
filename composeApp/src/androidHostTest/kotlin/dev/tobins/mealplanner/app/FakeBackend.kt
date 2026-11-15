@@ -153,8 +153,8 @@ class FakeBackend(
         if (emptyWeek) return ShoppingList(weekStart, emptyList(), emptyList())
         // In walking order, as the server sends it: by shop section, then by name. The regular price is the
         // amount needed at the price per kg of `prices`; the pepper, counted in pieces only, has none.
-        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String?, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null) =
-            ShoppingItem(key, name, grams, pieces, section.title, listOfNotNull(recipe), onHand = false, checked = checked, offers = offers, imageUrl = imageUrl, regularPrice = regularPrice)
+        fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String?, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null, knownGrams: Double? = null, otherAmounts: List<String> = emptyList()) =
+            ShoppingItem(key, name, grams, pieces, section.title, listOfNotNull(recipe), onHand = false, checked = checked, knownGrams = knownGrams, otherAmounts = otherAmounts, offers = offers, imageUrl = imageUrl, regularPrice = regularPrice)
         // Offers that end this week, for the advice: with their share already worked out, as the server sends them.
         fun deal(store: Store, title: String, deal: String, price: Double, paidShare: Double) =
             Offer(store, title, deal, price, null, null, null, "2026-11-16", "2026-11-22", paidShare = paidShare)
@@ -164,7 +164,8 @@ class FakeBackend(
             weekStart = weekStart,
             items = listOf(
                 item("pepper", "Red bell pepper", null, 4.0, ShopSection.FRUIT_VEG, chickpea, offers = listOf(offerList[0].copy(paidShare = 0.75)), imageUrl = offerList[0].imageUrl),
-                item("spinach", "Spinach", 600.0, null, ShopSection.FRUIT_VEG, chicken, regularPrice = 3.98),
+                // Weighed in one recipe and counted in bags in another: the weight is known only in part.
+                item("spinach", "Spinach", null, 1.0, ShopSection.FRUIT_VEG, chicken, knownGrams = 600.0, otherAmounts = listOf("1 bag")),
                 item(
                     "chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true,
                     offers = listOf(offerList[1].copy(paidShare = 0.75)), imageUrl = offerList[1].imageUrl, regularPrice = 13.97,
