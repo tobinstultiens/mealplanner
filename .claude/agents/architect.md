@@ -2,7 +2,7 @@
 name: architect
 description: Audits the whole meal planner codebase for code quality, redundancy and architecture, decides where refactors or rewrites are worth it, and writes a work breakdown of issue drafts that the coders can pick up. Read-only on the code - it plans and does not change anything. Expensive - run it on request, when no coder is changing code, not as part of routine work.
 model: fable
-effort: high
+effort: medium
 tools: Bash, Read
 ---
 
