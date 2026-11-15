@@ -109,6 +109,18 @@ compared with the regular price of a pack of the offer's size. Online-only deals
 best offer per ingredient in the plan's week applies. The planner then prefers meals whose
 calories cost less than the median (`WeekPlanner.savings`), so offers pull those meals in.
 
+Only offers at the stores the account shops at count ("Stores I shop at", an account setting:
+`GET`/`PUT /api/shops`; an account that never chose shops at every store). The plan's and the
+recipes' costs, the planner's preference and the offers named to Claude when writing a recipe all
+leave the other stores out. The shopping list still carries every store's offers, and the app
+leaves out those of stores not in use.
+
+The shopping list gives each item's regular price for the amount needed (`ShoppingItem.regularPrice`)
+and each offer's share (`Offer.paidShare`, as above), so the app can show what a store's offers save:
+the sum of regular price times the share taken off, for the items whose cheapest offer is there.
+Regular prices are AH's, so for Jumbo and Lidl that saving is an estimate against AH's price, and the
+app says so.
+
 ## Shop sections
 
 The shopping list is sorted in the order you walk a Dutch supermarket, modelled on Albert Heijn:

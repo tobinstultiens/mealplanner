@@ -68,11 +68,19 @@ fun ShoppingItem.quantityText(locale: FormatLocale): String = listOfNotNull(
 /**
  * What to buy for a week's plan, grouped by shop section in the order you walk the shop, with
  * items to tick off. The server sends the items in that order, so grouping keeps it. A second
- * view groups by the store to buy at, and one store can be chosen as the shop you are in.
+ * view groups by the store to buy at, among the account's [accountShops], with what each store's
+ * offers save; one store can be chosen as the shop you are in.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStorage, onOpenPantry: () -> Unit, onOpenOffers: () -> Unit) {
+fun ShoppingScreen(
+    api: ApiClient,
+    cache: ShoppingCache,
+    settings: SettingsStorage,
+    accountShops: AccountShops,
+    onOpenPantry: () -> Unit,
+    onOpenOffers: () -> Unit,
+) {
     val t = LocalStrings.current
     var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
     var state by remember { mutableStateOf<Load<ShoppingList>>(Load.Loading) }
@@ -84,7 +92,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
     var shoppingMode by remember { mutableStateOf(settings.shoppingMode()) }
     var view by remember { mutableStateOf(settings.shoppingView()) }
     var chosenStore by remember { mutableStateOf(settings.shoppingStore()) }
-    var shops by remember { mutableStateOf(settings.shops()) }
+    val shops = accountShops.stores
     val listState = rememberLazyListState()
     // Finished sections and Done groups the user opened; everything else stays collapsed.
     var expanded by remember { mutableStateOf(emptySet<String>()) }
@@ -164,6 +172,16 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                 }
                 if (doneOpen) items(section.done, key = { it.key }) { item -> row(item) }
             }
+        }
+    }
+
+    // Another device may have changed the stores; without a connection the last known ones stay.
+    LaunchedEffect(accountShops, reload) { load { accountShops.sync() } }
+
+    /** Shown at once; when the server can't be told, the chips go back and say why. */
+    fun chooseShops(chosen: Set<Store>) {
+        scope.launch {
+            (load { accountShops.choose(chosen) } as? Load.Failed)?.let { snackbar.showSnackbar(t(Msg.SHOPS_SAVE_FAILED, it.message)) }
         }
     }
 
@@ -264,10 +282,11 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                         view == ShoppingView.SECTION -> sectionItems(shoppingSections(list.items, shoppingMode)) { row(it) }
                         store == null -> {
                             val overview = storeOverview(list.items, shops)
-                            item { ShopsInUse(shops) { shops = it; settings.saveShops(it) } }
+                            item { ShopsInUse(shops, ::chooseShops) }
                             overview.stores.forEach { group ->
                                 item(key = "s:${group.store.name}") {
-                                    GroupHeader(group.title(t), t(Msg.TAP_TO_SHOP), onClick = { chooseStore(group.store) })
+                                    val hint = group.saving?.let { t(Msg.STORE_SAVING_HINT, formatEuro(it, t.locale)) } ?: t(Msg.TAP_TO_SHOP)
+                                    GroupHeader(group.title(t), hint, onClick = { chooseStore(group.store) })
                                 }
                                 groupItems(group.store.name, group.items) { row(it, it.bestOffer(shops)) }
                             }
@@ -284,7 +303,7 @@ fun ShoppingScreen(api: ApiClient, cache: ShoppingCache, settings: SettingsStora
                         }
                         else -> {
                             val visit = storeVisit(list.items, store, shops, shoppingMode)
-                            item(key = "visit") { ShopIAmIn(store) { chooseStore(null) } }
+                            item(key = "visit") { ShopIAmIn(store, visit.saving) { chooseStore(null) } }
                             sectionItems(visit.sections) { row(it, it.bestOffer(shops)) }
                             if (visit.elsewhere.isNotEmpty()) {
                                 val open = "elsewhere" in expanded
@@ -396,7 +415,10 @@ private fun ViewSwitch(view: ShoppingView, onChange: (ShoppingView) -> Unit) {
     }
 }
 
-/** The stores this device shops at; the last one stays on, as the list needs at least one. */
+/**
+ * The stores the account shops at, which the planner uses too; the last one stays on, as the list
+ * needs at least one. The note under them says so, and what the savings are measured against.
+ */
 @Composable
 private fun ShopsInUse(shops: Set<Store>, onChange: (Set<Store>) -> Unit) {
     val t = LocalStrings.current
@@ -411,6 +433,7 @@ private fun ShopsInUse(shops: Set<Store>, onChange: (Set<Store>) -> Unit) {
                 )
             }
         }
+        Text(t(Msg.SHOPS_NOTE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -432,9 +455,9 @@ private fun GroupHeader(title: String, hint: String, onClick: (() -> Unit)?) {
     }
 }
 
-/** Which shop the list is for, with the way back to all stores. */
+/** Which shop the list is for, what its offers save there, and the way back to all stores. */
 @Composable
-private fun ShopIAmIn(store: Store, onAllStores: () -> Unit) {
+private fun ShopIAmIn(store: Store, saving: Double?, onAllStores: () -> Unit) {
     val t = LocalStrings.current
     Row(Modifier.fillMaxWidth().padding(start = Spacing.ScreenEdge, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -444,6 +467,13 @@ private fun ShopIAmIn(store: Store, onAllStores: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (saving != null) {
+                Text(
+                    t(Msg.VISIT_SAVING, formatEuro(saving, t.locale)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         TextButton(onClick = onAllStores) { Text(t(Msg.ALL_STORES)) }
     }

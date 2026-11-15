@@ -16,6 +16,7 @@ import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.http.HttpMethod
@@ -323,6 +324,11 @@ fun Application.module(
             get("/api/profile") { call.respond(call.user.profiles.state()) }
 
             put("/api/profile") { call.respond(call.user.profiles.save(call.receive<Profile>())) }
+
+            // The stores the account shops at; offers elsewhere don't count for its plans and costs.
+            get("/api/shops") { call.respond(call.user.shops.setting()) }
+
+            put("/api/shops") { call.respond(call.user.shops.save(call.receive<ShopsSetting>())) }
 
             route("/api/plans/{weekStart}") {
                 fun io.ktor.server.routing.RoutingCall.week() = parameters["weekStart"]!!

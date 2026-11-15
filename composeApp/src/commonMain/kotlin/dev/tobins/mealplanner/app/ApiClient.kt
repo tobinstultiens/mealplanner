@@ -25,6 +25,7 @@ import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.UnmappedText
@@ -249,6 +250,14 @@ class ApiClient(
     }.body()
 
     suspend fun plan(weekStart: String): WeekPlan = http.get("api/plans/$weekStart").body()
+
+    /** The stores the account shops at; [ShopsSetting.stores] is null when it never chose. */
+    suspend fun shops(): ShopsSetting = http.get("api/shops").body()
+
+    suspend fun saveShops(setting: ShopsSetting): ShopsSetting = http.put("api/shops") {
+        contentType(ContentType.Application.Json)
+        setBody(setting)
+    }.body()
 
     suspend fun generatePlan(weekStart: String): WeekPlan = http.post("api/plans/$weekStart/generate").body()
 

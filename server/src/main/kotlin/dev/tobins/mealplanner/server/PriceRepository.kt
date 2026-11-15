@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientPrice
+import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.PricesState
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.pricing.Discounts
@@ -81,19 +82,41 @@ class PriceRepository(
         return ingredients.list().filter { it.pricePerKg == null }.mapNotNull { i -> images[i.name.lowercase()]?.let { i.id to it } }.toMap()
     }
 
-    /** One account's prices with the discounts of offers valid at some point between [from] and [until]. */
-    fun pricing(ingredients: IngredientRepository, from: LocalDate, until: LocalDate): Pricing {
+    /**
+     * Offers valid at some point between [from] and [until] for one account's ingredients, by
+     * ingredient id, at every store; each with its [Offer.paidShare] against the ingredient's regular price.
+     */
+    fun offers(ingredients: IngredientRepository, from: LocalDate, until: LocalDate): Map<Long, List<Offer>> =
+        offersWithShares(ingredients, perKg(ingredients), from, until)
+
+    /**
+     * One account's prices with the discounts of offers valid at some point between [from] and
+     * [until], at the stores in [shops] only: an offer where the account never shops saves it nothing.
+     */
+    fun pricing(ingredients: IngredientRepository, from: LocalDate, until: LocalDate, shops: Set<Store> = Store.entries.toSet()): Pricing {
         val perKg = perKg(ingredients)
-        val byId = ingredients.list().associateBy { it.id }
-        val discounts = offers.byIngredient(from, until, ingredients.matchTerms()).mapNotNull { (id, onOffer) ->
-            val ingredient = byId[id] ?: return@mapNotNull null
-            onOffer.mapNotNull { offer ->
-                val packGrams = PackSize.grams(offer.packSize ?: offer.title, ingredient.gramsPerPiece, ingredient.gramsPerMl)
-                val regularPack = perKg[id]?.let { perKg -> packGrams?.let { perKg * it / 1000 } }
-                Discounts.factor(offer, regularPack)
-            }.minOrNull()?.let { id to it }
+        val discounts = offersWithShares(ingredients, perKg, from, until).mapNotNull { (id, onOffer) ->
+            onOffer.filter { it.store in shops }.mapNotNull { it.paidShare }.minOrNull()?.let { id to it }
         }.toMap()
         return Pricing(perKg, discounts)
+    }
+
+    private fun offersWithShares(ingredients: IngredientRepository, perKg: Map<Long, Double>, from: LocalDate, until: LocalDate): Map<Long, List<Offer>> {
+        val byId = ingredients.list().associateBy { it.id }
+        return offers.byIngredient(from, until, ingredients.matchTerms()).mapValues { (id, onOffer) ->
+            val ingredient = byId[id]
+            onOffer.map { offer -> offer.copy(paidShare = ingredient?.let { paidShare(offer, it, perKg[id]) }) }
+        }
+    }
+
+    /**
+     * The share of the regular price paid with [offer] ([Discounts.factor]). Deals stated as a price
+     * are compared with a pack of the offer's size at [perKg], the ingredient's regular price.
+     */
+    private fun paidShare(offer: Offer, ingredient: Ingredient, perKg: Double?): Double? {
+        val packGrams = PackSize.grams(offer.packSize ?: offer.title, ingredient.gramsPerPiece, ingredient.gramsPerMl)
+        val regularPack = perKg?.let { price -> packGrams?.let { price * it / 1000 } }
+        return Discounts.factor(offer, regularPack)
     }
 
     /**

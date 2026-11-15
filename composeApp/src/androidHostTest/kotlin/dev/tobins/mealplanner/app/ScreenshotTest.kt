@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
+import dev.tobins.mealplanner.api.Store
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -55,9 +56,15 @@ data class Look(val dark: Boolean, val widthDp: Int, val fontScale: Float) {
 }
 
 @Composable
-private fun shopping(api: ApiClient, shoppingMode: Boolean) {
-    val storage = remember { MemorySettingsStorage().also { it.saveShoppingMode(shoppingMode) } }
-    ShoppingScreen(api, ShoppingCache(storage), storage, {}, {})
+private fun shopping(api: ApiClient, shoppingMode: Boolean, view: ShoppingView = ShoppingView.SECTION, store: Store? = null) {
+    val storage = remember {
+        MemorySettingsStorage().also {
+            it.saveShoppingMode(shoppingMode)
+            it.saveShoppingView(view)
+            it.saveShoppingStore(store)
+        }
+    }
+    ShoppingScreen(api, ShoppingCache(storage), storage, remember { AccountShops(storage, api::shops, api::saveShops) }, {}, {})
 }
 
 /** Controls of three kinds; the test gives the one tagged [FOCUSED] keyboard focus, to see the ring on each. */
@@ -113,6 +120,8 @@ enum class Shot(
     SHOPPING(heightDp = 1300, content = { api, _ -> shopping(api, shoppingMode = false) }),
     SHOPPING_MODE(heightDp = 1300, content = { api, _ -> shopping(api, shoppingMode = true) }),
     SHOPPING_EMPTY(emptyWeek = true, content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_STORES(heightDp = 1300, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE) }),
+    SHOPPING_AT_JUMBO(heightDp = 1100, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE, store = Store.JUMBO) }),
     RECIPES(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
     RECIPES_EMPTY(emptyRecipes = true, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
     RECIPE_DETAIL(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),

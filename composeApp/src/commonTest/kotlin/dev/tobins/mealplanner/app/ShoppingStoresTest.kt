@@ -137,6 +137,38 @@ class ShoppingStoresTest {
         }
     }
 
+    /** Regular prices: €4 of milk, €10 of cheese, €2 of rice. Every offer takes a quarter off, the deal-only one half. */
+    private val priced = items.map { item ->
+        val regular = mapOf("milk" to 4.0, "cheese" to 10.0, "rice" to 2.0)[item.key]
+        item.copy(regularPrice = regular, offers = item.offers.map { it.copy(paidShare = if (it.price == null) 0.5 else 0.75) })
+    }
+
+    @Test
+    fun eachStoreSavesWhatItsOffersTakeOffTheRegularPrices() {
+        val overview = storeOverview(priced, all)
+        assertEquals(1.0 + 0.5, overview.stores.single { it.store == Store.AH }.saving!!, 1e-9, "milk and rice at AH")
+        assertEquals(2.5, overview.stores.single { it.store == Store.JUMBO }.saving!!, 1e-9, "cheese; pear has no regular price")
+        assertNull(overview.stores.single { it.store == Store.LIDL }.saving, "leek has no regular price")
+        assertEquals(2.5, storeVisit(priced, Store.JUMBO, all, shoppingMode = false).saving!!, 1e-9, "only Jumbo's own offers")
+    }
+
+    @Test
+    fun theSavingFollowsTheStoresInUse() {
+        // Without AH, milk's offer is Jumbo's deal-only one: half of €4 saved there.
+        val jumbo = storeOverview(priced, setOf(Store.JUMBO, Store.LIDL)).stores.single { it.store == Store.JUMBO }
+        assertEquals(2.0 + 2.5, jumbo.saving!!, 1e-9)
+    }
+
+    @Test
+    fun noSavingIsShownWhenNoneIsKnownOrItIsLessThanACent() {
+        assertNull(storeOverview(items, all).stores.first().saving, "no regular prices from the server (an older one)")
+        val tiny = priced.map { if (it.key == "rice") it.copy(regularPrice = 0.01) else it.copy(regularPrice = null) }
+        assertNull(savingOf(tiny, all), "a quarter of a cent")
+        val rice = priced.single { it.key == "rice" }
+        assertEquals(0.5, rice.saving(rice.offers.single())!!, 1e-9)
+        assertNull(rice.saving(rice.offers.single().copy(paidShare = null)))
+    }
+
     @Test
     fun tickedItemsStayInTheirGroupWhenShoppingModeSetsThemAside() {
         val visit = storeVisit(items, Store.JUMBO, all, shoppingMode = true)

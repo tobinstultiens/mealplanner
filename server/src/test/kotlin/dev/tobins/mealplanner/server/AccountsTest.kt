@@ -19,6 +19,8 @@ import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Sex
+import dev.tobins.mealplanner.api.ShopsSetting
+import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
 import io.ktor.client.HttpClient
@@ -119,6 +121,22 @@ class AccountsTest {
         assertEquals(HttpStatusCode.OK, alice.post("/api/plans/2026-11-09/generate").status)
         bob.put("/api/profile") { setBody(Profile(weightKg = 80.0, heightCm = 180.0, ageYears = 30, sex = Sex.MALE, activity = ActivityLevel.LIGHT)) }
         assertTrue(bob.get("/api/plans/2026-11-09").body<WeekPlan>().days.all { it.meals.isEmpty() })
+    }
+
+    @Test
+    fun eachAccountChoosesItsOwnStores() = testApplication {
+        start()
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+
+        assertEquals(ShopsSetting(listOf(Store.AH)), alice.put("/api/shops") { setBody(ShopsSetting(listOf(Store.AH))) }.body<ShopsSetting>())
+        // Bob neither sees Alice's choice nor changes it with his own.
+        assertNull(bob.get("/api/shops").body<ShopsSetting>().stores, "never chosen: every store")
+        bob.put("/api/shops") { setBody(ShopsSetting(listOf(Store.LIDL, Store.JUMBO))) }
+        assertEquals(listOf(Store.AH), alice.get("/api/shops").body<ShopsSetting>().stores)
+        bob.put("/api/shops") { setBody(ShopsSetting(null)) }
+        assertEquals(listOf(Store.AH), alice.get("/api/shops").body<ShopsSetting>().stores)
+        assertNull(bob.get("/api/shops").body<ShopsSetting>().stores)
     }
 
     @Test

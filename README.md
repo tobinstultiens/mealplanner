@@ -112,12 +112,14 @@ optional fields is safe. Removing or renaming a field, or changing its meaning, 
 The product pictures (`Offer.imageUrl`, `ShoppingItem.imageUrl`) and the recipe pictures
 (`RecipeSummary.imageUrl`) are the first fields added this way, so they are merged together with the
 first app release after v0.1.1. `OfferSourceStatus.warning` (the Lidl check) is always in the offers
-response, so it too needs that release installed.
+response, so it too needs that release installed. v0.1.2 is that release and is installed, so optional
+fields can now be added freely: `ShoppingItem.regularPrice` and `Offer.paidShare` (the saving per store)
+were added this way, and `ShopsTest` decodes the new shopping list with v0.1.2's types to prove it.
 
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today, Plan, Shopping (also in shopping mode and with an empty week), Recipes, recipe detail, Offers, Prices, Progress and
+Today, Plan, Shopping (also in shopping mode, with an empty week, per store and at one store), Recipes, recipe detail, Offers, Prices, Progress and
 Settings screens, the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
@@ -236,7 +238,7 @@ API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `
 `/api/ingredients/sections` (each ingredient's shop section, which orders the shopping list; `PUT
 /api/ingredients/{id}/section` corrects one for the account), `/api/mappings` (links from recipe
 ingredient texts to catalogue ingredients), `/api/profile` (body data
-and daily targets), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`,
+and daily targets), `/api/shops` (the stores the account shops at; only their offers count for plans and costs), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`,
 and per meal `reroll`, `lock`, `status` and delete), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion), `/api/offers` (weekly store offers;
 `POST /api/offers/refresh` fetches them now) and `/api/prices` (regular AH prices per ingredient, the

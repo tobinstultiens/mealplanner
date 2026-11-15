@@ -91,6 +91,10 @@ fun App(
         }
     }
     val shoppingCache = remember(storage) { ShoppingCache(storage) }
+    val accountShops = remember(api, storage) { AccountShops(storage, api::shops, api::saveShops) }
+    // On start, so a device's choice of stores from before they were an account setting reaches
+    // the planner even before the shopping list is opened.
+    LaunchedEffect(accountShops) { if (session != null) load { accountShops.sync() } }
     DisposableEffect(api) { onDispose { api.close() } }
 
     // What was open when the page was loaded (a reload or a shared link); Today where nothing says.
@@ -284,7 +288,7 @@ fun App(
                             when (tab) {
                                 Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenPlan = { tab = Tab.PLAN })
                                 Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { profileOpen = true })
-                                Tab.SHOPPING -> ShoppingScreen(api, shoppingCache, storage, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
+                                Tab.SHOPPING -> ShoppingScreen(api, shoppingCache, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
                                 Tab.RECIPES -> RecipeListScreen(
                                     api,
                                     onOpen = { openRecipeId = it },

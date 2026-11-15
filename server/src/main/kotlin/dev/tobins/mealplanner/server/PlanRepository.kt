@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.planner.PlanCandidate
@@ -33,10 +34,14 @@ class PlanRepository(
     private val userId: Long,
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
-    /** Offers valid between two dates, grouped by ingredient id. */
+    /** Offers valid between two dates at every store, grouped by ingredient id. */
     private val offersByIngredient: (LocalDate, LocalDate) -> Map<Long, List<Offer>> = { _, _ -> emptyMap() },
-    /** Prices with the offers valid between two dates. */
+    /** Prices with the offers valid between two dates, at the stores the account shops at. */
     private val pricing: (LocalDate, LocalDate) -> Pricing = { _, _ -> Pricing.NONE },
+    /** The stores the account shops at: only their offers make the planner prefer a meal. */
+    private val shops: () -> Set<Store> = { Store.entries.toSet() },
+    /** Regular euros per kg of the account's ingredients, by id; without the offers. */
+    private val regularPerKg: () -> Map<Long, Double> = { emptyMap() },
     /** The shop section of each of the account's ingredients, by id. */
     private val sections: () -> Map<Long, ShopSection> = { emptyMap() },
     /** The picture of the product each of the account's ingredients is priced with, by id. */
@@ -202,17 +207,20 @@ class PlanRepository(
             }
         }
         val checked = q.selectChecks(userId, start.toString()).executeAsList().toSet()
+        // Every store's offers: the app chooses among those of the stores it shows.
         val offers = offersByIngredient(start, start.plusDays(DAYS - 1L))
         val images = productImages()
+        val perKg = regularPerKg()
         return ShoppingList(
             weekStart = start.toString(),
             items = needs.entries.sortedWith(compareBy({ it.value.section.ordinal }, { it.value.name.lowercase() })).map { (key, need) ->
                 val ingredientId = key.removePrefix("i").toLongOrNull()?.takeIf { key.startsWith("i") }
                 val itemOffers = ingredientId?.let { offers[it] }.orEmpty()
+                val grams = need.grams.takeIf { need.gramsKnown && it > 0 }
                 ShoppingItem(
                     key = key,
                     name = need.name,
-                    grams = need.grams.takeIf { need.gramsKnown && it > 0 },
+                    grams = grams,
                     pieces = need.pieces.takeIf { it > 0 },
                     category = need.section.title,
                     recipes = need.recipes.toList(),
@@ -220,6 +228,7 @@ class PlanRepository(
                     checked = key in checked,
                     offers = itemOffers,
                     imageUrl = bestOffer(itemOffers)?.imageUrl ?: ingredientId?.let { images[it] },
+                    regularPrice = grams?.let { g -> ingredientId?.let { perKg[it] }?.let { g / 1000 * it } },
                 )
             },
             staples = staples.toList(),
@@ -244,7 +253,7 @@ class PlanRepository(
     private fun request(start: LocalDate, locked: List<PlannedMeal>, seed: Long) = PlanRequest(
         targets = targets(),
         candidates = recipes.planCandidates(
-            onOffer = offersByIngredient(start, start.plusDays(DAYS - 1L)).keys,
+            onOffer = onOffer(start),
             dislikes = profiles.profile()?.dislikes.orEmpty(),
             prices = pricing(start, start.plusDays(DAYS - 1L)),
         ),
@@ -257,6 +266,12 @@ class PlanRepository(
         recent = stored(start.minusDays(DAYS.toLong())).mapTo(HashSet()) { it.recipeId },
         seed = seed,
     )
+
+    /** The ingredients on offer during the week at a store the account shops at. */
+    private fun onOffer(start: LocalDate): Set<Long> {
+        val inUse = shops()
+        return offersByIngredient(start, start.plusDays(DAYS - 1L)).filterValues { offers -> offers.any { it.store in inUse } }.keys
+    }
 
     private fun targets() = profiles.state().targets
         ?: throw ConflictException("Set up your profile first: the planner needs daily targets")

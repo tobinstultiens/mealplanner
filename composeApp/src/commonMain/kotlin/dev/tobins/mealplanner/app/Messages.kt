@@ -371,8 +371,18 @@ enum class Msg(private val english: String, private val dutch: String) {
     TICKED_COUNT("✓ {0} ticked", "✓ {0} afgevinkt"),
     DONE_COUNT("Done ({0})", "Klaar ({0})"),
     STORES_I_SHOP_AT("Stores I shop at", "Winkels waar ik kom"),
+    SHOPS_NOTE(
+        "Your plans count only these stores' offers. Savings are measured against Albert Heijn's regular prices.",
+        "Je weekplan telt alleen de aanbiedingen van deze winkels. Besparingen zijn vergeleken met de reguliere prijzen van Albert Heijn.",
+    ),
+    SHOPS_SAVE_FAILED("Could not save the stores: {0}", "Winkels opslaan is niet gelukt: {0}"),
+    STORE_SAVING_HINT("Saves about {0} · tap to shop here", "Bespaart ongeveer {0} · tik om hier te winkelen"),
     SHOPPING_AT("Shopping at {0}", "Boodschappen bij {0}"),
     ITS_OFFERS("Its offers and everything without one", "De aanbiedingen daar en alles zonder aanbieding"),
+    VISIT_SAVING(
+        "Its offers save about {0}, measured against Albert Heijn's regular prices",
+        "De aanbiedingen daar besparen ongeveer {0}, vergeleken met de reguliere prijzen van Albert Heijn",
+    ),
     ALL_STORES("All stores", "Alle winkels"),
     ON_HAND_MAYBE("{0}  (on hand?)", "{0}  (in huis?)"),
     SHOW_DEAL("Show the deal", "Toon de aanbieding"),
