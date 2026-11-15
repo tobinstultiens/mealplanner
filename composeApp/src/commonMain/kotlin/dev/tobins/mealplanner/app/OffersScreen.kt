@@ -119,13 +119,11 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
 private fun SourceLine(status: OfferSourceStatus) {
     val fetched = status.fetchedAt?.let { dayMonthLabel(it.take(10)) }
     val error = status.error
-    val warning = status.warning
     when {
         error != null -> ErrorBanner(
             if (fetched == null) "${status.store.label}: could not fetch" else "${status.store.label}: last fetch failed, offers from $fetched",
             error,
         )
-        warning != null -> WarningBanner("${status.store.label}: ${status.offerCount} offers, may be out of date", warning)
         fetched != null -> Text(
             "${status.store.label}: ${status.offerCount} offers, fetched $fetched",
             style = MaterialTheme.typography.bodySmall,

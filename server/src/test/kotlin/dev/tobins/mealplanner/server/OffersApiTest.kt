@@ -77,18 +77,16 @@ class OffersApiTest {
     }
 
     @Test
-    fun offersStateWarnsAboutLidlOffersThatStoppedBeingRenewed() = runBlocking {
+    fun warnsAboutLidlOffersThatStoppedBeingRenewed() = runBlocking {
         val ah = FakeSource(Store.AH, listOf(offer(Store.AH, "Kipfilet", "2026-11-16", "2026-11-22")))
         val lidl = FakeSource(Store.LIDL, listOf(offer(Store.LIDL, "Rundergehakt", "2026-11-16", "2026-11-22")))
         val repository = OfferRepository(openDatabase("jdbc:sqlite::memory:").second, listOf(ah, lidl))
         repository.refresh(now = Instant.parse("2026-11-18T10:00:00Z"))
 
-        fun status(store: Store, date: String) = repository.state(LocalDate.parse(date)).sources.single { it.store == store }
-        assertNull(status(Store.LIDL, "2026-11-18").warning, "Wednesday: current")
-        assertNotNull(status(Store.LIDL, "2026-11-20").warning, "Friday, nothing runs into next week")
-        assertNotNull(status(Store.LIDL, "2026-11-23").warning, "everything has ended")
-        assertEquals(1, status(Store.LIDL, "2026-11-23").offerCount, "the offers are kept")
-        assertNull(status(Store.AH, "2026-11-23").warning, "only Lidl is guarded")
+        assertEquals(emptyList(), repository.warnings(LocalDate.parse("2026-11-18")), "Wednesday: current")
+        assertEquals(1, repository.warnings(LocalDate.parse("2026-11-20")).size, "Friday, nothing runs into next week")
+        assertEquals(1, repository.warnings(LocalDate.parse("2026-11-23")).size, "everything has ended")
+        assertEquals(1, repository.state(LocalDate.parse("2026-11-23")).sources.single { it.store == Store.LIDL }.offerCount, "the offers are kept")
     }
 
     @Test

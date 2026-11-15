@@ -41,18 +41,21 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
             },
             sources = Store.entries.map { store ->
                 val row = recorded[store.name]
-                OfferSourceStatus(store, row?.fetchedAt, counts[store.name] ?: 0, row?.error, warning(store, date))
+                OfferSourceStatus(store, row?.fetchedAt, counts[store.name] ?: 0, row?.error)
             },
         )
     }
 
-    /** A warning about a store's stored offers as of [date]; only Lidl's page needs one so far. */
-    private fun warning(store: Store, date: LocalDate): String? {
-        if (store != Store.LIDL) return null
+    /**
+     * Warnings about the stored offers as of [date], for the server log: they are not part of
+     * the API, since apps released before this check fail on fields they do not know. Only
+     * Lidl's page needs one so far.
+     */
+    fun warnings(date: LocalDate): List<String> {
         // The widest range: the guard needs the ended offers too.
         val ends = q.selectOffersOverlapping(until = "9999-12-31", from = "0000-01-01").executeAsList()
-            .filter { it.store == store.name }.map { LocalDate.parse(it.validUntil) }
-        return LidlGuard.warning(ends, date)
+            .filter { it.store == Store.LIDL.name }.map { LocalDate.parse(it.validUntil) }
+        return listOfNotNull(LidlGuard.warning(ends, date))
     }
 
     private fun dev.tobins.mealplanner.server.db.Offer.toOffer() =
@@ -87,6 +90,8 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                 q.recordFailure(e.message ?: e::class.simpleName ?: "unknown error", source.store.name)
             }
         }
-        return state(LocalDate.ofInstant(now, java.time.ZoneId.of("Europe/Amsterdam")))
+        val today = LocalDate.ofInstant(now, java.time.ZoneId.of("Europe/Amsterdam"))
+        warnings(today).forEach { log.warn(it) }
+        return state(today)
     }
 }
