@@ -24,7 +24,8 @@ import kotlin.time.Duration.Companion.seconds
 internal interface ShoppingServer {
     suspend fun list(weekStart: String): Load<ShoppingList>
 
-    suspend fun check(weekStart: String, key: String, checked: Boolean): Load<ShoppingList>
+    /** [grams]: what the list advised buying, for ticking off a buy-ahead or stock-up item; null otherwise. */
+    suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?): Load<ShoppingList>
 
     suspend fun dismiss(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): Load<ShoppingList>
 
@@ -39,7 +40,8 @@ internal interface ShoppingServer {
 internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServer {
     override suspend fun list(weekStart: String) = load { shoppingList(weekStart) }
 
-    override suspend fun check(weekStart: String, key: String, checked: Boolean) = load { setShoppingChecked(weekStart, key, checked) }
+    override suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?) =
+        load { setShoppingChecked(weekStart, key, checked, grams) }
 
     override suspend fun dismiss(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean) =
         load { setShoppingDismissed(weekStart, group, dismissed) }
@@ -204,7 +206,8 @@ internal class ShoppingSession(
      * The user ticks a row again whose need grew since it was bought: the server keeps what a tick
      * said first, so the row is un-ticked and ticked in one step, and then remembers the new amount.
      * Not shown at once, as the amount comes from the server's answer; offline it is reported, not
-     * kept for later.
+     * kept for later. No advised grams go with it: only rows of the meals' needs can need more (an
+     * advice row remembers no bought amount), and the server weighs those itself, as it answers now.
      */
     fun tickAgain(key: String) {
         val week = weekStart
@@ -212,7 +215,7 @@ internal class ShoppingSession(
             turn.withLock {
                 var answer: ShoppingList? = null
                 for (checked in listOf(false, true)) {
-                    when (val result = timed { server.check(week, key, checked) }) {
+                    when (val result = timed { server.check(week, key, checked, grams = null) }) {
                         is Load.Ready -> answer = result.value
                         is Load.Failed -> {
                             waitingNotices += Notice(Msg.TICK_FAILED, result.message)
@@ -433,7 +436,7 @@ internal class ShoppingSession(
             // Ticks of this session that are still to go are sent in their own turn.
             val waiting = cache.pending(week) - ticks[week]?.unsent.orEmpty()
             for ((key, checked) in waiting) {
-                when (val result = timed { server.check(week, key, checked) }) {
+                when (val result = timed { server.check(week, key, checked, advisedGrams(week, key, checked)) }) {
                     is Load.Ready -> cache.confirm(result.value, nowIso(), key, checked)
                     is Load.Failed -> when {
                         result.refused -> {
@@ -450,13 +453,22 @@ internal class ShoppingSession(
         return null
     }
 
+    /**
+     * For ticking off a buy-ahead or stock-up item: the grams the list advised buying when it was
+     * ticked ([ShoppingCache.advised]). A tick made offline goes out later, when the server may have
+     * new offers and no longer advise it; with this it still knows how much was bought. Null for
+     * un-ticking and for other rows.
+     */
+    private fun advisedGrams(week: String, key: String, checked: Boolean): Double? =
+        if (checked) cache.advised(week, key) else null
+
     /** One week's ticks, made once: their requests go in the same turn as everything else. */
     private fun ticksOf(week: String): ShoppingTicks = ticks.getOrPut(week) {
         ShoppingTicks(
             scope,
             week,
             cache,
-            send = { key, checked -> timed { server.check(week, key, checked) } },
+            send = { key, checked -> timed { server.check(week, key, checked, advisedGrams(week, key, checked)) } },
             isOffline = { offlineSince != null },
             show = { display(week, it) },
             offline = { _, _ ->

@@ -45,6 +45,33 @@ class ShoppingCacheTest {
     }
 
     @Test
+    fun anAdviceTickKeepsTheGramsAdvisedUntilTheServerHasIt() {
+        val cache = ShoppingCache(MemorySettingsStorage())
+        val rice = item("stock:i7").copy(grams = 1000.0)
+        cache.save(list.copy(stockUp = listOf(rice)), "earlier")
+        cache.choose(list.weekStart, "stock:i7", true)
+        cache.choose(list.weekStart, "a", true)
+        assertEquals(1000.0, cache.advised(list.weekStart, "stock:i7"))
+        assertNull(cache.advised(list.weekStart, "a"), "a row of the meals' needs has no advice")
+
+        // The answer to the other tick comes from a server whose list no longer advises the rice.
+        cache.confirm(list, "later", "a", true)
+        cache.save(list, "latest")
+        assertEquals(1000.0, cache.advised(list.weekStart, "stock:i7"), "kept with the tick, not with the list")
+        cache.confirm(list, "latest", "stock:i7", true)
+        assertNull(cache.advised(list.weekStart, "stock:i7"), "the server has it")
+
+        // Un-ticked, nothing was bought; refused, it is dropped with the tick.
+        cache.save(list.copy(stockUp = listOf(rice)), "again")
+        cache.choose(list.weekStart, "stock:i7", true)
+        cache.choose(list.weekStart, "stock:i7", false)
+        assertNull(cache.advised(list.weekStart, "stock:i7"))
+        cache.choose(list.weekStart, "stock:i7", true)
+        cache.forget(list.weekStart, "stock:i7", true)
+        assertNull(cache.advised(list.weekStart, "stock:i7"))
+    }
+
+    @Test
     fun theAnswerToATickConfirmsOnlyTheChoiceItWasFor() {
         val cache = ShoppingCache(MemorySettingsStorage())
         cache.save(list, "earlier")

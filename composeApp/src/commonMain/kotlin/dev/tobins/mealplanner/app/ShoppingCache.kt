@@ -16,7 +16,16 @@ import kotlinx.serialization.json.Json
 class ShoppingCache(private val storage: SettingsStorage) {
     // Lists stored by earlier versions of the app must keep loading: fields are only added, with defaults.
     @Serializable
-    private data class Entry(val list: ShoppingList, val savedAt: String, val pending: Map<String, Boolean> = emptyMap())
+    private data class Entry(
+        val list: ShoppingList,
+        val savedAt: String,
+        val pending: Map<String, Boolean> = emptyMap(),
+        /** Of the waiting ticks of buy-ahead and stock-up items: the grams the list advised buying when ticked. */
+        val advised: Map<String, Double> = emptyMap(),
+    ) {
+        /** This entry without the waiting tick of [key]: the server has it, or refused it. */
+        fun settled(key: String) = copy(pending = pending - key, advised = advised - key)
+    }
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -47,7 +56,7 @@ class ShoppingCache(private val storage: SettingsStorage) {
 
     /** Stores a list fresh from the server in place of the copy; ticks still waiting for the server stay. */
     fun save(list: ShoppingList, savedAt: String) =
-        write(list.weekStart, Entry(list, savedAt, pending(list.weekStart)))
+        write(list.weekStart, entry(list.weekStart)?.copy(list = list, savedAt = savedAt) ?: Entry(list, savedAt))
 
     /** The stored list with the waiting ticks applied, and when it was saved; null if none. */
     fun load(weekStart: String): Pair<ShoppingList, String>? = entry(weekStart)?.let { entry ->
@@ -57,11 +66,15 @@ class ShoppingCache(private val storage: SettingsStorage) {
     /**
      * Records a tick before it is sent, so it survives the app being closed or the connection
      * dropping. Only over a stored list: every list the user can tick was stored first, and after
-     * [clear] (logging out) nothing of the previous account may be written back.
+     * [clear] (logging out) nothing of the previous account may be written back. Ticking off a
+     * buy-ahead or stock-up item records the grams the list advises buying too ([advised]): the
+     * answer to an earlier tick may replace the stored list with one that no longer advises it.
      */
     fun choose(weekStart: String, key: String, checked: Boolean) {
         val entry = entry(weekStart) ?: return
-        write(weekStart, entry.copy(pending = entry.pending + (key to checked)))
+        val grams = if (checked) (entry.list.buyAhead + entry.list.stockUp).firstOrNull { it.key == key }?.grams else null
+        val advised = if (grams != null) entry.advised + (key to grams) else entry.advised - key
+        write(weekStart, entry.copy(pending = entry.pending + (key to checked), advised = advised))
     }
 
     /**
@@ -69,15 +82,18 @@ class ShoppingCache(private val storage: SettingsStorage) {
      * no longer waits, unless the user has chosen differently since.
      */
     fun confirm(answer: ShoppingList, savedAt: String, key: String, checked: Boolean) {
-        val pending = pending(answer.weekStart)
-        write(answer.weekStart, Entry(answer, savedAt, if (pending[key] == checked) pending - key else pending))
+        val entry = entry(answer.weekStart)?.copy(list = answer, savedAt = savedAt) ?: Entry(answer, savedAt)
+        write(answer.weekStart, if (entry.pending[key] == checked) entry.settled(key) else entry)
     }
 
     /** Drops a tick the server refused, unless the user has chosen differently since. */
     fun forget(weekStart: String, key: String, checked: Boolean) {
         val entry = entry(weekStart) ?: return
-        if (entry.pending[key] == checked) write(weekStart, entry.copy(pending = entry.pending - key))
+        if (entry.pending[key] == checked) write(weekStart, entry.settled(key))
     }
+
+    /** The grams the list advised buying of the buy-ahead or stock-up item [key] when its waiting tick was made; null if unknown. */
+    fun advised(weekStart: String, key: String): Double? = entry(weekStart)?.advised?.get(key)
 
     /** The ticks of [weekStart] the server has not confirmed yet, by item key. */
     fun pending(weekStart: String): Map<String, Boolean> = entry(weekStart)?.pending.orEmpty()

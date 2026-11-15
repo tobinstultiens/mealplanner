@@ -57,6 +57,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Buying keepable offers of this week for meals of next week, and stocking up on staples (issue 70). */
@@ -160,8 +161,8 @@ class BuyAheadTest {
 
     private suspend fun HttpClient.list(weekStart: String = week) = get("/api/plans/$weekStart/shopping").body<ShoppingList>()
 
-    private suspend fun HttpClient.tick(key: String, checked: Boolean = true) =
-        put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, checked)) }
+    private suspend fun HttpClient.tick(key: String, checked: Boolean = true, grams: Double? = null) =
+        put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, checked, grams)) }
 
     private suspend fun HttpClient.onHand() = get("/api/pantry").body<Pantry>().onHand.map { it.name }.toSet()
 
@@ -618,6 +619,88 @@ class BuyAheadTest {
         http.delete("/api/pantry/on-hand/${rice.id}")
         http.mark(week, thisWeeks, MealStatus.PLANNED)
         assertFalse("White rice" in http.onHand())
+    }
+
+    private suspend fun HttpClient.pantryGrams() = get("/api/pantry").body<Pantry>().onHandGrams
+
+    @Test
+    fun theListSaysHowMuchIsOnHandWhereThatIsKnown() = testApplication {
+        val http = start().ready()
+        val rice = http.ingredient("White rice")
+        val lettuce = http.ingredient("Lettuce")
+        val chicken = http.ingredient("Chicken fillet")
+        // Ten servings of a dinner of 200 g of rice for four: 500 g needed this week, 3 kg of chicken.
+        http.plan(week, 0, MealSlot.DINNER, "Chicken 0", 10.0)
+        fun ShoppingList.row(name: String) = items.single { it.name == name }
+
+        // 300 g left of rice stocked up this week; lettuce on hand by hand; chicken bought ahead for next week.
+        scope().ingredients.putOnHandFrom(rice.id, LocalDate.parse(week), grams = 300.0)
+        http.put("/api/pantry/on-hand/${lettuce.id}")
+        scope().ingredients.putOnHandFrom(chicken.id, LocalDate.parse(nextWeek), grams = 2000.0)
+        val list = http.list()
+        assertEquals(500.0, assertNotNull(list.row("White rice").grams), 1e-9)
+        assertTrue(list.row("White rice").onHand)
+        assertEquals(300.0, list.row("White rice").onHandGrams)
+        assertTrue(list.row("Lettuce").onHand)
+        assertNull(list.row("Lettuce").onHandGrams, "set by hand: on hand, how much is not known")
+        assertFalse(list.row("Chicken fillet").onHand)
+        assertNull(list.row("Chicken fillet").onHandGrams, "it counts from next week")
+
+        // The pantry: every amount that is known, next week's stock too, as it is at home.
+        assertEquals(mapOf(rice.id to 300.0, chicken.id to 2000.0), http.pantryGrams())
+
+        // Marked on hand by hand, the amount is no longer known.
+        http.put("/api/pantry/on-hand/${rice.id}")
+        assertTrue(http.list().row("White rice").onHand)
+        assertNull(http.list().row("White rice").onHandGrams)
+        assertEquals(mapOf(chicken.id to 2000.0), http.pantryGrams())
+    }
+
+    @Test
+    fun theAmountOnHandFollowsAMealEatenAndUnEaten() = testApplication {
+        val http = start().ready()
+        // A kilo of rice stocked up this week, and a dinner of this week that takes 100 g of it.
+        http.tick(http.list().stockUp.single { it.name == "White rice" }.key)
+        val rice = http.ingredient("White rice")
+        val dinner = http.plan(week, 3, MealSlot.DINNER, "Chicken 2", 2.0)
+        fun ShoppingList.rice() = items.single { it.name == "White rice" }
+        assertEquals(1000.0, http.list().rice().onHandGrams)
+
+        http.mark(week, dinner, MealStatus.EATEN)
+        assertEquals(900.0, assertNotNull(http.list().rice().onHandGrams), 1e-9)
+        assertEquals(900.0, http.pantryGrams().getValue(rice.id), 1e-9)
+        http.mark(week, dinner, MealStatus.PLANNED)
+        assertEquals(1000.0, http.list().rice().onHandGrams)
+        assertEquals(1000.0, http.pantryGrams()[rice.id])
+    }
+
+    @Test
+    fun aLateAdviceTickCarriesTheGramsTheAppWasAdvised() = testApplication {
+        val http = start().ready()
+        val beef = http.ingredient("Beef")
+        val lettuce = http.ingredient("Lettuce")
+
+        // The list advises no beef (any more): the grams the app sends are what was bought.
+        http.tick("ahead:i${beef.id}", grams = 800.0)
+        assertEquals(800.0, left(beef, nextWeek))
+        assertEquals(800.0, http.pantryGrams()[beef.id])
+
+        // While the list still advises the item, its own amount counts.
+        val chicken = http.list().buyAhead.single()
+        http.tick(chicken.key, grams = 5.0)
+        assertEquals(chicken.grams, left(http.ingredient("Chicken fillet"), nextWeek))
+
+        // Nonsense is refused, and nothing is stored.
+        for (grams in listOf(0.0, -200.0, ShoppingCheck.MAX_GRAMS + 1)) {
+            assertEquals(HttpStatusCode.BadRequest, http.tick("stock:i${lettuce.id}", grams = grams).status, "$grams g")
+        }
+        assertFalse("Lettuce" in http.onHand())
+        assertTrue(db.shoppingQueries.selectChecks(accountId(), week).executeAsList().none { it.itemKey == "stock:i${lettuce.id}" })
+
+        // Without grams it is on hand in an amount nobody knows, as before.
+        assertEquals(HttpStatusCode.OK, http.tick("stock:i${lettuce.id}").status)
+        assertTrue("Lettuce" in http.onHand())
+        assertNull(http.pantryGrams()[lettuce.id])
     }
 
     @Test

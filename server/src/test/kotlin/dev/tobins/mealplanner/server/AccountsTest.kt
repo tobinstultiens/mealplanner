@@ -403,9 +403,25 @@ class AccountsTest {
         suspend fun mark(name: String, status: MealStatus) =
             assertEquals(HttpStatusCode.OK, accounts.getValue(name).first.put("/api/plans/$week/meals/0/dinner/status") { setBody(status) }.status)
 
+        // What each is shown of the stock, on the list's row and in the pantry: their own amount, and nothing of the other's.
+        suspend fun shown(name: String): Pair<Double?, Map<Long, Double>> {
+            val client = accounts.getValue(name).first
+            val row = client.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef" }
+            return row.onHandGrams to client.get("/api/pantry").body<Pantry>().onHandGrams
+        }
+        val (bob, _, bobsBeef) = accounts.getValue("bob")
+        val alicesBeef = accounts.getValue("alice").third
+
         mark("bob", MealStatus.EATEN)
         assertEquals(600.0, left("bob"))
         assertEquals(1000.0, left("alice"), "Bob's dinner is eaten from his beef only")
+        assertEquals(600.0 to mapOf(bobsBeef to 600.0), shown("bob"))
+        assertEquals(1000.0 to mapOf(alicesBeef to 1000.0), shown("alice"))
+
+        // A late tick of Bob's naming Alice's beef, with an amount, is refused and changes nothing of hers.
+        val late = ShoppingCheck("stock:i$alicesBeef", true, grams = 300.0)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/$week/shopping") { setBody(late) }.status)
+        assertEquals(1000.0, left("alice"))
         mark("alice", MealStatus.EATEN)
         mark("bob", MealStatus.SKIPPED)
         assertEquals(1000.0, left("bob"))

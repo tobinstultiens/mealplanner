@@ -52,7 +52,8 @@ class ShoppingListRepository(
      * What the week's meals need. Each recipe is scaled to the portions planned for it,
      * leftovers included; staples are left out and only named as a reminder. Items come in
      * the order of the walk through the shop, by section and then by name; whether an item
-     * is ticked or on hand does not move it. The account's own items ([addExtra]) are among them,
+     * is ticked or on hand does not move it; one on hand says how much is left of it when that is
+     * known ([ShoppingItem.onHandGrams]). The account's own items ([addExtra]) are among them,
      * also when the week has no meals. Next to it, the advice of [ShoppingList.buyAhead] and
      * [ShoppingList.stockUp], unless switched off or dismissed for the week, and what was bought
      * that the meals no longer need ([ShoppingList.noLongerNeeded]).
@@ -68,7 +69,8 @@ class ShoppingListRepository(
         val checked = ticks.keys
         // Only own items on this week's list come back, so one with a week it was bought in was ticked off in this one.
         val ticked = checked + ownRows.filter { it.boughtWeek != null }.map { ShoppingKey.Extra(it.id) }
-        val onHand = ingredients.onHandFor(start)
+        val stock = ingredients.onHandGramsFor(start)
+        val onHand = stock.keys
         // Every store's offers: the app chooses among those of the stores it shows.
         val offers = offersByIngredient(start, start.plusDays(DAYS - 1L))
         val images = productImages()
@@ -78,6 +80,7 @@ class ShoppingListRepository(
             val id = need.ingredient?.id
             need.toItem(need.key, need.key in ticked, id in onHand, id?.let { offers[it] }.orEmpty(), id?.let { images[it] }, id?.let { perKg[it] })
                 .withBought(ticks[need.key])
+                .withStock(id, stock)
         }
 
         val wanted = advice()
@@ -113,7 +116,7 @@ class ShoppingListRepository(
             buyAheadDismissed = buyAheadDismissed,
             stockUpDismissed = stockUpDismissed,
             buyAheadProvisional = ahead.provisional,
-            noLongerNeeded = noLongerNeeded(ticks, rows.mapTo(HashSet()) { it.key }, onHand, sectionOf),
+            noLongerNeeded = noLongerNeeded(ticks, rows.mapTo(HashSet()) { it.key }, stock, sectionOf),
         )
     }
 
@@ -140,6 +143,10 @@ class ShoppingListRepository(
     private fun ShoppingItem.withBought(tick: Tick?): ShoppingItem =
         if (tick == null) this else copy(boughtGrams = tick.grams, boughtPieces = tick.pieces)
 
+    /** This row of ingredient [id] with the grams left of it in [stock] (by id), where that is known. */
+    private fun ShoppingItem.withStock(id: Long?, stock: Map<Long, Double?>): ShoppingItem =
+        id?.let(stock::get)?.let { copy(onHandGrams = it) } ?: this
+
     /**
      * The week's ticks of rows of the meals' needs that are not on the list any more ([listed] holds
      * the keys of its rows): bought, and no meal needs them since the plan changed. Only ticks that
@@ -150,7 +157,7 @@ class ShoppingListRepository(
     private fun noLongerNeeded(
         ticks: Map<ShoppingKey, Tick>,
         listed: Set<ShoppingKey>,
-        onHand: Set<Long>,
+        stock: Map<Long, Double?>,
         sectionOf: Map<Long, ShopSection>,
     ): List<ShoppingItem> {
         // Rows that need nothing: no amounts, recipes or offers, only what was bought.
@@ -166,8 +173,9 @@ class ShoppingListRepository(
         }
         return gone.sortedWith(walkingOrder).map { row ->
             val id = (row.key as? ShoppingKey.Ingredient)?.id
-            row.toItem(row.key, checked = true, onHand = id in onHand, offers = emptyList(), productImage = null, perKg = null)
+            row.toItem(row.key, checked = true, onHand = id in stock, offers = emptyList(), productImage = null, perKg = null)
                 .withBought(ticks[row.key])
+                .withStock(id, stock)
         }
     }
 
@@ -225,8 +233,9 @@ class ShoppingListRepository(
 
     /**
      * Ticks an item off, or back on. A buy-ahead item ticked is on hand from next week, a stock-up
-     * item from this week, in the amount the list advises buying; un-ticking takes that back (see
-     * [IngredientRepository.putOnHandFrom]). An own item ticked off is bought in this week ([setBought]).
+     * item from this week, in the amount the list advises buying ([boughtGrams]); un-ticking takes
+     * that back (see [IngredientRepository.putOnHandFrom]). An own item ticked off is bought in this
+     * week ([setBought]).
      * A row of what the meals need remembers what it says as it is ticked ([neededRow]); ticking a
      * ticked one again keeps what it said first. A key no list has is refused; one that names no row
      * of this week's list (an app's list from before the plan changed) is ticked all the same, as it
@@ -240,10 +249,11 @@ class ShoppingListRepository(
             setBought(start, key.id, check.checked)
             return get(weekStart)
         }
-        val bought = if (check.checked) adviceItem(weekStart, key) else null
+        // Worked out before anything is stored, so that refused grams store nothing.
+        val bought = if (check.checked) boughtGrams(weekStart, key, check.grams) else null
         val row = if (check.checked) neededRow(start, key) else null
         db.transaction {
-            onHandFromTick(start, key, check.checked, bought?.grams)
+            onHandFromTick(start, key, check.checked, bought)
             if (check.checked) {
                 q.insertCheck(userId, start.toString(), key.toString(), row?.name, row?.let { it.grams ?: it.knownGrams }, row?.pieces)
             } else {
@@ -265,11 +275,22 @@ class ShoppingListRepository(
         return need.toItem(key, checked = true, onHand = false, offers = emptyList(), productImage = null, perKg = null)
     }
 
-    /** The buy-ahead or stock-up item under [key] on the week's list as it is; null for any other key. */
-    private fun adviceItem(weekStart: String, key: ShoppingKey): ShoppingItem? {
+    /**
+     * The grams a tick of the buy-ahead or stock-up item under [key] puts on hand: what the week's
+     * list advises buying as it is now, while it still has the item. Otherwise, as for a tick sent
+     * late after the offers changed, [sent], what the app says the list advised; that is refused
+     * (400) unless above 0 and at most [ShoppingCheck.MAX_GRAMS], as nothing is left to check it
+     * against. Null for any other key, and when neither is known.
+     */
+    private fun boughtGrams(weekStart: String, key: ShoppingKey, sent: Double?): Double? {
         if (key !is ShoppingKey.Ahead && key !is ShoppingKey.Stock) return null
         val list = get(weekStart)
-        return (list.buyAhead + list.stockUp).firstOrNull { it.key == key.toString() }
+        val advised = (list.buyAhead + list.stockUp).firstOrNull { it.key == key.toString() }
+        if (advised != null || sent == null) return advised?.grams
+        require(sent > 0 && sent <= ShoppingCheck.MAX_GRAMS) {
+            "grams must be above 0 and at most ${ShoppingCheck.MAX_GRAMS.toInt()}, not $sent"
+        }
+        return sent
     }
 
     /** [grams] is the amount bought; null when not known, such as for an item the list no longer advises. */

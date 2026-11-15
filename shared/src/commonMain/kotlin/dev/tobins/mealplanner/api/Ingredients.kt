@@ -138,4 +138,14 @@ data class KeepsChoice(val keeps: Boolean?)
  * ticked on the shopping list's buy-ahead and stock-up advice (see [ShoppingList.buyAhead]).
  */
 @Serializable
-data class Pantry(val staples: List<Ingredient>, val onHand: List<Ingredient>)
+data class Pantry(
+    val staples: List<Ingredient>,
+    val onHand: List<Ingredient>,
+    /**
+     * The grams left of entries of [onHand], by ingredient id: a ticked buy-ahead or stock-up item
+     * bought in a known amount, less what meals ate of it. An entry put on hand by hand, or ticked
+     * without an amount, is not here: how much there is is not known, which is not none. A separate
+     * map, so that apps that read [onHand] as a list of ingredients (v0.1.2 on) keep reading it.
+     */
+    val onHandGrams: Map<Long, Double> = emptyMap(),
+)
