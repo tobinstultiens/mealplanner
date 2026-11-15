@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.pricing
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.RecipeCost
+import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.recipes.IngredientLine
 import kotlin.math.ceil
@@ -52,6 +53,22 @@ object PackSize {
             if (packPieces != null) return piecesNeeded?.takeIf { it > 0 }?.let { PacksToBuy(packsFor(it / packPieces), null, packPieces, deal) }
         }
         return null
+    }
+
+    /** More packs than this for one deal is a pallet, not stocking up: such an offer is not advised. */
+    const val MAX_STOCK_UP_PACKS = 6
+
+    /**
+     * The packs a stock-up row advises for [offer] whose pack weighs [packGrams] (null when not known):
+     * the packs the deal wants bought together ([Discounts.packsNeeded]), so that its saving is really
+     * had. Null when that is not a reasonable amount to stock: more than [MAX_STOCK_UP_PACKS] packs, more
+     * than [ShoppingCheck.MAX_GRAMS] in all, or several packs of a size nobody can add up.
+     */
+    fun stockUpPacks(offer: Offer, packGrams: Double?): Int? {
+        val packs = Discounts.packsNeeded(offer.deal)
+        if (packs == 1) return 1
+        if (packGrams == null || packs > MAX_STOCK_UP_PACKS || packs * packGrams > ShoppingCheck.MAX_GRAMS) return null
+        return packs
     }
 
     /** Whole packs; a hair over a whole number (rounding in the sums) does not call for one more. */

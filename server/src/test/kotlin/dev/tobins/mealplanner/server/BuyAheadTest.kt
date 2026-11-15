@@ -90,7 +90,7 @@ class BuyAheadTest {
      * (this week only, but it doesn't keep), rice at 40% off (this week and next) and olive oil at
      * 25% off.
      */
-    private fun ApplicationTestBuilder.start(): HttpClient {
+    private fun ApplicationTestBuilder.start(extraOffers: List<Offer> = emptyList()): HttpClient {
         repo = createTempDirectory("cooking").toFile()
         // This week's plan is made of fillers only, so next week's provisional choice has the rest to choose from.
         for (i in 0..2) write("filler-$i", meal("Filler $i", "beef", rice = false))
@@ -106,7 +106,7 @@ class BuyAheadTest {
                 Offer(Store.JUMBO, "Jumbo Sla", "50% korting", validFrom = week, validUntil = thisWeekOnly),
                 Offer(Store.JUMBO, "Jumbo Rijst 1 kg", "40% korting", packSize = "1 kg", validFrom = week, validUntil = "2026-11-29"),
                 Offer(Store.JUMBO, "Jumbo Olijfolie 1 l", "25% korting", packSize = "1 l", validFrom = week, validUntil = thisWeekOnly),
-            ),
+            ) + extraOffers,
         )
         db = openDatabase(config.databaseUrl).second
         application { module(config, db, listOf(jumbo), priceSource = null, generator = null, verifier = TestTokens) }
@@ -285,6 +285,28 @@ class BuyAheadTest {
         // One already on hand by hand is not advised.
         http.put("/api/pantry/on-hand/${http.ingredient("Olive oil").id}")
         assertEquals(listOf("White rice"), http.list().stockUp.map { it.name })
+    }
+
+    @Test
+    fun aDealThatNeedsSeveralPacksIsAdvisedInThosePacksAndTheirSavingCounts() = testApplication {
+        val flour = Offer(Store.JUMBO, "Jumbo Spelt flour 1 kg", "1+1 gratis", packSize = "1 kg", validFrom = week, validUntil = "2026-11-22")
+        val http = start(listOf(flour)).ready()
+        val spelt = http.ingredient("Spelt flour")
+        val row = http.list().stockUp.single { it.name == "Spelt flour" }
+        assertEquals(2000.0, assertNotNull(row.grams), 1e-9, "two packs of 1 kg")
+        assertEquals(2.0 * 1.0, assertNotNull(row.regularPrice), 1e-9)
+        assertEquals(1.0, row.saving(), 1e-9, "the second pack is free")
+
+        // The tick stocks both packs, whatever the app sends.
+        http.tick(row.key, grams = 5.0)
+        assertEquals(2000.0, left(spelt, week))
+    }
+
+    @Test
+    fun aDealForMoreThanAReasonableNumberOfPacksIsNotAdvised() = testApplication {
+        val flour = Offer(Store.JUMBO, "Jumbo Spelt flour 1 kg", "9 voor 5,00", packSize = "1 kg", validFrom = week, validUntil = "2026-11-22")
+        val http = start(listOf(flour)).ready()
+        assertTrue(http.list().stockUp.none { it.name == "Spelt flour" })
     }
 
     @Test

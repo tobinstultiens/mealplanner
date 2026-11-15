@@ -255,6 +255,15 @@ class ShoppingStoresTest {
     }
 
     @Test
+    fun aStockUpRowOfADealForTwoPacksSaysTwoPacksAndCountsItsSaving() {
+        // As the server advises it: both packs' weight and the regular price of both.
+        val offer = packOffer("1 kg", "1+1 gratis")
+        val row = packItem(2000.0, null, offer).copy(regularPrice = 8.0)
+        assertEquals("2 × 1 kg", row.packsToBuy(offer)?.text(Strings.English))
+        assertEquals(4.0, savingOf(listOf(row), setOf(Store.AH), "2026-01-02")!!, 1e-9)
+    }
+
+    @Test
     fun theRowSaysHowMuchIsOnHandAndWhatIsLeftToBuy() {
         val offer = packOffer("700 g", "25% korting", 0.75)
         fun stocked(left: Double?, grams: Double? = 1400.0) =

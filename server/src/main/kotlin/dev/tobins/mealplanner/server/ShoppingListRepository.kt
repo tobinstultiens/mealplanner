@@ -99,10 +99,11 @@ class ShoppingListRepository(
         // Buying ahead goes with a plan: without meals this week there is nothing to shop with.
         val ahead = if (wanted.buyAhead && !buyAheadDismissed && meals.isNotEmpty()) buyAhead(start, meals, advisor) else BuyAheadAdvice(emptyList(), false)
         val buyAhead = ahead.items
+        val catalogue = ingredients.list()
         val stockUp = if (wanted.stockUp && !stockUpDismissed) {
             val listed = rows.mapNotNullTo(HashSet()) { it.ingredient?.id } +
                 buyAhead.mapNotNull { (ShoppingKey.parse(it.key) as? ShoppingKey.Ahead)?.id }
-            advisor.stockUp(ingredients.list(), ingredients.usedIds(), onHand, listed)
+            advisor.stockUp(catalogue, ingredients.usedIds(), onHand, listed)
         } else {
             emptyList()
         }
@@ -116,7 +117,7 @@ class ShoppingListRepository(
             buyAheadDismissed = buyAheadDismissed,
             stockUpDismissed = stockUpDismissed,
             buyAheadProvisional = ahead.provisional,
-            noLongerNeeded = noLongerNeeded(ticks, rows.mapTo(HashSet()) { it.key }, stock, sectionOf),
+            noLongerNeeded = noLongerNeeded(ticks, rows.mapTo(HashSet()) { it.key }, stock, sectionOf, staples = catalogue.filter { it.isStaple }.mapTo(HashSet()) { it.id }),
         )
     }
 
@@ -152,19 +153,22 @@ class ShoppingListRepository(
      * the keys of its rows): bought, and no meal needs them since the plan changed. Only ticks that
      * remember their row (by its name) count: one from before ticks did may be of a row that was never
      * on this week's list, so it stays a plain tick that nothing shows. Advice ticks and dismissed
-     * groups are not rows of the meals' needs. In walking order, as the list.
+     * groups are not rows of the meals' needs. A [staples] ingredient is left out: it was made a staple
+     * after it was bought, so it left the list although meals still use it, and a staple is always at
+     * home (it shows up again as stock-up advice when on offer). In walking order, as the list.
      */
     private fun noLongerNeeded(
         ticks: Map<ShoppingKey, Tick>,
         listed: Set<ShoppingKey>,
         stock: Map<Long, Double?>,
         sectionOf: Map<Long, ShopSection>,
+        staples: Set<Long>,
     ): List<ShoppingItem> {
         // Rows that need nothing: no amounts, recipes or offers, only what was bought.
         val gone = ticks.mapNotNull { (key, tick) ->
             val name = tick.name ?: return@mapNotNull null
             val id = when (key) {
-                is ShoppingKey.Ingredient -> key.id
+                is ShoppingKey.Ingredient -> key.id.takeIf { it !in staples } ?: return@mapNotNull null
                 is ShoppingKey.Text -> null
                 else -> return@mapNotNull null
             }

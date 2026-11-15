@@ -34,6 +34,18 @@ class PricingTest {
     }
 
     @Test
+    fun stockingUpTakesThePacksTheDealWants() {
+        assertEquals(1, PackSize.stockUpPacks(packOffer("500 g", "25% korting"), 500.0))
+        assertEquals(1, PackSize.stockUpPacks(packOffer("3 stuks", null), null))
+        assertEquals(2, PackSize.stockUpPacks(packOffer("500 g", "1+1 gratis"), 500.0))
+        assertEquals(4, PackSize.stockUpPacks(packOffer("500 g", "3+1 gratis"), 500.0))
+        // Too many packs, too heavy, or packs nobody can weigh: not advised.
+        assertNull(PackSize.stockUpPacks(packOffer("500 g", "9 voor 5,00"), 500.0))
+        assertNull(PackSize.stockUpPacks(packOffer("3 kg", "4 voor 9,00"), 3000.0))
+        assertNull(PackSize.stockUpPacks(packOffer("3 stuks", "2 voor 3,00"), null))
+    }
+
+    @Test
     fun packsInPiecesAreComparedWithPieces() {
         assertEquals(PacksToBuy(2, null, 3, 1), PackSize.toBuy(packOffer("3 stuks"), null, 4.0))
         // Weights are not guessed from pieces, nor pieces from weights.
