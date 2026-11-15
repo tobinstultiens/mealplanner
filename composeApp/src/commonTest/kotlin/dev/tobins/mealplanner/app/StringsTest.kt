@@ -16,7 +16,7 @@ class StringsTest {
     private val sameInBothLanguages = setOf(
         Msg.DETAILS, Msg.SLOT_LUNCH, Msg.CARD_SERVER, Msg.CARD_ACCOUNT, Msg.CARD_APP, Msg.LATER,
         Msg.LANGUAGE_ENGLISH, Msg.LANGUAGE_DUTCH, Msg.OFFER_WAS, Msg.PRICE_PER_KG, Msg.WEIGHING_ROW,
-        Msg.SERVER_ADDRESS_HINT,
+        Msg.SERVER_ADDRESS_HINT, Msg.PACKS_TO_TAKE,
     )
 
     @Test

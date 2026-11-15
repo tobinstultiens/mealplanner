@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.RecipeCost
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.recipes.IngredientLine
+import kotlin.math.ceil
 
 /** Pack sizes as stores write them: "500 g", "1,5 l", "2 x 250 g", "ca. 600 g", "3 stuks", "per stuk". */
 object PackSize {
@@ -12,6 +13,7 @@ object PackSize {
     private val multi = Regex("""(\d+)\s*x\s*$NUMBER\s*(kilogram|kg|kilo|gram|gr|g|liter|lt|l|ml|cl)\b""")
     private val single = Regex("""$NUMBER\s*(kilogram|kg|kilo|gram|gr|g|liter|lt|l|ml|cl)\b""")
     private val pieces = Regex("""(\d+)\s*(stuks|stuk|st)\b""")
+    private val volume = Regex("""\d\s*(liter|lt|l|ml|cl)\b""")
 
     /**
      * Grams in a pack, or null when the text gives no size that can be converted: volumes
@@ -27,6 +29,34 @@ object PackSize {
         return if (count != null && gramsPerPiece != null) count * gramsPerPiece else null
     }
 
+    /** The number of pieces in a pack written as "3 stuks" (or "per stuk": 1), null when the text counts none. */
+    fun pieces(text: String?): Int? {
+        val t = text?.lowercase() ?: return null
+        return pieces.find(t)?.groupValues?.get(1)?.toInt() ?: if (t.contains("per stuk")) 1 else null
+    }
+
+    /**
+     * What to pick up for an item that needs [gramsNeeded] (or [piecesNeeded]) when the store sells it as
+     * [offer]: the packs to take and how many packs the deal wants. The pack size is read from
+     * [Offer.packSize], else from the title. Packs in grams are compared with [gramsNeeded], packs in
+     * pieces with [piecesNeeded]; nothing is converted between them, and volumes are not taken for
+     * weights. Null when the size cannot be read or the item has no amount of the pack's kind.
+     */
+    fun toBuy(offer: Offer, gramsNeeded: Double?, piecesNeeded: Double?): PacksToBuy? {
+        val deal = Discounts.packsNeeded(offer.deal)
+        for (text in listOfNotNull(offer.packSize, offer.title)) {
+            if (volume.containsMatchIn(text.lowercase())) continue
+            val packGrams = grams(text)?.takeIf { it > 0 }
+            if (packGrams != null) return gramsNeeded?.takeIf { it > 0 }?.let { PacksToBuy(packsFor(it / packGrams), packGrams, null, deal) }
+            val packPieces = pieces(text)?.takeIf { it > 0 }
+            if (packPieces != null) return piecesNeeded?.takeIf { it > 0 }?.let { PacksToBuy(packsFor(it / packPieces), null, packPieces, deal) }
+        }
+        return null
+    }
+
+    /** Whole packs; a hair over a whole number (rounding in the sums) does not call for one more. */
+    private fun packsFor(ratio: Double) = ceil(ratio - 1e-9).toInt().coerceAtLeast(1)
+
     private fun number(text: String) = text.replace(',', '.').toDouble()
 
     private fun toGrams(amount: Double, unit: String, gramsPerMl: Double?): Double = when (unit) {
@@ -38,13 +68,35 @@ object PackSize {
     }
 }
 
+/**
+ * What to take home for one item: [packs] of the offer's pack, which is [packGrams] heavy or holds
+ * [packPieces] pieces (one of them is set), and the [dealPacks] the deal wants bought together.
+ */
+data class PacksToBuy(val packs: Int, val packGrams: Double?, val packPieces: Int?, val dealPacks: Int) {
+    /** True when the deal needs no more packs than the amount does, so its saving is really had. */
+    val dealFits: Boolean get() = dealPacks <= packs
+}
+
 /** How much of the regular price an offer leaves to pay. */
 object Discounts {
     private val percent = Regex("""(\d+(?:\.\d+)?)\s*%\s*korting""")
     private val free = Regex("""(\d+)\s*\+\s*(\d+)\s*gratis""")
     private val multiPrice = Regex("""(\d+)\s*voor\s*(\d+(?:\.\d+)?)""")
     private val fixedPrice = Regex("""^voor\s*(\d+(?:\.\d+)?)""")
+    private val halfPriceNth = Regex("""(\d+)\s*e\s*halve prijs""")
     private val amountOff = Regex("""^(\d+(?:\.\d+)?)\s*korting""")
+
+    /**
+     * How many packs the deal wants bought together: 2 for "2 voor 3,99", "1+1 gratis" and "2e halve
+     * prijs", 4 for "3+1 gratis"; 1 for a percentage, a price or a deal that says nothing of the kind.
+     */
+    fun packsNeeded(deal: String?): Int {
+        val text = deal?.lowercase()?.replace(',', '.')?.trim() ?: return 1
+        val count = free.find(text)?.let { it.groupValues[1].toInt() + it.groupValues[2].toInt() }
+            ?: multiPrice.find(text)?.groupValues?.get(1)?.toInt()
+            ?: halfPriceNth.find(text)?.groupValues?.get(1)?.toInt()
+        return (count ?: 1).coerceAtLeast(1)
+    }
 
     /**
      * The share of the regular price paid with [offer]: 0.75 for "25% korting", 0.5 for

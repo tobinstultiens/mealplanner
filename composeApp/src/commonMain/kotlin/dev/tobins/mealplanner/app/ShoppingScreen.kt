@@ -57,9 +57,28 @@ import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.pricing.PackSize
+import dev.tobins.mealplanner.pricing.PacksToBuy
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
 import kotlin.math.roundToInt
+
+/** `450 g`, `1.4 kg`: a weight the way the list writes it. */
+fun weightText(grams: Double, locale: FormatLocale): String =
+    if (grams >= 1000) "${formatAmount(grams / 1000, locale)} kg" else "${grams.roundToInt()} g"
+
+/**
+ * What to pick up for this item when bought as [offer]: [PackSize.toBuy] for the weight the recipes
+ * need, or their pieces. What could not be weighed is not guessed at, so an item with other amounts
+ * (or without a weight) gets nothing.
+ */
+fun ShoppingItem.packsToBuy(offer: Offer): PacksToBuy? = PackSize.toBuy(offer, grams, if (otherAmounts.isEmpty()) pieces else null)
+
+/** `2 × 700 g`, `1 × 500 g · deal needs 2`, `2 × 3 pieces`: the packs to take and, when the deal wants more than the amount needs, how many it wants. */
+fun PacksToBuy.text(strings: Strings): String {
+    val size = packGrams?.let { weightText(it, strings.locale) } ?: strings.plural(Plural.PACK_PIECES, packPieces ?: 1)
+    return if (dealFits) strings(Msg.PACKS_TO_TAKE, packs, size) else strings(Msg.PACKS_DEAL_NEEDS, packs, size, dealPacks)
+}
 
 /**
  * `3 × · 330 g`, `450 g`, `2 ×`, `200 g + 1 bag`, `250 ml`, or empty when the recipes give no
@@ -67,7 +86,7 @@ import kotlin.math.roundToInt
  * piece count is left out then, as it would count those amounts a second time.
  */
 fun ShoppingItem.quantityText(locale: FormatLocale): String {
-    val weight = (grams ?: knownGrams)?.let { if (it >= 1000) "${formatAmount(it / 1000, locale)} kg" else "${it.roundToInt()} g" }
+    val weight = (grams ?: knownGrams)?.let { weightText(it, locale) }
     if (otherAmounts.isNotEmpty()) return (listOfNotNull(weight) + otherAmounts).joinToString(" + ")
     // Pieces are rounded up: nobody buys 1.5 onions.
     return listOfNotNull(pieces?.let { "${ceil(it - 1e-9).toInt()} ×" }, weight).joinToString(" · ")
@@ -604,6 +623,14 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, to
             // Long amounts such as "200 g + 1 bag" wrap rather than squeeze the name.
             Text(item.quantityText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), textAlign = TextAlign.End)
             if (offer != null) {
+                item.packsToBuy(offer)?.let {
+                    Text(
+                        it.text(t),
+                        style = MaterialTheme.typography.bodySmall.numeric(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.End,
+                    )
+                }
                 // A tap shows the full deal; the rest of the row keeps ticking. The badge looks small
                 // but its touch area is 48 dp, as Material asks.
                 Box(

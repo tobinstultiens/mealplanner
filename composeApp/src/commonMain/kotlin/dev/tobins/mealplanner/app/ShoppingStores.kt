@@ -41,14 +41,16 @@ fun ShoppingItem.savingOffer(shops: Set<Store>, today: String): Offer? = bestOff
 fun ShoppingItem.dealText(shops: Set<Store>, today: String, strings: Strings): String =
     offers.filter { it.store in shops && it.validUntil >= today }.distinctBy { it.store to it.deal }.joinToString("\n") {
         val later = if (it.startsAfter(today)) " ${it.startLabel(today, strings)}" else ""
-        "${it.shortText(strings)}$later (${it.title})"
+        // The pack size is added when the title does not already say it.
+        val pack = it.packSize?.takeIf { size -> size.isNotBlank() && !it.title.contains(size, ignoreCase = true) }
+        "${it.shortText(strings)}$later (${listOfNotNull(it.title, pack).joinToString(", ")})"
     }
 
 /**
  * What buying this item with [offer] saves in euros: its regular price times the share the offer
- * takes off. The regular price is AH's, so at another store this is an estimate. Like the plan's
- * costs it assumes the deal applies to the amount needed (a "1+1 gratis" halves it even when one
- * pack would do). Null when the server could not work out either part.
+ * takes off. The regular price is AH's, so at another store this is an estimate. It assumes the
+ * deal applies to the amount needed, which [savingOf] checks against the packs. Null when the
+ * server could not work out either part.
  */
 fun ShoppingItem.saving(offer: Offer): Double? {
     val regular = regularPrice ?: return null
@@ -59,10 +61,12 @@ fun ShoppingItem.saving(offer: Offer): Double? {
 /**
  * What [items] save together when each is bought with its preferred offer in [shops] on [today];
  * null when no saving is known, or it is less than a cent. An offer that only starts later saves
- * nothing today, so it is left out of the sum although its badge stays on the row.
+ * nothing today, so it is left out of the sum although its badge stays on the row. So is a deal
+ * that wants more packs than the amount needs ("1+1 gratis" for one pack): the saving would only
+ * be had by buying more than needed.
  */
 fun savingOf(items: List<ShoppingItem>, shops: Set<Store>, today: String): Double? =
-    items.mapNotNull { item -> item.bestOffer(shops, today)?.takeIf { it.validOn(today) }?.let(item::saving) }.sum().takeIf { it >= 0.005 }
+    items.mapNotNull { item -> item.bestOffer(shops, today)?.takeIf { it.validOn(today) && item.packsToBuy(it)?.dealFits != false }?.let(item::saving) }.sum().takeIf { it >= 0.005 }
 
 /** The items whose saving offer ([savingOffer]) is at [store], and what those offers save ([savingOf]). */
 data class StoreGroup(val store: Store, val items: List<ShoppingItem>, val saving: Double? = null) {
