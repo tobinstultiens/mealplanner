@@ -237,8 +237,11 @@ tab, the pantry or the offers cancels nothing, and coming back shows the same we
 and opened groups. Requests go out one at a time, each with 10 seconds to answer. Without an answer
 or with a server error (5xx) the tick stays stored and the list says it is offline. Stored ticks of
 every week go out, oldest week first, before any list is fetched, also after the app was closed: a
-buy-ahead tick made offline last week still reaches the server. A tick the server refuses (another
-4xx than 401, 408 or 429) goes back, and the snackbar says why. Logging out (or a login the identity
+buy-ahead tick made offline last week still reaches the server. A stored tick the server fails on (a
+5xx) stays stored for the next time while the rest and the list still go out, so one tick the server
+keeps failing on never stops the lists from loading; only a stored tick without any answer holds the
+list back. A tick the server refuses (another 4xx than 401, 408 or 429) goes back, and the snackbar
+says why. Logging out (or a login the identity
 provider no longer renews) forgets the stored lists and their unsent ticks, and an answer that
 arrives after that stores nothing, so they never reach another account's list.
 
@@ -251,7 +254,7 @@ How often the app asks:
 |---|---|
 | Shopping screen shown, app in front, shopping mode | the list every 30 s (two people in one shop) |
 | Shopping screen shown, app in front | the list every 2 minutes |
-| Offline (or the list failed to load), screen shown, in front | one attempt every 30 s: the oldest stored tick, or else the list; on success the rest go and the offline line goes, without Retry |
+| Offline (or the list failed to load), screen shown, in front | one attempt every 30 s: the oldest stored tick, or else the list; on success the rest go and the offline line goes, without Retry. A list the server refused (a 4xx) is not tried again by itself, only on Retry or when the screen or the app comes back |
 | App comes to the front (start, back from another app or browser tab) | stored ticks, then the list shown, or else the current week's list, so it is on the phone in a shop without reception even if it was not opened |
 | Leaving the Plan tab | the current week's list (the plan may have changed), unless the Shopping screen shows |
 | Another screen, or the app behind | nothing |

@@ -514,6 +514,85 @@ class ShoppingSessionTest {
     }
 
     @Test
+    fun aStoredTickTheServerKeepsFailingOnStaysStoredAndTheListStillLoads() = runTest {
+        ShoppingCache(storage).apply {
+            save(server.listFor(monday), "earlier")
+            choose(monday, "b", true)
+        }
+        // So the list from the server can be told from the stored copy.
+        server.tickElsewhere(monday, "c", true)
+        server.answer = { _, _ -> Load.Failed("Internal server error", 500) }
+        val session = session()
+        session.inFront(true)
+        session.resume()
+        wait(2 * server.latency)
+        assertEquals(listOf("check $monday b", "list $monday"), server.asked)
+        assertEquals(listOf(false, true, true), session.checked(), "the server's list, with the stored tick laid over it")
+        assertNull(session.offlineSince)
+        assertEquals(mapOf("b" to true), pending(), "kept for later")
+        assertEquals(emptyList(), session.notices.toList())
+
+        server.asked.clear()
+        wait(10 * ShoppingSession.RECONNECT.inWholeMilliseconds)
+        assertEquals(List(2) { listOf("check $monday b", "list $monday") }.flatten(), server.asked, "with each refresh, not every 30 s")
+        assertEquals(mapOf("b" to true), pending())
+        assertEquals(listOf(false, true, true), session.checked())
+    }
+
+    @Test
+    fun aStoredTickWithNoAnswerAtAllStillHoldsTheListBackAfterAServerError() = runTest {
+        val lastWeek = "2026-11-09"
+        ShoppingCache(storage).apply {
+            save(server.listFor(lastWeek), "earlier")
+            choose(lastWeek, "a", true)
+            save(server.listFor(monday), "earlier")
+            choose(monday, "b", true)
+        }
+        server.answer = { _, _ -> Load.Failed("Internal server error", 500) }
+        server.hanging += "b"
+        val session = session()
+        session.resume()
+        wait(server.latency + ShoppingSession.TIME_LIMIT.inWholeMilliseconds - 1)
+        assertNull(session.offlineSince, "still waiting for the second tick")
+        wait(1)
+        assertNotNull(session.offlineSince, "after one time limit, not two")
+        assertEquals(listOf("check $lastWeek a", "check $monday b"), server.asked, "the list is not waited for as well")
+        assertEquals(listOf(false, true, false), session.checked())
+        assertEquals(mapOf("a" to true), pending(lastWeek))
+        assertEquals(mapOf("b" to true), pending())
+    }
+
+    @Test
+    fun aListTheServerRefusesIsNotAskedForAgainByItself() = runTest {
+        server.listAnswer = Load.Failed("No such week", 404)
+        val session = session(shoppingMode = true)
+        session.inFront(true)
+        session.resume()
+        wait(server.latency)
+        assertEquals(Load.Failed("No such week", 404), session.state)
+        wait(10 * ShoppingSession.RECONNECT.inWholeMilliseconds)
+        assertEquals(1, lists(), "not by the checks, even in shopping mode")
+
+        session.retry()
+        wait(server.latency)
+        assertEquals(2, lists(), "Retry asks again")
+        session.leave()
+        session.resume()
+        wait(server.latency)
+        assertEquals(3, lists(), "and so does showing the screen again")
+        wait(10 * ShoppingSession.RECONNECT.inWholeMilliseconds)
+        assertEquals(3, lists())
+
+        // A server error is not a refusal: that list is tried again by itself.
+        server.listAnswer = Load.Failed("Bad gateway", 502)
+        session.retry()
+        wait(server.latency)
+        assertEquals(Load.Failed("Bad gateway", 502), session.state)
+        wait(ShoppingSession.RECONNECT.inWholeMilliseconds)
+        assertEquals(5, lists())
+    }
+
+    @Test
     fun aServerErrorKeepsTheListShownWithTheOfflineLineAndIsTriedAgain() = runTest {
         val session = session()
         session.inFront(true)
