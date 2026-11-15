@@ -7,8 +7,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * The fixtures are trimmed copies of what the stores served on 2026-11-12; the Jumbo pictures and the
- * Lidl donut tile are from 2026-11-15.
+ * The fixtures are trimmed copies of what the stores served on 2026-11-12; the pictures (AH `images`,
+ * Jumbo `image`) and the Lidl donut tile are from 2026-11-15.
  */
 internal fun fixture(name: String): String =
     checkNotNull(OfferParsersTest::class.java.getResource("/offers/$name")) { "missing fixture $name" }.readText()
@@ -42,6 +42,7 @@ class OfferParsersTest {
                 validFrom = "2026-11-09",
                 validUntil = "2026-11-15",
                 url = "https://www.ah.nl/producten/product/wi561333",
+                imageUrl = "https://static.ah.nl/dam/product/AHI_5f37776b6d71456651626935325a6b484a315a317577?revLabel=1&rendition=200x200_WEBP&fileType=binary",
             ),
             mince,
         )
@@ -55,20 +56,30 @@ class OfferParsersTest {
 
     @Test
     fun ahTakesTheNarrowestPictureAtLeast200Wide() {
-        // The shape of AH's `images` list; not a recorded response: on 2026-11-15 AH's API refused every
-        // anonymous token, so none could be recorded (docs/data-sources.md, "Product pictures").
-        fun images(vararg widths: Int) = widths.joinToString(",", "[", "]") {
-            """{"width":$it,"height":$it,"url":"https://static.ah.nl/dam/product/AHI_1?rendition=${it}x${it}_JPG"}"""
-        }
-        fun section(images: String) = """{"bonusGroupOrProducts":[
-            {"product":{"title":"AH Kipfilet","bonusMechanism":"25% korting","bonusStartDate":"2026-11-16","bonusEndDate":"2026-11-22","images":$images}},
-            {"bonusGroup":{"id":"1","segmentDescription":"Alle AH kip","bonusStartDate":"2026-11-16","bonusEndDate":"2026-11-22","images":$images}}]}"""
+        // AH lists 800, 400 and 200 px WebP, a 48 px GIF and an 80 px JPEG, in that order; a group made
+        // up for the week ("Alle …") has a picture of its own in 200 and 708 px.
+        val (mince, chicken, _, stew) = AhParser.section(fixture("ah-section.json"))
+        assertEquals(
+            "https://static.ah.nl/mam/bonus/COMBIBEELD_207831_AH_NL_WK46_ALLE_AH_GREENFIELDS_STOOFVLEES?rendition=200px&fileType=binary&version=kybRNnZOGKGxCexGJV6X_DmmLfSHZUXOpnvnXD-SZHo",
+            stew.imageUrl,
+        )
+        assertEquals(stew.imageUrl, StoreImages.accept(stew.imageUrl), "kept when stored")
+        assertEquals(
+            "https://static.ah.nl/dam/product/AHI_5f37776b6d71456651626935325a6b484a315a317577?revLabel=1&rendition=200x200_WEBP&fileType=binary",
+            mince.imageUrl,
+        )
+        assertEquals(
+            "https://static.ah.nl/dam/product/AHI_386e6f465431636d544165796b302d33616a79774951?revLabel=1&rendition=200x200_WEBP&fileType=binary",
+            chicken.imageUrl,
+            "a bonus group has a picture too",
+        )
 
-        val offers = AhParser.section(section(images(800, 48, 400, 200, 80)))
-        assertEquals(List(2) { "https://static.ah.nl/dam/product/AHI_1?rendition=200x200_JPG" }, offers.map { it.imageUrl }, "products and groups")
-        assertEquals("https://static.ah.nl/dam/product/AHI_1?rendition=80x80_JPG", AhParser.section(section(images(48, 80))).first().imageUrl, "else the widest")
-        assertEquals(listOf(null, null), AhParser.section(section("[]")).map { it.imageUrl })
-        assertEquals(List(4) { null }, AhParser.section(fixture("ah-section.json")).map { it.imageUrl }, "the recorded section lists none")
+        fun section(images: String) = """{"bonusGroupOrProducts":[{"product":{"title":"AH Kipfilet","bonusMechanism":"25% korting",
+            "bonusStartDate":"2026-11-16","bonusEndDate":"2026-11-22","images":$images}}]}"""
+        val small = """[{"width":48,"height":48,"url":"https://static.ah.nl/dam/product/AHI_1?rendition=48x48_GIF"},
+            {"width":80,"height":80,"url":"https://static.ah.nl/dam/product/AHI_1?rendition=80x80_JPG"}]"""
+        assertEquals("https://static.ah.nl/dam/product/AHI_1?rendition=80x80_JPG", AhParser.section(section(small)).single().imageUrl, "else the widest")
+        assertNull(AhParser.section(section("[]")).single().imageUrl)
     }
 
     @Test
@@ -128,7 +139,8 @@ class OfferParsersTest {
     @Test
     fun onlyHttpsPicturesOnTheStoresImageHostsAreKept() {
         val kept = listOf(
-            "https://static.ah.nl/dam/product/AHI_4354523130303733373134?revLabel=1&rendition=200x200_JPG&fileType=binary",
+            "https://static.ah.nl/dam/product/AHI_43545239393132353833?revLabel=1&rendition=200x200_WEBP&fileType=binary",
+            "https://static.ah.nl/mam/bonus/COMBIBEELD_207839_AH_NL_WK46_AH_OVENSPECIALITEITEN?rendition=200px&fileType=binary&version=HHh15Qg61OTKzllc1IBd_0-vaL2G2EFUMoxFhK7y_yA",
             "https://www.jumbo.com/INTERSHOP/static/WFS/Jumbo-Grocery-Site/-/Jumbo-Grocery/nl_NL/Images_Aanbiedingen/2026/Weekaanbiedingen/Week%2046/Weekaanbiedingen-Week-46_56.png",
             "https://www.lidl.nl/assets/gcp7166ef147e4144c287b9e15763796ad4.png",
         )
@@ -140,6 +152,7 @@ class OfferParsersTest {
             "https://evil.example/assets/gcp1.png", // another host
             "https://www.lidl.nl.evil.example/assets/gcp1.png",
             "https://www.lidl.nl/c/aanbiedingen/a10008785", // the store's site, but not a picture
+            "https://static.ah.nl/somewhere/else.png",
             "https://www.lidl.nl/assets/../c/aanbiedingen", "https://www.lidl.nl/assets/%2e%2e/c/aanbiedingen",
             "https://user@www.lidl.nl/assets/gcp1.png", "https://www.lidl.nl:8443/assets/gcp1.png",
         )

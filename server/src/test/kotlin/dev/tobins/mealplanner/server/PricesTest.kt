@@ -30,6 +30,11 @@ class PricesTest {
         assertEquals("4 stuks", onOffer.packSize)
         assertEquals("Vleeswaren", onOffer.category)
         assertEquals("prijs per kg €16.60", products.first().unitPrice)
+        // The pictures were recorded on 2026-11-15; the 200 px one of the five sizes.
+        assertEquals(
+            "https://static.ah.nl/dam/product/AHI_43545239393132353833?revLabel=1&rendition=200x200_WEBP&fileType=binary",
+            products.first().imageUrl,
+        )
 
         // Fields as AH's search gave them on 2026-11-15; the sub-category places flour on the baking shelf.
         val flour = AhProductParser.products(
@@ -38,14 +43,6 @@ class PricesTest {
         assertEquals("Bakkerij", flour.category)
         assertEquals("Tarwebloem", flour.subCategory)
         assertNull(flour.imageUrl, "no pictures listed")
-
-        // The shape of AH's `images` list (not recorded: see OfferParsersTest.ahTakesTheNarrowestPictureAtLeast200Wide).
-        val pictured = AhProductParser.products(
-            """{"products":[{"title":"AH Tarwebloem","priceBeforeBonus":0.99,"images":[
-                {"width":400,"height":400,"url":"https://static.ah.nl/dam/product/AHI_1?rendition=400x400_JPG"},
-                {"width":200,"height":200,"url":"https://static.ah.nl/dam/product/AHI_1?rendition=200x200_JPG"}]}]}""",
-        ).single()
-        assertEquals("https://static.ah.nl/dam/product/AHI_1?rendition=200x200_JPG", pictured.imageUrl)
     }
 
     private class FakeStore(val products: Map<String, List<StoreProduct>>) : PriceSource {

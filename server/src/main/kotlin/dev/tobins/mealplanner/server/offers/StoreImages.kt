@@ -9,9 +9,13 @@ import java.net.URI
  * "Product pictures".
  */
 object StoreImages {
-    /** Host and path prefix of each store's pictures; Jumbo and Lidl serve them from their main sites. */
+    /**
+     * Host and path prefix of each store's pictures. AH keeps product pictures and the pictures of
+     * bonus groups (several products in one) apart; Jumbo and Lidl serve theirs from their main sites.
+     */
     private val places = listOf(
         "static.ah.nl" to "/dam/product/",
+        "static.ah.nl" to "/mam/bonus/",
         "www.jumbo.com" to "/INTERSHOP/static/",
         "www.lidl.nl" to "/assets/",
     )

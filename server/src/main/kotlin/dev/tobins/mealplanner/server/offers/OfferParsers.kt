@@ -96,10 +96,9 @@ object AhParser {
         o["discountLabels"]?.jsonArray?.firstOrNull()?.obj?.str("defaultDescription")
 
     /**
-     * The picture of an AH product or bonus group. AH's app API lists each picture in several
-     * sizes (`images[]` with `width` and `url`; not yet checked against a live response, see
-     * docs/data-sources.md); the narrowest of at least [MIN_IMAGE_WIDTH] is sharp enough
-     * without loading more than needed.
+     * The picture of an AH product or bonus group. AH lists each picture in five square sizes
+     * (`images[]` with `width` and `url`: 48, 80, 200, 400 and 800 px); the narrowest of at least
+     * [MIN_IMAGE_WIDTH] is sharp enough without loading more than needed.
      */
     fun image(o: JsonObject): String? {
         val sizes = (o["images"] as? JsonArray).orEmpty().mapNotNull { it.obj }

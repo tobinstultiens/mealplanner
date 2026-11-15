@@ -165,7 +165,7 @@ Where the URLs come from:
 
 | Store | Field | Renditions | Used |
 |---|---|---|---|
-| AH | `images[]` of a product (offers and product search) and of a bonus group | several, each with `width` and `url` | the narrowest at least 200 px wide, else the widest |
+| AH | `images[]` of a product (offers and product search) and of a bonus group | each with `width`, `height`, `url`. A product's picture (also a group that is one product): five squares, 800, 400, 200 px WebP, 48 px GIF, 80 px JPEG, under `/dam/product/` (`rendition=200x200_WEBP`). A group made up for the week ("Alle …", about half the groups): its own picture of several products, 200 and 708 px WebP, under `/mam/bonus/` (`rendition=200px`) | the narrowest at least 200 px wide (a 200 px WebP, 10 to 25 KB), else the widest |
 | Jumbo | `image` of a promotion in the offers page payload | one, 300 × 300 PNG (about 130 KB) | that one |
 | Lidl | `image` of a tile's `data-grid-data` | `imageList_V2[].variants[]` per ratio (4:3, 3:4), each `smallUrl` 380 × 285 (about 160 KB PNG) and `mediumUrl` 772 × 579 (about 630 KB); `image` is the 4:3 `smallUrl` | `image` |
 
@@ -178,7 +178,7 @@ pictures existed get theirs at their store's next fetch (within a day), prices a
 lookup (`POST /api/prices/refresh` does it now).
 
 The apps load these URLs, so the server keeps only https URLs on the stores' image hosts and paths
-(`StoreImages`): `static.ah.nl/dam/product/`, `www.jumbo.com/INTERSHOP/static/`,
+(`StoreImages`): `static.ah.nl/dam/product/` and `/mam/bonus/`, `www.jumbo.com/INTERSHOP/static/`,
 `www.lidl.nl/assets/`. Anything else a page might hold (another host, plain http, `..` in the path)
 is dropped, so a changed or hostile page cannot make the apps fetch an arbitrary address.
 
@@ -187,26 +187,32 @@ cookies; an `Origin` header to see CORS):
 
 | Host | Without referrer | CORS (`Access-Control-Allow-Origin`) | Stable for a week |
 |---|---|---|---|
-| `www.lidl.nl/assets/` (myracloud) | yes (tried with OkHttp's `okhttp/…`) | `*` | yes: content-addressed names (`gcp` + 32 hex), `Cache-Control: max-age` one year, `Last-Modified` two months back |
+| `static.ah.nl/dam/product/` | yes (tried with OkHttp's `okhttp/…`) | `*` | yes: an asset id and a `revLabel` in the URL, nothing signed or expiring, `max-age` about nine days |
+| `static.ah.nl/mam/bonus/` | yes (tried with OkHttp's `okhttp/…`) | `*` | for the week: the week in the name (`…_WK46_ALLE_AH_GREENFIELDS_STOOFVLEES`) and a `version` hash, nothing expiring; but sent with `max-age=0`, so an app must cache it regardless of the headers to have it offline |
 | `www.jumbo.com/INTERSHOP/static/` (Akamai Image Manager) | yes for a browser, Android's own (`Dalvik/…`), `ktor-client` or an app's own user agent; **the connection is reset for OkHttp's default `okhttp/…`** | none | yes: a fixed path per week and promotion (`…/Week%2046/Weekaanbiedingen-Week-46_56.png`), no query string, `max-age` about 22 days |
-| `static.ah.nl` | not checked | not checked | not checked |
+| `www.lidl.nl/assets/` (myracloud) | yes (tried with OkHttp's `okhttp/…`) | `*` | yes: content-addressed names (`gcp` + 32 hex), `Cache-Control: max-age` one year, `Last-Modified` two months back |
 
-AH could not be checked: from 02:41 UTC on 2026-11-15 AH's anonymous token endpoint answered every
-request 500 or 400 "Client not supported", including the server's own client, and the web shop
-answers 403 to plain requests, so no product image URL could be obtained. The parser follows the
-`images[]` list AH's app API gives products; check it against a real response (and the host above)
-before relying on AH pictures.
+Every AH product and bonus group, Jumbo promotion and dated Lidl food tile in the responses
+checked had a picture: all 111 AH offers (15 products, 96 groups), 15 AH search results, 270 Jumbo
+and 45 Lidl offers (`LIVE_OFFERS=1` test, which now also counts the pictures kept).
+Jumbo's is the promotion's picture, so for "Alle … of …" promotions it shows several products. AH
+serves its WebP renditions with `Content-Type: image/jpeg`, so a loader must recognise the format
+from the bytes (Android's decoder and Skia do). AH's anonymous token endpoint refused every request,
+the server's own included, from 02:41 to about 03:00 UTC on 2026-11-15 (500, or 400 "Client not
+supported"), then worked again; during such an outage offers and prices keep their previous values.
 
-What this means for the apps:
-- **Android** can load the pictures directly from the stores, with a disk cache so the shopping
-  list keeps them offline. Its image loader must send its own user agent (for example
+Recommendation for the apps:
+- **Android: load directly from the stores**, with a disk cache so the shopping list keeps its
+  pictures offline. The image loader must send its own user agent (for example
   `Mealplanner/<version> (Android)`), not OkHttp's default, or Jumbo's pictures fail. Direct loading
-  tells the stores' CDNs the phone's IP address and which pictures it shows; the "Show product
-  pictures" setting turns that off.
-- **The web client** decodes pictures itself and so needs CORS: Lidl's work directly, Jumbo's do
-  not. It needs the server to pass pictures through (`/api/image?url=…`, accepting only URLs that
-  pass `StoreImages`, sending its own user agent, caching), or placeholders. The pass-through is not
-  built yet; it belongs with the app's web pictures.
+  tells the stores' CDNs the phone's IP address and which pictures it shows (not who is logged in);
+  the "Show product pictures" setting turns it off.
+- **Web: load AH and Lidl directly** (they allow CORS), and **Jumbo through the server**, which
+  needs a pass-through: `/api/image?url=…`, accepting only URLs that pass `StoreImages`, fetching with
+  its own user agent, caching. Until that exists the web client shows placeholders for Jumbo. The
+  pass-through is not built yet; it belongs with the app's web pictures. Passing every picture
+  through it would also keep the stores from seeing the phone's address, if that is ever wanted on
+  Android.
 
 ## Nutrition: NEVO
 
