@@ -23,6 +23,9 @@ import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SectionChoice
+import dev.tobins.mealplanner.api.KeepsChoice
+import dev.tobins.mealplanner.api.ShoppingAdvice
+import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
@@ -171,6 +174,20 @@ class ApiClient(
             setBody(ShoppingCheck(key, checked))
         }.body()
 
+    /** Hides the buy-ahead or stock-up advice of one week's list, or with [dismissed] false shows it again. */
+    suspend fun setShoppingDismissed(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): ShoppingList {
+        val path = "api/plans/$weekStart/shopping/dismissed/${group.path}"
+        return if (dismissed) http.put(path).body() else http.delete(path).body()
+    }
+
+    /** Whether the account's shopping list advises buying ahead and stocking up. */
+    suspend fun shoppingAdvice(): ShoppingAdvice = http.get("api/shopping-advice").body()
+
+    suspend fun saveShoppingAdvice(advice: ShoppingAdvice): ShoppingAdvice = http.put("api/shopping-advice") {
+        contentType(ContentType.Application.Json)
+        setBody(advice)
+    }.body()
+
     /** Writes a recipe with Claude on the server; this can take a minute or two. */
     suspend fun generateRecipe(request: GenerateRequest): RecipeDetail = http.post("api/recipes/generate") {
         timeout {
@@ -236,6 +253,12 @@ class ApiClient(
     suspend fun setSection(ingredientId: Long, section: String?): IngredientSection = http.put("api/ingredients/$ingredientId/section") {
         contentType(ContentType.Application.Json)
         setBody(SectionChoice(section))
+    }.body()
+
+    /** Sets by hand whether an ingredient keeps until next week; null goes back to its section's answer. */
+    suspend fun setKeeps(ingredientId: Long, keeps: Boolean?): IngredientSection = http.put("api/ingredients/$ingredientId/keeps") {
+        contentType(ContentType.Application.Json)
+        setBody(KeepsChoice(keeps))
     }.body()
 
     suspend fun searchFoods(query: String): List<Food> = http.get("api/foods") { parameter("q", query) }.body()

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
+import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import org.junit.After
@@ -119,12 +120,12 @@ enum class Shot(
 ) {
     TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, {}, {}) }),
     PLAN(heightDp = 4400, content = { api, _ -> PlanScreen(api, {}, {}) }),
-    SHOPPING(heightDp = 1300, content = { api, _ -> shopping(api, shoppingMode = false) }),
-    SHOPPING_MODE(heightDp = 1300, content = { api, _ -> shopping(api, shoppingMode = true) }),
-    SHOPPING_WITHOUT_JUMBO(heightDp = 1300, content = { api, _ -> shopping(api, shoppingMode = false, shops = setOf(Store.AH, Store.LIDL)) }),
+    SHOPPING(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_MODE(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = true) }),
+    SHOPPING_WITHOUT_JUMBO(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false, shops = setOf(Store.AH, Store.LIDL)) }),
     SHOPPING_EMPTY(emptyWeek = true, content = { api, _ -> shopping(api, shoppingMode = false) }),
-    SHOPPING_STORES(heightDp = 1300, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE) }),
-    SHOPPING_AT_JUMBO(heightDp = 1100, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE, store = Store.JUMBO) }),
+    SHOPPING_STORES(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE) }),
+    SHOPPING_AT_JUMBO(heightDp = 1500, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE, store = Store.JUMBO) }),
     RECIPES(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
     RECIPES_EMPTY(emptyRecipes = true, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
     RECIPE_DETAIL(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
@@ -149,7 +150,7 @@ enum class Shot(
             UpdateBody(update, "0.1.1")
         }
     }),
-    SETTINGS(heightDp = 1100, content = { _, _ ->
+    SETTINGS(heightDp = 1350, content = { _, _ ->
         ServerSettingsScreen(
             current = ServerSettings("https://mealplanner.example.nl"),
             account = "Anna",
@@ -167,6 +168,8 @@ enum class Shot(
             productPictures = true,
             onProductPictures = {},
             accountShops = AccountShops(MemorySettingsStorage().also { it.saveShops(setOf(Store.AH, Store.LIDL)) }, { ShopsSetting() }, { it }),
+            loadShoppingAdvice = { ShoppingAdvice(stockUp = false) },
+            saveShoppingAdvice = { it },
             onSave = {},
             onBack = {},
         )

@@ -26,7 +26,7 @@ class ShoppingCache(private val storage: SettingsStorage) {
 
     /** The stored list with offline ticks applied, and when it was saved; null if none. */
     fun load(weekStart: String): Pair<ShoppingList, String>? = entry(weekStart)?.let { entry ->
-        entry.list.copy(items = entry.list.items.map { item -> entry.pending[item.key]?.let { item.copy(checked = it) } ?: item }) to entry.savedAt
+        entry.list.withTicks(entry.pending) to entry.savedAt
     }
 
     /** Records a tick made while offline, to send once the server is reachable. */

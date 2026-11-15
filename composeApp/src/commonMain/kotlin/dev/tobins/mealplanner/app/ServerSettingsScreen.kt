@@ -35,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
+import dev.tobins.mealplanner.api.ShoppingAdvice
 import kotlinx.coroutines.launch
 
 /**
@@ -65,6 +67,9 @@ fun ServerSettingsScreen(
     onProductPictures: (Boolean) -> Unit,
     /** The stores the account shops at: the same state and save path as the per-store shopping list. */
     accountShops: AccountShops,
+    /** Reads and saves whether the account's shopping list advises buying ahead and stocking up. */
+    loadShoppingAdvice: suspend () -> ShoppingAdvice,
+    saveShoppingAdvice: suspend (ShoppingAdvice) -> ShoppingAdvice,
     onSave: (ServerSettings) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -164,12 +169,49 @@ fun ServerSettingsScreen(
                         modifier = Modifier,
                     )
                     shopsError?.let { ErrorBanner(t(Msg.SHOPS_SAVE_FAILED_TITLE), it) }
+                    ShoppingAdviceSwitches(loadShoppingAdvice, saveShoppingAdvice)
                 }
             }
             if (updater != null) AppVersionSection(updater)
             if (loggedIn) server()
         }
     }
+}
+
+/**
+ * The account's two shopping-list advice switches. They show once the server has answered (a server
+ * from before them has none to show); a switch flips at once and goes back if saving fails.
+ */
+@Composable
+private fun ShoppingAdviceSwitches(read: suspend () -> ShoppingAdvice, save: suspend (ShoppingAdvice) -> ShoppingAdvice) {
+    val t = LocalStrings.current
+    val scope = rememberCoroutineScope()
+    var advice by remember { mutableStateOf<ShoppingAdvice?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { advice = (load { read() } as? Load.Ready)?.value }
+
+    fun change(chosen: ShoppingAdvice) {
+        val before = advice
+        advice = chosen
+        scope.launch {
+            when (val result = load { save(chosen) }) {
+                is Load.Ready -> {
+                    error = null
+                    if (advice == chosen) advice = result.value
+                }
+                is Load.Failed -> {
+                    error = result.message
+                    if (advice == chosen) advice = before
+                }
+                Load.Loading -> Unit
+            }
+        }
+    }
+
+    val current = advice ?: return
+    SwitchRow(t(Msg.BUY_AHEAD_SETTING), t(Msg.BUY_AHEAD_SETTING_HINT), current.buyAhead) { change(current.copy(buyAhead = it)) }
+    SwitchRow(t(Msg.STOCK_UP_SETTING), t(Msg.STOCK_UP_SETTING_HINT), current.stockUp) { change(current.copy(stockUp = it)) }
+    error?.let { ErrorBanner(t(Msg.ADVICE_SAVE_FAILED_TITLE), it) }
 }
 
 /** The outcome of "Test connection": [text] is the server version, or the error. */
