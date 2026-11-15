@@ -13,7 +13,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -92,15 +91,15 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         when (val current = state) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 ErrorMessage("Could not load the day", current.message) { reload++ }
             }
             is Load.Ready -> {
                 val day = current.value
                 Column(
-                    Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
                     TotalsCard(day)
                     if (day.meals.isEmpty()) {
@@ -114,14 +113,14 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
                             onStatus = { status -> change { api.setMealStatus(day.weekStart, day.dayIndex, meal.slot, status) } },
                         )
                     }
-                    if (day.extras.isNotEmpty()) Text("Also eaten", style = MaterialTheme.typography.titleSmall)
+                    if (day.extras.isNotEmpty()) SectionHeader("Also eaten")
                     for (extra in day.extras) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(extra.description, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 Text(
                                     "${extra.kcal.roundToInt()} kcal · ${extra.proteinG.roundToInt()} g protein",
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodySmall.numeric(),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -148,19 +147,19 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
 @Composable
 private fun TotalsCard(day: DayView) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             val targets = day.targets
             if (targets == null) {
-                Text("Eaten: ${day.eatenKcal.roundToInt()} kcal · ${day.eatenProteinG.roundToInt()} g protein", style = MaterialTheme.typography.titleMedium)
+                Text("Eaten: ${day.eatenKcal.roundToInt()} kcal · ${day.eatenProteinG.roundToInt()} g protein", style = MaterialTheme.typography.titleMedium.numeric())
                 Text("Set up your profile under Progress to see targets.", style = MaterialTheme.typography.bodySmall)
             } else {
                 Text("Eaten so far", style = MaterialTheme.typography.labelLarge)
-                Text("${day.eatenKcal.roundToInt()} of ${targets.kcal} kcal", style = MaterialTheme.typography.titleLarge)
+                Text("${day.eatenKcal.roundToInt()} of ${targets.kcal} kcal", style = MaterialTheme.typography.titleLarge.numeric())
                 LinearProgressIndicator(
                     progress = { (day.eatenKcal / targets.kcal).toFloat().coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text("${day.eatenProteinG.roundToInt()} of ${targets.proteinG} g protein", style = MaterialTheme.typography.bodyLarge)
+                Text("${day.eatenProteinG.roundToInt()} of ${targets.proteinG} g protein", style = MaterialTheme.typography.bodyLarge.numeric())
                 LinearProgressIndicator(
                     progress = { (day.eatenProteinG / targets.proteinG).toFloat().coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
@@ -173,7 +172,7 @@ private fun TotalsCard(day: DayView) {
                             difference < 0 -> ", ${-difference} under the target."
                             else -> ", exactly on target."
                         },
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.numeric(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -184,7 +183,7 @@ private fun TotalsCard(day: DayView) {
 @Composable
 private fun MealCard(meal: PlannedMeal, onOpen: () -> Unit, onStatus: (MealStatus) -> Unit) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Column(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
                 Text(
                     meal.slot.name.lowercase().replaceFirstChar { it.uppercase() } + if (meal.leftover) " · leftovers" else "",
@@ -198,7 +197,7 @@ private fun MealCard(meal: PlannedMeal, onOpen: () -> Unit, onStatus: (MealStatu
                 )
                 MealNumbers(meal.macrosText(), meal.cost?.let { "≈ ${formatEuro(it)}" })
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalAlignment = Alignment.CenterVertically) {
                 when (meal.status) {
                     MealStatus.PLANNED -> {
                         Button(onClick = { onStatus(MealStatus.EATEN) }) { Text("Eaten") }
@@ -230,7 +229,7 @@ private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Doubl
         onDismissRequest = onDismiss,
         title = { Text("Something else you ate") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 OutlinedTextField(description, { description = it }, label = { Text("What") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     kcal, { kcal = it },

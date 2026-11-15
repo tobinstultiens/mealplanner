@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mark: a sprout over a bowl, kept inside the 66 dp circle at the centre that every launcher mask leaves visible. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M32,57 H76 A22,18 0 0 1 32,57 Z M47,73 H61 V77 H47 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,49 C46,49 38,43 39,31 C49,31 58,38 54,49 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,49 C62,49 70,43 69,31 C59,31 50,38 54,49 Z" />
+</vector>

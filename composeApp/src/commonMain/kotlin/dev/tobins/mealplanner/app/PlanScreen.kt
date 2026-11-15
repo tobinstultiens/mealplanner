@@ -15,7 +15,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -103,18 +102,15 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         when (val current = state) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 if (current.status == 409) {
-                    Column(
-                        Modifier.fillMaxSize().padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text("Set up your profile first", style = MaterialTheme.typography.titleMedium)
-                        Text("The planner needs your daily calorie and protein targets.")
-                        Button(onClick = onOpenProfile) { Text("Open profile") }
-                    }
+                    EmptyState(
+                        AppIcons.Person,
+                        "Set up your profile first: the planner needs your daily calorie and protein targets.",
+                        actionLabel = "Open profile",
+                        onAction = onOpenProfile,
+                    )
                 } else {
                     ErrorMessage("Could not load the plan", current.message) { weekStart = weekStart.also { state = Load.Loading } }
                 }
@@ -124,21 +120,21 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                 val hasMeals = plan.days.any { it.meals.isNotEmpty() }
                 LazyColumn(
                     Modifier.padding(padding).fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(Spacing.ScreenEdge),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
                     item {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                             Text(
                                 "Daily target: ${plan.targets.kcal} kcal · ${plan.targets.proteinG} g protein",
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodyMedium.numeric(),
                             )
                             plan.cost?.let { cost ->
                                 val saved = (plan.costWithoutOffers ?: cost) - cost
                                 Text(
                                     "≈ ${formatEuro(cost)} for the week's meals" +
                                         if (saved >= 0.01) ", ${formatEuro(saved)} saved by offers" else "",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyMedium.numeric(),
                                 )
                             }
                             Button(enabled = !busy, onClick = { change { api.generatePlan(weekStart) } }) {
@@ -184,11 +180,11 @@ private fun DayCard(
     onToggleLock: (PlannedMeal) -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             Text(dayLabel(day.date), style = MaterialTheme.typography.titleMedium)
             Text(
                 "${day.kcal.roundToInt()} of ${targets.kcal} kcal · ${day.proteinG.roundToInt()} of ${targets.proteinG} g protein",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.numeric(),
             )
             LinearProgressIndicator(
                 progress = { (day.kcal / targets.kcal).toFloat().coerceIn(0f, 1f) },

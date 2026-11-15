@@ -10,16 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,28 +55,19 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
         state = load { api.offers(today) }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Offers") },
-                navigationIcon = { BackButton(onBack) },
-                actions = {
-                    BarAction(AppIcons.Refresh, if (refreshing) "Fetching the offers" else "Refresh the offers", busy = refreshing, onClick = {
-                        refreshing = true
-                        scope.launch {
-                            (load { api.refreshOffers() } as? Load.Failed)?.let { snackbar.showSnackbar("Could not refresh: ${it.message}") }
-                            refreshing = false
-                            reload++
-                        }
-                    })
-                    OverflowMenu(MenuAction(AppIcons.Price, "Regular prices", onOpenPrices))
-                },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
+    SubScreen("Offers", onBack, snackbar, actions = {
+        BarAction(AppIcons.Refresh, if (refreshing) "Fetching the offers" else "Refresh the offers", busy = refreshing, onClick = {
+            refreshing = true
+            scope.launch {
+                (load { api.refreshOffers() } as? Load.Failed)?.let { snackbar.showSnackbar("Could not refresh: ${it.message}") }
+                refreshing = false
+                reload++
+            }
+        })
+        OverflowMenu(MenuAction(AppIcons.Price, "Regular prices", onOpenPrices))
+    }) { padding ->
         when (val current = state) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 ErrorMessage("Could not load the offers", current.message) { reload++ }
             }
@@ -90,11 +77,11 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
                     .filter { !onlyMatched || it.ingredientName != null }
                     .filter { store == null || it.store == store }
                     .sortedWith(compareBy({ it.ingredientName == null }, { it.ingredientName.orEmpty() }, { it.store }))
-                LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+                LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                     item {
-                        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
                             current.value.sources.forEach { SourceLine(it) }
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                                 FilterChip(
                                     selected = onlyMatched,
                                     onClick = { onlyMatched = !onlyMatched },
@@ -112,9 +99,9 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
                     }
                     if (shown.isEmpty()) {
                         item {
-                            Text(
+                            EmptyState(
+                                AppIcons.Offer,
                                 if (all.isEmpty()) "No offers fetched yet. Tap Refresh." else "No offers match these filters.",
-                                modifier = Modifier.padding(16.dp),
                             )
                         }
                     }
@@ -152,7 +139,7 @@ private fun SourceLine(status: OfferSourceStatus) {
 
 @Composable
 private fun OfferRow(offer: Offer) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp)) {
         offer.ingredientName?.let {
             Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         }

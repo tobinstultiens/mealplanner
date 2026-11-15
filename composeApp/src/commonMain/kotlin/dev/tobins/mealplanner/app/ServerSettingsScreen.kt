@@ -19,9 +19,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,11 +60,7 @@ fun ServerSettingsScreen(
     val draft = ServerSettings(url.trim().trimEnd('/'))
     val urlValid = draft.url.startsWith("http://") || draft.url.startsWith("https://")
 
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Settings") }, navigationIcon = { BackButton(onBack) })
-        },
-    ) { padding ->
+    SubScreen("Settings", onBack) { padding ->
         // Without an account the server comes first: nothing else works until it is set.
         val server: @Composable () -> Unit = {
             SettingsCard("Server") {
@@ -79,7 +73,7 @@ fun ServerSettingsScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
                     OutlinedButton(
                         enabled = urlValid && !testing,
                         onClick = {
@@ -105,7 +99,7 @@ fun ServerSettingsScreen(
             }
         }
         Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (!loggedIn) server()
@@ -123,7 +117,7 @@ fun ServerSettingsScreen(
                 loginError?.let { ErrorBanner("Could not log in", it) }
             }
             SettingsCard("Appearance") {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     ThemeMode.entries.forEach { mode ->
                         FilterChip(selected = theme == mode, onClick = { onTheme(mode) }, label = { Text(mode.label) })
                     }
@@ -142,7 +136,7 @@ private class ConnectionResult(val ok: Boolean, val text: String)
 @Composable
 private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             content()
         }

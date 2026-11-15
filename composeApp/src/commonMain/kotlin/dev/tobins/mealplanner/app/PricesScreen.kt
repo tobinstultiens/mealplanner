@@ -7,16 +7,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,39 +50,30 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
     }
     val refreshing = (state as? Load.Ready)?.value?.refreshing == true
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Regular prices") },
-                navigationIcon = { BackButton(onBack) },
-                actions = {
-                    BarAction(AppIcons.Refresh, if (refreshing) "Looking up prices" else "Refresh the prices", busy = refreshing, onClick = {
-                        scope.launch {
-                            when (val started = load { api.refreshPrices() }) {
-                                is Load.Ready -> {
-                                    state = started
-                                    reload++
-                                }
-                                is Load.Failed -> snackbar.showSnackbar("Could not start: ${started.message}")
-                                Load.Loading -> {}
-                            }
-                        }
-                    })
-                },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
+    SubScreen("Regular prices", onBack, snackbar, actions = {
+        BarAction(AppIcons.Refresh, if (refreshing) "Looking up prices" else "Refresh the prices", busy = refreshing, onClick = {
+            scope.launch {
+                when (val started = load { api.refreshPrices() }) {
+                    is Load.Ready -> {
+                        state = started
+                        reload++
+                    }
+                    is Load.Failed -> snackbar.showSnackbar("Could not start: ${started.message}")
+                    Load.Loading -> {}
+                }
+            }
+        })
+    }) { padding ->
         when (val current = state) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 ErrorMessage("Could not load the prices", current.message) { reload++ }
             }
             is Load.Ready -> {
                 val prices = current.value
-                LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+                LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                     item {
-                        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
                             Text(
                                 when {
                                     prices.refreshing -> "Looking up prices at Albert Heijn; this takes a few minutes."
@@ -122,7 +109,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                         item {
                             Text(
                                 "No product found, costed at a typical price: ${prices.unpriced.joinToString("; ")}.",
-                                modifier = Modifier.padding(16.dp),
+                                modifier = Modifier.padding(Spacing.InsideCard),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

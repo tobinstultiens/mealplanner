@@ -108,7 +108,7 @@ fun inlineMarkdown(text: String, linkStyle: SpanStyle): AnnotatedString = buildA
 @Composable
 fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
     val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         // The cooking site's own "Ingredients" heading is left over once the ingredients block is shown separately.
         val blocks = parseMarkdown(markdown).filterNot { it is MdBlock.Heading && it.text.trimEnd(':').lowercase() in setOf("ingredients", "ingrediënten") }
         for (block in blocks) {
@@ -123,7 +123,7 @@ fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
                     // A lone label such as "Steps:" reads as a small heading.
                     style = if (block.text.endsWith(":") && block.text.length < 40) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyLarge,
                 )
-                is MdBlock.ListItem -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                is MdBlock.ListItem -> Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     Text(block.marker, Modifier.width(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(text, style = MaterialTheme.typography.bodyLarge)
                 }

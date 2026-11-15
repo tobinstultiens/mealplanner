@@ -15,7 +15,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -96,17 +95,17 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         when (val current = state) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 ErrorMessage("Could not load your weight log", current.message) { reload++ }
             }
             is Load.Ready -> {
                 val log = current.value
                 Column(
-                    Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
                         val value = weightText.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it in 30.0..300.0 }
                         OutlinedTextField(
                             weightText, { weightText = it },
@@ -151,11 +150,11 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                         )
                     }
 
-                    if (log.entries.isNotEmpty()) Text("Weighings", style = MaterialTheme.typography.titleSmall)
+                    if (log.entries.isNotEmpty()) SectionHeader("Weighings")
                     for (entry in log.entries.asReversed().take(30)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(dayLabel(entry.date), Modifier.weight(1f))
-                            Text("${kg(entry.kg)}  ·  trend ${kg(entry.trendKg)}", style = MaterialTheme.typography.bodyMedium)
+                            Text("${kg(entry.kg)}  ·  trend ${kg(entry.trendKg)}", style = MaterialTheme.typography.bodyMedium.numeric())
                             TextButton(onClick = { change { api.deleteWeight(entry.date) } }) { Text("Remove") }
                         }
                     }
@@ -170,7 +169,7 @@ private fun TrendSummary(log: WeightLog) {
     val last = log.entries.last()
     val first = log.entries.first()
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
             Text("Trend weight", style = MaterialTheme.typography.labelLarge)
             Text(kg(last.trendKg), style = MaterialTheme.typography.headlineMedium)
             val change = last.trendKg - first.trendKg
@@ -195,7 +194,7 @@ private fun TrendSummary(log: WeightLog) {
 @Composable
 private fun SuggestionCard(suggestion: TargetSuggestion, onAccept: () -> Unit, onDismiss: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             Text("Adjust your calorie target?", style = MaterialTheme.typography.titleMedium)
             val rate = formatAmount((abs(suggestion.actualKgPerWeek) * 100).roundToInt() / 100.0)
             Text(
@@ -203,7 +202,7 @@ private fun SuggestionCard(suggestion: TargetSuggestion, onAccept: () -> Unit, o
                     "${if (suggestion.actualKgPerWeek >= 0) "a loss" else "a gain"} of $rate kg a week. " +
                     "Changing the target from ${suggestion.currentKcal} to ${suggestion.suggestedKcal} kcal should close the gap.",
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 Button(onClick = onAccept) { Text("Use ${suggestion.suggestedKcal} kcal") }
                 TextButton(onClick = onDismiss) { Text("Not now") }
             }
@@ -239,8 +238,8 @@ private fun WeightChart(entries: List<WeightEntry>) {
         return days.indices.minBy { abs(days[it] - day) }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Weight trend (kg)", style = MaterialTheme.typography.titleSmall)
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
+        SectionHeader("Weight trend (kg)")
         Text(
             selected?.let { entries[it] }?.let { "${dayLabel(it.date)}: weighed ${kg(it.kg)}, trend ${kg(it.trendKg)}" }
                 ?: "Line: trend. Dots: daily weighings. Touch the chart to read a day.",

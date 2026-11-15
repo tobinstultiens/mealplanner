@@ -2,14 +2,25 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -27,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -97,7 +109,7 @@ fun OverflowMenu(vararg actions: MenuAction) {
 @Composable
 fun ErrorBanner(summary: String, details: String, modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         Icon(AppIcons.Error, contentDescription = null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
         Text(summary, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         TextButton(onClick = { open = true }) { Text("Details") }
@@ -115,7 +127,7 @@ fun ErrorBanner(summary: String, details: String, modifier: Modifier = Modifier)
 /** A small icon with a short [text], for a warning that doesn't need a sentence. */
 @Composable
 fun WarningBadge(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
         Icon(AppIcons.Warning, contentDescription = null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary)
         Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
     }
@@ -127,14 +139,14 @@ fun WarningBadge(text: String) {
  */
 @Composable
 fun MealNumbers(macros: String, cost: String?, modifier: Modifier = Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards), verticalAlignment = Alignment.Top) {
         Text(
             macros,
             Modifier.weight(1f),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.numeric(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        cost?.let { Text(it, style = MaterialTheme.typography.bodySmall, softWrap = false) }
+        cost?.let { Text(it, style = MaterialTheme.typography.bodySmall.numeric(), softWrap = false) }
     }
 }
 
@@ -157,5 +169,73 @@ fun PeriodStepper(label: String, previous: String, next: String, onPrevious: () 
             modifier = Modifier.weight(1f, fill = false).widthIn(min = 96.dp),
         )
         BarAction(AppIcons.ChevronRight, next, onNext)
+    }
+}
+
+/**
+ * A screen opened from a tab: a top bar with the back arrow and the [title], optional
+ * [actions] and [snackbar] host, around the [content]. The content gets the insets to pad with.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SubScreen(
+    title: String,
+    onBack: () -> Unit,
+    snackbar: SnackbarHostState? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+    content: @Composable (PaddingValues) -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = { BackButton(onBack) },
+                actions = actions,
+            )
+        },
+        snackbarHost = { snackbar?.let { SnackbarHost(it) } },
+        content = content,
+    )
+}
+
+/** The heading of a group of rows or cards, in the accent colour so groups stand out when scrolling. */
+@Composable
+fun SectionHeader(text: String, modifier: Modifier = Modifier, style: TextStyle = MaterialTheme.typography.titleSmall) {
+    Text(text, modifier, style = style, color = MaterialTheme.colorScheme.primary)
+}
+
+/**
+ * What a screen shows when there is nothing in it yet: the [icon], one [message] sentence
+ * and, when there is something to do about it, a button for the [action].
+ */
+@Composable
+fun EmptyState(
+    icon: ImageVector,
+    message: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
+) {
+    Column(
+        modifier.fillMaxSize().padding(Spacing.Message),
+        verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, contentDescription = null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+        if (actionLabel != null) Button(onClick = onAction) { Text(actionLabel) }
+    }
+}
+
+/** What a screen shows while its data loads: a spinner with a word, so it isn't a blank screen. */
+@Composable
+fun LoadingState(modifier: Modifier = Modifier) {
+    Column(
+        modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(Spacing.Related, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator()
+        Text("Loading…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

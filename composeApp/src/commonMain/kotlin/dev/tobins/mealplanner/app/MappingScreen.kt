@@ -14,16 +14,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,24 +67,16 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
         if (reference == null) reference = (load { api.foodDataset() } as? Load.Ready)?.value?.reference
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Link ingredients") },
-                navigationIcon = { BackButton(onBack) },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
+    SubScreen("Link ingredients", onBack, snackbar) { padding ->
         when (val current = state) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 ErrorMessage("Could not load ingredients", current.message) { reload++ }
             }
             is Load.Ready -> LazyColumn(
                 Modifier.padding(padding).fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(Spacing.ScreenEdge),
+                verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
             ) {
                 item {
                     Text(
@@ -140,7 +128,7 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
 @Composable
 private fun UnmappedCard(unmapped: UnmappedText, onPick: (Food?) -> Unit) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(unmapped.text, style = MaterialTheme.typography.titleMedium)
             Text(
                 (if (unmapped.recipeCount == 1) "Used in 1 recipe" else "Used in ${unmapped.recipeCount} recipes") +
@@ -153,7 +141,7 @@ private fun UnmappedCard(unmapped: UnmappedText, onPick: (Food?) -> Unit) {
                 Text("Linked to ${linked.name}, but its weight per piece is unknown.", style = MaterialTheme.typography.bodyMedium)
                 AssistChip(onClick = { onPick(linked.food) }, label = { Text("Set weight per piece") })
             } else {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     unmapped.suggestedFoods.take(3).forEach { food ->
                         AssistChip(onClick = { onPick(food) }, label = { Text(food.nameEn) })
                     }
@@ -192,7 +180,7 @@ private fun LinkDialog(
         onDismissRequest = onDismiss,
         title = { Text("Link “${unmapped.text}”") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 val food = selected
                 val linked = unmapped.linkedIngredient
                 if (linked != null) {

@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -155,13 +154,13 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                 onValueChange = { query = it },
                 label = { Text("Search title or tag") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge),
             )
             FilterChip(
                 selected = mealsOnly,
                 onClick = { mealsOnly = !mealsOnly },
                 label = { Text("Meals only") },
-                modifier = Modifier.padding(horizontal = 16.dp),
+                modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
             )
             syncStatus?.let { SyncLine(it, onEdit = { editingRepo = true }) }
             if (editingRepo) {
@@ -185,7 +184,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                 )
             }
             when (val current = state) {
-                Load.Loading -> CenteredBox { CircularProgressIndicator() }
+                Load.Loading -> LoadingState()
                 is Load.Failed -> ErrorMessage("Could not load recipes", current.message) { reload++ }
                 is Load.Ready -> {
                     val shown = current.value.filter { recipe ->
@@ -193,16 +192,17 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                             (query.isBlank() || recipe.title.contains(query.trim(), ignoreCase = true) ||
                                 recipe.tags.any { it.contains(query.trim(), ignoreCase = true) })
                     }
-                    if (shown.isEmpty()) {
-                        CenteredBox {
-                            Text(
-                                if (current.value.isEmpty()) "No recipes yet. Tap Sync to import from the cooking site."
-                                else "No recipes match.",
-                                modifier = Modifier.padding(24.dp),
-                            )
-                        }
+                    if (current.value.isEmpty()) {
+                        EmptyState(
+                            AppIcons.Recipes,
+                            "No recipes yet. Add your cooking site to import them, or write one yourself.",
+                            actionLabel = "New recipe",
+                            onAction = onNewRecipe,
+                        )
+                    } else if (shown.isEmpty()) {
+                        EmptyState(AppIcons.Recipes, "No recipes match.")
                     } else {
-                        LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
+                        LazyColumn(contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                             items(shown, key = { it.id }) { recipe ->
                                 RecipeRow(recipe, onClick = { onOpen(recipe.id) })
                                 HorizontalDivider()
@@ -226,7 +226,7 @@ private fun SyncLine(status: CookingSyncStatus, onEdit: () -> Unit) {
         status.syncedAt == null -> "Cooking site not synced yet"
         else -> "Cooking site synced ${instantLabel(status.syncedAt!!)}"
     }
-    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onEdit).padding(horizontal = 16.dp), verticalArrangement = Arrangement.Center) {
+    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onEdit).padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.Center) {
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         status.error?.let { ErrorBanner("Last sync failed", it) }
     }
@@ -250,7 +250,7 @@ private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: s
         onDismissRequest = onDismiss,
         title = { Text("Cooking site") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 Text("The git repository of your cooking site. Its recipes are imported now and then automatically every 6 hours.")
                 OutlinedTextField(
                     url, { url = it; error = null },
@@ -279,12 +279,12 @@ private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: s
 private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
     val text = recipe.rowText()
     Column(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Spacing.ScreenEdge, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(Spacing.Tight),
     ) {
         Text(recipe.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (text.nutrition != null || text.cost != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
                 Text(text.nutrition.orEmpty(), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 text.cost?.let { Text(it, style = MaterialTheme.typography.bodyMedium, softWrap = false) }
             }
@@ -309,38 +309,24 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
         routines = (load { api.routines() } as? Load.Ready)?.value
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        (state as? Load.Ready)?.value?.summary?.title ?: "Recipe",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = { BackButton(onBack) },
-                actions = {
-                    if ((state as? Load.Ready)?.value?.summary?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }) {
-                        BarAction(AppIcons.Edit, "Edit recipe", onEdit)
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: "Recipe", onBack, actions = {
+        if ((state as? Load.Ready)?.value?.summary?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }) {
+            BarAction(AppIcons.Edit, "Edit recipe", onEdit)
+        }
+    }) { padding ->
         when (val current = state) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Box(Modifier.padding(padding)) {
                 ErrorMessage("Could not load recipe", current.message) { reload++ }
             }
             is Load.Ready -> {
                 val recipe = current.value
                 Column(
-                    Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
                     if (recipe.summary.tags.isNotEmpty()) {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                             recipe.summary.tags.forEach { AssistChip(onClick = {}, label = { Text(it) }) }
                         }
                     }
@@ -375,7 +361,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                             val line = mapped.line
                             if (line.group != group) {
                                 group = line.group
-                                group?.let { Text(it, style = MaterialTheme.typography.titleSmall) }
+                                group?.let { SectionHeader(it) }
                             }
                             Column {
                                 Text("•  ${line.displayText()}")
@@ -429,7 +415,7 @@ private fun RoutineButtons(summary: RecipeSummary, routines: Routines, onChange:
     val canBreakfast = summary.kind == RecipeKind.MEAL && MealSlot.BREAKFAST in summary.mealSlots
     val canSnack = summary.kind == RecipeKind.MEAL && MealSlot.SNACK in summary.mealSlots
     if (!canBreakfast && !canSnack && routines.breakfast != summary.id && routines.snack != summary.id) return
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         if (canBreakfast || routines.breakfast == summary.id) {
             FilterChip(
                 selected = routines.breakfast == summary.id,
@@ -451,9 +437,9 @@ private fun RoutineButtons(summary: RecipeSummary, routines: Routines, onChange:
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
         Text("Plan as", style = MaterialTheme.typography.labelLarge)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             val isMeal = summary.kind == RecipeKind.MEAL
             MealSlot.entries.forEach { slot ->
                 val selected = isMeal && slot in summary.mealSlots
@@ -480,7 +466,7 @@ private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -
 @Composable
 private fun NutritionCard(nutrition: RecipeNutrition, source: String?) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
             Text("Per serving", style = MaterialTheme.typography.labelLarge)
             Text(nutrition.headline(), style = MaterialTheme.typography.titleLarge)
             with(nutrition.perServing) {
@@ -520,9 +506,9 @@ private fun NutritionCard(nutrition: RecipeNutrition, source: String?) {
 @Composable
 private fun CostCard(cost: RecipeCost) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
             Text("Cost per serving", style = MaterialTheme.typography.labelLarge)
-            Text("≈ ${formatEuro(cost.perServingWithOffers)}", style = MaterialTheme.typography.titleLarge)
+            Text("≈ ${formatEuro(cost.perServingWithOffers)}", style = MaterialTheme.typography.titleLarge.numeric())
             if (cost.perServingWithOffers < cost.perServing - 0.005) {
                 Text(
                     "${formatEuro(cost.perServing)} at regular prices; this week's offers save ${formatEuro(cost.perServing - cost.perServingWithOffers)}.",
@@ -542,16 +528,11 @@ private fun CostCard(cost: RecipeCost) {
 }
 
 @Composable
-internal fun CenteredBox(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
-}
-
-@Composable
 internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
     val openServer = LocalOpenServerSettings.current
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        Modifier.fillMaxSize().padding(Spacing.Message),
+        verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
@@ -561,7 +542,7 @@ internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
         } else {
             ErrorBanner(summary = detail.lineSequence().first().take(100) + "…", details = detail, modifier = Modifier.fillMaxWidth())
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             Button(onClick = onRetry) { Text("Try again") }
             if (openServer != null) TextButton(onClick = openServer) { Text("Server settings") }
         }

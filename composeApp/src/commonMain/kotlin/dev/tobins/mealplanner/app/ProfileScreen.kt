@@ -12,16 +12,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -98,33 +94,25 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
     }
     val problems = draft?.let(TargetCalculator::problems)
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Profile and targets") },
-                navigationIcon = { BackButton(onBack) },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
+    SubScreen("Profile and targets", onBack, snackbar) { padding ->
         when (val current = loaded) {
-            Load.Loading -> CenteredBox(Modifier.padding(padding)) { CircularProgressIndicator() }
+            Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 ErrorMessage("Could not load your profile", current.message) { reload++ }
             }
             is Load.Ready -> Column(
-                Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
+                verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
             ) {
                 NumberField("Weight (kg)", weight, decimal = true) { weight = it }
                 NumberField("Height (cm)", height, decimal = true) { height = it }
                 NumberField("Age", age, decimal = false) { age = it }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     FilterChip(selected = sex == Sex.MALE, onClick = { sex = Sex.MALE }, label = { Text("Male") })
                     FilterChip(selected = sex == Sex.FEMALE, onClick = { sex = Sex.FEMALE }, label = { Text("Female") })
                 }
                 Text("Activity", style = MaterialTheme.typography.labelLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     ActivityLevel.entries.forEach { level ->
                         FilterChip(selected = activity == level, onClick = { activity = level }, label = { Text(activityLabels.getValue(level)) })
                     }
@@ -132,14 +120,14 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                 NumberField("Weight loss per week (kg, 0 to 1)", goal, decimal = true) { goal = it }
 
                 Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
                         Text("Daily targets", style = MaterialTheme.typography.labelLarge)
                         when {
                             draft == null -> Text("Fill in the fields above to see your targets.")
                             !problems.isNullOrEmpty() -> Text(problems.joinToString("\n"), color = MaterialTheme.colorScheme.error)
                             else -> {
                                 val targets = TargetCalculator.targets(draft)
-                                Text("${targets.kcal} kcal · ${targets.proteinG} g protein", style = MaterialTheme.typography.titleLarge)
+                                Text("${targets.kcal} kcal · ${targets.proteinG} g protein", style = MaterialTheme.typography.titleLarge.numeric())
                                 Text(
                                     "You maintain your weight at about ${TargetCalculator.maintenanceKcal(draft)} kcal a day. " +
                                         "Suggested: ${TargetCalculator.suggest(draft).let { "${it.kcal} kcal, ${it.proteinG} g protein" }}.",

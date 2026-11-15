@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mark as the update notification's small icon: white on transparent, as the status bar needs. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <group android:translateX="-26" android:translateY="-24">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M32,57 H76 A22,18 0 0 1 32,57 Z M47,73 H61 V77 H47 Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M54,49 C46,49 38,43 39,31 C49,31 58,38 54,49 Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M54,49 C62,49 70,43 69,31 C59,31 50,38 54,49 Z" />
+    </group>
+</vector>

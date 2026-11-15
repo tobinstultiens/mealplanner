@@ -51,7 +51,7 @@ fun GenerateDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     FilterChip(selected = mode == GenerationMode.PREFERENCE, onClick = { mode = GenerationMode.PREFERENCE }, label = { Text("To my wish") })
                     FilterChip(selected = mode == GenerationMode.TASTE_BREAKER, onClick = { mode = GenerationMode.TASTE_BREAKER }, label = { Text("Surprise me") })
                 }
@@ -61,7 +61,7 @@ fun GenerateDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (fixedSlot == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (fixedSlot == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     MealSlot.entries.forEach { s ->
                         FilterChip(selected = slot == s, onClick = { slot = s }, label = { Text(s.name.lowercase().replaceFirstChar { it.uppercase() }) })
                     }
@@ -72,7 +72,7 @@ fun GenerateDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (busy) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator()
                         Text("Writing the recipe; this can take a minute.")
                     }
