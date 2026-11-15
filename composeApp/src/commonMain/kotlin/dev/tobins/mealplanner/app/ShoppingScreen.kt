@@ -37,7 +37,16 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
+import dev.tobins.mealplanner.api.ShoppingExtraInput
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -291,6 +300,7 @@ internal fun ShoppingScreen(
                     shoppingMode,
                     suggested,
                     onToggle = { if (shoppingMode) tickWithUndo(item) else tick(item.key, !item.checked) },
+                    onRemove = item.extraId?.let { id -> { session.remove(id) } },
                     onOfferClick = {
                         scope.launch {
                             snackbar.currentSnackbarData?.dismiss()
@@ -299,7 +309,10 @@ internal fun ShoppingScreen(
                     },
                 )
                 if (list.items.isEmpty()) {
-                    EmptyState(Spot.NothingToBuy, t(Msg.NOTHING_TO_BUY), Modifier.padding(padding))
+                    Column(Modifier.padding(padding)) {
+                        AddItemRow(session)
+                        EmptyState(Spot.NothingToBuy, t(Msg.NOTHING_TO_BUY), Modifier.weight(1f))
+                    }
                     return@Scaffold
                 }
                 LazyColumn(Modifier.padding(padding).fillMaxSize(), listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
@@ -310,6 +323,7 @@ internal fun ShoppingScreen(
                         }
                     }
                     item { ViewSwitch(view) { view = it; settings.saveShoppingView(it) } }
+                    item(key = "add") { AddItemRow(session) }
                     offlineSince?.let { since ->
                         item {
                             Row(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalAlignment = Alignment.CenterVertically) {
@@ -396,6 +410,45 @@ internal fun ShoppingScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The field and button that put an own item on the list. Enter or the button adds it; the field
+ * then clears and keeps the focus for the next one. A refusal leaves the text for the user to
+ * change. Without a connection the field is off and says why.
+ */
+@Composable
+private fun AddItemRow(session: ShoppingSession) {
+    val t = LocalStrings.current
+    var text by rememberSaveable { mutableStateOf("") }
+    val focus = remember { FocusRequester() }
+    val enabled = session.canChangeExtras
+    fun add() {
+        val sent = text
+        if (sent.isBlank()) return
+        // Only what was sent is cleared: the user may have started the next item meanwhile.
+        session.add(sent) {
+            if (text == sent) text = ""
+            focus.requestFocus()
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 4.dp), verticalAlignment = Alignment.Top) {
+        OutlinedTextField(
+            text,
+            { text = it.take(ShoppingExtraInput.MAX_NAME_LENGTH) },
+            label = { Text(t(Msg.EXTRA_FIELD)) },
+            supportingText = if (enabled) null else ({ Text(t(Msg.EXTRA_NEEDS_CONNECTION, "")) }),
+            enabled = enabled,
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { add() }),
+            modifier = Modifier.weight(1f).focusRequester(focus),
+        )
+        // Level with the field, not with its supporting text.
+        IconButton(onClick = ::add, enabled = enabled && text.isNotBlank() && !session.adding, modifier = Modifier.padding(top = 4.dp)) {
+            Icon(AppIcons.Add, t(Msg.EXTRA_ADD))
         }
     }
 }
@@ -593,7 +646,7 @@ private fun ToggleHeader(title: String, open: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, today: String, shoppingMode: Boolean, suggested: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
+private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, today: String, shoppingMode: Boolean, suggested: Boolean, onToggle: () -> Unit, onRemove: (() -> Unit)?, onOfferClick: () -> Unit) {
     val t = LocalStrings.current
     Row(
         Modifier.fillMaxWidth()
@@ -622,6 +675,13 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, to
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        // An own item has no amount and no offer; in shopping mode its row has the one tap target.
+        if (onRemove != null) {
+            if (!shoppingMode) {
+                IconButton(onClick = onRemove) { Icon(AppIcons.Close, t(Msg.EXTRA_REMOVE, item.name)) }
+            }
+            return@Row
         }
         Column(Modifier.padding(horizontal = 12.dp).widthIn(max = 128.dp), horizontalAlignment = Alignment.End) {
             // Long amounts such as "200 g + 1 bag" wrap rather than squeeze the name.

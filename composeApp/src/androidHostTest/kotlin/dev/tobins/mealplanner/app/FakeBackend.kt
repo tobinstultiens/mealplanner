@@ -177,6 +177,9 @@ class FakeBackend(
                     offers = listOf(Offer(Store.LIDL, "Griekse yoghurt 500 g", "voor 1,19", 1.19, 1.79, "500 g", null, "2026-11-19", "2026-11-25", paidShare = 0.66)), regularPrice = 1.79,
                 ),
                 item("oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries", offers = listOf(offerList[3].copy(paidShare = 0.79)), regularPrice = 0.76),
+                // Own items, typed by hand: one the server filed under a section, one it could not place.
+                item("x:1", "Coffee", null, null, ShopSection.DRINKS, null),
+                item("x:2", "Birthday candles", null, null, ShopSection.OTHER, null),
             ),
             staples = listOf("Olive oil", "Salt"),
             toTaste = listOf("Black pepper", "Fresh parsley"),

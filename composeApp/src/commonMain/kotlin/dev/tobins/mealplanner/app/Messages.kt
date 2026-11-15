@@ -361,6 +361,12 @@ enum class Msg(private val english: String, private val dutch: String) {
     TICK_FAILED("Could not save the tick: {0}", "Afvinken opslaan is niet gelukt: {0}"),
     BACK_ON_LIST("{0} back on the list", "{0} staat weer op de lijst"),
     TICKED_OFF("{0} ticked off", "{0} afgevinkt"),
+    EXTRA_FIELD("Add an item of your own", "Voeg een eigen product toe"),
+    EXTRA_ADD("Add", "Toevoegen"),
+    EXTRA_REMOVE("Remove {0} from the list", "Haal {0} van de lijst"),
+    EXTRA_NEEDS_CONNECTION("Adding and removing items needs a connection", "Producten toevoegen of weghalen kan alleen met een verbinding"),
+    EXTRA_ADD_FAILED("Could not add the item: {0}", "Het product toevoegen is niet gelukt: {0}"),
+    EXTRA_REMOVE_FAILED("Could not remove the item: {0}", "Het product weghalen is niet gelukt: {0}"),
     SHOPPING_LOAD_FAILED("Could not load the shopping list", "De boodschappenlijst kon niet worden geladen"),
     NOTHING_TO_BUY("Nothing to buy: no meals are planned for this week.", "Niets te kopen: er zijn deze week geen maaltijden gepland."),
     OFFLINE_LIST(
