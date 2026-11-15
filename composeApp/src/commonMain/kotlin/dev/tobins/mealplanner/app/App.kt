@@ -52,6 +52,8 @@ fun App(
     /** Redirects back from the login page (URLs), as the platform receives them. */
     loginCallbacks: Flow<String>,
     updater: UpdateInstaller? = null,
+    /** Where the open screen is kept between reloads (the browser's address); none on Android. */
+    routes: RouteStore = NoRoutes,
 ) {
     var settings by remember { mutableStateOf(storage.serverSettings(defaults)) }
     val login = remember(storage) { Login(storage) }
@@ -91,17 +93,22 @@ fun App(
     val shoppingCache = remember(storage) { ShoppingCache(storage) }
     DisposableEffect(api) { onDispose { api.close() } }
 
-    var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
-    var openRecipeId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // What was open when the page was loaded (a reload or a shared link); Today where nothing says.
+    val start = remember { parseRoute(routes.read()).openScreens() }
+    var tab by rememberSaveable { mutableStateOf(start.tab) }
+    var openRecipeId by rememberSaveable { mutableStateOf(start.recipeId) }
     // Null: no editor open. -1: a new recipe. Otherwise the id of the recipe being edited.
-    var editing by rememberSaveable { mutableStateOf<Long?>(null) }
-    var mapping by rememberSaveable { mutableStateOf(false) }
-    var profileOpen by rememberSaveable { mutableStateOf(false) }
-    var pantryOpen by rememberSaveable { mutableStateOf(false) }
-    var offersOpen by rememberSaveable { mutableStateOf(false) }
-    var pricesOpen by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf(start.editing) }
+    var mapping by rememberSaveable { mutableStateOf(start.mapping) }
+    var profileOpen by rememberSaveable { mutableStateOf(start.profile) }
+    var pantryOpen by rememberSaveable { mutableStateOf(start.pantry) }
+    var offersOpen by rememberSaveable { mutableStateOf(start.offers) }
+    var pricesOpen by rememberSaveable { mutableStateOf(start.prices) }
     // Not logged in, nothing works yet: start on the settings, where the login is.
-    var serverOpen by rememberSaveable { mutableStateOf(session == null) }
+    var serverOpen by rememberSaveable { mutableStateOf(session == null || start.settings) }
+    // The address follows the open screen, so that a reload comes back to it.
+    val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen)
+    LaunchedEffect(open, session != null) { addressFor(open, loggedIn = session != null)?.let(routes::write) }
 
     LaunchedEffect(Unit) {
         loginCallbacks.collect { url ->
@@ -143,7 +150,7 @@ fun App(
     ) {
     MealPlannerTheme(dark, systemColors) {
       // On a wide browser window the app keeps a phone-like column in the middle.
-      Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
+      Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).focusRing(), contentAlignment = Alignment.TopCenter) {
        Box(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
         // Any error message can offer the server settings, since a wrong address is the usual cause.
         update?.let { found ->
@@ -302,12 +309,12 @@ fun App(
 }
 
 /** The five tabs; the icon is filled in for the one that is open. */
-private enum class Tab(val label: Msg, val icon: ImageVector, val selectedIcon: ImageVector) {
-    TODAY(Msg.TAB_TODAY, AppIcons.Today, AppIcons.TodayFilled),
-    PLAN(Msg.TAB_PLAN, AppIcons.Plan, AppIcons.PlanFilled),
-    SHOPPING(Msg.TAB_SHOPPING, AppIcons.Shopping, AppIcons.ShoppingFilled),
-    RECIPES(Msg.TAB_RECIPES, AppIcons.Recipes, AppIcons.RecipesFilled),
-    PROGRESS(Msg.TAB_PROGRESS, AppIcons.Progress, AppIcons.ProgressFilled),
+enum class Tab(val slug: String, val label: Msg, val icon: ImageVector, val selectedIcon: ImageVector) {
+    TODAY("today", Msg.TAB_TODAY, AppIcons.Today, AppIcons.TodayFilled),
+    PLAN("plan", Msg.TAB_PLAN, AppIcons.Plan, AppIcons.PlanFilled),
+    SHOPPING("shopping", Msg.TAB_SHOPPING, AppIcons.Shopping, AppIcons.ShoppingFilled),
+    RECIPES("recipes", Msg.TAB_RECIPES, AppIcons.Recipes, AppIcons.RecipesFilled),
+    PROGRESS("progress", Msg.TAB_PROGRESS, AppIcons.Progress, AppIcons.ProgressFilled),
 }
 
 /**

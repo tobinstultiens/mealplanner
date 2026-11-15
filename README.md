@@ -68,10 +68,14 @@ dependencies; commit changes to it. The web tests run in a headless Chrome.
 
 Checked by hand (login, all five tabs, light and dark, 360 px and 1280 px wide, Dutch locale, back
 button, mouse wheel, keyboard focus) in Chromium 157, and in Firefox 160 (login and two tabs only).
-Differences from the Android app that are deliberate or known: a reload always returns to the Today
-tab (screens are not part of the address), text cannot be selected (as on Android), keyboard focus is
-hard to see (follow-ups in #54), and the page background before the app has started follows the
-browser's light/dark setting, not the Light/Dark choice in Settings.
+The open screen is part of the address (`/#/recipes/12`, `#/offers`, `#/settings`; see `Routes.kt`), so a
+reload or a shared link comes back to it; an unknown address is the Today tab, and without a login the login
+shows first and the address is restored when it returns. The address changes without adding history entries, so
+the back button works as before; Android does not use routes. Keyboard focus is shown by a ring in the theme's
+primary colour (`FocusRing.kt`), on Android with a keyboard too. Before the app has started the page takes its
+background from the Light/Dark choice in Settings, which `index.html` reads from `localStorage` (key `theme`).
+The ingredients and steps of a recipe can be selected and copied, on Android too. Known difference: typing a
+new fragment into the address of an open page does not move the app (a reload does).
 
 ## Android app
 

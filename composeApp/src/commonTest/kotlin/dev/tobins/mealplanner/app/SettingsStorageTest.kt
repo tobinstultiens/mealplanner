@@ -5,6 +5,19 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class SettingsStorageTest {
+    /** The page reads the choice straight from the browser's storage before the app runs. */
+    @Test
+    fun themeChoiceIsStoredWhereTheBrowserPageReadsIt() {
+        val storage = MemorySettingsStorage()
+        assertEquals(ThemeMode.SYSTEM, storage.themeMode())
+
+        storage.saveThemeMode(ThemeMode.DARK)
+        assertEquals("DARK", storage.get("theme"))
+        storage.saveThemeMode(ThemeMode.LIGHT)
+        assertEquals("LIGHT", storage.get("theme"))
+        assertEquals(ThemeMode.LIGHT, storage.themeMode())
+    }
+
     @Test
     fun savedSettingsReplaceTheBuiltInDefaults() {
         val defaults = ServerSettings("http://10.0.2.2:8080")

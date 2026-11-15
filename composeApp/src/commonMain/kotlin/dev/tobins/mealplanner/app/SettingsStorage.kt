@@ -32,6 +32,10 @@ fun SettingsStorage.saveServerSettings(settings: ServerSettings) {
 /** Light, dark, or whatever the device uses. */
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/**
+ * The browser's page (`index.html`) reads this key and its values `LIGHT` and `DARK` to colour itself before the
+ * app has started; changing either needs its script changed too (SettingsStorageTest pins them).
+ */
 private const val THEME_KEY = "theme"
 
 fun SettingsStorage.themeMode(): ThemeMode =
