@@ -134,7 +134,11 @@ internal fun ShoppingScreen(
         }
     }
     KeepScreenOn(shoppingMode)
-    LaunchedEffect(session) { session.resume() }
+    // The session keeps the list current while the screen shows, and stops when it goes.
+    DisposableEffect(session) {
+        session.resume()
+        onDispose { session.leave() }
+    }
 
     // What the session has to tell, also from while the screen was not shown.
     val notice = session.notices.firstOrNull()

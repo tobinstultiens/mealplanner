@@ -2,7 +2,10 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.events.Event
 
@@ -44,6 +47,21 @@ actual fun systemColorScheme(dark: Boolean): androidx.compose.material3.ColorSch
 /** The browser decides when to lock the screen. */
 @Composable
 actual fun KeepScreenOn(enabled: Boolean) {}
+
+@JsFun("() => document.visibilityState === 'visible'")
+private external fun pageVisible(): Boolean
+
+/** The page is in front while its tab shows; the browser says when that changes (`visibilitychange`). */
+@Composable
+actual fun appInFront(): Boolean {
+    val visible = remember { mutableStateOf(pageVisible()) }
+    DisposableEffect(Unit) {
+        val listener: (Event) -> Unit = { visible.value = pageVisible() }
+        document.addEventListener("visibilitychange", listener)
+        onDispose { document.removeEventListener("visibilitychange", listener) }
+    }
+    return visible.value
+}
 
 /** The browser keeps its own cache and sets the User-Agent itself, so there is nothing to configure. */
 actual fun productImageLoader(context: coil3.PlatformContext): coil3.ImageLoader =

@@ -93,6 +93,69 @@ class ShoppingCacheTest {
     }
 
     @Test
+    fun aCacheMadeBeforeTheListsWereClearedWritesNothingAfter() {
+        val storage = MemorySettingsStorage()
+        val previousAccount = ShoppingCache(storage)
+        previousAccount.save(list, "earlier")
+        storage.logOut()
+        // Answers to requests that were under way when the login ended.
+        previousAccount.save(list, "later")
+        previousAccount.confirm(list, "later", "a", true)
+        previousAccount.choose(list.weekStart, "a", true)
+        previousAccount.tidy(today = "2026-11-18")
+        assertNull(ShoppingCache(storage).load(list.weekStart))
+        assertEquals(emptyList(), ShoppingCache(storage).weeksWithTicks())
+
+        val nextAccount = ShoppingCache(storage)
+        nextAccount.save(list, "now")
+        assertEquals("now", nextAccount.load(list.weekStart)!!.second, "a cache made after the clear works as before")
+    }
+
+    @Test
+    fun weeksWithTicksAreListedOldestFirst() {
+        val cache = ShoppingCache(MemorySettingsStorage())
+        listOf("2026-11-16", "2026-11-09", "2026-11-23").forEach { cache.save(list.copy(weekStart = it), "earlier") }
+        cache.choose("2026-11-16", "a", true)
+        cache.choose("2026-11-09", "b", false)
+        assertEquals(listOf("2026-11-09", "2026-11-16"), cache.weeksWithTicks())
+    }
+
+    @Test
+    fun tidyingDropsOldListsWithoutTicksAndKeepsTheRest() {
+        val storage = MemorySettingsStorage()
+        val cache = ShoppingCache(storage)
+        val fiveWeeksOld = "2026-10-12"
+        val fiveWeeksOldWithTicks = "2026-10-05"
+        val fourWeeksOld = "2026-10-19"
+        listOf(fiveWeeksOld, fiveWeeksOldWithTicks, fourWeeksOld, "2026-11-16", "2026-11-23").forEach { cache.save(list.copy(weekStart = it), "earlier") }
+        cache.choose(fiveWeeksOldWithTicks, "a", true)
+        storage.set("shopping.2026-11-02", "not a list")
+
+        cache.tidy(today = "2026-11-18")
+        assertNull(cache.load(fiveWeeksOld))
+        assertNull(storage.get("shopping.$fiveWeeksOld"), "removed, not left empty")
+        assertNull(storage.get("shopping.2026-11-02"), "one that no longer reads goes too")
+        assertEquals(mapOf("a" to true), cache.pending(fiveWeeksOldWithTicks), "its tick has still to reach the server")
+        listOf(fourWeeksOld, "2026-11-16", "2026-11-23").forEach { assertEquals(it, cache.load(it)?.first?.weekStart) }
+
+        cache.forget(fiveWeeksOldWithTicks, "a", true)
+        cache.tidy(today = "2026-11-18")
+        assertNull(cache.load(fiveWeeksOldWithTicks), "once its tick was dealt with")
+    }
+
+    @Test
+    fun tidyingTakesListsStoredBeforeTheListOfWeeksAlong() {
+        val storage = MemorySettingsStorage()
+        // As the installed app (v0.1.3) stores it: the entry only, with a tick that never reached the server.
+        val legacy = """{"list":{"weekStart":"2026-11-09","items":[{"key":"a","name":"a","grams":100.0,"pieces":null,"category":"Vegetables","recipes":["Soup"],"onHand":false,"checked":false}],"staples":[]},"savedAt":"earlier","pending":{"a":true}}"""
+        storage.set("shopping.2026-11-09", legacy)
+        val cache = ShoppingCache(storage)
+        assertEquals(emptyList(), cache.weeksWithTicks())
+        cache.tidy(today = "2026-11-18")
+        assertEquals(listOf("2026-11-09"), cache.weeksWithTicks(), "so its tick is sent with the rest")
+    }
+
+    @Test
     fun loggingOutForgetsTheStoredListsAndTheirTicks() {
         val storage = MemorySettingsStorage()
         val cache = ShoppingCache(storage)

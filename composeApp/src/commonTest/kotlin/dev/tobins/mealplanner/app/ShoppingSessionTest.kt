@@ -19,6 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /** The shopping list's state as the app keeps it, across leaving the screen, closing the app and changing week. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -27,24 +28,38 @@ class ShoppingSessionTest {
 
     /**
      * A server that answers after [latency] ms and remembers what it was sent, in order. [answer]
-     * replaces the answer to a tick, and a tick of a key in [hanging] is never answered.
+     * replaces the answer to a tick and [listAnswer] the one to fetching a list; a tick of a key
+     * in [hanging] is never answered, and while [unreachable] every request fails at once, as
+     * without a network. [asked] has every request as it went out.
      */
     private class FakeServer(var latency: Long = 2000) : ShoppingServer {
         val lists = mutableMapOf<String, ShoppingList>()
         val ticks = mutableListOf<Triple<String, String, Boolean>>()
+        val asked = mutableListOf<String>()
         var answer: ((String, Boolean) -> Load<ShoppingList>)? = null
+        var listAnswer: Load<ShoppingList>? = null
         val hanging = mutableSetOf<String>()
+        var unreachable = false
 
         fun listFor(week: String): ShoppingList = lists.getOrPut(week) {
             ShoppingList(week, listOf("a", "b", "c").map { ShoppingItem(it, it, 100.0, null, "Vegetables", listOf("Soup"), onHand = false, checked = false) }, staples = emptyList())
         }
 
+        /** Another device on the same login ticks [key]. */
+        fun tickElsewhere(week: String, key: String, checked: Boolean) {
+            lists[week] = listFor(week).withTicks(mapOf(key to checked))
+        }
+
         override suspend fun list(weekStart: String): Load<ShoppingList> {
+            asked += "list $weekStart"
+            if (unreachable) return Load.Failed("Unable to resolve host")
             delay(latency)
-            return Load.Ready(listFor(weekStart))
+            return listAnswer ?: Load.Ready(listFor(weekStart))
         }
 
         override suspend fun check(weekStart: String, key: String, checked: Boolean): Load<ShoppingList> {
+            asked += "check $weekStart $key"
+            if (unreachable) return Load.Failed("Unable to resolve host")
             if (key in hanging) awaitCancellation()
             delay(latency)
             ticks += Triple(weekStart, key, checked)
@@ -63,7 +78,14 @@ class ShoppingSessionTest {
     private val storage = MemorySettingsStorage()
     private val server = FakeServer()
 
-    private fun TestScope.session(today: () -> String = { "2026-11-18" }) = ShoppingSession(backgroundScope, server, ShoppingCache(storage), today)
+    private fun TestScope.session(shoppingMode: Boolean = false, today: () -> String = { "2026-11-18" }) =
+        ShoppingSession(backgroundScope, server, ShoppingCache(storage), today, shoppingMode = { shoppingMode })
+
+    /** Lets [ms] pass and runs what is due then. */
+    private fun TestScope.wait(ms: Long) {
+        advanceTimeBy(ms)
+        runCurrent()
+    }
 
     /** Lets a minute pass, time for every request; advanceUntilIdle does not wait for the background scope the sessions run in. */
     private fun TestScope.settle() {
@@ -331,5 +353,203 @@ class ShoppingSessionTest {
         offline.dismiss(ShoppingAdviceGroup.BUY_AHEAD, false)
         settle()
         assertEquals(listOf(Msg.ADVICE_CHANGE_FAILED to "Server down"), offline.notices.map { it.msg to it.detail })
+    }
+
+    private fun lists() = server.asked.count { it.startsWith("list") }
+
+    @Test
+    fun anotherDevicesTickShowsWithinOneRefreshAndATapJustBeforeTheAnswerIsNotFlippedBack() = runTest {
+        val session = session(shoppingMode = true)
+        session.inFront(true)
+        session.resume()
+        wait(3000)
+        assertEquals(listOf(false, false, false), session.checked())
+        assertEquals(1, lists(), "coming to the front and opening the screen fetch the list once")
+
+        server.tickElsewhere(monday, "c", true)
+        wait(ShoppingSession.REFRESH_IN_SHOP.inWholeMilliseconds - 3000 + server.latency)
+        assertEquals(listOf(false, false, true), session.checked(), "one interval later, without any action")
+
+        // The next refresh goes out at 60 s; "a" is tapped while its answer is on the way.
+        wait(29_000)
+        assertEquals(3, lists())
+        session.tick("a", true)
+        repeat(100) {
+            wait(100)
+            assertEquals(listOf(true, false, true), session.checked(), "at ${testScheduler.currentTime} ms")
+        }
+        assertEquals(Triple(monday, "a", true), server.ticks.last())
+        assertEquals(emptyMap(), pending())
+    }
+
+    @Test
+    fun outsideShoppingModeTheListIsFetchedEveryTwoMinutes() = runTest {
+        val session = session()
+        session.inFront(true)
+        session.resume()
+        wait(ShoppingSession.REFRESH.inWholeMilliseconds - 1)
+        assertEquals(1, lists())
+        wait(1)
+        assertEquals(2, lists())
+    }
+
+    @Test
+    fun offlineTheListReconnectsByItselfAndSendsTheStoredTicks() = runTest {
+        val session = session()
+        session.inFront(true)
+        session.resume()
+        wait(3000)
+        server.unreachable = true
+        session.tick("a", true)
+        runCurrent()
+        assertNotNull(session.offlineSince)
+        assertEquals(mapOf("a" to true), pending())
+
+        server.unreachable = false
+        // The check at 30 s sends the tick, then fetches the list: two answers later the list is online.
+        wait(ShoppingSession.RECONNECT.inWholeMilliseconds - 3000 + 2 * server.latency)
+        assertNull(session.offlineSince, "the offline line goes without a tap on Retry")
+        assertEquals(listOf(Triple(monday, "a", true)), server.ticks)
+        assertEquals(emptyMap(), pending())
+        assertEquals(listOf(true, false, false), session.checked())
+    }
+
+    @Test
+    fun offlineOnlyTheReconnectAttemptGoesOutOncePerInterval() = runTest {
+        val session = session(shoppingMode = true)
+        session.inFront(true)
+        session.resume()
+        wait(3000)
+        server.unreachable = true
+        session.tick("a", true)
+        session.tick("b", true)
+        runCurrent()
+        server.asked.clear()
+
+        wait(10 * ShoppingSession.RECONNECT.inWholeMilliseconds)
+        assertEquals(List(10) { "check $monday a" }, server.asked, "the first stored tick, which finds no connection, and nothing else")
+        assertNotNull(session.offlineSince)
+        assertEquals(listOf(true, true, false), session.checked())
+    }
+
+    @Test
+    fun nothingIsFetchedByItselfWhileTheScreenIsNotShownOrTheAppIsBehind() = runTest {
+        val session = session(shoppingMode = true)
+        session.inFront(true)
+        wait(10 * 60_000)
+        assertEquals(listOf("list $monday"), server.asked, "the current week once, so it is on the phone for the shop")
+        assertNotNull(ShoppingCache(storage).load(monday))
+
+        session.resume()
+        wait(3000)
+        session.inFront(false)
+        val behind = server.asked.size
+        wait(10 * 60_000)
+        assertEquals(behind, server.asked.size, "behind another app")
+
+        session.inFront(true)
+        wait(3000)
+        assertEquals(behind + 1, server.asked.size, "fetched again on coming back")
+        session.leave()
+        val left = server.asked.size
+        wait(10 * 60_000)
+        assertEquals(left, server.asked.size, "on another screen")
+
+        // The plan changed on the Plan tab: the current week is fetched for the shop, unless the screen shows.
+        session.prefetch()
+        wait(3000)
+        assertEquals(left + 1, server.asked.size)
+        session.resume()
+        session.prefetch()
+        wait(3000)
+        assertEquals(left + 2, server.asked.size, "the screen's own fetch only")
+    }
+
+    @Test
+    fun theChecksStopWhenTheSessionCloses() = runTest(timeout = 10.seconds) {
+        // In the test's own scope, which ends only when every coroutine in it has: a check left running fails the test.
+        val session = ShoppingSession(this, server, ShoppingCache(storage), { "2026-11-18" }, shoppingMode = { true })
+        session.inFront(true)
+        session.resume()
+        wait(5 * 60_000)
+        val asked = server.asked.size
+        assertTrue(asked >= 10, "fetched every 30 s")
+        session.close()
+        wait(10 * 60_000)
+        assertEquals(asked, server.asked.size)
+    }
+
+    @Test
+    fun storedTicksOfLastWeekAreSentOnStartWhileThisWeekIsShown() = runTest {
+        val lastWeek = "2026-11-09"
+        ShoppingCache(storage).apply {
+            save(server.listFor(monday), "earlier")
+            choose(monday, "b", true)
+            save(server.listFor(lastWeek), "earlier")
+            choose(lastWeek, "a", true)
+        }
+        val session = session()
+        session.inFront(true)
+        session.resume()
+        settle()
+        assertEquals(listOf(Triple(lastWeek, "a", true), Triple(monday, "b", true)), server.ticks, "oldest week first")
+        assertEquals(emptyMap(), pending(lastWeek))
+        assertEquals(monday, session.weekStart)
+        assertEquals(listOf(false, true, false), session.checked())
+    }
+
+    @Test
+    fun withoutAnAnswerToAStoredTickTheOfflineLineDoesNotWaitForTheListAsWell() = runTest {
+        ShoppingCache(storage).apply {
+            save(server.listFor(monday), "earlier")
+            choose(monday, "b", true)
+        }
+        server.hanging += "b"
+        val session = session()
+        session.resume()
+        assertEquals(listOf(false, true, false), session.checked(), "the stored copy at once")
+        wait(ShoppingSession.TIME_LIMIT.inWholeMilliseconds)
+        assertNotNull(session.offlineSince, "after one time limit, not two")
+        assertEquals(listOf("check $monday b"), server.asked)
+    }
+
+    @Test
+    fun aServerErrorKeepsTheListShownWithTheOfflineLineAndIsTriedAgain() = runTest {
+        val session = session()
+        session.inFront(true)
+        session.resume()
+        wait(3000)
+        server.listAnswer = Load.Failed("Bad gateway", 502)
+        session.retry()
+        wait(3000)
+        assertEquals(listOf(false, false, false), session.checked(), "the list stays")
+        assertNotNull(session.offlineSince)
+
+        server.listAnswer = null
+        wait(ShoppingSession.RECONNECT.inWholeMilliseconds)
+        assertNull(session.offlineSince)
+    }
+
+    @Test
+    fun aRequestAnsweredAfterARefusedRenewalLoggedOutStoresNothingForTheNextAccount() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+        session.tick("a", true)
+        session.retry()
+        wait(1000)
+        // The identity provider refused to renew the login: the app logs out before the session is closed.
+        storage.logOut()
+        settle()
+        assertEquals(Triple(monday, "a", true), server.ticks.single(), "the request was under way")
+        assertNull(ShoppingCache(storage).load(monday), "neither its answer nor the list fetched after it was stored")
+        assertEquals(emptyMap(), pending())
+
+        val nextAccount = session()
+        nextAccount.inFront(true)
+        nextAccount.resume()
+        assertEquals(Load.Loading, nextAccount.state, "nothing of the previous account is shown")
+        settle()
+        assertEquals(1, server.ticks.size, "no tick of the previous account is sent again")
     }
 }

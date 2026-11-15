@@ -8,6 +8,10 @@ import kotlinx.serialization.json.Json
  * The last shopping list seen per week, and the ticks the server has not confirmed yet, so the
  * list works in a shop without reception and no tick is lost when the app is closed before it
  * was sent.
+ *
+ * One cache belongs to one login: it writes nothing once the stored lists were cleared after it
+ * was made ([clear], on logging out), so a request of the previous account that is answered just
+ * after that never puts its list or ticks back for whoever logs in next.
  */
 class ShoppingCache(private val storage: SettingsStorage) {
     // Lists stored by earlier versions of the app must keep loading: fields are only added, with defaults.
@@ -16,19 +20,30 @@ class ShoppingCache(private val storage: SettingsStorage) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** How many times the stored lists had been cleared when this cache was made. */
+    private val generation = storage.get(GENERATION_KEY).orEmpty()
+
+    /** False once the stored lists were cleared after this cache was made: it belongs to an account that logged out. */
+    private fun current() = storage.get(GENERATION_KEY).orEmpty() == generation
+
     private fun key(weekStart: String) = "shopping.$weekStart"
 
     private fun entry(weekStart: String): Entry? =
         storage.get(key(weekStart))?.let { runCatching { json.decodeFromString<Entry>(it) }.getOrNull() }
 
     private fun write(weekStart: String, entry: Entry) {
+        if (!current()) return
         val weeks = weeks()
         if (weekStart !in weeks) storage.set(WEEKS_KEY, (weeks + weekStart).joinToString(","))
         storage.set(key(weekStart), json.encodeToString(entry))
     }
 
-    /** The weeks with a stored list, so that [clear] can find them: the storage cannot list its keys. */
+    /** The weeks with a stored list, so that [clear] and [tidy] can find them: the storage cannot list its keys. */
     private fun weeks(): List<String> = storage.get(WEEKS_KEY).orEmpty().split(',').filter { it.isNotBlank() }
+
+    /** Weeks around [thisWeek] with a list stored by app versions from before the list of weeks. */
+    private fun legacyWeeks(thisWeek: String) =
+        (-LEGACY_WEEKS_BACK..LEGACY_WEEKS_AHEAD).map { plusDays(thisWeek, 7 * it) }.filter { !storage.get(key(it)).isNullOrEmpty() }
 
     /** Stores a list fresh from the server in place of the copy; ticks still waiting for the server stay. */
     fun save(list: ShoppingList, savedAt: String) =
@@ -67,21 +82,45 @@ class ShoppingCache(private val storage: SettingsStorage) {
     /** The ticks of [weekStart] the server has not confirmed yet, by item key. */
     fun pending(weekStart: String): Map<String, Boolean> = entry(weekStart)?.pending.orEmpty()
 
+    /** The weeks with ticks the server has not confirmed yet, oldest first, so they are sent in the order they were made. */
+    fun weeksWithTicks(): List<String> = weeks().sorted().filter { pending(it).isNotEmpty() }
+
+    /**
+     * Keeps the stored lists from growing for ever: drops those of weeks more than [KEEP_WEEKS]
+     * weeks before [today]'s, unless ticks of theirs still wait for the server, and any that no
+     * longer reads. Lists stored before the list of weeks existed are taken into it, so their
+     * ticks are sent with the rest ([weeksWithTicks]).
+     */
+    fun tidy(today: String = todayIso()) {
+        if (!current()) return
+        val thisWeek = mondayOf(today)
+        val oldest = plusDays(thisWeek, -7 * KEEP_WEEKS)
+        val (keep, drop) = (weeks() + legacyWeeks(thisWeek)).distinct().partition { week ->
+            entry(week) != null && (week >= oldest || pending(week).isNotEmpty())
+        }
+        drop.forEach { storage.remove(key(it)) }
+        storage.set(WEEKS_KEY, keep.sorted().joinToString(","))
+    }
+
     /**
      * Forgets every stored list and waiting tick, for when another account may log in on this
-     * device: its ticks must never reach that account's list. Lists stored by app versions from
-     * before the list of weeks are found by looking at the weeks around [today].
+     * device: its ticks must never reach that account's list. Every cache made before this one
+     * writes nothing from now on. Lists stored by app versions from before the list of weeks are
+     * found by looking at the weeks around [today].
      */
     fun clear(today: String = todayIso()) {
-        val thisWeek = mondayOf(today)
-        val earlier = (-LEGACY_WEEKS_BACK..LEGACY_WEEKS_AHEAD).map { plusDays(thisWeek, 7 * it) }.filter { !storage.get(key(it)).isNullOrEmpty() }
-        (weeks() + earlier).toSet().forEach { storage.set(key(it), "") }
-        storage.set(WEEKS_KEY, "")
+        storage.set(GENERATION_KEY, ((storage.get(GENERATION_KEY)?.toIntOrNull() ?: 0) + 1).toString())
+        (weeks() + legacyWeeks(mondayOf(today))).toSet().forEach { storage.remove(key(it)) }
+        storage.remove(WEEKS_KEY)
     }
 
     private companion object {
         const val WEEKS_KEY = "shopping.weeks"
+        const val GENERATION_KEY = "shopping.generation"
         const val LEGACY_WEEKS_BACK = 52
         const val LEGACY_WEEKS_AHEAD = 8
+
+        /** Stored lists of older weeks without waiting ticks are dropped; a month back is plenty to look up what was bought. */
+        const val KEEP_WEEKS = 4
     }
 }

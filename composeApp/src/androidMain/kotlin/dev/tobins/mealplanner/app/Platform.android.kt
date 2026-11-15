@@ -2,6 +2,10 @@ package dev.tobins.mealplanner.app
 
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 
 @Composable
 actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) =
@@ -42,6 +46,13 @@ actual fun KeepScreenOn(enabled: Boolean) {
         if (enabled) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose { window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
+}
+
+/** Started means visible, also in split screen or behind a dialog; stopped means behind another app or the screen is off. */
+@Composable
+actual fun appInFront(): Boolean {
+    val state by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    return state.isAtLeast(Lifecycle.State.STARTED)
 }
 
 actual fun productImageLoader(context: coil3.PlatformContext): coil3.ImageLoader {
