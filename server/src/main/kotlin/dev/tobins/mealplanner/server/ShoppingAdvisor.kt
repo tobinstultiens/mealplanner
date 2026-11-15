@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.planner.BuyAhead
 import dev.tobins.mealplanner.pricing.PackSize
 import dev.tobins.mealplanner.shopping.ShelfLife
 import dev.tobins.mealplanner.shopping.ShopSection
+import dev.tobins.mealplanner.shopping.bestOffer
 
 /**
  * The advice on one week's shopping list next to what its meals need: what to buy ahead for next
@@ -30,7 +31,7 @@ class ShoppingAdvisor(
     private val checked: Set<ShoppingKey>,
 ) {
     /** The share of the regular price paid with the best offer that saves; null without one. */
-    private fun paidShare(id: Long): Double? = offers[id]?.mapNotNull { it.paidShare }?.minOrNull()
+    private fun paidShare(id: Long): Double? = offers[id]?.let(::bestOffer)?.paidShare
 
     /** Euros the offers save on [need] against the regular price; null when either is unknown. */
     private fun saving(need: ShoppingNeed): Double? {
@@ -90,7 +91,7 @@ class ShoppingAdvisor(
 
     /** One pack of [ingredient] bought with its best offer; null when what that saves is unknown. */
     private fun pack(ingredient: Ingredient): Pack? {
-        val offer = offers[ingredient.id]?.filter { it.paidShare != null }?.minByOrNull { it.paidShare!! } ?: return null
+        val offer = offers[ingredient.id]?.let(::bestOffer)?.takeIf { it.paidShare != null } ?: return null
         val grams = PackSize.grams(offer.packSize ?: offer.title, ingredient.gramsPerPiece, ingredient.gramsPerMl)
         val regular = grams?.let { g -> perKg[ingredient.id]?.let { g / 1000 * it } }
             ?: offer.originalPrice?.takeIf { offer.price != null }

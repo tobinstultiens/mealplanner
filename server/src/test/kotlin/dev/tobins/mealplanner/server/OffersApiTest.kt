@@ -201,7 +201,7 @@ class OffersApiTest {
         val ah = FakeSource(Store.AH, listOf(
             Offer(Store.AH, "AH Gemengd gehakt 500 gram", "VOOR 3.49", price = 3.49, validFrom = "2026-11-09", validUntil = "2026-11-15", imageUrl = ahPicture),
         ))
-        // No price stated, so not the best offer, although it has a picture too.
+        // No price stated, but 1+1 gratis saves half while the AH offer is dearer than the regular price: this one is the best.
         val jumbo = FakeSource(Store.JUMBO, listOf(
             Offer(Store.JUMBO, "Jumbo Rundergehakt", "1+1 gratis", validFrom = "2026-11-09", validUntil = "2026-11-15", imageUrl = jumboPicture),
         ))
@@ -232,7 +232,7 @@ class OffersApiTest {
 
         val thisWeek = owner.mince("2026-11-09")
         assertEquals(listOf(Store.AH, Store.JUMBO), thisWeek.offers.map { it.store })
-        assertEquals(ahPicture, thisWeek.imageUrl, "the cheapest offer with a price is the one shown")
+        assertEquals(jumboPicture, thisWeek.imageUrl, "the offer that saves most is the one shown")
         val nextWeek = owner.mince("2026-11-16")
         assertNull(nextWeek.offers.single().imageUrl)
         assertEquals(productPicture, nextWeek.imageUrl, "the offer has no picture, so the product's")
@@ -243,7 +243,7 @@ class OffersApiTest {
             setBody(IngredientInput(beef.name, beef.food?.nevoCode, beef.gramsPerPiece, beef.gramsPerMl, beef.category, pricePerKg = 9.0, beef.isStaple, beef.negligible))
         }
         assertNull(owner.mince("2026-11-16").imageUrl)
-        assertEquals(ahPicture, owner.mince("2026-11-09").imageUrl, "an offer's picture still shows")
+        assertEquals(jumboPicture, owner.mince("2026-11-09").imageUrl, "an offer's picture still shows")
         assertEquals(productPicture, bob.mince("2026-11-16").imageUrl, "another account's hand price changes nothing for Bob")
     }
 }

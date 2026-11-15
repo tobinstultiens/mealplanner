@@ -13,8 +13,8 @@ class ShoppingModeTest {
     private fun item(key: String, category: String, checked: Boolean = false, offers: List<Offer> = emptyList()) =
         ShoppingItem(key, key, null, null, category, emptyList(), false, checked, offers)
 
-    private fun offer(store: Store, price: Double?, deal: String? = null) =
-        Offer(store, "Product", deal, price, validFrom = "2026-01-01", validUntil = "2026-01-07")
+    private fun offer(store: Store, price: Double?, deal: String? = null, share: Double? = null) =
+        Offer(store, "Product", deal, price, validFrom = "2026-01-01", validUntil = "2026-01-07", paidShare = share)
 
     private val items = listOf(
         item("apple", "Fruit & veg", checked = true),
@@ -55,10 +55,10 @@ class ShoppingModeTest {
     }
 
     @Test
-    fun theBestOfferIsTheCheapestPricedOne() {
-        val cheap = offer(Store.JUMBO, 1.49)
-        val withOffers = item("x", "Dairy", offers = listOf(offer(Store.AH, 1.99), offer(Store.LIDL, null, "1+1 gratis"), cheap))
-        assertEquals(cheap, withOffers.bestOffer())
+    fun theBestOfferIsTheOneThatSavesMost() {
+        val best = offer(Store.JUMBO, 1.49, share = 0.6)
+        val withOffers = item("x", "Dairy", offers = listOf(offer(Store.AH, 0.99, share = 0.9), offer(Store.LIDL, null, "1+1 gratis"), best))
+        assertEquals(best, withOffers.bestOffer())
         assertEquals("1+1 gratis", item("y", "Dairy", offers = listOf(offer(Store.LIDL, null, "1+1 gratis"))).bestOffer()?.deal)
         assertNull(item("z", "Dairy").bestOffer())
     }
