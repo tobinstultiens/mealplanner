@@ -216,6 +216,8 @@ fun App(
                         productPictures = it
                     },
                     accountShops = accountShops,
+                    loadShoppingAdvice = api::shoppingAdvice,
+                    saveShoppingAdvice = api::saveShoppingAdvice,
                     onSave = {
                         // Another server has its own accounts: the session doesn't carry over.
                         if (it.url != settings.url) {

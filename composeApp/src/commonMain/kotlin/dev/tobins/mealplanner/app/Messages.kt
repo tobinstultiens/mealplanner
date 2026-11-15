@@ -389,6 +389,34 @@ enum class Msg(private val english: String, private val dutch: String) {
     ALL_STORES("All stores", "Alle winkels"),
     ON_HAND_MAYBE("{0}  (on hand?)", "{0}  (in huis?)"),
     SHOW_DEAL("Show the deal", "Toon de aanbieding"),
+    FOR_THIS_WEEK("For this week", "Voor deze week"),
+    BUY_AHEAD_TITLE("Buy ahead for next week (on offer now)", "Nu kopen voor volgende week (nu in de aanbieding)"),
+    BUY_AHEAD_HINT(
+        "It keeps, and the offer ends this week. Ticked, it counts as on hand for next week's plan.",
+        "Het blijft goed en de aanbieding stopt deze week. Afgevinkt telt het als in huis voor het plan van volgende week.",
+    ),
+    STOCK_UP_TITLE("Stock up: on offer now", "Inslaan: nu in de aanbieding"),
+    STOCK_UP_HINT(
+        "Keeps for months; no meal on this list needs it. One pack each; ticked, it goes in the pantry.",
+        "Blijft maanden goed; geen maaltijd op deze lijst heeft het nodig. Eén pak per product; afgevinkt gaat het naar de voorraad.",
+    ),
+    ADVICE_SAVING("Saves about {0}.", "Bespaart ongeveer {0}."),
+    HIDE_ADVICE("Hide", "Verbergen"),
+    SHOW_ADVICE("Show", "Tonen"),
+    BUY_AHEAD_HIDDEN("Buying ahead hidden for this week", "Vooruit kopen verborgen voor deze week"),
+    STOCK_UP_HIDDEN("Stocking up hidden for this week", "Inslaan verborgen voor deze week"),
+    ADVICE_CHANGE_FAILED("Could not change the list: {0}", "De lijst aanpassen is niet gelukt: {0}"),
+    BUY_AHEAD_SETTING("Buy ahead for next week", "Vooruit kopen voor volgende week"),
+    BUY_AHEAD_SETTING_HINT(
+        "The shopping list suggests offers ending this week for meals of next week",
+        "De boodschappenlijst stelt aanbiedingen voor die deze week stoppen, voor maaltijden van volgende week",
+    ),
+    STOCK_UP_SETTING("Stock-up advice", "Advies om in te slaan"),
+    STOCK_UP_SETTING_HINT(
+        "The shopping list names staples and food that keeps when on offer",
+        "De boodschappenlijst noemt basisproducten en houdbaar eten als ze in de aanbieding zijn",
+    ),
+    ADVICE_SAVE_FAILED_TITLE("Could not save the shopping advice", "Het boodschappenadvies opslaan is niet gelukt"),
 
     // --- Progress
     PROFILE_AND_TARGETS("Profile and targets", "Profiel en doelen"),
@@ -501,6 +529,11 @@ enum class Msg(private val english: String, private val dutch: String) {
     SET_BY_HAND("{0} · set by hand", "{0} · zelf ingesteld"),
     SECTION_FOR("Section for {0}", "Afdeling voor {0}"),
     AUTOMATIC("Automatic: {0}", "Automatisch: {0}"),
+    KEEPS_TITLE("Keeps until next week?", "Blijft het goed tot volgende week?"),
+    KEEPS_YES("Yes (in the freezer, for meat and fish)", "Ja (in de vriezer, voor vlees en vis)"),
+    KEEPS_NO("No", "Nee"),
+    KEEPS_HINT("Only what keeps is suggested for buying ahead.", "Alleen wat goed blijft, wordt voorgesteld om vooruit te kopen."),
+    KEEPS_SHORT("keeps", "blijft goed"),
 
     // --- Android: the download of an update (toasts)
     DOWNLOADING_VERSION("Downloading version {0}…", "Versie {0} wordt gedownload…"),

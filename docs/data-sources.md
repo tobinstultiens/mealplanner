@@ -162,6 +162,13 @@ hand when a meal of that week or later that uses it is marked eaten, or when it 
 pantry. Items put on hand by hand behave as before: they stay until removed by hand. Next week's
 plan is not fixed in advance; only what was ticked carries over.
 
+In the app the list then has three parts: "For this week", "Buy ahead for next week (on offer now)"
+and "Stock up: on offer now", each by shop section in walking order, in shopping mode (ticked items
+in a Done line) and in the per-store view; at one chosen store only the advice on offer there is
+shown. Each advice group says what its offers save and has a Hide button for the week, with a line
+to show it again. The two switches are under Settings, Shopping; whether an ingredient keeps is
+corrected in the same dialog as its shop section (Recipes → Link ingredients → Shop sections).
+
 ## Shop sections
 
 The shopping list is sorted in the order you walk a Dutch supermarket, modelled on Albert Heijn:

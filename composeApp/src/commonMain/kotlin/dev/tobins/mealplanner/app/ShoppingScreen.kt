@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
@@ -70,6 +71,10 @@ fun ShoppingItem.quantityText(locale: FormatLocale): String = listOfNotNull(
  * items to tick off. The server sends the items in that order, so grouping keeps it. A second
  * view groups by the store to buy at, among the account's [accountShops], with what each store's
  * offers save; one store can be chosen as the shop you are in.
+ *
+ * Below this week's part comes the server's advice, each group in walking order and ticked off
+ * the same way: what to buy ahead for next week, and what to stock up on. Each group can be
+ * hidden for the week.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -154,25 +159,61 @@ fun ShoppingScreen(
         }
     }
 
-    /** The shop sections in walking order, each with its icon and, in shopping mode, its Done group. */
-    fun LazyListScope.sectionItems(sections: List<ShoppingSectionView>, row: @Composable (ShoppingItem) -> Unit) {
+    /**
+     * The shop sections in walking order, each with its icon and, in shopping mode, its Done group.
+     * [group] tells the advice groups' sections apart from this week's, which have the same titles.
+     */
+    fun LazyListScope.sectionItems(sections: List<ShoppingSectionView>, group: String = "", row: @Composable (ShoppingItem) -> Unit) {
         sections.forEach { section ->
             val title = section.title
-            val sectionOpen = !section.finished || title in expanded
-            item(key = "h:$title") {
-                SectionHeaderRow(title, section, sectionOpen) { expanded = expanded.toggled(title) }
+            val id = group + title
+            val sectionOpen = !section.finished || id in expanded
+            item(key = "h:$id") {
+                SectionHeaderRow(title, section, sectionOpen) { expanded = expanded.toggled(id) }
             }
             items(section.open, key = { it.key }) { item -> row(item) }
             if (section.finished && sectionOpen) {
                 items(section.done, key = { it.key }) { item -> row(item) }
             } else if (section.done.isNotEmpty() && !section.finished) {
-                val doneOpen = "done:$title" in expanded
-                item(key = "d:$title") {
-                    DoneGroupHeader(section.done.size, doneOpen) { expanded = expanded.toggled("done:$title") }
+                val doneOpen = "done:$id" in expanded
+                item(key = "d:$id") {
+                    DoneGroupHeader(section.done.size, doneOpen) { expanded = expanded.toggled("done:$id") }
                 }
                 if (doneOpen) items(section.done, key = { it.key }) { item -> row(item) }
             }
         }
+    }
+
+    /** Hides one advice group for the week, or shows it again; the list comes back from the server. */
+    fun dismiss(group: ShoppingAdviceGroup, dismissed: Boolean) {
+        val week = weekStart
+        scope.launch {
+            when (val result = load { api.setShoppingDismissed(week, group, dismissed) }) {
+                is Load.Ready -> if (week == weekStart) {
+                    state = Load.Ready(ticks.reset(result.value))
+                    cache.save(result.value, nowIso())
+                }
+                is Load.Failed -> snackbar.showSnackbar(t(Msg.ADVICE_CHANGE_FAILED, result.message))
+                Load.Loading -> Unit
+            }
+        }
+    }
+
+    /**
+     * One advice group below this week's list: its title with what it is for and saves, a way to
+     * hide it, and its items by section; while hidden, a line to show it again. At a chosen [store]
+     * only the items on offer there.
+     */
+    fun LazyListScope.adviceGroup(texts: AdviceTexts, list: ShoppingList, store: Store?, row: @Composable (ShoppingItem) -> Unit) {
+        val key = "a:${texts.group.path}"
+        if (texts.dismissed(list)) {
+            item(key = key) { HiddenAdvice(t(texts.hidden)) { dismiss(texts.group, false) } }
+            return
+        }
+        val shown = adviceAt(texts.items(list), store, shops)
+        if (shown.isEmpty()) return
+        item(key = key) { AdviceHeader(t(texts.title), adviceHint(texts, shown, shops, t)) { dismiss(texts.group, true) } }
+        sectionItems(shoppingSections(shown, shoppingMode), group = "${texts.group.path}:", row = row)
     }
 
     // Another device may have changed the stores; without a connection the last known ones stay.
@@ -279,6 +320,7 @@ fun ShoppingScreen(
                         )
                     }
                     val store = chosenStore?.takeIf { view == ShoppingView.STORE && it in shops }
+                    if (list.hasAdvice()) item(key = "this-week") { PartTitle(t(Msg.FOR_THIS_WEEK)) }
                     when {
                         view == ShoppingView.SECTION -> sectionItems(shoppingSections(list.items, shoppingMode)) { row(it) }
                         store == null -> {
@@ -335,6 +377,7 @@ fun ShoppingScreen(
                             )
                         }
                     }
+                    AdviceTexts.entries.forEach { adviceGroup(it, list, store) { item -> row(item) } }
                 }
             }
         }
@@ -342,6 +385,44 @@ fun ShoppingScreen(
 }
 
 private fun Set<String>.toggled(entry: String) = if (entry in this) this - entry else this + entry
+
+/** The title of one part of the list: this week's, or an advice group's. */
+@Composable
+private fun PartTitle(title: String, modifier: Modifier = Modifier) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = modifier.padding(start = Spacing.ScreenEdge, end = Spacing.ScreenEdge, top = Spacing.InsideCard),
+    )
+}
+
+/** An advice group's title, what it is for and saves, and the button that hides it for the week. */
+@Composable
+private fun AdviceHeader(title: String, hint: String, onHide: () -> Unit) {
+    val t = LocalStrings.current
+    Column(Modifier.fillMaxWidth().padding(top = Spacing.InsideCard)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PartTitle(title, Modifier.weight(1f))
+            TextButton(onClick = onHide, modifier = Modifier.padding(end = 4.dp, top = Spacing.Tight)) { Text(t(Msg.HIDE_ADVICE)) }
+        }
+        Text(
+            hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
+        )
+    }
+}
+
+/** In place of a hidden advice group: that it is hidden, and the button that shows it again. */
+@Composable
+private fun HiddenAdvice(text: String, onShow: () -> Unit) {
+    val t = LocalStrings.current
+    Row(Modifier.fillMaxWidth().padding(start = Spacing.ScreenEdge, end = 4.dp, top = Spacing.Tight), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        TextButton(onClick = onShow) { Text(t(Msg.SHOW_ADVICE)) }
+    }
+}
 
 @Composable
 private fun ShoppingModeSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
@@ -517,13 +598,16 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, sh
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                item.recipes.joinToString(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Stock-up advice is for no meal in particular.
+            if (item.recipes.isNotEmpty()) {
+                Text(
+                    item.recipes.joinToString(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Column(Modifier.padding(horizontal = 12.dp), horizontalAlignment = Alignment.End) {
             Text(item.quantityText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), softWrap = false)
