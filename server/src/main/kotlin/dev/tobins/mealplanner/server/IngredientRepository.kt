@@ -10,6 +10,7 @@ import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.shopping.ShopSection
 import dev.tobins.mealplanner.units.Dimension
+import java.time.LocalDate
 import dev.tobins.mealplanner.server.db.Ingredient as IngredientRow
 
 /** Thrown for requests that refer to something that does not exist; mapped to 404. */
@@ -59,6 +60,53 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     fun setOnHand(id: Long, onHand: Boolean) {
         requireIngredient(id)
         if (onHand) db.pantryQueries.insertOnHand(id, java.time.Instant.now().toString()) else db.pantryQueries.deleteOnHand(id)
+    }
+
+    /**
+     * The ingredients on hand for planning or shopping in the week starting [week]: those put on hand
+     * by hand, and the ticked buy-ahead and stock-up items that count from that week or earlier. An
+     * item bought ahead for next week is at home already, but this week's meals need their own.
+     */
+    fun onHandFor(week: LocalDate): Set<Long> = db.pantryQueries.selectOnHandWeeks(userId).executeAsList()
+        .filter { it.fromWeek == null || LocalDate.parse(it.fromWeek) <= week }
+        .mapTo(HashSet()) { it.ingredientId }
+
+    /**
+     * A ticked item of the shopping list: on hand from [week] on. When the ingredient is on hand
+     * already, it stays as it was, so un-ticking never takes away what was put there by hand.
+     */
+    fun putOnHandFrom(id: Long, week: LocalDate) {
+        requireIngredient(id)
+        db.pantryQueries.insertOnHandFrom(id, java.time.Instant.now().toString(), week.toString())
+    }
+
+    /** An un-ticked item of the shopping list: takes back what ticking it put on hand from [week]. */
+    fun takeBackOnHand(id: Long, week: LocalDate) {
+        requireIngredient(id)
+        db.pantryQueries.deleteOnHandFrom(id, week.toString())
+    }
+
+    /**
+     * A meal of the week starting [week] that uses [ids] was eaten: what was bought ahead or stocked
+     * up for that week or before is used up. What was put on hand by hand stays, as it always has.
+     */
+    fun useUp(ids: Collection<Long>, week: LocalDate) {
+        if (ids.isNotEmpty()) db.pantryQueries.deleteUsedUp(week.toString(), ids, userId)
+    }
+
+    /** Whether ingredients keep until next week, where the account set it by hand, by id. */
+    fun keepsByHand(): Map<Long, Boolean> = q.selectKeepsByHand(userId).executeAsList().associate { it.id to (it.keeps != 0L) }
+
+    /** Sets by hand whether an ingredient keeps until next week; null goes back to its shop section's answer. */
+    fun setKeeps(id: Long, keeps: Boolean?) {
+        requireIngredient(id)
+        q.setKeeps(keeps?.let { if (it) 1L else 0L }, userId, id)
+    }
+
+    /** The ingredients the account's active recipes use, by id. */
+    fun usedIds(): Set<Long> {
+        val resolve = resolver()
+        return activeLines().mapNotNullTo(HashSet()) { resolve(it)?.id }
     }
 
     /** Shop sections the account set by hand, by ingredient id. Keys this version does not know are skipped. */

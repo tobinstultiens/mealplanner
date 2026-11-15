@@ -115,6 +115,8 @@ first app release after v0.1.1. `OfferSourceStatus.warning` (the Lidl check) is 
 response, so it too needs that release installed. v0.1.2 is that release and is installed, so optional
 fields can now be added freely: `ShoppingItem.regularPrice` and `Offer.paidShare` (the saving per store)
 were added this way, and `ShopsTest` decodes the new shopping list with v0.1.2's types to prove it.
+The buy-ahead and stock-up advice (`ShoppingList.buyAhead`, `stockUp`) came as separate optional lists
+rather than rows of `items`, so v0.1.2 shows only what the week's meals need (`BuyAheadTest`).
 
 ## Screenshot tests
 
@@ -242,9 +244,13 @@ which is ignored by git.
 
 API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue),
 `/api/ingredients/sections` (each ingredient's shop section, which orders the shopping list; `PUT
-/api/ingredients/{id}/section` corrects one for the account), `/api/mappings` (links from recipe
+/api/ingredients/{id}/section` corrects one for the account, `PUT /api/ingredients/{id}/keeps` whether it
+keeps until next week), `/api/mappings` (links from recipe
 ingredient texts to catalogue ingredients), `/api/profile` (body data
-and daily targets), `/api/shops` (the stores the account shops at; only their offers count for plans and costs), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`,
+and daily targets), `/api/shops` (the stores the account shops at; only their offers count for plans and costs),
+`/api/shopping-advice` (whether the shopping list advises buying ahead and stocking up; see
+`docs/data-sources.md`, "Buying ahead and stocking up"), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`
+with `shopping/dismissed/{group}`,
 and per meal `reroll`, `lock`, `status` and delete), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion), `/api/offers` (weekly store offers;
 `POST /api/offers/refresh` fetches them now) and `/api/prices` (regular AH prices per ingredient, the

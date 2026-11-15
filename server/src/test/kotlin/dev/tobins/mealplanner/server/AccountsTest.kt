@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.IngredientSection
+import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.Pantry
@@ -19,6 +20,9 @@ import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Sex
+import dev.tobins.mealplanner.api.ShoppingAdvice
+import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
@@ -137,6 +141,57 @@ class AccountsTest {
         bob.put("/api/shops") { setBody(ShopsSetting(null)) }
         assertEquals(listOf(Store.AH), alice.get("/api/shops").body<ShopsSetting>().stores)
         assertNull(bob.get("/api/shops").body<ShopsSetting>().stores)
+    }
+
+    @Test
+    fun buyingAheadAndStockingUpStayWithTheirAccount() = testApplication {
+        start()
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val week = "2026-11-16"
+        val chicken = alice.post("/api/ingredients") { setBody(IngredientInput("Chicken thigh")) }.body<Ingredient>()
+
+        // Bob can't tick Alice's ingredient onto anyone's pantry, nor say whether it keeps.
+        for (key in listOf("ahead:i${chicken.id}", "stock:i${chicken.id}")) {
+            assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, true)) }.status)
+            assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, false)) }.status)
+        }
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/ingredients/${chicken.id}/keeps") { setBody(KeepsChoice(false)) }.status)
+        assertEquals(emptyList(), alice.get("/api/pantry").body<Pantry>().onHand)
+        assertFalse(alice.get("/api/ingredients/sections").body<List<IngredientSection>>().single { it.ingredientId == chicken.id }.keepsByHand)
+
+        // Alice's tick puts it in her pantry only; her correction is hers.
+        alice.put("/api/plans/$week/shopping") { setBody(ShoppingCheck("ahead:i${chicken.id}", true)) }
+        assertEquals(listOf("Chicken thigh"), alice.get("/api/pantry").body<Pantry>().onHand.map { it.name })
+        assertEquals(emptyList(), bob.get("/api/pantry").body<Pantry>().onHand)
+        alice.put("/api/ingredients/${chicken.id}/keeps") { setBody(KeepsChoice(true)) }
+        assertTrue(bob.get("/api/ingredients/sections").body<List<IngredientSection>>().none { it.ingredientId == chicken.id })
+
+        // The switch and a dismissed group are per account.
+        alice.put("/api/shopping-advice") { setBody(ShoppingAdvice(buyAhead = false, stockUp = false)) }
+        assertEquals(ShoppingAdvice(), bob.get("/api/shopping-advice").body<ShoppingAdvice>())
+        bob.put("/api/plans/$week/shopping/dismissed/buy-ahead")
+        assertFalse(alice.get("/api/plans/$week/shopping").body<ShoppingList>().buyAheadDismissed)
+        assertTrue(bob.get("/api/plans/$week/shopping").body<ShoppingList>().buyAheadDismissed)
+        assertEquals(ShoppingAdvice(buyAhead = false, stockUp = false), alice.get("/api/shopping-advice").body<ShoppingAdvice>())
+    }
+
+    @Test
+    fun eatingAMealUsesUpOnlyTheAccountsOwnStock() {
+        val db = openDatabase("jdbc:sqlite::memory:").second
+        val foods = FoodRepository(db)
+        val users = UserRepository(db)
+        val alice = IngredientRepository(db, foods, users.resolve(Identity("sub-alice", "alice")).id)
+        val bob = IngredientRepository(db, foods, users.resolve(Identity("sub-bob", "bob")).id)
+        val week = java.time.LocalDate.parse("2026-11-23")
+        val chicken = alice.create(IngredientInput("Chicken thigh"))
+        alice.putOnHandFrom(chicken.id, week)
+
+        // Bob naming Alice's ingredient as one his meal used takes nothing from her pantry.
+        bob.useUp(listOf(chicken.id), week)
+        assertEquals(setOf(chicken.id), alice.onHandFor(week))
+        alice.useUp(listOf(chicken.id), week)
+        assertEquals(emptySet(), alice.onHandFor(week))
     }
 
     @Test

@@ -115,12 +115,27 @@ data class IngredientSection(
     /** Where [automatic] comes from, e.g. "Albert Heijn: Kaas" or "NEVO food group: Cheese". */
     val source: String,
     val byHand: Boolean,
+    /**
+     * Whether it keeps until next week (in the freezer for fresh meat and fish), so it may be bought
+     * ahead: the one set by hand, else [keepsAutomatic].
+     */
+    val keeps: Boolean = false,
+    /** What [section]'s shelf life says ([dev.tobins.mealplanner.shopping.ShopSection.shelfLife]). */
+    val keepsAutomatic: Boolean = false,
+    val keepsByHand: Boolean = false,
 )
 
 /** Body for setting an ingredient's section by hand; a null section goes back to the automatic one. */
 @Serializable
 data class SectionChoice(val section: String?)
 
-/** What is at home: [staples] are always there, [onHand] are perishables to use up. */
+/** Body for setting by hand whether an ingredient keeps until next week; null goes back to the automatic answer. */
+@Serializable
+data class KeepsChoice(val keeps: Boolean?)
+
+/**
+ * What is at home: [staples] are always there, [onHand] are perishables to use up, and what was
+ * ticked on the shopping list's buy-ahead and stock-up advice (see [ShoppingList.buyAhead]).
+ */
 @Serializable
 data class Pantry(val staples: List<Ingredient>, val onHand: List<Ingredient>)

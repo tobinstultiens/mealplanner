@@ -1,0 +1,10 @@
+-- Version 7 -> 8: buying ahead and stocking up (issue 70). Only new columns, so no table is rebuilt
+-- and no row is touched: every ingredient keeps or not by its shop section until set by hand, and
+-- everything already on hand was set by hand, so it counts at once as before.
+
+-- Whether the ingredient keeps until next week, set by hand: 1 or 0; NULL: by its shop section.
+ALTER TABLE ingredient ADD COLUMN keeps INTEGER;
+
+-- The plan week (ISO date of its Monday) from which a ticked buy-ahead or stock-up item counts as on
+-- hand; NULL for what was put on hand by hand, which counts at once.
+ALTER TABLE onHand ADD COLUMN fromWeek TEXT;

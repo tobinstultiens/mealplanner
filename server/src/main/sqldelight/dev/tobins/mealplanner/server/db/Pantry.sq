@@ -1,8 +1,11 @@
 -- Perishables currently at home that should be used up. Presence only, no quantities.
 -- Belongs to the account through the ingredient.
+-- A ticked buy-ahead or stock-up item of the shopping list is on hand from the plan week in
+-- fromWeek on, until a meal of that week or later that uses it is eaten; NULL: put on hand by hand.
 CREATE TABLE onHand (
     ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE,
-    addedAt TEXT NOT NULL
+    addedAt TEXT NOT NULL,
+    fromWeek TEXT
 );
 
 selectOnHand:
@@ -14,6 +17,25 @@ INSERT OR IGNORE INTO onHand (ingredientId, addedAt) VALUES (?, ?);
 
 deleteOnHand:
 DELETE FROM onHand WHERE ingredientId = ?;
+
+-- With the week each entry counts from (NULL: at once).
+selectOnHandWeeks:
+SELECT o.ingredientId, o.fromWeek FROM onHand o JOIN ingredient i ON i.id = o.ingredientId
+WHERE i.userId = ?;
+
+-- A ticked item of the shopping list; an entry already there (put on hand by hand) stays as it is.
+insertOnHandFrom:
+INSERT OR IGNORE INTO onHand (ingredientId, addedAt, fromWeek) VALUES (?, ?, ?);
+
+-- Un-ticking takes back only what that tick put there.
+deleteOnHandFrom:
+DELETE FROM onHand WHERE ingredientId = ? AND fromWeek = ?;
+
+-- A meal of :week that uses these ingredients was eaten: what was bought ahead for it is used up.
+deleteUsedUp:
+DELETE FROM onHand
+WHERE fromWeek IS NOT NULL AND fromWeek <= :week AND ingredientId IN :ids
+  AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
 
 setStaple:
 UPDATE ingredient SET isStaple = ? WHERE userId = ? AND id = ?;

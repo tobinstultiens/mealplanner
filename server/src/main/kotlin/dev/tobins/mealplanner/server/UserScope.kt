@@ -34,14 +34,17 @@ class UserScope(
     val profiles = ProfileRepository(db, accountId)
     val pictures = RecipePictures(db, imageDir, accountId)
     val sections = ShopSections(ingredients, prices)
+    val shoppingAdvice = ShoppingAdviceRepository(db, accountId)
     val plans by lazy {
         PlanRepository(
-            db, accountId, recipes, profiles,
+            db, accountId, recipes, profiles, ingredients,
             offersByIngredient = { from, until -> prices.offers(ingredients, from, until) },
             pricing = { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) },
             shops = shops::inUse,
             regularPerKg = { prices.perKg(ingredients) },
             sections = sections::byIngredient,
+            keeps = sections::keepsByIngredient,
+            advice = shoppingAdvice::setting,
             productImages = { prices.productImages(ingredients) },
         )
     }
