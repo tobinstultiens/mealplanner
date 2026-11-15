@@ -91,7 +91,8 @@ class ShoppingListRepository(
             checked = checked,
         )
         // Buying ahead goes with a plan: without meals this week there is nothing to shop with.
-        val buyAhead = if (wanted.buyAhead && !buyAheadDismissed && meals.isNotEmpty()) buyAhead(start, meals, advisor) else emptyList()
+        val ahead = if (wanted.buyAhead && !buyAheadDismissed && meals.isNotEmpty()) buyAhead(start, meals, advisor) else BuyAheadAdvice(emptyList(), false)
+        val buyAhead = ahead.items
         val stockUp = if (wanted.stockUp && !stockUpDismissed) {
             val listed = rows.mapNotNullTo(HashSet()) { it.ingredient?.id } +
                 buyAhead.mapNotNull { (ShoppingKey.parse(it.key) as? ShoppingKey.Ahead)?.id }
@@ -108,6 +109,7 @@ class ShoppingListRepository(
             stockUp = stockUp,
             buyAheadDismissed = buyAheadDismissed,
             stockUpDismissed = stockUpDismissed,
+            buyAheadProvisional = ahead.provisional,
         )
     }
 
@@ -137,19 +139,22 @@ class ShoppingListRepository(
     private fun planned(meals: List<PlannedMeal>): List<PlannedRecipe> =
         meals.groupBy { it.recipeId }.map { (id, ofRecipe) -> PlannedRecipe(id, ofRecipe.first().title, ofRecipe.sumOf { it.portions }) }
 
+    /** The buy-ahead items, and whether their meals are a provisional pick rather than next week's plan. */
+    private class BuyAheadAdvice(val items: List<ShoppingItem>, val provisional: Boolean)
+
     /**
      * What to buy now for next week's meals. When next week is planned already, those are its
      * meals as planned; otherwise a provisional choice among the dinners the planner could pick
      * then ([BuyAhead.provisional]), one batch each. Nothing of it is stored: next week is planned
      * as usual later, with what was ticked here on hand.
      */
-    private fun buyAhead(start: LocalDate, thisWeek: List<PlannedMeal>, advisor: ShoppingAdvisor): List<ShoppingItem> {
+    private fun buyAhead(start: LocalDate, thisWeek: List<PlannedMeal>, advisor: ShoppingAdvisor): BuyAheadAdvice {
         val next = start.plusDays(DAYS.toLong())
         val nextWeek = plans.meals(next)
         val (meals, ratings) = if (nextWeek.isNotEmpty()) {
             planned(nextWeek) to emptyMap()
         } else {
-            val targets = profiles.state().targets ?: return emptyList()
+            val targets = profiles.state().targets ?: return BuyAheadAdvice(emptyList(), false)
             val candidates = BuyAhead.provisional(
                 recipes.planCandidates(dislikes = profiles.profile()?.dislikes.orEmpty()),
                 targets,
@@ -157,13 +162,14 @@ class ShoppingListRepository(
             )
             candidates.map { PlannedRecipe(it.recipeId, it.title, it.servings.toDouble()) } to candidates.associate { it.recipeId to it.rating }
         }
-        return advisor.buyAhead(
+        val items = advisor.buyAhead(
             meals,
             recipes.linesWithIngredients(meals.map { it.recipeId }),
             ratings,
             onHand = ingredients.onHandFor(next),
             onOfferNextWeek = plans.onOffer(next),
         )
+        return BuyAheadAdvice(items, provisional = nextWeek.isEmpty())
     }
 
     /**

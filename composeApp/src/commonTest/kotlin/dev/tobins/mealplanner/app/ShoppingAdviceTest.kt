@@ -81,6 +81,25 @@ class ShoppingAdviceTest {
     }
 
     @Test
+    fun theHintSaysWhenNextWeekIsNotPlannedYet() {
+        assertEquals(
+            "Next week is not planned yet: these are dinners it could have. It keeps, and the offer ends this week. Ticked, next week's plan prefers meals that use it. Saves about €4.50.",
+            adviceHint(AdviceTexts.BUY_AHEAD, listOf(beef, spinach), all, today, Strings.English, provisional = true),
+        )
+        assertEquals(
+            "Volgende week is nog niet gepland: dit zijn maaltijden die het kan krijgen. Het blijft goed en de aanbieding stopt deze week. Afgevinkt kiest het plan van volgende week liever maaltijden die het gebruiken. Bespaart ongeveer € 4,50.",
+            adviceHint(AdviceTexts.BUY_AHEAD, listOf(beef, spinach), all, today, Strings.Dutch, provisional = true),
+        )
+        // Stock-up advice has no meals, so nothing changes for it.
+        assertEquals(
+            adviceHint(AdviceTexts.STOCK_UP, listOf(rice), all, today, Strings.English),
+            adviceHint(AdviceTexts.STOCK_UP, listOf(rice), all, today, Strings.English, provisional = true),
+        )
+        assertEquals("for e.g. Beef chilli, Lasagne", Strings.English(Msg.SUGGESTED_MEALS, "Beef chilli, Lasagne"))
+        assertEquals("bijv. voor Beef chilli, Lasagne", Strings.Dutch(Msg.SUGGESTED_MEALS, "Beef chilli, Lasagne"))
+    }
+
+    @Test
     fun ticksAreLaidOverTheAdviceToo() {
         val list = week.copy(buyAhead = listOf(beef), stockUp = listOf(rice))
         val ticked = list.withTicks(mapOf("ahead:i2" to true, "stock:i4" to true, "i1" to true))

@@ -202,7 +202,7 @@ internal fun ShoppingScreen(
         }
         val shown = adviceAt(texts.items(list), store, shops, today)
         if (shown.isEmpty()) return
-        item(key = key) { AdviceHeader(t(texts.title), adviceHint(texts, shown, shops, today, t)) { dismiss(texts.group, true) } }
+        item(key = key) { AdviceHeader(t(texts.title), adviceHint(texts, shown, shops, today, t, provisional = list.buyAheadProvisional)) { dismiss(texts.group, true) } }
         val id = "${texts.group.path}:"
         if (byStore) {
             storeOverview(shown, shops, today).stores.forEach { group ->
@@ -260,12 +260,13 @@ internal fun ShoppingScreen(
             is Load.Ready -> {
                 val list = current.value
                 @Composable
-                fun row(item: ShoppingItem, offer: Offer? = item.bestOffer(shops, today)) = ShoppingRow(
+                fun row(item: ShoppingItem, offer: Offer? = item.bestOffer(shops, today), suggested: Boolean = false) = ShoppingRow(
                     item,
                     offer,
                     shops,
                     today,
                     shoppingMode,
+                    suggested,
                     onToggle = { if (shoppingMode) tickWithUndo(item) else tick(item.key, !item.checked) },
                     onOfferClick = {
                         scope.launch {
@@ -365,7 +366,11 @@ internal fun ShoppingScreen(
                             )
                         }
                     }
-                    AdviceTexts.entries.forEach { adviceGroup(it, list, store, byStore = view == ShoppingView.STORE && store == null) { item -> row(item) } }
+                    AdviceTexts.entries.forEach { texts ->
+                        adviceGroup(texts, list, store, byStore = view == ShoppingView.STORE && store == null) { item ->
+                            row(item, suggested = texts == AdviceTexts.BUY_AHEAD && list.buyAheadProvisional)
+                        }
+                    }
                 }
             }
         }
@@ -565,7 +570,7 @@ private fun ToggleHeader(title: String, open: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, today: String, shoppingMode: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
+private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, today: String, shoppingMode: Boolean, suggested: Boolean, onToggle: () -> Unit, onOfferClick: () -> Unit) {
     val t = LocalStrings.current
     Row(
         Modifier.fillMaxWidth()
@@ -584,10 +589,10 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, to
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            // Stock-up advice is for no meal in particular.
+            // Stock-up advice is for no meal in particular; a provisional buy-ahead meal is only an example.
             if (item.recipes.isNotEmpty()) {
                 Text(
-                    item.recipes.joinToString(),
+                    item.recipes.joinToString().let { if (suggested) t(Msg.SUGGESTED_MEALS, it) else it },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

@@ -191,6 +191,7 @@ class FakeBackend(
                     offers = listOf(deal(Store.AH, "AH Spinazie diepvries 450 g", "25% korting", 1.12, 0.75)), regularPrice = 1.49,
                 ),
             ),
+            buyAheadProvisional = true,
             stockUp = listOf(
                 item("stock:i23", "Rice", 1000.0, null, ShopSection.WORLD, null, offers = listOf(deal(Store.LIDL, "Basmati rijst 1 kg", "1+1 gratis", 2.29, 0.5)), regularPrice = 2.29),
                 item("stock:i24", "Chopped tomatoes", 400.0, null, ShopSection.TINS, null, offers = listOf(deal(Store.AH, "AH Tomatenblokjes 400 g", "2e halve prijs", 0.62, 0.75)), regularPrice = 0.69),

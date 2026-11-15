@@ -195,6 +195,27 @@ class BuyAheadTest {
     }
 
     @Test
+    fun theAdviceSaysWhenItsMealsAreOnlyASuggestion() = testApplication {
+        val http = start().ready()
+        assertTrue(http.list().buyAheadProvisional, "next week has no plan: the meals are a provisional pick")
+
+        http.post("/api/plans/$nextWeek/generate")
+        assertFalse(http.list().buyAheadProvisional, "next week is planned: the meals are its own")
+
+    }
+
+    @Test
+    fun noSuggestionIsFlaggedWhenBuyAheadIsDismissedOrOff() = testApplication {
+        val http = start().ready()
+        http.put("/api/plans/$week/shopping/dismissed/buy-ahead")
+        assertFalse(http.list().buyAheadProvisional, "dismissed")
+        http.delete("/api/plans/$week/shopping/dismissed/buy-ahead")
+        assertTrue(http.list().buyAheadProvisional)
+        http.put("/api/shopping-advice") { setBody(ShoppingAdvice(buyAhead = false)) }
+        assertFalse(http.list().buyAheadProvisional, "switched off")
+    }
+
+    @Test
     fun aTickedBuyAheadItemIsOnHandNextWeekAndPullsItsMealsIntoThatPlan() = testApplication {
         val http = start().ready()
         val key = http.list().buyAhead.single().key
