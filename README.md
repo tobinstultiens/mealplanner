@@ -119,7 +119,11 @@ The buy-ahead and stock-up advice (`ShoppingList.buyAhead`, `stockUp`) came as s
 rather than rows of `items`, so v0.1.2 shows only what the week's meals need (`BuyAheadTest`). The account's
 own items (coffee, toilet paper) are the opposite case: they are rows of `items` (keys `x:<id>`), so v0.1.2
 shows and ticks them off without an update, though only a newer app can add one (`BuyAheadTest` decodes and
-ticks one with v0.1.2's types).
+ticks one with v0.1.2's types). What a tick remembers of its row came the same way: `ShoppingItem.boughtGrams`
+and `boughtPieces` are optional fields of a row that stays `checked`, so older apps never see a bought item
+come back un-ticked when the plan needs more, and `ShoppingList.noLongerNeeded` (bought items no meal needs
+any more) is a separate list, so they never take it for something to buy (`ShoppingTicksTest` decodes it
+with v0.1.2's types). A tick still needs only its key, as those apps send it.
 
 ## Screenshot tests
 

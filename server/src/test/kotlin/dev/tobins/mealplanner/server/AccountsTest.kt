@@ -224,6 +224,51 @@ class AccountsTest {
     }
 
     @Test
+    fun whatAnAccountBoughtIsSeenAndChangedByItAlone() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val week = "2026-11-16"
+        val accounts = listOf(alice to "sub-alice", bob to "sub-bob")
+        suspend fun HttpClient.list() = get("/api/plans/$week/shopping").body<ShoppingList>()
+        suspend fun HttpClient.tick(key: String, checked: Boolean = true) = put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, checked)) }
+        // Without NEVO data the planner plans nothing, so each account's dinner is put in its plan directly.
+        suspend fun HttpClient.dine(subject: String, input: RecipeInput) {
+            val recipe = post("/api/recipes") { setBody(input) }.body<RecipeDetail>().summary
+            val userId = db.userQueries.selectBySubject(subject).executeAsOne().id
+            db.planQueries.upsertMeal(userId, week, 0, "DINNER", recipe.id, recipe.title, 2.0, 1000.0, 50.0, 0, 0, "PLANNED")
+        }
+        // Alice's beef is an ingredient of her catalogue (key i<id>); the onion is linked in neither
+        // account, so both lists have its row under the same key.
+        val beef = alice.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+        for ((client, subject) in accounts) client.dine(subject, recipe)
+        val alicesItems = alice.list().items
+        assertTrue("i${beef.id}" in alicesItems.map { it.key })
+        assertTrue(alicesItems.map { it.key }.intersect(bob.list().items.map { it.key }.toSet()).isNotEmpty())
+
+        // Alice buys everything: her ticks remember it, Bob's list knows nothing of it.
+        for (item in alicesItems) alice.tick(item.key)
+        assertEquals(400.0, alice.list().items.single { it.key == "i${beef.id}" }.boughtGrams)
+        assertTrue(bob.list().items.none { it.checked || it.boughtGrams != null })
+
+        // Both plans change, so nothing on the lists is needed any more: only Alice bought it.
+        for ((client, subject) in accounts) client.dine(subject, RecipeInput("Salad", 2, "200 | g | lettuce"))
+        val bought = alice.list().noLongerNeeded
+        assertEquals(alicesItems.map { it.key }.toSet(), bought.map { it.key }.toSet())
+        assertEquals(emptyList(), bob.list().noLongerNeeded)
+
+        // Bob ticking and un-ticking her keys touches his own ticks only, and as no row of his list they remember nothing.
+        for (item in alicesItems) {
+            assertEquals(HttpStatusCode.OK, bob.tick(item.key, checked = false).status)
+            assertEquals(HttpStatusCode.OK, bob.tick(item.key).status)
+        }
+        assertEquals(emptyList(), bob.list().noLongerNeeded)
+        assertEquals(bought, alice.list().noLongerNeeded)
+    }
+
+    @Test
     fun ownShoppingItemsStayWithTheirAccount() = testApplication {
         val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
         val db = openDatabase(config.databaseUrl).second

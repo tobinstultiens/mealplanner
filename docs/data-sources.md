@@ -214,6 +214,22 @@ shown. Each advice group says what its offers save and has a Hide button for the
 to show it again. The two switches are under Settings, Shopping; whether an ingredient keeps is
 corrected in the same dialog as its shop section (Recipes → Link ingredients → Shop sections).
 
+**What a tick remembers.** Ticking a row of what the week's meals need (`PUT
+/api/plans/{weekStart}/shopping`, keys `i<id>` and `t:<text>`) keeps what the row said then with the
+tick (`shoppingCheck.name`, `grams`, `pieces`; the known weight when not all of it could be weighed),
+so the list can tell when the plan changed since. The row stays ticked (`checked`) and says what was
+bought (`ShoppingItem.boughtGrams`, `boughtPieces`), so when a reroll makes the meals need more than
+that, the app can say more is needed. Ticking a ticked row again keeps what it said first; un-ticking
+forgets it. A ticked row no meal needs any more (its meal was rerolled or removed) leaves `items` and
+is listed in `ShoppingList.noLongerNeeded`: its key and name, what was bought and whether it is on hand
+already; un-ticking it the usual way takes it off. Advice rows remember their amount in the pantry
+instead (above), and own items are ticked on the item itself. A tick of a key that is no row of the
+week's list at that moment is kept as always, and remembers nothing. Ticks from before version 12 of
+the database remember nothing either, as nobody knows what was bought: they stay plain ticks, never
+show as needing more, and are not listed when their row goes. What is remembered is the list as the
+server has it when the tick arrives, so a tick an app sends late (offline first) remembers the plan of
+that moment.
+
 **Ticks in the app.** A tick shows at once and is stored on the device before it is sent
 (`ShoppingCache`); it is taken off when the server has it. The app keeps the list's state for as
 long as it is logged in (`ShoppingSession`), so leaving the Shopping screen for a recipe, another

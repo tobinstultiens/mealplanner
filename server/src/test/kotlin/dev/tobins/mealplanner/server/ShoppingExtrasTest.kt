@@ -123,7 +123,7 @@ class ShoppingExtrasTest {
         assertEquals(mapOf("2026-11-23" to true), http.listsWith(key))
         // Its tick is kept with the item, not with the week's ticks.
         val userId = db.userQueries.selectBySubject("sub-t").executeAsOne().id
-        assertEquals(emptyList(), db.planQueries.selectChecks(userId, "2026-11-23").executeAsList())
+        assertEquals(emptyList(), db.shoppingQueries.selectChecks(userId, "2026-11-23").executeAsList())
 
         // Un-ticked, it is back on every list from the week it was added in.
         assertFalse(http.tick(key, checked = false, weekStart = "2026-11-23").body<ShoppingList>().own("Coffee").checked)
