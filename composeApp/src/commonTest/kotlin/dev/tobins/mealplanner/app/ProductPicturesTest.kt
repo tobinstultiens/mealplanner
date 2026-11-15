@@ -51,4 +51,15 @@ class ProductPicturesTest {
         assertEquals(lidl, item.pictureUrl(null))
         assertEquals(lidl, item.pictureUrl(offer(Store.AH, 1.49, null)))
     }
+
+    @Test
+    fun theItemsOwnPictureIsLeftOutWhenItComesFromAStoreSwitchedOff() {
+        fun offer(store: Store, price: Double, image: String?) =
+            Offer(store, "Pear", null, price, validFrom = "2026-01-01", validUntil = "2026-01-07", imageUrl = image)
+        val item = ShoppingItem("pear", "Pear", null, null, "Fruit", emptyList(), false, false, listOf(offer(Store.AH, 1.49, null), offer(Store.LIDL, 1.19, lidl)), imageUrl = lidl)
+        val withoutLidl = setOf(Store.AH, Store.JUMBO)
+
+        assertNull(item.pictureUrl(item.bestOffer(withoutLidl), withoutLidl))
+        assertEquals(lidl, item.pictureUrl(item.bestOffer(), Store.entries.toSet()))
+    }
 }

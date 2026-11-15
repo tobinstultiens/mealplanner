@@ -113,7 +113,9 @@ Only offers at the stores the account shops at count ("Stores I shop at", an acc
 `GET`/`PUT /api/shops`; an account that never chose shops at every store). The plan's and the
 recipes' costs, the planner's preference and the offers named to Claude when writing a recipe all
 leave the other stores out. The shopping list still carries every store's offers, and the app
-leaves out those of stores not in use.
+leaves out those of stores not in use, with their pictures, in every view of the list. The stores can be
+chosen on the per-store list and under Settings, Shopping (one shared setting); logging out forgets the
+stores shown until the next account's answer arrives.
 
 The shopping list gives each item's regular price for the amount needed (`ShoppingItem.regularPrice`)
 and each offer's share (`Offer.paidShare`, as above), so the app can show what a store's offers save:

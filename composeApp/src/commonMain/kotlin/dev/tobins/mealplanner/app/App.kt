@@ -85,7 +85,10 @@ fun App(
         ApiClient(settings, session) {
             val current = storage.session() ?: return@ApiClient null
             login.refresh(settings.url, current) ?: run {
-                if (storage.session() == null) session = null
+                if (storage.session() == null) {
+                    storage.clearShops()
+                    session = null
+                }
                 null
             }
         }
@@ -188,7 +191,7 @@ fun App(
                         }
                     },
                     onLogout = {
-                        storage.saveSession(null)
+                        storage.logOut()
                         session = null
                     },
                     updater = updater,
@@ -212,10 +215,11 @@ fun App(
                         storage.saveProductPictures(it)
                         productPictures = it
                     },
+                    accountShops = accountShops,
                     onSave = {
                         // Another server has its own accounts: the session doesn't carry over.
                         if (it.url != settings.url) {
-                            storage.saveSession(null)
+                            storage.logOut()
                             session = null
                         }
                         storage.saveServerSettings(it)
