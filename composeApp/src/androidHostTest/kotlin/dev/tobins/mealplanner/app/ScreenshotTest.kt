@@ -29,6 +29,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.TimeZone
+import kotlinx.coroutines.flow.emptyFlow
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -44,18 +45,52 @@ private fun shopping(api: ApiClient, shoppingMode: Boolean) {
     ShoppingScreen(api, ShoppingCache(storage), storage, {}, {})
 }
 
-/** A screen under test and the sample data it gets. */
-enum class Shot(val emptyWeek: Boolean = false, val content: @Composable (ApiClient, ServerSettings) -> Unit) {
-    TODAY(content = { api, _ -> TodayScreen(api, {}, {}) }),
-    PLAN(content = { api, _ -> PlanScreen(api, {}, {}) }),
-    SHOPPING(content = { api, _ -> shopping(api, shoppingMode = false) }),
-    SHOPPING_MODE(content = { api, _ -> shopping(api, shoppingMode = true) }),
+/** The whole app as it starts for someone who is logged in: the bottom bar lives here, not in a screen. */
+@Composable
+private fun shell(settings: ServerSettings) {
+    val storage = remember {
+        MemorySettingsStorage().also {
+            it.saveSession(Session("token", expiresAt = Long.MAX_VALUE))
+            it.saveAppLanguage(AppLanguage.ENGLISH)
+        }
+    }
+    val launcher = remember {
+        object : LoginLauncher {
+            override fun redirectUri(serverUrl: String) = serverUrl
+
+            override fun open(url: String) = Unit
+        }
+    }
+    App(settings, storage, launcher, emptyFlow())
+}
+
+/**
+ * A screen under test and the sample data it gets. [heightDp] is the height of the picture: a
+ * screen that scrolls gets a tall one, so what is lower down is checked too. The `empty` flags
+ * leave that list of the fake backend empty.
+ */
+enum class Shot(
+    val emptyWeek: Boolean = false,
+    val emptyOffers: Boolean = false,
+    val emptyPrices: Boolean = false,
+    val emptyRecipes: Boolean = false,
+    val heightDp: Int = 640,
+    val content: @Composable (ApiClient, ServerSettings) -> Unit,
+) {
+    TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, {}, {}) }),
+    PLAN(heightDp = 4400, content = { api, _ -> PlanScreen(api, {}, {}) }),
+    SHOPPING(heightDp = 1300, content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_MODE(heightDp = 1300, content = { api, _ -> shopping(api, shoppingMode = true) }),
     SHOPPING_EMPTY(emptyWeek = true, content = { api, _ -> shopping(api, shoppingMode = false) }),
-    RECIPES(content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
-    RECIPE_DETAIL(content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
-    OFFERS(content = { api, _ -> OffersScreen(api, {}, {}) }),
-    PRICES(content = { api, _ -> PricesScreen(api, {}) }),
-    PROGRESS(content = { api, _ -> ProgressScreen(api, {}, {}) }),
+    RECIPES(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
+    RECIPES_EMPTY(emptyRecipes = true, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
+    RECIPE_DETAIL(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
+    OFFERS(heightDp = 800, content = { api, _ -> OffersScreen(api, {}, {}) }),
+    OFFERS_EMPTY(emptyOffers = true, content = { api, _ -> OffersScreen(api, {}, {}) }),
+    PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
+    PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
+    PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
+    SHELL(content = { _, settings -> shell(settings) }),
     SETTINGS(content = { _, _ ->
         ServerSettingsScreen(
             current = ServerSettings("https://mealplanner.example.nl"),
@@ -94,7 +129,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     @get:Rule
     val compose = createEmptyComposeRule()
 
-    private val backend = FakeBackend(shot.emptyWeek)
+    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes)
     private val api = ApiClient(backend.settings)
 
     @Before
@@ -103,8 +138,9 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         appClock = object : Clock {
             override fun now(): Instant = Instant.parse("${FakeBackend.TODAY}T10:30:00Z")
         }
-        // The phone's width; the height only has to be generous. mdpi makes one dp one pixel, which keeps the pictures small.
-        RuntimeEnvironment.setQualifiers("en-rGB-w${look.widthDp}dp-h640dp-mdpi")
+        // The phone's size, as tall as the picture. mdpi makes one dp one pixel, which keeps the pictures small.
+        // Night mode is set too, for the shell, which follows the device when nothing else is chosen.
+        RuntimeEnvironment.setQualifiers("en-rGB-w${look.widthDp}dp-h${shot.heightDp}dp-${if (look.dark) "night" else "notnight"}-mdpi")
     }
 
     @After
@@ -137,7 +173,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         // The language is pinned to English, whatever the machine's locale is.
         CompositionLocalProvider(LocalDensity provides Density(density.density, look.fontScale), LocalStrings provides Strings.English) {
             MealPlannerTheme(look.dark) {
-                Surface(Modifier.testTag(FRAME).size(look.widthDp.dp, 640.dp)) { content() }
+                Surface(Modifier.testTag(FRAME).size(look.widthDp.dp, shot.heightDp.dp)) { content() }
             }
         }
     }
