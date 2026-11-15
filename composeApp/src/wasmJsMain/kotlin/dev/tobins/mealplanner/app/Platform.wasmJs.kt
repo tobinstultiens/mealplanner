@@ -34,3 +34,9 @@ actual fun secureRandomBytes(size: Int): ByteArray = randomBytesCsv(size).split(
 
 /** The browser's preferred language, e.g. `nl-NL`. */
 actual fun deviceLocaleTag(): String = window.navigator.language
+
+/** The browser has no wallpaper colours. */
+actual fun systemColorsAvailable(): Boolean = false
+
+@Composable
+actual fun systemColorScheme(dark: Boolean): androidx.compose.material3.ColorScheme? = null

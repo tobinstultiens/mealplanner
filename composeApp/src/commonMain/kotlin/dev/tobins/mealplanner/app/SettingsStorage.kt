@@ -36,3 +36,10 @@ fun SettingsStorage.themeMode(): ThemeMode =
     get(THEME_KEY)?.let { stored -> ThemeMode.entries.firstOrNull { it.name == stored } } ?: ThemeMode.SYSTEM
 
 fun SettingsStorage.saveThemeMode(mode: ThemeMode) = set(THEME_KEY, mode.name)
+
+private const val SYSTEM_COLORS_KEY = "systemColors"
+
+/** Whether the colours come from the wallpaper (where the device has them); off by default. */
+fun SettingsStorage.systemColors(): Boolean = get(SYSTEM_COLORS_KEY) == "true"
+
+fun SettingsStorage.saveSystemColors(on: Boolean) = set(SYSTEM_COLORS_KEY, on.toString())

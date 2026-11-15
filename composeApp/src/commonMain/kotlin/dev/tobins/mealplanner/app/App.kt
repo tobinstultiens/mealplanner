@@ -31,6 +31,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 
 /**
@@ -54,6 +56,7 @@ fun App(
     var loginError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     var theme by remember { mutableStateOf(storage.themeMode()) }
+    var systemColors by remember { mutableStateOf(storage.systemColors()) }
     // A newer release found on start; "Later" hides it until the next start.
     var update by remember { mutableStateOf<AppUpdate?>(null) }
     LaunchedEffect(updater) {
@@ -118,7 +121,7 @@ fun App(
         ThemeMode.DARK -> true
     }
     SystemBars(dark)
-    MealPlannerTheme(dark) {
+    MealPlannerTheme(dark, systemColors) {
       // On a wide browser window the app keeps a phone-like column in the middle.
       Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
        Box(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
@@ -162,6 +165,11 @@ fun App(
                     onTheme = {
                         storage.saveThemeMode(it)
                         theme = it
+                    },
+                    systemColors = systemColors,
+                    onSystemColors = {
+                        storage.saveSystemColors(it)
+                        systemColors = it
                     },
                     onSave = {
                         // Another server has its own accounts: the session doesn't carry over.
@@ -226,8 +234,7 @@ fun App(
                                         selected = tab == entry,
                                         onClick = { tab = entry },
                                         icon = { Icon(if (tab == entry) entry.selectedIcon else entry.icon, contentDescription = null) },
-                                        // One line even at a large font size: wrapping makes the bar taller on some tabs only.
-                                        label = { Text(entry.label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall) },
+                                        label = { NavigationLabel(entry.label) },
                                     )
                                 }
                             }
@@ -271,3 +278,19 @@ private enum class Tab(val label: String, val icon: ImageVector, val selectedIco
     RECIPES("Recipes", AppIcons.Recipes, AppIcons.RecipesFilled),
     PROGRESS("Progress", AppIcons.Progress, AppIcons.ProgressFilled),
 }
+
+/**
+ * A bottom bar label on one line (wrapping would make the bar taller on some tabs only). Five
+ * labels share the width, so the label grows with the user's font size only up to
+ * [MaxLabelFontScale]; beyond that the icon and the rest of the app still follow the setting.
+ */
+@Composable
+private fun NavigationLabel(text: String) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, MaxLabelFontScale))) {
+        Text(text, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/** The font scale at which "Progress" still clears its tab's edges on a 360 dp wide screen. */
+private const val MaxLabelFontScale = 1.15f

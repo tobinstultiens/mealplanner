@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.OfferSourceStatus
 import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.offers.LidlGuard
 import dev.tobins.mealplanner.server.offers.OfferMatcher
 import dev.tobins.mealplanner.server.offers.OfferSource
 import kotlinx.coroutines.CancellationException
@@ -40,9 +41,18 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
             },
             sources = Store.entries.map { store ->
                 val row = recorded[store.name]
-                OfferSourceStatus(store, row?.fetchedAt, counts[store.name] ?: 0, row?.error)
+                OfferSourceStatus(store, row?.fetchedAt, counts[store.name] ?: 0, row?.error, warning(store, date))
             },
         )
+    }
+
+    /** A warning about a store's stored offers as of [date]; only Lidl's page needs one so far. */
+    private fun warning(store: Store, date: LocalDate): String? {
+        if (store != Store.LIDL) return null
+        // The widest range: the guard needs the ended offers too.
+        val ends = q.selectOffersOverlapping(until = "9999-12-31", from = "0000-01-01").executeAsList()
+            .filter { it.store == store.name }.map { LocalDate.parse(it.validUntil) }
+        return LidlGuard.warning(ends, date)
     }
 
     private fun dev.tobins.mealplanner.server.db.Offer.toOffer() =

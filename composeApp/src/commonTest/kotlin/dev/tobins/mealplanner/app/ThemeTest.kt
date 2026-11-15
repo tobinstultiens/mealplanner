@@ -14,7 +14,7 @@ class ThemeTest {
     }
 
     /** The text colour and the background it sits on, for every pairing the components use. */
-    private fun pairs(c: ColorScheme) = mapOf(
+    private fun pairs(c: ColorScheme, warning: Color) = mapOf(
         "onPrimary/primary" to (c.onPrimary to c.primary),
         "onPrimaryContainer/primaryContainer" to (c.onPrimaryContainer to c.primaryContainer),
         "onSecondaryContainer/secondaryContainer" to (c.onSecondaryContainer to c.secondaryContainer),
@@ -31,12 +31,15 @@ class ThemeTest {
         "primary/surface" to (c.primary to c.surface),
         "error/surface" to (c.error to c.surface),
         "tertiary/surface" to (c.tertiary to c.surface),
+        "warning/surface" to (warning to c.surface),
+        "warning/surfaceContainer" to (warning to c.surfaceContainer),
+        "warning/surfaceContainerHighest" to (warning to c.surfaceContainerHighest),
     )
 
     @Test
     fun textMeetsWcagAaOnItsBackgroundInBothSchemes() {
         for (dark in listOf(false, true)) {
-            pairs(appColorScheme(dark)).forEach { (name, pair) ->
+            pairs(appColorScheme(dark), warningColor(dark)).forEach { (name, pair) ->
                 val ratio = contrast(pair.first, pair.second)
                 assertTrue(ratio >= 4.5, "$name in ${if (dark) "dark" else "light"} has contrast $ratio, below 4.5")
             }

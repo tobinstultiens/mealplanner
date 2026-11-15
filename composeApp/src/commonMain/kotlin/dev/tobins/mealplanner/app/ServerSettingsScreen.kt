@@ -19,6 +19,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -33,7 +35,7 @@ import kotlinx.coroutines.launch
 
 /**
  * App settings in cards: the server address (first while not logged in, since nothing works
- * without it; it can be tested before saving), the account, light or dark, which applies at
+ * without it; it can be tested before saving), the account, light or dark and (on Android 12+) the wallpaper colours, which apply at
  * once, and the app version.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -50,6 +52,9 @@ fun ServerSettingsScreen(
     updater: UpdateInstaller?,
     theme: ThemeMode,
     onTheme: (ThemeMode) -> Unit,
+    /** Whether the colours come from the wallpaper; the switch shows only where the device has them. */
+    systemColors: Boolean,
+    onSystemColors: (Boolean) -> Unit,
     onSave: (ServerSettings) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -120,6 +125,15 @@ fun ServerSettingsScreen(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     ThemeMode.entries.forEach { mode ->
                         FilterChip(selected = theme == mode, onClick = { onTheme(mode) }, label = { Text(mode.label) })
+                    }
+                }
+                if (systemColorsAvailable()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Use system colours", style = MaterialTheme.typography.bodyMedium)
+                            Text("Take the colours from your wallpaper.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = systemColors, onCheckedChange = onSystemColors)
                     }
                 }
             }

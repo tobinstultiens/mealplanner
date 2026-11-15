@@ -41,6 +41,11 @@ data class OfferSourceStatus(
     val offerCount: Int,
     /** Message of the last failed fetch, cleared by a successful one. */
     val error: String?,
+    /**
+     * Something that looks wrong although the fetch succeeded, e.g. a store whose offers are
+     * all old. The store keeps its offers. Optional, so older apps ignore it.
+     */
+    val warning: String? = null,
 )
 
 @Serializable
