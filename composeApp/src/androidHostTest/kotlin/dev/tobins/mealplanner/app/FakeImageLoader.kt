@@ -25,11 +25,30 @@ fun fakeImageLoader(context: Context, failing: (String) -> Boolean = { false }):
                 override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
                     val request = chain.request
                     if (failing(request.data.toString())) return ErrorResult(null, request, IllegalStateException("not found"))
-                    return SuccessResult(pack(request.data.toString()).asImage(), request, DataSource.MEMORY)
+                    return SuccessResult(drawing(request.data.toString()).asImage(), request, DataSource.MEMORY)
                 }
             })
         }
         .build()
+
+/** A recipe photo (an address of our own server) is a plate on a table, anything else a product pack. */
+private fun drawing(url: String): Bitmap = if ("/api/recipes/" in url) dish(url) else pack(url)
+
+/** A plate seen from above on a coloured table, wider than tall like a photo; the same one for the same address. */
+private fun dish(url: String): Bitmap {
+    val bitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val tables = intArrayOf(0xFF8D6E63.toInt(), 0xFF607D8B.toInt())
+    canvas.drawColor(tables[(url.hashCode() and 0x7fffffff) % tables.size])
+    paint.color = Color.WHITE
+    canvas.drawCircle(160f, 120f, 100f, paint)
+    paint.color = 0xFFE67E22.toInt()
+    canvas.drawCircle(160f, 120f, 62f, paint)
+    paint.color = 0xFF2E7D32.toInt()
+    canvas.drawCircle(185f, 100f, 22f, paint)
+    return bitmap
+}
 
 /** The same drawing for the same address, in a colour taken from it. */
 private fun pack(url: String): Bitmap {

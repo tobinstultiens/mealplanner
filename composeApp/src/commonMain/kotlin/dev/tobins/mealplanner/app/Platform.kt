@@ -38,7 +38,8 @@ expect fun KeepScreenOn(enabled: Boolean)
  * The loader of product pictures. It sends its own User-Agent (Jumbo resets connections that
  * carry OkHttp's default), keeps pictures on disk where the platform has room for that, and
  * ignores the stores' cache headers: AH's bonus pictures say `max-age=0`, yet the shopping list
- * should show them offline in the shop.
+ * should show them offline in the shop. Recipe photos from our own server use it too, with the
+ * login token added per request (see [RecipeImages]).
  */
 expect fun productImageLoader(context: PlatformContext): ImageLoader
 

@@ -179,6 +179,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
             LocalDensity provides Density(density.density, look.fontScale),
             LocalStrings provides Strings.English,
             LocalProductImageLoader provides pictures,
+            LocalRecipeImages provides RecipeImages(pictures, "http://fake", { null }),
         ) {
             MealPlannerTheme(look.dark) {
                 Surface(Modifier.testTag(FRAME).size(look.widthDp.dp, shot.heightDp.dp)) { content() }

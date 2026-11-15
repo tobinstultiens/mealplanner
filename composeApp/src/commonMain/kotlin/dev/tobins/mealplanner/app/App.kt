@@ -67,9 +67,11 @@ fun App(
     var systemColors by remember { mutableStateOf(storage.systemColors()) }
     var productPictures by remember { mutableStateOf(storage.productPictures()) }
     val platformContext = LocalPlatformContext.current
-    // One loader for the whole app so its caches are shared; with pictures off there is none and rows show their letter.
-    val imageLoader = remember(productPictures) { if (productPictures) productImageLoader(platformContext) else null }
-    DisposableEffect(imageLoader) { onDispose { imageLoader?.shutdown() } }
+    // One loader for the whole app so its caches are shared. With product pictures off the rows get none and
+    // show their letter; recipe photos come from our own server and are loaded either way.
+    val imageLoader = remember { productImageLoader(platformContext) }
+    DisposableEffect(imageLoader) { onDispose { imageLoader.shutdown() } }
+    val recipeImages = remember(settings, imageLoader, storage) { RecipeImages(imageLoader, settings.url, { storage.session()?.accessToken }) }
     // A newer release found on start; "Later" hides it until the next start.
     var update by remember { mutableStateOf<AppUpdate?>(null) }
     LaunchedEffect(updater) {
@@ -134,7 +136,11 @@ fun App(
         ThemeMode.DARK -> true
     }
     SystemBars(dark)
-    CompositionLocalProvider(LocalStrings provides strings, LocalProductImageLoader provides imageLoader) {
+    CompositionLocalProvider(
+        LocalStrings provides strings,
+        LocalProductImageLoader provides imageLoader.takeIf { productPictures },
+        LocalRecipeImages provides recipeImages,
+    ) {
     MealPlannerTheme(dark, systemColors) {
       // On a wide browser window the app keeps a phone-like column in the middle.
       Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {

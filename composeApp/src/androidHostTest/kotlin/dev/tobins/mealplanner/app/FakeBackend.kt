@@ -165,7 +165,7 @@ class FakeBackend(
         )
     }
 
-    private fun summary(id: Long, title: String, section: String, kcal: Double, protein: Double, rating: Int?, tags: List<String> = emptyList()) = RecipeSummary(
+    private fun summary(id: Long, title: String, section: String, kcal: Double, protein: Double, rating: Int?, tags: List<String> = emptyList(), photo: Boolean = false) = RecipeSummary(
         id = id,
         title = title,
         section = section,
@@ -181,13 +181,15 @@ class FakeBackend(
         mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER),
         rating = rating,
         cost = RecipeCost(2.40, 2.10),
+        imageUrl = if (photo) "/api/recipes/$id/image?v=0a1b2c" else null,
     )
 
     private val recipes = listOf(
-        summary(1, "Overnight oats with blueberries", "Breakfast", 460.0, 24.0, 4, listOf("quick", "vegetarian")),
+        // Two recipes have a photo, like the real ones where a few do; the others show how the screens look without.
+        summary(1, "Overnight oats with blueberries", "Breakfast", 460.0, 24.0, 4, listOf("quick", "vegetarian"), photo = true),
         summary(2, "Chickpea salad with feta and roasted peppers", "Lunch", 640.0, 42.0, 5, listOf("vegetarian")),
         summary(3, "Tuna pasta salad", "Lunch", 610.0, 38.0, null),
-        summary(4, "Slow-cooked chicken thighs with coconut, lemon and spinach", "Dinner", 810.0, 55.0, 5, listOf("meal prep", "gluten free")),
+        summary(4, "Slow-cooked chicken thighs with coconut, lemon and spinach", "Dinner", 810.0, 55.0, 5, listOf("meal prep", "gluten free"), photo = true),
         summary(5, "Lentil soup", "Dinner", 520.0, 31.0, 3),
         summary(6, "Shakshuka", "Dinner", 560.0, 29.0, 4, listOf("vegetarian", "eggs")),
     )
