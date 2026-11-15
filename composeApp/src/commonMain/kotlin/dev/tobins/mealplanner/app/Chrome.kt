@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -108,11 +109,20 @@ fun OverflowMenu(vararg actions: MenuAction) {
  * shows the full [details] (often a long technical message) in a dialog.
  */
 @Composable
-fun ErrorBanner(summary: String, details: String, modifier: Modifier = Modifier) {
+fun ErrorBanner(summary: String, details: String, modifier: Modifier = Modifier) =
+    DetailsBanner(summary, details, AppIcons.Error, MaterialTheme.colorScheme.error, modifier)
+
+/** Like [ErrorBanner], in the warning colour: for something that works but may not be right. */
+@Composable
+fun WarningBanner(summary: String, details: String, modifier: Modifier = Modifier) =
+    DetailsBanner(summary, details, AppIcons.Warning, MaterialTheme.warning, modifier)
+
+@Composable
+private fun DetailsBanner(summary: String, details: String, icon: ImageVector, tint: Color, modifier: Modifier) {
     var open by remember { mutableStateOf(false) }
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-        Icon(AppIcons.Error, contentDescription = null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
-        Text(summary, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        Icon(icon, contentDescription = null, Modifier.size(20.dp), tint = tint)
+        Text(summary, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = tint)
         TextButton(onClick = { open = true }) { Text(LocalStrings.current(Msg.DETAILS)) }
     }
     if (open) {

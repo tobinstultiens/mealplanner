@@ -42,21 +42,22 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
             },
             sources = Store.entries.map { store ->
                 val row = recorded[store.name]
-                OfferSourceStatus(store, row?.fetchedAt, counts[store.name] ?: 0, row?.error)
+                OfferSourceStatus(store, row?.fetchedAt, counts[store.name] ?: 0, row?.error, warning = if (store == Store.LIDL) lidlWarning(date) else null)
             },
         )
     }
 
     /**
-     * Warnings about the stored offers as of [date], for the server log: they are not part of
-     * the API, since apps released before this check fail on fields they do not know. Only
-     * Lidl's page needs one so far.
+     * Warnings about the stored offers as of [date], for the server log; the same texts reach
+     * the apps as [OfferSourceStatus.warning]. Only Lidl's page needs one so far.
      */
-    fun warnings(date: LocalDate): List<String> {
+    fun warnings(date: LocalDate): List<String> = listOfNotNull(lidlWarning(date))
+
+    private fun lidlWarning(date: LocalDate): String? {
         // The widest range: the guard needs the ended offers too.
         val ends = q.selectOffersOverlapping(until = "9999-12-31", from = "0000-01-01").executeAsList()
             .filter { it.store == Store.LIDL.name }.map { LocalDate.parse(it.validUntil) }
-        return listOfNotNull(LidlGuard.warning(ends, date))
+        return LidlGuard.warning(ends, date)
     }
 
     private fun dev.tobins.mealplanner.server.db.Offer.toOffer() =

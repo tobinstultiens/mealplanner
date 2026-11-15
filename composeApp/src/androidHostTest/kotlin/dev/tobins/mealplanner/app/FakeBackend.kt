@@ -228,7 +228,10 @@ class FakeBackend(
         sources = listOf(
             OfferSourceStatus(Store.AH, "2026-11-17T06:00:00Z", 2, null),
             OfferSourceStatus(Store.JUMBO, "2026-11-17T06:00:00Z", 1, null),
-            OfferSourceStatus(Store.LIDL, "2026-11-17T06:00:00Z", 1, null),
+            OfferSourceStatus(
+                Store.LIDL, "2026-11-17T06:00:00Z", 1, null,
+                warning = "No Lidl offer runs into next week (the last ends 2026-11-22); the offers page may not show next week's offers.",
+            ),
         ),
     )
 

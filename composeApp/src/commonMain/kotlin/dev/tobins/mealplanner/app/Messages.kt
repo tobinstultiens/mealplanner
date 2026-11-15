@@ -255,6 +255,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     SOURCE_COULD_NOT_FETCH("{0}: could not fetch", "{0}: ophalen is niet gelukt"),
     SOURCE_LAST_FAILED("{0}: last fetch failed, offers from {1}", "{0}: laatste keer ophalen mislukt, aanbiedingen van {1}"),
     SOURCE_NOT_FETCHED("{0}: not fetched yet", "{0}: nog niet opgehaald"),
+    SOURCE_WARNING("{0}: offers may be out of date", "{0}: aanbiedingen zijn mogelijk verouderd"),
     UNTIL("until {0}", "t/m {0}"),
 
     // --- Pantry

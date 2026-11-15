@@ -121,21 +121,24 @@ private fun SourceLine(status: OfferSourceStatus) {
     val t = LocalStrings.current
     val fetched = status.fetchedAt?.let { dayMonthLabel(it.take(10), t.locale) }
     val error = status.error
-    when {
-        error != null -> ErrorBanner(
-            if (fetched == null) t(Msg.SOURCE_COULD_NOT_FETCH, status.store.label) else t(Msg.SOURCE_LAST_FAILED, status.store.label, fetched),
-            error,
-        )
-        fetched != null -> Text(
-            t.plural(Plural.SOURCE_FETCHED, status.offerCount, status.store.label, fetched),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        else -> Text(
-            t(Msg.SOURCE_NOT_FETCHED, status.store.label),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    Column {
+        when {
+            error != null -> ErrorBanner(
+                if (fetched == null) t(Msg.SOURCE_COULD_NOT_FETCH, status.store.label) else t(Msg.SOURCE_LAST_FAILED, status.store.label, fetched),
+                error,
+            )
+            fetched != null -> Text(
+                t.plural(Plural.SOURCE_FETCHED, status.offerCount, status.store.label, fetched),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> Text(
+                t(Msg.SOURCE_NOT_FETCHED, status.store.label),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        status.warning?.let { WarningBanner(t(Msg.SOURCE_WARNING, status.store.label), it) }
     }
 }
 

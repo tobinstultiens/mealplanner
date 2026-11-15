@@ -33,7 +33,11 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertContains
 import kotlin.test.assertNotNull
+import io.ktor.client.statement.bodyAsText
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlin.test.assertNull
 
 class OffersApiTest {
@@ -95,6 +99,35 @@ class OffersApiTest {
         assertEquals(1, repository.warnings(LocalDate.parse("2026-11-23")).size, "everything has ended")
         assertEquals(1, repository.state(LocalDate.parse("2026-11-23")).sources.single { it.store == Store.LIDL }.offerCount, "the offers are kept")
     }
+
+    @Test
+    fun theLidlWarningReachesTheAppsAndOlderClientsStillDecodeTheResponse() = testApplication {
+        val lidl = FakeSource(Store.LIDL, listOf(offer(Store.LIDL, "Rundergehakt", "2026-11-16", "2026-11-22")))
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        application { module(config, openDatabase(config.databaseUrl).second, listOf(lidl), verifier = TestTokens) }
+        val http = createClient {
+            install(ContentNegotiation) { json() }
+            defaultRequest { bearerAuth("t") }
+        }
+        http.post("/api/offers/refresh")
+
+        val fresh = http.get("/api/offers?date=2026-11-18").bodyAsText()
+        val stale = http.get("/api/offers?date=2026-11-23").bodyAsText()
+        assertNull(Json.decodeFromString<OffersState>(fresh).sources.single { it.store == Store.LIDL }.warning)
+        assertContains(Json.decodeFromString<OffersState>(stale).sources.single { it.store == Store.LIDL }.warning!!, "have ended")
+
+        // The lenient client (ApiClient) skips fields it does not know: a type without `warning` reads both.
+        val lenient = Json { ignoreUnknownKeys = true }
+        assertEquals(3, lenient.decodeFromString<OldOffersState>(stale).sources.size)
+        assertEquals(3, lenient.decodeFromString<OldOffersState>(fresh).sources.size)
+    }
+
+    /** The offers state as the apps before the warning knew it. */
+    @Serializable
+    private data class OldOffersState(val offers: List<Offer>, val sources: List<OldSource>)
+
+    @Serializable
+    private data class OldSource(val store: Store, val fetchedAt: String?, val offerCount: Int, val error: String?)
 
     @Test
     fun scheduledRefreshSkipsStoresFetchedRecently() = runBlocking {
