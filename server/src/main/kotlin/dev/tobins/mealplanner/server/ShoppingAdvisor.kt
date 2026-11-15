@@ -73,7 +73,7 @@ class ShoppingAdvisor(
     /**
      * What to stock up on: [ingredients] that keep and are a staple, or that a recipe uses ([used])
      * and keep for months; on offer now, not on hand ([onHand]) unless this list's own tick put them
-     * there, and not on the list already ([listed]). One pack of the best offer each; the
+     * there, and not on the list already ([listed]). The packs the best offer's deal wants, one when it wants no more; the
      * [MAX_STOCK_UP] that save most, in walking order.
      */
     fun stockUp(ingredients: List<Ingredient>, used: Set<Long>, onHand: Set<Long>, listed: Set<Long>): List<ShoppingItem> =
@@ -89,16 +89,21 @@ class ShoppingAdvisor(
             .map { it.toItem() }
             .toList()
 
-    /** One pack of [ingredient] bought with its best offer; null when what that saves is unknown. */
+    /**
+     * [ingredient] bought with its best offer, in the packs the deal wants ([PackSize.stockUpPacks]);
+     * null when what that saves is unknown or the deal asks for an unreasonable amount.
+     */
     private fun pack(ingredient: Ingredient): Pack? {
         val offer = offers[ingredient.id]?.let(::bestOffer)?.takeIf { it.paidShare != null } ?: return null
-        val grams = PackSize.grams(offer.packSize ?: offer.title, ingredient.gramsPerPiece, ingredient.gramsPerMl)
-        val regular = grams?.let { g -> perKg[ingredient.id]?.let { g / 1000 * it } }
+        val packGrams = PackSize.grams(offer.packSize ?: offer.title, ingredient.gramsPerPiece, ingredient.gramsPerMl)
+        val packs = PackSize.stockUpPacks(offer, packGrams) ?: return null
+        val regularPack = packGrams?.let { g -> perKg[ingredient.id]?.let { g / 1000 * it } }
             ?: offer.originalPrice?.takeIf { offer.price != null }
             ?: return null
-        return Pack(ingredient, sectionOf[ingredient.id] ?: ShopSection.OTHER, offer, grams, regular)
+        return Pack(ingredient, sectionOf[ingredient.id] ?: ShopSection.OTHER, offer, packGrams?.times(packs), regularPack * packs)
     }
 
+    /** What is advised for one ingredient: [grams] and [regular] price are those of all the packs. */
     private inner class Pack(val ingredient: Ingredient, val section: ShopSection, val offer: Offer, val grams: Double?, val regular: Double) {
         val saving get() = regular * (1 - offer.paidShare!!)
 

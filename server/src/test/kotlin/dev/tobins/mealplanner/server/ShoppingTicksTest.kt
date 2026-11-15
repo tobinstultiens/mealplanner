@@ -167,6 +167,19 @@ class ShoppingTicksTest {
     }
 
     @Test
+    fun aBoughtItemMadeAStapleAfterwardsIsNotListedAsNoLongerNeeded() = testApplication {
+        val http = start().planned()
+        assertEquals("Chicken salad", http.rerollMonday())
+        http.tick(http.list().item("Lettuce").key)
+        assertEquals("Rice bowl", http.rerollMonday())
+        assertEquals(listOf("Lettuce"), http.list().noLongerNeeded.map { it.name })
+
+        // Made a staple, it is always at home: nothing to tell about it.
+        http.put("/api/pantry/staples/${http.ingredient("Lettuce").id}")
+        assertEquals(emptyList(), http.list().noLongerNeeded)
+    }
+
+    @Test
     fun aCountedRowRemembersItsPiecesWhenItsMealIsRemoved() = testApplication {
         val http = start().planned()
         // Pomegranates have no nutrition, so the planner can't size a meal of them: it is put in the plan directly.

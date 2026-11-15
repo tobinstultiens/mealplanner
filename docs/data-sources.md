@@ -168,8 +168,12 @@ switched off or dismissed.
 
 **Stock up** (`ShoppingList.stockUp`, keys `stock:i<id>`): ingredients that keep and are a staple, or
 that a recipe uses and keep for months (so not fresh meat), on offer now, not on hand and not on the
-list already. One pack of the best offer each, with its saving; the six saving most (at least
-€0.25 a pack), in walking order. Advice only: it never changes the plan.
+list already. The best offer each, with its saving; the six saving most (at least €0.25), in
+walking order. A deal that wants several packs together ("2 voor", "1+1 gratis", "3+1 gratis"; see
+`Discounts.packsNeeded`) is advised in those packs, so the row reads "2 × 1 kg", its amount and
+regular price are those of all the packs, its saving is counted and its tick stocks all of them
+(`PackSize.stockUpPacks`). A deal for more than 6 packs, more than 10 kg in all, or several packs of
+a size that cannot be weighed is not advised. Advice only: it never changes the plan.
 
 **Ticked items go to the pantry.** Ticking a buy-ahead item puts its ingredient on hand from next
 week (`onHand.fromWeek`), so this week's meals, list and recipe ideas still get their own amount and
@@ -258,7 +262,9 @@ groups; tapping it un-ticks and ticks it in one step, so the server remembers th
 row without bought amounts is a plain tick. `noLongerNeeded` is the group "Bought, no longer
 needed" below the list, with "Use it up" (puts the ingredient on hand, catalogue ingredients only)
 and "Remove" (un-ticks it). "Use it up" puts it on hand by hand, the pantry's own route, so it has
-no amount: the pantry shows no number for it, and meals don't eat from it.
+no amount: the pantry shows no number for it, and meals don't eat from it. A staple is never in the
+group: an ingredient made a staple after it was bought is always at home, and when it is on offer it
+shows as stock-up advice, the moment to buy more.
 
 **Ticks in the app.** A tick shows at once and is stored on the device before it is sent
 (`ShoppingCache`); it is taken off when the server has it. The app keeps the list's state for as
