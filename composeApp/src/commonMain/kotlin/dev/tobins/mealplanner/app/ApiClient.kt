@@ -33,6 +33,8 @@ import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.Me
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
+import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
@@ -50,9 +52,24 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
 
 /** Where the server is. */
 data class ServerSettings(val url: String)
+
+/**
+ * Ktor's default JSON settings, but tolerant of fields this app version does not know, so the server
+ * can add fields to a response without breaking installed apps. Unknown enum values still fail.
+ */
+private val lenientJson = Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = true
+    isLenient = true
+    allowSpecialFloatingPointValues = true
+    allowStructuredMapKeys = true
+    prettyPrint = false
+    useArrayPolymorphism = false
+}
 
 /**
  * Talks to the meal planner server as the logged-in account. Calls throw on network errors
@@ -61,11 +78,12 @@ data class ServerSettings(val url: String)
 class ApiClient(
     settings: ServerSettings,
     session: Session? = null,
+    engine: HttpClientEngine? = null,
     refresh: suspend () -> Session? = { null },
 ) {
-    private val http = HttpClient {
+    private val setUp: HttpClientConfig<*>.() -> Unit = {
         expectSuccess = true
-        install(ContentNegotiation) { json() }
+        install(ContentNegotiation) { json(lenientJson) }
         install(HttpTimeout)
         if (session != null) {
             install(Auth) {
@@ -78,6 +96,8 @@ class ApiClient(
         }
         defaultRequest { url(settings.url.trimEnd('/') + "/") }
     }
+
+    private val http = if (engine == null) HttpClient(setUp) else HttpClient(engine, setUp)
 
     suspend fun me(): Me = http.get("api/me").body()
 

@@ -83,6 +83,13 @@ QT_QPA_PLATFORM=xcb ANDROID_AVD_HOME=$HOME/.config/.android/avd \
 ./gradlew :androidApp:installDebug
 ```
 
+## API compatibility
+
+Installed apps outlive server deployments. App releases up to and including v0.1.1 reject JSON fields
+they do not know, so until a release containing the lenient client (`ApiClient`) is installed, responses
+those apps read must not gain fields: new data goes in new routes or types. Once it is installed, adding
+optional fields is safe. Removing or renaming a field, or changing its meaning, still breaks installed apps.
+
 ## Database changes
 
 The schema lives in `server/src/main/sqldelight/.../db/*.sq` and always describes the current
