@@ -168,7 +168,9 @@ which is ignored by git.
 `../cooking`, or wherever `-PcookingRepo=<path>` points, and is skipped when that is missing.
 
 API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue),
-`/api/mappings` (links from recipe ingredient texts to catalogue ingredients), `/api/profile` (body data
+`/api/ingredients/sections` (each ingredient's shop section, which orders the shopping list; `PUT
+/api/ingredients/{id}/section` corrects one for the account), `/api/mappings` (links from recipe
+ingredient texts to catalogue ingredients), `/api/profile` (body data
 and daily targets), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`,
 and per meal `reroll`, `lock`, `status` and delete), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion), `/api/offers` (weekly store offers;

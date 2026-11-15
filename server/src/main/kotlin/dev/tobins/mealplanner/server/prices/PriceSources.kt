@@ -30,8 +30,14 @@ data class StoreProduct(
     val regularPrice: Double?,
     /** The store's own unit price text, e.g. "prijs per kg €16.60". */
     val unitPrice: String?,
+    /** The store's main category, e.g. "Kaas"; it decides the aisle and the ingredient's shop section. */
     val category: String?,
+    /** The store's category within [category], e.g. "Tarwebloem". */
+    val subCategory: String? = null,
 )
+
+/** Where a store files a product: its main [category] and the [subCategory] within it. */
+data class StoreAisle(val store: Store, val category: String, val subCategory: String?)
 
 /** Searches one store's products. Throws when the store cannot be read. */
 interface PriceSource {
@@ -82,6 +88,7 @@ object AhProductParser {
                 regularPrice = p["priceBeforeBonus"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null,
                 unitPrice = p.string("unitPriceDescription"),
                 category = p.string("mainCategory"),
+                subCategory = p.string("subCategory"),
             )
         }
 

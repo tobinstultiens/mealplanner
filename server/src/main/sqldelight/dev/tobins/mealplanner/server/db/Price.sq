@@ -1,6 +1,6 @@
 -- Regular store prices, shared by every account: keyed by ingredient name, so each
 -- account's catalogue finds the price for its own ingredient of that name. Replaced
--- per name by each lookup.
+-- per name by each lookup. The product's category also gives the ingredient's shop section.
 CREATE TABLE ingredientPrice (
     name TEXT NOT NULL PRIMARY KEY COLLATE NOCASE,
     store TEXT NOT NULL,
@@ -8,15 +8,17 @@ CREATE TABLE ingredientPrice (
     packSize TEXT,
     packPrice REAL,
     eurosPerKg REAL NOT NULL,
-    fetchedAt TEXT NOT NULL
+    fetchedAt TEXT NOT NULL,
+    category TEXT,                     -- the store's category of the product, e.g. "Kaas"
+    subCategory TEXT
 );
 
 selectPrices:
 SELECT * FROM ingredientPrice ORDER BY name COLLATE NOCASE;
 
 upsertPrice:
-INSERT OR REPLACE INTO ingredientPrice (name, store, product, packSize, packPrice, eurosPerKg, fetchedAt)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO ingredientPrice (name, store, product, packSize, packPrice, eurosPerKg, fetchedAt, category, subCategory)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deletePrice:
 DELETE FROM ingredientPrice WHERE name = ?;

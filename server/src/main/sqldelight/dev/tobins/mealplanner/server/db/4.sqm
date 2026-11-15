@@ -1,0 +1,13 @@
+-- Version 4 -> 5: shop sections, for a shopping list in walking order. Only new columns,
+-- so no table is rebuilt and no row is touched.
+
+-- A section an account sets by hand on its own ingredient; NULL means automatic.
+ALTER TABLE ingredient ADD COLUMN section TEXT;
+
+-- The store's category of the product priced for an ingredient name, shared like the price.
+ALTER TABLE ingredientPrice ADD COLUMN category TEXT;
+ALTER TABLE ingredientPrice ADD COLUMN subCategory TEXT;
+
+-- Prices from before have no category: forget when they were looked up, so the next scheduled
+-- check looks them up again (the same searches as the weekly lookup) instead of in a week.
+DELETE FROM meta WHERE key = 'pricesFetchedAt';

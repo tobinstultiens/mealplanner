@@ -53,7 +53,13 @@ data class WeekPlan(
     val costWithoutOffers: Double? = null,
 )
 
-/** One thing to buy for a week plan. */
+/**
+ * One thing to buy for a week plan.
+ *
+ * Apps up to v0.1.1 read responses strictly and fail on a field they don't know, so fields
+ * added here break them: the section travels as [category] alone, and its position is the
+ * order the server sends the items in.
+ */
 @Serializable
 data class ShoppingItem(
     /** Stable identifier of the item within the list, used to tick it off. */
@@ -63,7 +69,7 @@ data class ShoppingItem(
     val grams: Double?,
     /** Total number of pieces, when the recipes count this ingredient in pieces. */
     val pieces: Double?,
-    /** Shop section, taken from the food group; "Other" when unknown. */
+    /** The shop section's title ([dev.tobins.mealplanner.shopping.ShopSection.title]); "Other" when unknown. */
     val category: String,
     val recipes: List<String>,
     /** True when the pantry lists it as on hand: check before buying. */
@@ -73,7 +79,10 @@ data class ShoppingItem(
     val offers: List<Offer> = emptyList(),
 )
 
-/** Everything the week's meals need, without the staples that are always at home. */
+/**
+ * Everything the week's meals need, without the staples that are always at home. [items] come
+ * in walking order: by shop section, then by name; ticking an item off does not move it.
+ */
 @Serializable
 data class ShoppingList(
     val weekStart: String,

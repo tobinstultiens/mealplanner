@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.Pantry
@@ -16,6 +17,7 @@ import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
@@ -38,6 +40,7 @@ import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -95,6 +98,21 @@ class AccountsTest {
         assertNull(alice.get("/api/recipes/${stew.id}").body<RecipeDetail>().summary.rating)
         assertEquals(1, alice.get("/api/days/2026-11-10").body<DayView>().extras.size)
         assertEquals(listOf("Shallot"), alice.get("/api/pantry").body<Pantry>().onHand.map { it.name })
+
+        // Shop sections set by hand are per account: Bob can neither see nor change Alice's, and
+        // his ingredient of the same name keeps its automatic section.
+        val placed = alice.put("/api/ingredients/${onion.id}/section") { setBody(SectionChoice("FRUIT_VEG")) }.body<IngredientSection>()
+        assertTrue(placed.byHand)
+        assertTrue(bob.get("/api/ingredients/sections").body<List<IngredientSection>>().none { it.ingredientId == onion.id })
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/ingredients/${onion.id}/section") { setBody(SectionChoice("FROZEN")) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/ingredients/${onion.id}/section") { setBody(SectionChoice(null)) }.status)
+        val bobsShallot = bob.post("/api/ingredients") { setBody(IngredientInput("Shallot")) }.body<Ingredient>()
+        val bobsSection = bob.get("/api/ingredients/sections").body<List<IngredientSection>>().single { it.ingredientId == bobsShallot.id }
+        assertEquals("OTHER", bobsSection.section)
+        assertFalse(bobsSection.byHand)
+        val alicesSection = alice.get("/api/ingredients/sections").body<List<IngredientSection>>().single { it.ingredientId == onion.id }
+        assertEquals("FRUIT_VEG", alicesSection.section)
+        assertEquals(HttpStatusCode.BadRequest, alice.put("/api/ingredients/${onion.id}/section") { setBody(SectionChoice("AISLE_42")) }.status)
 
         // Plans are per account too (without NEVO data here, Alice's plan stays empty, but it is hers).
         assertEquals(HttpStatusCode.OK, alice.post("/api/plans/2026-11-09/generate").status)

@@ -53,4 +53,44 @@ class MigrationTest {
         assertEquals(1L, owner.id)
         assertTrue(reopened.recipeQueries.selectActive(owner.id).executeAsList().single().rating == null, "existing rows survive")
     }
+
+    @Test
+    fun aVersionFourDatabaseKeepsItsRowsAndLooksUpPricesAgainForTheirCategory() {
+        val file = createTempFile("v4", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        // Version 4 is today's schema without the shop section columns.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute("ALTER TABLE ingredient DROP COLUMN section")
+                statement.execute("ALTER TABLE ingredientPrice DROP COLUMN category")
+                statement.execute("ALTER TABLE ingredientPrice DROP COLUMN subCategory")
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'sub', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (userId, name, isStaple) VALUES (1, 'Gouda', 1)")
+                statement.execute("INSERT INTO onHand (ingredientId, addedAt) VALUES (1, '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredientPrice (name, store, product, eurosPerKg, fetchedAt) VALUES ('Gouda', 'AH', 'AH Gouda', 12.0, '2026-11-14T00:00:00Z')")
+                statement.execute("INSERT INTO meta (key, value) VALUES ('pricesFetchedAt', '2026-11-14T00:00:00Z'), ('other', 'kept')")
+                statement.execute("PRAGMA user_version = 4")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        for (table in listOf("ingredient", "ingredientPrice")) {
+            assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
+        }
+        val gouda = db.ingredientQueries.selectIngredientByName(1, "Gouda").executeAsOne()
+        assertEquals(null, gouda.section, "automatic until set by hand")
+        assertEquals(1L, gouda.isStaple)
+        assertEquals(1, db.pantryQueries.selectOnHand(1).executeAsList().size)
+        val price = db.priceQueries.selectPrices().executeAsOne()
+        assertEquals(12.0, price.eurosPerKg, "the price stays until the lookup replaces it")
+        assertEquals(null, price.category)
+        assertEquals(null, db.foodQueries.selectMeta("pricesFetchedAt").executeAsOneOrNull(), "so the next check looks prices up again")
+        assertEquals("kept", db.foodQueries.selectMeta("other").executeAsOneOrNull())
+        driver.close()
+    }
 }

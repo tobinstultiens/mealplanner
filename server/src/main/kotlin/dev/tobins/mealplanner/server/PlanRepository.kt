@@ -16,6 +16,7 @@ import dev.tobins.mealplanner.units.Dimension
 import dev.tobins.mealplanner.planner.WeekPlanner
 import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.shopping.ShopSection
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
@@ -35,6 +36,8 @@ class PlanRepository(
     private val offersByIngredient: (LocalDate, LocalDate) -> Map<Long, List<dev.tobins.mealplanner.api.Offer>> = { _, _ -> emptyMap() },
     /** Prices with the offers valid between two dates. */
     private val pricing: (LocalDate, LocalDate) -> Pricing = { _, _ -> Pricing.NONE },
+    /** The shop section of each of the account's ingredients, by id. */
+    private val sections: () -> Map<Long, ShopSection> = { emptyMap() },
 ) {
     private val q = db.planQueries
 
@@ -147,17 +150,20 @@ class PlanRepository(
 
     /**
      * What the week's meals need. Each recipe is scaled to the portions planned for it,
-     * leftovers included; staples are left out and only named as a reminder.
+     * leftovers included; staples are left out and only named as a reminder. Items come in
+     * the order of the walk through the shop, by section and then by name; whether an item
+     * is ticked or on hand does not move it.
      */
     fun shoppingList(weekStart: String): ShoppingList {
         val start = parse(weekStart)
-        class Need(val name: String, val category: String, val onHand: Boolean) {
+        class Need(val name: String, val section: ShopSection, val onHand: Boolean) {
             var grams = 0.0
             var gramsKnown = true
             var pieces = 0.0
             val recipes = linkedSetOf<String>()
         }
         val onHand = recipes.onHandIds()
+        val sectionOf = sections()
         val needs = linkedMapOf<String, Need>()
         val staples = sortedSetOf<String>()
         val toTaste = sortedSetOf<String>()
@@ -180,7 +186,7 @@ class PlanRepository(
                 val need = needs.getOrPut(key) {
                     Need(
                         name = ingredient?.name ?: IngredientLine.coreText(line.ingredientText).replaceFirstChar { it.uppercase() },
-                        category = ingredient?.food?.groupEn ?: "Other",
+                        section = ingredient?.let { sectionOf[it.id] } ?: ShopSection.OTHER,
                         onHand = ingredient?.id in onHand,
                     )
                 }
@@ -196,19 +202,19 @@ class PlanRepository(
         val offers = offersByIngredient(start, start.plusDays(DAYS - 1L))
         return ShoppingList(
             weekStart = start.toString(),
-            items = needs.map { (key, need) ->
+            items = needs.entries.sortedWith(compareBy({ it.value.section.ordinal }, { it.value.name.lowercase() })).map { (key, need) ->
                 ShoppingItem(
                     key = key,
                     name = need.name,
                     grams = need.grams.takeIf { need.gramsKnown && it > 0 },
                     pieces = need.pieces.takeIf { it > 0 },
-                    category = need.category,
+                    category = need.section.title,
                     recipes = need.recipes.toList(),
                     onHand = need.onHand,
                     checked = key in checked,
                     offers = key.removePrefix("i").toLongOrNull()?.takeIf { key.startsWith("i") }?.let { offers[it] }.orEmpty(),
                 )
-            }.sortedWith(compareBy({ it.category == "Other" }, { it.category }, { it.name.lowercase() })),
+            },
             staples = staples.toList(),
             toTaste = toTaste.toList(),
         )
