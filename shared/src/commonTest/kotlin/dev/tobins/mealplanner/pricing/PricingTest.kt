@@ -14,6 +14,52 @@ class PricingTest {
     private fun near(expected: Double, actual: Double?, tolerance: Double = 0.001) =
         assertTrue(actual != null && abs(expected - actual) <= tolerance, "expected $expected, got $actual")
 
+    private fun packOffer(packSize: String?, deal: String? = null, title: String = "Product") =
+        Offer(Store.AH, title, deal, 4.5, packSize = packSize, validFrom = "2026-01-01", validUntil = "2026-01-07")
+
+    @Test
+    fun packsToTakeAreRoundedUp() {
+        val plan = PackSize.toBuy(packOffer("700 g"), 1400.0, null)
+        assertEquals(PacksToBuy(2, 700.0, null, 1), plan)
+        assertEquals(3, PackSize.toBuy(packOffer("700 g"), 1401.0, null)?.packs)
+        assertEquals(1, PackSize.toBuy(packOffer("700 g"), 50.0, null)?.packs)
+    }
+
+    @Test
+    fun aDealThatWantsMorePacksThanNeededDoesNotFit() {
+        val plan = PackSize.toBuy(packOffer("500 g", "1+1 gratis"), 450.0, null)
+        assertEquals(PacksToBuy(1, 500.0, null, 2), plan)
+        assertEquals(false, plan?.dealFits)
+        assertEquals(true, PackSize.toBuy(packOffer("500 g", "1+1 gratis"), 900.0, null)?.dealFits)
+    }
+
+    @Test
+    fun packsInPiecesAreComparedWithPieces() {
+        assertEquals(PacksToBuy(2, null, 3, 1), PackSize.toBuy(packOffer("3 stuks"), null, 4.0))
+        // Weights are not guessed from pieces, nor pieces from weights.
+        assertNull(PackSize.toBuy(packOffer("3 stuks"), 400.0, null))
+        assertNull(PackSize.toBuy(packOffer("500 g"), null, 4.0))
+    }
+
+    @Test
+    fun packSizeFallsBackToTheTitleAndUnreadableOnesGiveNothing() {
+        assertEquals(700.0, PackSize.toBuy(packOffer(null, title = "Kipfilet 700 g"), 700.0, null)?.packGrams)
+        assertNull(PackSize.toBuy(packOffer(null, title = "Kipfilet"), 700.0, null))
+        assertNull(PackSize.toBuy(packOffer("1 l"), 700.0, null))
+        assertNull(PackSize.toBuy(packOffer("500 g"), null, null))
+    }
+
+    @Test
+    fun packsADealNeeds() {
+        assertEquals(2, Discounts.packsNeeded("1+1 gratis"))
+        assertEquals(4, Discounts.packsNeeded("3+1 GRATIS"))
+        assertEquals(2, Discounts.packsNeeded("2 voor 3,99"))
+        assertEquals(2, Discounts.packsNeeded("2e halve prijs"))
+        assertEquals(1, Discounts.packsNeeded("25% korting"))
+        assertEquals(1, Discounts.packsNeeded("voor 3,49"))
+        assertEquals(1, Discounts.packsNeeded(null))
+    }
+
     @Test
     fun packSizesInWeightVolumeAndPieces() {
         assertEquals(500.0, PackSize.grams("500 g"))

@@ -233,4 +233,51 @@ class ShoppingStoresTest {
         // The Lidl deal is still there to read, with its day.
         assertEquals("AH: €2.00 (Product)\nLidl: €1.00 from Thu (Product)", milk.dealText(all, monday, Strings.English))
     }
+
+    private fun packItem(grams: Double?, pieces: Double?, offer: Offer, otherAmounts: List<String> = emptyList()) =
+        ShoppingItem("chicken", "Chicken", grams, pieces, "Meat", emptyList(), false, false, listOf(offer), regularPrice = 4.0, otherAmounts = otherAmounts)
+
+    private fun packOffer(packSize: String?, deal: String?, share: Double = 0.5) =
+        Offer(Store.AH, "Chicken", deal, null, packSize = packSize, validFrom = "2026-01-01", validUntil = "2026-01-07", paidShare = share)
+
+    @Test
+    fun theRowSaysWhatToPickUpInBothLanguages() {
+        val two = packItem(1400.0, null, packOffer("700 g", "25% korting", 0.75))
+        assertEquals("2 × 700 g", two.packsToBuy(two.offers.single())?.text(Strings.English))
+        val kilo = packItem(1000.0, null, packOffer("1,5 kg", "25% korting", 0.75))
+        assertEquals("1 × 1,5 kg", kilo.packsToBuy(kilo.offers.single())?.text(Strings.Dutch))
+        val tight = packItem(450.0, null, packOffer("500 g", "1+1 gratis"))
+        assertEquals("1 × 500 g · deal needs 2", tight.packsToBuy(tight.offers.single())?.text(Strings.English))
+        assertEquals("1 × 500 g · actie vraagt 2", tight.packsToBuy(tight.offers.single())?.text(Strings.Dutch))
+        val pieces = packItem(null, 4.0, packOffer("3 stuks", null, 0.75))
+        assertEquals("2 × 3 pieces", pieces.packsToBuy(pieces.offers.single())?.text(Strings.English))
+        assertEquals("2 × 3 stuks", pieces.packsToBuy(pieces.offers.single())?.text(Strings.Dutch))
+    }
+
+    @Test
+    fun theRowGuessesNothingWithoutAWeighedAmountOrAReadablePack() {
+        assertNull(packItem(null, null, packOffer("500 g", null)).let { it.packsToBuy(it.offers.single()) })
+        val unweighed = packItem(null, 2.0, packOffer("500 g", null), otherAmounts = listOf("1 bag"))
+        assertNull(unweighed.packsToBuy(unweighed.offers.single()))
+        assertNull(packItem(400.0, null, packOffer(null, null)).let { it.packsToBuy(it.offers.single()) })
+    }
+
+    @Test
+    fun aDealThatDoesNotFitSavesNothingInTheSums() {
+        val fits = packItem(1000.0, null, packOffer("500 g", "1+1 gratis"))
+        val tooMuch = packItem(450.0, null, packOffer("500 g", "1+1 gratis"))
+        assertEquals(2.0, savingOf(listOf(fits), all, today))
+        assertNull(savingOf(listOf(tooMuch), all, today))
+        assertEquals(2.0, savingOf(listOf(fits, tooMuch), all, today))
+        // Without a readable pack nothing can be said against the saving.
+        assertEquals(2.0, savingOf(listOf(packItem(450.0, null, packOffer(null, "1+1 gratis"))), all, today))
+    }
+
+    @Test
+    fun theSnackbarAddsThePackSizeUnlessTheTitleHasIt() {
+        val plain = packItem(450.0, null, packOffer("500 g", "1+1 gratis"))
+        assertTrue(plain.dealText(all, today, Strings.English).endsWith("(Chicken, 500 g)"))
+        val named = packItem(450.0, null, packOffer("500 g", "1+1 gratis").copy(title = "Kip 500 g"))
+        assertTrue(named.dealText(all, today, Strings.English).endsWith("(Kip 500 g)"))
+    }
 }

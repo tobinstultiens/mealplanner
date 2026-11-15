@@ -118,6 +118,8 @@ enum class Msg(private val english: String, private val dutch: String) {
     ALL_TICKED_OFF("All {0} ticked off", "Alle {0} afgevinkt"),
     BADGE_OFFER("offer", "aanbieding"),
     OFFER_FROM("from {0}", "vanaf {0}"),
+    PACKS_TO_TAKE("{0} × {1}", "{0} × {1}"),
+    PACKS_DEAL_NEEDS("{0} × {1} · deal needs {2}", "{0} × {1} · actie vraagt {2}"),
 
     // --- App shell and login
     YOUR_ACCOUNT("your account", "je account"),
@@ -571,6 +573,7 @@ enum class Plural(
 
     /** For an amount that may be fractional: the count only picks the form, `{1}` is the amount as written. */
     SERVINGS_AMOUNT("{1} serving", "{1} servings", "{1} portie", "{1} porties"),
+    PACK_PIECES("{0} piece", "{0} pieces", "{0} stuk", "{0} stuks"),
     INGREDIENTS_TO_LINK("{0} ingredient to link", "{0} ingredients to link", "{0} ingrediënt om te koppelen", "{0} ingrediënten om te koppelen"),
     STORE_ITEMS_ON_OFFER(
         "{1} · {0} item on offer", "{1} · {0} items on offer",
