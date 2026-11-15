@@ -1,8 +1,6 @@
 package dev.tobins.mealplanner.app
 
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.unit.dp
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -93,7 +91,30 @@ object AppUpdates {
             .takeIf { it.size == 3 }
 }
 
-/** Asks whether to install [update]; the notes are the release's changelog. */
+/**
+ * The release notes as lines of plain text: a Markdown bullet (`- ` or `* `) becomes a dot, blank
+ * lines and `#` headings are left out. Notes are written by the release script, so nothing more
+ * than bullets is expected.
+ */
+fun noteLines(notes: String): List<String> =
+    notes.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+        .map { if (it.startsWith("- ") || it.startsWith("* ")) "\u2022 " + it.drop(2).trim() else it }
+
+/** What the update dialog says: the version and, when the release has notes, "What's new" with them. */
+@androidx.compose.runtime.Composable
+fun UpdateBody(update: AppUpdate, currentVersion: String) {
+    val t = LocalStrings.current
+    val lines = noteLines(update.notes)
+    androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.Related)) {
+        androidx.compose.material3.Text(t(Msg.UPDATE_EXPLAIN, currentVersion))
+        if (lines.isNotEmpty()) {
+            androidx.compose.material3.Text(t(Msg.WHATS_NEW), style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+            lines.forEach { androidx.compose.material3.Text(it) }
+        }
+    }
+}
+
+/** Asks whether to install [update]; long notes scroll while the buttons stay in view. */
 @androidx.compose.runtime.Composable
 fun UpdateDialog(update: AppUpdate, currentVersion: String, onUpdate: () -> Unit, onLater: () -> Unit) {
     val t = LocalStrings.current
@@ -101,12 +122,8 @@ fun UpdateDialog(update: AppUpdate, currentVersion: String, onUpdate: () -> Unit
         onDismissRequest = onLater,
         title = { androidx.compose.material3.Text(t(Msg.UPDATE_AVAILABLE, update.version)) },
         text = {
-            androidx.compose.foundation.layout.Column(
-                androidx.compose.ui.Modifier.heightIn(max = 360.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.Related),
-            ) {
-                androidx.compose.material3.Text(t(Msg.UPDATE_EXPLAIN, currentVersion))
-                if (update.notes.isNotBlank()) MarkdownText(update.notes)
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                UpdateBody(update, currentVersion)
             }
         },
         confirmButton = { androidx.compose.material3.TextButton(onClick = onUpdate) { androidx.compose.material3.Text(t(Msg.UPDATE)) } },

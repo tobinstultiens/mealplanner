@@ -18,6 +18,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.requestFocus
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -136,6 +137,18 @@ enum class Shot(
     FOCUS_OUTLINED_BUTTON(heightDp = 200, content = { _, _ -> focusRing(1) }),
     FOCUS_ICON_BUTTON(heightDp = 200, content = { _, _ -> focusRing(2) }),
     SHELL(content = { _, settings -> shell(settings) }),
+    // The dialog's body: a dialog is a window of its own that the picture of the frame does not include.
+    UPDATE_NOTES(content = { _, _ ->
+        val update = AppUpdate(
+            "0.2.0",
+            "- Shopping mode: a list made for use in the shop\n- Dutch interface, with a language setting\n- Recipe photos from the cooking site\n- Swap never gives the same recipe again",
+            "", "",
+        )
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(LocalStrings.current(Msg.UPDATE_AVAILABLE, update.version), style = MaterialTheme.typography.headlineSmall)
+            UpdateBody(update, "0.1.1")
+        }
+    }),
     SETTINGS(heightDp = 1100, content = { _, _ ->
         ServerSettingsScreen(
             current = ServerSettings("https://mealplanner.example.nl"),

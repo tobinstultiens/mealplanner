@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.app
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -32,5 +34,27 @@ class AppUpdatesTest {
         assertNull(AppUpdates.parse(release("v0.1.0"), "0.1.0"))
         assertNull(AppUpdates.parse(release("v0.2.0", assets = "[]"), "0.1.0"))
         assertNull(AppUpdates.parse(release("v0.2.0", prerelease = true), "0.1.0"))
+    }
+
+    @Test
+    fun notesAreReadFromTheReleaseBody() {
+        val body = "- Dark mode\n- Shopping list"
+        val update = AppUpdates.parse("""{"tag_name":"v0.2.0","body":${Json.encodeToString(body)},"html_url":"u","assets":[{"name":"a.apk","browser_download_url":"d"}]}""", "0.1.0")!!
+        assertEquals(body, update.notes)
+    }
+
+    @Test
+    fun missingOrEmptyNotesGiveNoLines() {
+        val noBody = AppUpdates.parse("""{"tag_name":"v0.2.0","html_url":"u","assets":[{"name":"a.apk","browser_download_url":"d"}]}""", "0.1.0")!!
+        val nullBody = AppUpdates.parse("""{"tag_name":"v0.2.0","body":null,"html_url":"u","assets":[{"name":"a.apk","browser_download_url":"d"}]}""", "0.1.0")!!
+        assertEquals("", noBody.notes)
+        assertEquals("", nullBody.notes)
+        assertEquals(emptyList(), noteLines(noBody.notes))
+        assertEquals(emptyList(), noteLines("  \n\n"))
+    }
+
+    @Test
+    fun bulletsBecomePlainLines() {
+        assertEquals(listOf("\u2022 Dark mode", "\u2022 Shopping list", "Thanks"), noteLines("## What's changed\n- Dark mode\n* Shopping list\n\nThanks"))
     }
 }

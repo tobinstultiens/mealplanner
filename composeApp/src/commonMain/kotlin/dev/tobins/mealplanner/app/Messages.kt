@@ -165,6 +165,7 @@ enum class Msg(private val english: String, private val dutch: String) {
         "You have {0}. The update downloads and then asks Android to install it.",
         "Je hebt {0}. De update wordt gedownload en daarna vraagt Android of je hem wilt installeren.",
     ),
+    WHATS_NEW("What's new", "Wat is er nieuw"),
     UPDATE("Update", "Bijwerken"),
     LATER("Later", "Later"),
     LOGIN_NOT_STARTED("No login was started", "Er is geen inlog gestart"),
