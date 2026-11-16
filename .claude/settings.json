@@ -10,9 +10,6 @@
       "Bash(git commit *)",
       "Bash(git rebase *)",
       "Bash(git merge *)",
-      "Bash(git push -u origin issue-*)",
-      "Bash(git push origin issue-*)",
-      "Bash(git push --force-with-lease origin issue-*)",
       "Bash(gh pr create *)",
       "Bash(gh pr view *)",
       "Bash(gh pr diff *)",
@@ -45,6 +42,13 @@
       {
         "matcher": "Bash",
         "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gate-git-push.sh",
+            "if": "Bash(*git*push*)",
+            "timeout": 10,
+            "onFailure": "block"
+          },
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gate-pr-merge.sh",
