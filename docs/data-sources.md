@@ -167,7 +167,11 @@ pack size is another product. A row is one period in which the product was offer
 - The catalogue ingredient the product matches is kept by name (`ingredient`), from every account's
   ingredients and aliases, as the regular prices are kept by name. It is matched when a row starts; a row
   that matched nothing is matched again on each refresh, so it gets an ingredient an account adds later.
-- Recording happens in the transaction that stores the store's offers.
+- Recording happens once the store's offers are stored, in a transaction of its own: the history never
+  costs a store its offers. If recording fails, the error is logged and nothing of that refresh is
+  written, so the next good refresh continues the rows as if the night had not happened (as for a store
+  that fails). An offer whose dates are no ISO dates (`2026-11-16`) is left out of the history and logged,
+  and the store's other offers are recorded; the offer itself is stored with the others as always.
 
 With each row the deal is kept as the store wrote it and as a kind that can be compared (`Discounts.kind`,
 `DealTerms` in `shared/.../pricing/`). Only text after a "·" ("· Alleen online") is left out when reading the

@@ -65,6 +65,19 @@ class PriceChangesTest {
     }
 
     @Test
+    fun anOfferWhoseDatesAreNoIsoDatesIsNotSeen() {
+        val odd = listOf(
+            offer("Day first", until = "22-11-2026"),
+            offer("Slashes", from = "2026/11/16"),
+            offer("Time", until = "2026-11-22T23:59"),
+            offer("Five digits", until = "+12026-11-22"),
+            offer("Empty", from = ""),
+        )
+        assertEquals(listOf(false), odd.map(OfferSighting::readable).distinct())
+        assertEquals(listOf("Kaas"), saw(offer("Kaas"), *odd.toTypedArray()).map { it.offer.title })
+    }
+
+    @Test
     fun ofTwoOpenPeriodsAlikeTheLaterContinues() {
         val identity = saw(offer("Kaas")).single().identity
         val changes = changes(listOf(4L to identity, 9L to identity), saw(offer("Kaas"))) { it.identity }

@@ -68,8 +68,8 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
      * Fetches every store, or only those whose last successful fetch is older than
      * [olderThan]. A store that fails keeps its previous offers and records the error;
      * the other stores are not affected. What a store offers is also kept in the price
-     * history ([PriceHistoryRepository.recordOffers]), with the offers, in one transaction;
-     * a store that fails records nothing there either.
+     * history once its offers are stored ([recordHistory]); a store that fails records
+     * nothing there either.
      */
     suspend fun refresh(olderThan: Duration? = null, now: Instant = Instant.now()): OffersState {
         val fetched = q.selectSources().executeAsList().associate { it.store to it.fetchedAt }
@@ -90,10 +90,10 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                     }
                     q.ensureSource(source.store.name)
                     q.recordSuccess(now.toString(), source.store.name)
-                    history.pruneOffers(now)
-                    history.recordOffers(source.store, offers, ingredientOf, now)
                 }
                 log.info("Fetched ${offers.size} offers from ${source.store.label}")
+                // Looked up inside, so that a failure to read the catalogues is the history's too.
+                recordHistory(source.store, offers, { ingredientOf(it) }, now)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -105,5 +105,23 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
         val today = LocalDate.ofInstant(now, java.time.ZoneId.of("Europe/Amsterdam"))
         warnings(today).forEach { log.warn(it) }
         return state(today)
+    }
+
+    /**
+     * Keeps what [store]'s refresh saw in the price history, in a transaction of its own once the
+     * offers are stored: the history is kept on the side, so whatever goes wrong there is logged and
+     * never costs the store its offers (issue 116). A failed recording writes nothing, so the history
+     * stays as the last good one left it, and the next good refresh continues its periods from there:
+     * no gap, and nothing twice.
+     */
+    private fun recordHistory(store: Store, offers: List<Offer>, ingredientOf: (Offer) -> String?, now: Instant) {
+        try {
+            db.transaction {
+                history.pruneOffers(now)
+                history.recordOffers(store, offers, ingredientOf, now)
+            }
+        } catch (e: Exception) {
+            log.warn("Could not keep the offers of ${store.label} in the price history; the offers themselves are stored", e)
+        }
     }
 }

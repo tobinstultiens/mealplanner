@@ -1,5 +1,9 @@
 package dev.tobins.mealplanner.server
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Store
@@ -9,6 +13,7 @@ import dev.tobins.mealplanner.server.offers.OfferSource
 import dev.tobins.mealplanner.server.prices.PriceSource
 import dev.tobins.mealplanner.server.prices.StoreProduct
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.abs
@@ -22,7 +27,8 @@ class PriceHistoryTest {
         override suspend fun fetch(): List<Offer> = offers ?: error("${store.label} is down")
     }
 
-    private val db: Database = openDatabase("jdbc:sqlite::memory:").second
+    private val opened = openDatabase("jdbc:sqlite::memory:")
+    private val db: Database = opened.second
 
     /** Nightly refreshes from Monday 16 November 2026, 03:00 UTC. */
     private fun night(n: Int): Instant = Instant.parse("2026-11-16T03:00:00Z").plus(Duration.ofDays(n.toLong()))
@@ -33,6 +39,65 @@ class PriceHistoryTest {
     private fun history(): List<OfferHistory> = db.priceHistoryQueries.selectOfferHistory().executeAsList()
 
     private fun refresh(source: FakeSource, n: Int) = runBlocking { OfferRepository(db, listOf(source)).refresh(now = night(n)) }
+
+    /** Each product's periods in the history, by title: when each was first and last seen, as nights. */
+    private fun periods(): Map<String, List<Pair<Int, Int>>> {
+        fun nightOf(seen: String) = Duration.between(night(0), Instant.parse(seen)).toDays().toInt()
+        return history().groupBy({ it.title }, { nightOf(it.firstSeen) to nightOf(it.lastSeen) })
+    }
+
+    /** The titles of the store offers stored now, and whether the last refresh of each store succeeded. */
+    private fun stored(): Pair<List<String>, List<Pair<String?, String?>>> =
+        db.planQueries.selectOffersValidOn("2026-11-18").executeAsList().map { it.title } to
+            db.planQueries.selectSources().executeAsList().map { it.fetchedAt to it.error }
+
+    /** The warnings [logger] logs while [block] runs. */
+    private fun warningsOf(logger: Class<*>, block: () -> Unit): List<String> {
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        val log = LoggerFactory.getLogger(logger) as Logger
+        log.addAppender(appender)
+        try {
+            block()
+        } finally {
+            log.detachAppender(appender)
+        }
+        return appender.list.filter { it.level == Level.WARN }.map { it.formattedMessage }
+    }
+
+    @Test
+    fun anOfferWithDatesTheHistoryCannotReadIsLeftOutOfItAndCostsTheStoreNoOffers() {
+        val ah = FakeSource(Store.AH, listOf(offer("Kaas"), offer("Ham").copy(validUntil = "29-11-2026")))
+        val warned = warningsOf(PriceHistoryRepository::class.java) { refresh(ah, 0) }
+
+        assertEquals(listOf("Ham", "Kaas") to listOf(night(0).toString() to null), stored(), "the store's offers are refreshed")
+        assertEquals(2, db.planQueries.countOffers().executeAsOne().n, "both offers are stored, as always")
+        assertEquals(mapOf("Kaas" to listOf(0 to 0)), periods(), "the rest of the store is recorded")
+        assertTrue(warned.single().contains("Ham, 2026-11-16 to 29-11-2026"), "$warned")
+
+        // The next good refresh records normally: no gap in what was recorded, nothing twice.
+        ah.offers = listOf(offer("Kaas"), offer("Ham"))
+        refresh(ah, 1)
+        assertEquals(mapOf("Ham" to listOf(1 to 1), "Kaas" to listOf(0 to 1)), periods())
+    }
+
+    @Test
+    fun aFailureToRecordTheHistoryIsLoggedAndLeavesTheStoresOffersRefreshed() {
+        val ah = FakeSource(Store.AH, listOf(offer("Kaas")))
+        refresh(ah, 0)
+        // Whatever the history cannot write (here: the database refuses every new row) is the history's alone.
+        opened.first.execute(null, "CREATE TRIGGER broken BEFORE INSERT ON offerHistory BEGIN SELECT RAISE(ABORT, 'no new rows'); END", 0)
+        ah.offers = listOf(offer("Kaas"), offer("Ham"))
+        val warned = warningsOf(OfferRepository::class.java) { refresh(ah, 1) }
+
+        assertEquals(listOf("Ham", "Kaas") to listOf(night(1).toString() to null), stored(), "the offers are refreshed")
+        assertTrue(warned.single().contains("price history"), "$warned")
+        assertEquals(mapOf("Kaas" to listOf(0 to 0)), periods(), "nothing of that refresh is recorded, not even what continued")
+
+        // The next good refresh continues from the last recording: no false gap, no row twice.
+        opened.first.execute(null, "DROP TRIGGER broken", 0)
+        refresh(ah, 2)
+        assertEquals(mapOf("Ham" to listOf(2 to 2), "Kaas" to listOf(0 to 2)), periods())
+    }
 
     @Test
     fun theSameOffersRefreshedThreeTimesAreOneRowPerProduct() {
