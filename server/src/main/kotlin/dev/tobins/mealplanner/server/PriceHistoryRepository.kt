@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.pricing.DealKind
 import dev.tobins.mealplanner.pricing.DealTerms
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.OfferHistory
+import dev.tobins.mealplanner.server.db.OfferRecording
 import dev.tobins.mealplanner.server.db.RegularPriceHistory
 import dev.tobins.mealplanner.server.history.OfferIdentity
 import dev.tobins.mealplanner.server.history.OfferSighting
@@ -15,6 +16,7 @@ import dev.tobins.mealplanner.server.history.changes
 import dev.tobins.mealplanner.server.history.normalised
 import dev.tobins.mealplanner.server.offers.OfferMatcher
 import org.slf4j.LoggerFactory
+import java.net.URI
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -54,11 +56,14 @@ class PriceHistoryRepository(private val db: Database) {
      * that saw nothing (an empty page that did not fail) writes nothing, so that stays the last recording
      * and the refresh ends no offer. A refresh no later than the last one recorded (two at once) records
      * nothing either, rather than put its older view on top. An offer whose dates are no ISO dates is left
-     * out and logged ([OfferSighting.readable]); the rest of the store's offers are recorded.
+     * out and logged ([OfferSighting.readable]); the rest of the store's offers are recorded. A refresh that
+     * records anything also leaves an `offerRecording` row, so that a product missing from the history on a
+     * night the store was read can be told from a night it was not.
      *
      * [ingredientOf] is asked only for a period that starts, or one still without an ingredient: what a
      * period is for stays as it was matched, and one that matched nothing gets the ingredient an account
-     * adds later.
+     * adds later. The category, address and price per litre are not part of what a period is (see
+     * [OfferIdentity]): a continued period gets them only where it has none yet, and keeps the ones it has.
      */
     fun recordOffers(store: Store, offers: List<Offer>, ingredientOf: (Offer) -> String?, now: Instant) {
         val seen = seen(now)
@@ -72,13 +77,25 @@ class PriceHistoryRepository(private val db: Database) {
             )
         }
         val saw = OfferSighting.of(offers, LocalDate.ofInstant(now, ZONE))
+        if (saw.isEmpty()) return
         val open = last?.let { q.selectOpenOffers(store.name, it).executeAsList() }.orEmpty().associateBy { it.id }
         val (continued, started) = changes(open.values.map { it.id to it.identity() }, saw) { it.identity }
         for ((id, sighting) in continued) {
-            val ingredient = open.getValue(id).ingredient ?: ingredientOf(sighting.offer)
-            q.continueOfferPeriod(seen, sighting.offer.validFrom, sighting.offer.validUntil, ingredient, id)
+            val offer = sighting.offer
+            val ingredient = open.getValue(id).ingredient ?: ingredientOf(offer)
+            q.continueOfferPeriod(
+                lastSeen = seen,
+                validFrom = offer.validFrom,
+                validUntil = offer.validUntil,
+                ingredient = ingredient,
+                category = offer.category,
+                url = httpsAddress(offer.url),
+                eurosPerLitre = DealTerms.of(offer).eurosPerLitre,
+                id = id,
+            )
         }
         for (sighting in started) insert(sighting, ingredientOf(sighting.offer), seen)
+        q.insertOfferRecording(store.name, seen, saw.size.toLong())
     }
 
     private fun insert(sighting: OfferSighting, ingredient: String?, seen: String) {
@@ -108,8 +125,18 @@ class PriceHistoryRepository(private val db: Database) {
             validUntil = offer.validUntil,
             firstSeen = seen,
             lastSeen = seen,
+            category = offer.category,
+            url = httpsAddress(offer.url),
+            eurosPerLitre = terms.eurosPerLitre,
         )
     }
+
+    /**
+     * The offer's address at the store, kept only when it is an https address: the parsers build them so,
+     * and an app may open it one day, so whatever else a page might carry is not kept.
+     */
+    private fun httpsAddress(url: String?): String? =
+        url?.takeIf { runCatching { URI(it) }.getOrNull()?.let { uri -> uri.scheme == "https" && !uri.host.isNullOrEmpty() } == true }
 
     private fun OfferHistory.identity() =
         OfferIdentity(ProductKey(Store.valueOf(store), productKey, packKey), price, originalPrice, normalised(deal))
@@ -130,8 +157,22 @@ class PriceHistoryRepository(private val db: Database) {
     private fun RegularPriceHistory.identity() =
         RegularPriceSighting(name, Store.valueOf(store), product, packSize, packPrice, eurosPerKg).identity
 
-    /** Removes the offers last seen more than [KEEP_YEARS] years before [now]. */
-    fun pruneOffers(now: Instant) = q.pruneOffers(cutoff(now))
+    /**
+     * The periods of [stores] seen at any time from [from] to [until] (both included), in no set order: those
+     * that began by [until] and were last seen from [from] on. With [recordings], what judging a deal reads.
+     */
+    fun offerPeriods(stores: Collection<Store>, from: Instant, until: Instant): List<OfferHistory> =
+        q.selectOfferPeriods(stores.map { it.name }, seen(from), seen(until)).executeAsList()
+
+    /** When [store]'s offers were recorded from [from] to [until] (both included), oldest first. */
+    fun recordings(store: Store, from: Instant, until: Instant): List<OfferRecording> =
+        q.selectOfferRecordings(store.name, seen(from), seen(until)).executeAsList()
+
+    /** Removes the offers, and the recordings, last seen more than [KEEP_YEARS] years before [now]. */
+    fun pruneOffers(now: Instant) {
+        q.pruneOffers(cutoff(now))
+        q.pruneOfferRecordings(cutoff(now))
+    }
 
     /** Removes the regular prices last seen more than [KEEP_YEARS] years before [now]. */
     fun pruneRegularPrices(now: Instant) = q.pruneRegularPrices(cutoff(now))

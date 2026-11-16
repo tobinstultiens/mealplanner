@@ -103,6 +103,39 @@ class DealKindTest {
     }
 
     @Test
+    fun aPackWrittenAsAVolumeHasAPricePerLitre() {
+        DealTerms.of(offer(null, price = 2.99, packSize = "1,5 l")).let { near(1.993, it.eurosPerLitre); assertNull(it.eurosPerKg) }
+        // Both packs of the deal together: 7,00 for 2 x 1,98 l.
+        near(7.0 / 3.96, DealTerms.of(offer("2 voor 7,00", packSize = "6 x 330 ml")).eurosPerLitre)
+        near(4.0, DealTerms.of(offer("voor 3,00", packSize = "75 cl")).eurosPerLitre)
+        // At the deal's share, like the price per kg; from the title when the pack size gives no size.
+        near(1.0, DealTerms.of(offer("1+1 gratis", originalPrice = 2.0, title = "AH Halfvolle melk 1 liter")).eurosPerLitre)
+    }
+
+    @Test
+    fun aPackWithoutAVolumeHasNoPricePerLitre() {
+        DealTerms.of(offer("voor 2,00", packSize = "500 g")).let { near(4.0, it.eurosPerKg); assertNull(it.eurosPerLitre) }
+        assertNull(DealTerms.of(offer("voor 2,00", packSize = "4 stuks")).eurosPerLitre)
+        // The pack size is a weight: a volume in the title does not make it one.
+        assertNull(DealTerms.of(offer("voor 2,00", packSize = "500 g", title = "Saus 1 l")).eurosPerLitre)
+        // A price by weight has no price per pack to divide.
+        assertNull(DealTerms.of(offer("1,00 per kilo", packSize = "1 l")).eurosPerLitre)
+        assertNull(DealTerms.of(offer("1+1 gratis", price = 2.0, packSize = "1 l")).eurosPerLitre, "no price before")
+    }
+
+    @Test
+    fun aVolumeIsReadInMillilitresAndAWeightIsNot() {
+        assertEquals(1500.0, PackSize.millilitres("1,5 l"))
+        assertEquals(1980.0, PackSize.millilitres("6 x 330 ml"))
+        assertEquals(750.0, PackSize.millilitres("75 cl"))
+        assertEquals(1000.0, PackSize.millilitres("1 liter"))
+        assertEquals(500.0, PackSize.millilitres("500 g, 500 ml"), "the volume, not the weight before it")
+        assertNull(PackSize.millilitres("500 g"))
+        assertNull(PackSize.millilitres("4 stuks"))
+        assertNull(PackSize.millilitres(null))
+    }
+
+    @Test
     fun aShareAboveTheFullPriceIsNotKept() {
         assertNull(DealTerms.of(offer("voor 5,00", originalPrice = 4.0)).paidShare)
     }

@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.server
 
+import app.cash.sqldelight.db.QueryResult
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
@@ -14,6 +15,7 @@ import dev.tobins.mealplanner.server.prices.PriceSource
 import dev.tobins.mealplanner.server.prices.StoreProduct
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
+import java.io.File
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.abs
@@ -158,6 +160,120 @@ class PriceHistoryTest {
     }
 
     @Test
+    fun aPeriodKeepsTheStoresCategoryItsAddressAndItsPricePerLitre() {
+        val ah = FakeSource(
+            Store.AH,
+            listOf(
+                offer("AH Olijfolie", "voor 4,50", packSize = "750 ml").copy(category = "Pasta, rijst en wereldkeuken", url = "https://www.ah.nl/producten/product/wi1234"),
+                offer("AH Kipfilet", "voor 5,00", packSize = "500 g").copy(category = "Vlees", url = "http://www.ah.nl/producten/product/wi5678"),
+                offer("AH Melk", "voor 1,00", packSize = "1 l").copy(url = "javascript:alert(1)"),
+            ),
+        )
+        refresh(ah, 0)
+
+        val rows = history().associateBy { it.title }
+        val oil = rows.getValue("AH Olijfolie")
+        assertEquals("Pasta, rijst en wereldkeuken" to "https://www.ah.nl/producten/product/wi1234", oil.category to oil.url)
+        near(6.0, oil.eurosPerLitre)
+        assertNull(oil.eurosPerKg, "a volume is no weight")
+        val chicken = rows.getValue("AH Kipfilet")
+        assertEquals("Vlees" to null, chicken.category to chicken.url, "only an https address is kept")
+        assertEquals(null to 10.0, chicken.eurosPerLitre to chicken.eurosPerKg)
+        assertEquals(null to null, rows.getValue("AH Melk").let { it.category to it.url })
+    }
+
+    @Test
+    fun aContinuedPeriodKeepsItsFirstCategoryAndAddressAndGetsOnesItLacked() {
+        val first = offer("AH Passata", "voor 1,00", packSize = "500 g").copy(category = "Soepen en sauzen", url = null)
+        val ah = FakeSource(Store.AH, listOf(first))
+        refresh(ah, 0)
+        // The store moves the product and gives an address: the same offer, so the same period.
+        ah.offers = listOf(first.copy(category = "Pasta en sauzen", url = "https://www.ah.nl/producten/product/wi42"))
+        refresh(ah, 1)
+        ah.offers = listOf(first.copy(category = "Wereldkeuken", url = "https://www.ah.nl/producten/product/wi43"))
+        refresh(ah, 2)
+
+        val row = history().single()
+        assertEquals(night(0).toString() to night(2).toString(), row.firstSeen to row.lastSeen, "no new row for a category or an address")
+        assertEquals("Soepen en sauzen" to "https://www.ah.nl/producten/product/wi42", row.category to row.url)
+    }
+
+    @Test
+    fun eachRefreshThatRecordsLeavesARecordingAndOneThatFailsOrSeesNothingLeavesNone() {
+        val ah = FakeSource(Store.AH, listOf(offer("Kaas"), offer("Ham"), offer("Ham")))
+        refresh(ah, 0)
+        ah.offers = null
+        refresh(ah, 1)
+        ah.offers = listOf(offer("Kaas"), offer("Ham", "1+1 gratis"), offer("Brood"))
+        refresh(ah, 2)
+        ah.offers = emptyList()
+        refresh(ah, 3)
+        // Only offers that have ended: nothing is recorded, so nothing was read either.
+        ah.offers = listOf(offer("Kaas").copy(validUntil = "2026-11-18"))
+        refresh(ah, 4)
+        // Older than the last recording: nothing.
+        ah.offers = listOf(offer("Kaas"))
+        refresh(ah, 1)
+
+        val recordings = PriceHistoryRepository(db).recordings(Store.AH, night(0), night(10)).map { it.seenAt to it.offers }
+        assertEquals(listOf(night(0).toString() to 2L, night(2).toString() to 3L), recordings, "the same offer twice is one sighting")
+        assertEquals(emptyList(), PriceHistoryRepository(db).recordings(Store.JUMBO, night(0), night(10)), "per store")
+    }
+
+    @Test
+    fun aFailureToRecordLeavesNoRecordingEither() {
+        val ah = FakeSource(Store.AH, listOf(offer("Kaas")))
+        refresh(ah, 0)
+        opened.first.execute(null, "CREATE TRIGGER broken BEFORE INSERT ON offerHistory BEGIN SELECT RAISE(ABORT, 'no new rows'); END", 0)
+        ah.offers = listOf(offer("Kaas"), offer("Ham"))
+        refresh(ah, 1)
+        assertEquals(listOf(night(0).toString()), PriceHistoryRepository(db).recordings(Store.AH, night(0), night(10)).map { it.seenAt })
+    }
+
+    @Test
+    fun thePeriodsAndRecordingsBetweenTwoInstantsAreReadByStore() {
+        val ah = FakeSource(Store.AH, listOf(offer("Kaas")))
+        val jumbo = FakeSource(Store.JUMBO, listOf(offer("Ham", store = Store.JUMBO)))
+        val lidl = FakeSource(Store.LIDL, listOf(offer("Brood", store = Store.LIDL)))
+        refresh(ah, 0)
+        refresh(ah, 1)
+        refresh(jumbo, 3)
+        refresh(lidl, 5)
+        ah.offers = listOf(offer("Kaas", "1+1 gratis"))
+        refresh(ah, 6)
+
+        val history = PriceHistoryRepository(db)
+        fun titles(stores: Collection<Store>, from: Int, until: Int) =
+            history.offerPeriods(stores, night(from), night(until)).map { "${it.title} ${it.deal}" }.sorted()
+        assertEquals(listOf("Kaas 25% korting"), titles(listOf(Store.AH), 1, 5), "a period running into the range")
+        assertEquals(listOf("Kaas 1+1 gratis", "Kaas 25% korting"), titles(listOf(Store.AH), 0, 6))
+        assertEquals(listOf("Ham 25% korting", "Kaas 25% korting"), titles(Store.entries, 1, 4))
+        assertEquals(listOf("Brood 25% korting", "Ham 25% korting"), titles(listOf(Store.JUMBO, Store.LIDL), 0, 6))
+        assertEquals(emptyList(), titles(Store.entries, 2, 2), "nothing was seen that night")
+        assertEquals(listOf(night(1), night(6)).map { it.toString() }, history.recordings(Store.AH, night(1), night(6)).map { it.seenAt })
+    }
+
+    /** The query plan of the query [label] in PriceHistory.sq, with its parameters bound to [values]. */
+    private fun planOf(label: String, vararg values: String): String {
+        val source = File("src/main/sqldelight/dev/tobins/mealplanner/server/db/PriceHistory.sq").readText()
+        val sql = source.substringAfter("\n$label:\n").substringBefore(";")
+            .replace(":stores", "(?, ?)").replace(Regex(""":\w+"""), "?")
+        return opened.first.executeQuery(null, "EXPLAIN QUERY PLAN $sql", { cursor ->
+            val steps = mutableListOf<String>()
+            while (cursor.next().value) steps += cursor.getString(3).orEmpty()
+            QueryResult.Value(steps.joinToString("; "))
+        }, values.size) { values.forEachIndexed { i, value -> bindString(i, value) } }.value
+    }
+
+    @Test
+    fun readingThePeriodsAndRecordingsUsesAnIndex() {
+        val periods = planOf("selectOfferPeriods", "AH", "JUMBO", night(0).toString(), night(7).toString())
+        assertTrue(periods.contains("USING INDEX offerHistory_seen (store=? AND lastSeen>?)"), periods)
+        val recordings = planOf("selectOfferRecordings", "AH", night(0).toString(), night(7).toString())
+        assertTrue(recordings.contains("USING INDEX sqlite_autoindex_offerRecording_1 (store=? AND seenAt>? AND seenAt<?)"), recordings)
+    }
+
+    @Test
     fun storesAreRecordedApartAndTheirFailuresStayApart() {
         val ah = FakeSource(Store.AH, listOf(offer("Kaas")))
         val jumbo = FakeSource(Store.JUMBO, listOf(offer("Kaas", store = Store.JUMBO)))
@@ -257,6 +373,8 @@ class PriceHistoryTest {
         ah.offers = listOf(offer("Now"))
         refresh(ah, 0)
         assertEquals(listOf("Now", "Recent"), history().map { it.title }.sorted())
+        val recorded = PriceHistoryRepository(db).recordings(Store.AH, Instant.parse("2024-01-01T00:00:00Z"), night(0)).map { it.seenAt }
+        assertEquals(listOf("2024-11-30T03:00:00Z", night(0).toString()), recorded, "the recordings go with them")
     }
 
     private class FakeStore(var products: List<StoreProduct>) : PriceSource {

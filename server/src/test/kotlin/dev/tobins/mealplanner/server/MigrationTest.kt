@@ -13,6 +13,7 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -94,6 +95,7 @@ class MigrationTest {
      * by week alone. The tables as version 13 had them, empty.
      */
     private fun dropStockSources(statement: Statement) {
+        dropVerdictRecords(statement)
         statement.execute("DROP TABLE stock")
         statement.execute("DROP TABLE onHand")
         statement.execute("DROP TABLE stockUse")
@@ -108,6 +110,12 @@ class MigrationTest {
                 "FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE)",
         )
         statement.execute("CREATE INDEX stockUse_ingredient ON stockUse(ingredientId)")
+    }
+
+    /** Version 15 added the category, address and price per litre to the history, and its recordings (14.sqm). */
+    private fun dropVerdictRecords(statement: Statement) {
+        for (column in listOf("category", "url", "eurosPerLitre")) statement.execute("ALTER TABLE offerHistory DROP COLUMN $column")
+        statement.execute("DROP TABLE offerRecording")
     }
 
     @Test
@@ -135,7 +143,7 @@ class MigrationTest {
         val tables = listOf(
             "appUser", "userMeta", "recipe", "recipeIngredient", "ingredient", "ingredientAlias", "onHand",
             "ingredientPrice", "planMeal", "shoppingCheck", "shoppingExtra", "stockUse", "offer", "foodLog", "weight",
-            "offerHistory", "regularPriceHistory", "stock",
+            "offerHistory", "regularPriceHistory", "stock", "offerRecording",
         )
         for (table in tables) {
             assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
@@ -659,6 +667,77 @@ class MigrationTest {
         ingredients.takeBackOnHand(2, LocalDate.parse(next), StockSource.BUY_AHEAD)
         ingredients.takeBackOnHand(3, LocalDate.parse(next), StockSource.BUY_AHEAD)
         assertEquals(mapOf(3L to 337.5), ingredients.pantry().onHandGrams)
+        driver.close()
+    }
+
+    /** Every table of the database at [url] as SQLite has it ([shape]), by name. */
+    private fun shapes(url: String): Map<String, List<String>> =
+        single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+            .associateWith { shape(url, it) }
+
+    @Test
+    fun aVersionFourteenDatabaseKeepsEveryHistoryRowWithTheNewColumnsEmpty() {
+        val file = createTempFile("v14", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val open = "2026-11-16T03:00:00Z"
+        // Version 14 is today's schema without the history's category, address and price per litre, and without recordings.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropVerdictRecords(statement)
+                // An oil offer still open at the last recording, one that ended, and another store's.
+                statement.execute(
+                    "INSERT INTO offerHistory (id, store, productKey, packKey, title, packSize, ingredient, deal, dealKind, dealPacks, dealFree, " +
+                        "dealPercent, dealEuros, price, originalPrice, paidShare, eurosPerKg, eurosPerPiece, validFrom, validUntil, firstSeen, lastSeen) VALUES " +
+                        "(1, 'AH', 'ah olijfolie', '750 ml', 'AH Olijfolie', '750 ml', 'Olive oil', 'voor 4,50', 'LOWER_PRICE', 1, NULL, NULL, 4.5, " +
+                        "NULL, 6.0, 0.75, NULL, NULL, '2026-11-16', '2026-11-22', '2026-11-14T03:00:00Z', '$open'), " +
+                        "(2, 'AH', 'ah kipfilet', '500 g', 'AH Kipfilet', '500 g', NULL, '1+1 gratis', 'X_PLUS_Y_FREE', 2, 1, NULL, NULL, " +
+                        "NULL, 8.0, 0.5, 8.0, NULL, '2026-11-09', '2026-11-15', '2026-11-09T03:00:00Z', '2026-11-15T03:00:00Z'), " +
+                        "(3, 'JUMBO', 'kaas', '', 'Kaas', NULL, NULL, '25% korting', 'PERCENT_OFF', 1, NULL, 25.0, NULL, " +
+                        "2.25, 3.0, 0.75, NULL, NULL, '2026-11-16', '2026-11-22', '$open', '$open')",
+                )
+                statement.execute(
+                    "INSERT INTO regularPriceHistory (name, store, product, packSize, packPrice, eurosPerKg, firstSeen, lastSeen) " +
+                        "VALUES ('Olive oil', 'AH', 'AH Olijfolie', '750 ml', 6.0, 8.0, '2026-11-14T00:00:00Z', '2026-11-14T00:00:00Z')",
+                )
+                statement.execute("PRAGMA user_version = 14")
+            }
+        }
+        // Each history row in full, as text, by the columns version 14 has.
+        val oldColumns = listOf("offerHistory", "regularPriceHistory").associateWith { columns(url, it) }
+        fun rows() = oldColumns.map { (table, columns) ->
+            single(url, "SELECT ${columns.joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }} FROM $table ORDER BY id")
+        }
+        val before = rows()
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, rows(), "every row as it was")
+        assertEquals("0", single(url, "SELECT count(*) FROM offerHistory WHERE category IS NOT NULL OR url IS NOT NULL OR eurosPerLitre IS NOT NULL"))
+        assertEquals("0", single(url, "SELECT count(*) FROM offerRecording"), "recordings start with the next refresh")
+
+        // The next refresh continues the open period without a new row, and gives it what it lacked.
+        val ah = object : OfferSource {
+            override val store = Store.AH
+            override suspend fun fetch() = listOf(
+                Offer(
+                    Store.AH, "AH Olijfolie", "voor 4,50", null, 6.0, "750 ml", "Olie en azijn", "2026-11-16", "2026-11-22",
+                    "https://www.ah.nl/producten/product/wi1234",
+                ),
+            )
+        }
+        runBlocking { OfferRepository(db, listOf(ah)).refresh(now = Instant.parse("2026-11-17T03:00:00Z")) }
+        val periods = db.priceHistoryQueries.selectOfferHistory().executeAsList().filter { it.store == "AH" }
+        assertEquals(listOf(2L, 1L), periods.map { it.id }, "no new row")
+        val oil = periods.single { it.id == 1L }
+        assertEquals(listOf("2026-11-17T03:00:00Z", "Olie en azijn", "https://www.ah.nl/producten/product/wi1234"), listOf(oil.lastSeen, oil.category, oil.url))
+        assertTrue(oil.eurosPerLitre?.let { abs(it - 6.0) < 1e-9 } == true, "4,50 for 750 ml: ${oil.eurosPerLitre}")
+        assertEquals("AH:1", single(url, "SELECT store || ':' || offers FROM offerRecording"))
         driver.close()
     }
 }
