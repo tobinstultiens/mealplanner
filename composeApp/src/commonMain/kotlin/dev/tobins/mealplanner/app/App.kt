@@ -130,6 +130,8 @@ fun App(
     val start = remember { parseRoute(routes.read()).openScreens() }
     var tab by rememberSaveable { mutableStateOf(start.tab) }
     var openRecipeId by rememberSaveable { mutableStateOf(start.recipeId) }
+    // The planned meal the open recipe was opened from, for how much to cook; none from the recipe list.
+    var openMeal by rememberSaveable(stateSaver = MealToCook.Saver) { mutableStateOf<MealToCook?>(null) }
     // Null: no editor open. -1: a new recipe. Otherwise the id of the recipe being edited.
     var editing by rememberSaveable { mutableStateOf(start.editing) }
     var mapping by rememberSaveable { mutableStateOf(start.mapping) }
@@ -297,7 +299,7 @@ fun App(
                     }
                     recipeId != null -> {
                         BackHandler(enabled = true) { openRecipeId = null }
-                        RecipeDetailScreen(api, recipeId, nutritionSource, onBack = { openRecipeId = null }, onEdit = { editing = recipeId })
+                        RecipeDetailScreen(api, recipeId, nutritionSource, onBack = { openRecipeId = null }, onEdit = { editing = recipeId }, meal = openMeal)
                     }
                     else -> Scaffold(
                         bottomBar = {
@@ -318,12 +320,12 @@ fun App(
                         val bottom = PaddingValues(bottom = padding.calculateBottomPadding())
                         Box(Modifier.padding(bottom).consumeWindowInsets(bottom)) {
                             when (tab) {
-                                Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenPlan = { tab = Tab.PLAN })
-                                Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it }, onOpenProfile = { profileOpen = true })
+                                Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it.recipeId; openMeal = it.toCook() }, onOpenPlan = { tab = Tab.PLAN })
+                                Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it.recipeId; openMeal = it.toCook() }, onOpenProfile = { profileOpen = true })
                                 Tab.SHOPPING -> ShoppingScreen(shopping, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
                                 Tab.RECIPES -> RecipeListScreen(
                                     api,
-                                    onOpen = { openRecipeId = it },
+                                    onOpen = { openRecipeId = it; openMeal = null },
                                     onOpenMapping = { mapping = true },
                                     onNewRecipe = { editing = -1 },
                                 )

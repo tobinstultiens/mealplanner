@@ -51,7 +51,7 @@ import kotlin.math.roundToInt
 /** The week plan: one card per day with its meals and totals against the targets. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -> Unit) {
+fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfile: () -> Unit) {
     val t = LocalStrings.current
     var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
     var state by remember { mutableStateOf<Load<WeekPlan>>(Load.Loading) }
@@ -218,7 +218,7 @@ private fun DayCard(
     missingSlots: List<MealSlot>,
     enabled: Boolean,
     pictures: Map<Long, String>,
-    onOpenRecipe: (Long) -> Unit,
+    onOpenRecipe: (PlannedMeal) -> Unit,
     onReroll: (PlannedMeal) -> Unit,
     onGenerate: (PlannedMeal) -> Unit,
     onChoose: (Int, MealSlot) -> Unit,
@@ -242,7 +242,7 @@ private fun DayCard(
             }
             for (meal in day.meals) {
                 // The whole meal opens its recipe; the two icon buttons take their own taps.
-                Column(Modifier.fillMaxWidth().clickable { onOpenRecipe(meal.recipeId) }) {
+                Column(Modifier.fillMaxWidth().clickable { onOpenRecipe(meal) }) {
                     // The title gets the full width left of the icon buttons; the numbers sit below.
                     Row(verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f).padding(vertical = 4.dp)) {

@@ -441,8 +441,11 @@ class PlanTest {
         val lunch = after.days[2].meals.first { it.slot == MealSlot.LUNCH }
         assertNotEquals(old.recipeId, lunch.recipeId)
         assertFalse(lunch.leftover)
-        val others = { plan: WeekPlan -> plan.days.flatMap { it.meals }.filterNot { it.day == 2 && it.slot == MealSlot.LUNCH } }
+        // The dinner before it no longer cooks for that lunch.
+        val others = { plan: WeekPlan -> plan.days.flatMap { it.meals }.filterNot { (it.day == 2 && it.slot == MealSlot.LUNCH) || (it.day == 1 && it.slot == MealSlot.DINNER) }.map { it.copy(cookPortions = null) } }
         assertEquals(others(before), others(after))
+        val dinner = after.days[1].meals.first { it.slot == MealSlot.DINNER }
+        assertEquals(dinner.portions, dinner.cookPortions)
     }
 
     @Test
@@ -781,5 +784,68 @@ class PlanTest {
         http.post("/api/recipes/generate") { setBody(GenerateRequest()) }
         assertEquals(listOf("Korean"), fake.contexts.last().likes)
         assertEquals(listOf("bee"), fake.contexts.last().dislikes)
+    }
+
+    @Test
+    fun aMealSaysHowManyServingsToCookForItAndTheDayAgrees() = testApplication {
+        val http = start().ready()
+        val plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        val dinner = plan.meal(1, MealSlot.DINNER)!!
+        val lunch = plan.meal(2, MealSlot.LUNCH)!!
+        assertTrue(lunch.leftover)
+        assertEquals(dinner.portions + lunch.portions, dinner.cookPortions)
+        assertEquals(0.0, lunch.cookPortions, "cooked the evening before")
+
+        // The day says the same as the week.
+        val day = http.get("/api/days/2026-11-17").body<DayView>().meals.single { it.slot == MealSlot.DINNER }
+        assertEquals(dinner.cookPortions, day.cookPortions)
+        assertEquals(0.0, http.get("/api/days/2026-11-18").body<DayView>().meals.single { it.slot == MealSlot.LUNCH }.cookPortions)
+
+        // A breakfast is cooked as eaten.
+        val bowl = http.post("/api/recipes") { setBody(RecipeInput("Beef bowl", 1, "300 | g | beef")) }.body<RecipeDetail>().summary
+        val breakfast = http.put("/api/plans/$week/meals/0/breakfast") { setBody(MealChoice(bowl.id)) }.body<WeekPlan>().meal(0, MealSlot.BREAKFAST)!!
+        assertEquals(breakfast.portions, breakfast.cookPortions)
+    }
+
+    @Test
+    fun aDinnerWhoseLeftoverLunchWasSwappedCooksOnlyItsOwn() = testApplication {
+        val http = start().ready()
+        val before = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        val dinner = before.meal(1, MealSlot.DINNER)!!
+        val other = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.id != dinner.recipeId && it.title.startsWith("Dinner") }
+
+        val plan = http.put("/api/plans/$week/meals/2/lunch") { setBody(MealChoice(other.id)) }.body<WeekPlan>()
+        assertEquals(dinner.portions, plan.meal(1, MealSlot.DINNER)!!.cookPortions)
+        assertEquals(plan.meal(2, MealSlot.LUNCH)!!.portions, plan.meal(2, MealSlot.LUNCH)!!.cookPortions, "a lunch of its own is cooked")
+    }
+
+    @Test
+    fun aSkippedMealCooksNothingAndTheLunchOfASkippedDinnerCooksItself() = testApplication {
+        val http = start().ready()
+        val before = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        val lunch = before.meal(2, MealSlot.LUNCH)!!
+
+        val plan = http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.SKIPPED) }.body<WeekPlan>()
+        assertEquals(0.0, plan.meal(1, MealSlot.DINNER)!!.cookPortions)
+        assertEquals(lunch.portions, plan.meal(2, MealSlot.LUNCH)!!.cookPortions, "the shopping list still buys for it")
+
+        val both = http.put("/api/plans/$week/meals/2/lunch/status") { setBody(MealStatus.SKIPPED) }.body<WeekPlan>()
+        assertEquals(0.0, both.meal(2, MealSlot.LUNCH)!!.cookPortions)
+    }
+
+    @Test
+    fun theServingsToCookAddUpToWhatTheShoppingListBuys() = testApplication {
+        val http = start().ready()
+        val plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        val shopping = http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef raw" }
+
+        // The recipe's own amounts (grams of beef for its servings) scaled to what each meal cooks.
+        var expected = 0.0
+        for (meal in plan.days.flatMap { it.meals }) {
+            val recipe = http.get("/api/recipes/${meal.recipeId}").body<RecipeDetail>()
+            val grams = recipe.ingredients.sumOf { it.grams ?: 0.0 }
+            expected += grams * meal.cookPortions!! / recipe.summary.servings!!
+        }
+        assertEquals(shopping.grams!!, expected, absoluteTolerance = 1e-6)
     }
 }

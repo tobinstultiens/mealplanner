@@ -341,6 +341,17 @@ enum class Msg(private val english: String, private val dutch: String) {
         "This recipe has no structured ingredient list on the cooking site yet, so it cannot be planned.",
         "Dit recept heeft op de kookwebsite nog geen gestructureerde ingrediëntenlijst en kan dus niet worden gepland.",
     ),
+    COOK_SERVINGS("Cook {0}", "Kook {0}"),
+    COOK_WITH_LEFTOVERS(
+        "Cook {0}: {1} now, {2} for tomorrow's lunch",
+        "Kook {0}: {1} nu, {2} voor de lunch van morgen",
+    ),
+    NOTHING_TO_COOK_LEFTOVERS(
+        "Leftovers of yesterday's dinner: nothing to cook",
+        "Restjes van het eten van gisteren: niets te koken",
+    ),
+    NOTHING_TO_COOK_SKIPPED("Skipped: nothing to cook", "Overgeslagen: niets te koken"),
+    AS_WRITTEN("As written ({0})", "Zoals geschreven ({0})"),
     NOT_COUNTED("not counted (negligible)", "niet meegeteld (verwaarloosbaar)"),
     WEIGHT_UNKNOWN("weight unknown", "gewicht onbekend"),
     RATING("Rating", "Beoordeling"),

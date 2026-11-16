@@ -43,6 +43,43 @@ class FormattingTest {
     }
 
     @Test
+    fun scalingALineRoundsToWhatCanBeMeasured() {
+        fun line(amount: Double?, unit: String?, dimension: Dimension?, item: String) =
+            IngredientLine(amount, unit, dimension, amount.takeIf { dimension != Dimension.COUNT }, item, group = null)
+        val factor = 2.5 / 4
+
+        assertEquals("250 g beef", line(400.0, "g", Dimension.WEIGHT, "beef").scaled(factor).displayText(en))
+        // 1.5 tbsp is 0.94: a quarter spoon is the finest anyone measures.
+        assertEquals("1 tbsp oil", line(1.5, "tbsp", Dimension.VOLUME, "oil").scaled(factor).displayText(en))
+        assertEquals("1.25 clove garlic", line(2.0, "clove", Dimension.COUNT, "garlic").scaled(factor).displayText(en))
+        assertEquals("salt to taste", line(null, null, null, "salt to taste").scaled(factor).displayText(en))
+        // Below ten grams one decimal stays, and nothing rounds to nothing.
+        assertEquals("3.1 g salt", line(5.0, "g", Dimension.WEIGHT, "salt").scaled(factor).displayText(en))
+        assertEquals("0.25 pinch chili", line(0.1, "pinch", Dimension.COUNT, "chili").scaled(factor).displayText(en))
+        assertEquals("0.63 kg flour", line(1.0, "kg", Dimension.WEIGHT, "flour").scaled(factor).displayText(en))
+        assertEquals(250.0, line(400.0, "g", Dimension.WEIGHT, "beef").scaled(factor).baseAmount)
+    }
+
+    @Test
+    fun aRecipeFromAMealSaysWhatToCook() {
+        val english = Strings.of(AppLanguage.ENGLISH, "en")
+        val dutch = Strings.of(AppLanguage.DUTCH, "nl")
+        val dinner = MealToCook(1, 1.25, 2.5, skipped = false)
+        assertEquals("Cook 2.5 servings: 1.25 now, 1.25 for tomorrow's lunch", dinner.sentence(english))
+        assertEquals("Kook 2,5 porties: 1,25 nu, 1,25 voor de lunch van morgen", dinner.sentence(dutch))
+        assertEquals("Cook 1 serving", MealToCook(1, 1.0, 1.0, skipped = false).sentence(english))
+        assertEquals("Leftovers of yesterday's dinner: nothing to cook", MealToCook(1, 1.0, 0.0, skipped = false).sentence(english))
+        assertEquals("Skipped: nothing to cook", MealToCook(1, 1.0, 0.0, skipped = true).sentence(english))
+    }
+
+    @Test
+    fun aMealPassesItsServingsToCookOnlyWhenTheServerSaysThem() {
+        val meal = PlannedMeal(0, MealSlot.DINNER, 7, "Stew", 1.25, 700.0, 50.0)
+        assertNull(meal.toCook(), "an older server: the recipe shows as written")
+        assertEquals(MealToCook(7, 1.25, 2.5, skipped = false), meal.copy(cookPortions = 2.5).toCook())
+    }
+
+    @Test
     fun gramsAreWholeAboveTenAndOneDecimalBelow() {
         assertEquals("28 g", formatGrams(28.06, en))
         assertEquals("302 g", formatGrams(301.65, en))

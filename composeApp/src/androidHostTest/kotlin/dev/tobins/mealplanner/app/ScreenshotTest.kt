@@ -148,6 +148,13 @@ enum class Shot(
     RECIPES(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
     RECIPES_EMPTY(emptyRecipes = true, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
     RECIPE_DETAIL(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
+    // Opened from a planned meal: the amounts of 1.5 of the recipe's 2 servings, and nothing to cook for leftovers.
+    RECIPE_FROM_MEAL(heightDp = 1700, content = { api, _ ->
+        RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 1.5, skipped = false))
+    }),
+    RECIPE_FROM_LEFTOVERS(heightDp = 1700, content = { api, _ ->
+        RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 0.0, skipped = false))
+    }),
     OFFERS(heightDp = 800, content = { api, _ -> OffersScreen(api, {}, {}) }),
     OFFERS_EMPTY(emptyOffers = true, content = { api, _ -> OffersScreen(api, {}, {}) }),
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),

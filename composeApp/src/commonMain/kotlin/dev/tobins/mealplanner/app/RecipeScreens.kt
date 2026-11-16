@@ -30,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -43,6 +44,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +52,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeCost
@@ -328,9 +332,27 @@ internal fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
     }
 }
 
+/**
+ * What the planned meal a recipe was opened from says about cooking it: [portions] of it are eaten,
+ * [cookPortions] are to be cooked now (those of tomorrow's leftover lunch included, 0 for that
+ * lunch itself). Opened from the recipe list there is none, and the recipe shows its own servings.
+ */
+data class MealToCook(val recipeId: Long, val portions: Double, val cookPortions: Double, val skipped: Boolean) {
+    companion object {
+        /** Keeps the meal across a re-created screen; no meal is an empty list. */
+        val Saver = listSaver<MealToCook?, Any>(
+            save = { meal -> meal?.let { listOf(it.recipeId, it.portions, it.cookPortions, it.skipped) }.orEmpty() },
+            restore = { v -> if (v.isEmpty()) null else MealToCook(v[0] as Long, v[1] as Double, v[2] as Double, v[3] as Boolean) },
+        )
+    }
+}
+
+/** What [this] meal passes on to its recipe; null from a server that does not say how much to cook, so the recipe shows as written. */
+fun PlannedMeal.toCook(): MealToCook? = cookPortions?.let { MealToCook(recipeId, portions, it, status == MealStatus.SKIPPED) }
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?, onBack: () -> Unit, onEdit: () -> Unit) {
+fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?, onBack: () -> Unit, onEdit: () -> Unit, meal: MealToCook? = null) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
     var state by remember(recipeId) { mutableStateOf<Load<RecipeDetail>>(Load.Loading) }
@@ -354,6 +376,11 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
             }
             is Load.Ready -> {
                 val recipe = current.value
+                // Opened from a planned meal: the amounts are for what is cooked now, unless asked as written.
+                var asWritten by remember(recipeId) { mutableStateOf(false) }
+                val cooking = meal?.takeIf { it.recipeId == recipeId }
+                val servings = recipe.summary.servings?.takeIf { it > 0 }
+                val factor = if (cooking != null && servings != null && cooking.cookPortions > 0 && !asWritten) cooking.cookPortions / servings else null
                 Column(
                     Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
                     verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
@@ -382,6 +409,15 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                             scope.launch { (load { api.saveRoutines(updated) } as? Load.Ready)?.let { routines = it.value } }
                         }
                     }
+                    if (cooking != null && servings != null) {
+                        Text(cooking.sentence(t), style = MaterialTheme.typography.titleMedium)
+                        if (cooking.cookPortions > 0) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(t(Msg.AS_WRITTEN, t.plural(Plural.SERVINGS, servings)), Modifier.weight(1f))
+                                Switch(checked = asWritten, onCheckedChange = { asWritten = it })
+                            }
+                        }
+                    }
                     // The reading content can be selected and copied; the controls above stay out of it.
                     SelectionContainer {
                         Column(verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
@@ -395,7 +431,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                                 Text(t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
                                 var group: String? = null
                                 for (mapped in recipe.ingredients) {
-                                    val line = mapped.line
+                                    val line = factor?.let { mapped.line.scaled(it) } ?: mapped.line
                                     if (line.group != group) {
                                         group = line.group
                                         group?.let { SectionHeader(it) }
@@ -406,7 +442,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                                             Text(
                                                 "     $name" + when {
                                                     mapped.negligible -> " · " + t(Msg.NOT_COUNTED)
-                                                    mapped.grams != null -> " · ${formatGrams(mapped.grams, t.locale)}"
+                                                    mapped.grams != null -> " · ${formatGrams(mapped.grams?.times(factor ?: 1.0), t.locale)}"
                                                     mapped.line.amount == null -> ""
                                                     else -> " · " + t(Msg.WEIGHT_UNKNOWN)
                                                 },
