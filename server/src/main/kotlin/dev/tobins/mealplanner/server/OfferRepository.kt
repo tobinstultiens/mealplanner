@@ -54,6 +54,27 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
      */
     fun warnings(date: LocalDate): List<String> = listOfNotNull(lidlWarning(date))
 
+    /**
+     * What is wrong with the stored offers as of [now], for `GET /health/data`: a store whose last
+     * successful fetch is older than [STALE_AFTER] (with the error of its last failed fetch, when it
+     * has one), a store that never succeeded and keeps failing, and the [warnings]. Empty when all is well.
+     * A store with nothing recorded yet is not a problem: a new server fills in within hours.
+     */
+    fun problems(now: Instant): List<String> {
+        val stale = q.selectSources().executeAsList().mapNotNull { row ->
+            val store = Store.valueOf(row.store)
+            val last = row.fetchedAt?.let(Instant::parse)
+            val because = row.error?.let { " ($it)" }.orEmpty()
+            when {
+                last == null && row.error != null -> "No offers from ${store.label} were ever fetched$because"
+                last != null && Duration.between(last, now) > STALE_AFTER ->
+                    "The offers of ${store.label} were last fetched at ${row.fetchedAt}, more than ${STALE_AFTER.toHours()} hours ago$because"
+                else -> null
+            }
+        }
+        return stale + warnings(LocalDate.ofInstant(now, AMSTERDAM))
+    }
+
     private fun lidlWarning(date: LocalDate): String? {
         // The widest range: the guard needs the ended offers too.
         val ends = q.selectOffersOverlapping(until = "9999-12-31", from = "0000-01-01").executeAsList()
@@ -149,8 +170,11 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
         }
     }
 
-    private companion object {
-        val AMSTERDAM: java.time.ZoneId = java.time.ZoneId.of("Europe/Amsterdam")
+    companion object {
+        /** How long a store's offers may go without a successful fetch before the health check says so (the job runs every six hours). */
+        val STALE_AFTER: Duration = Duration.ofHours(48)
+
+        private val AMSTERDAM: java.time.ZoneId = java.time.ZoneId.of("Europe/Amsterdam")
 
         /**
          * A result with fewer than 1 in this many of the valid stored offers is refused. A third: a quiet
@@ -158,6 +182,6 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
          * A truly small week after a big one is refused once and accepted the next time, when the big
          * week's offers have ended.
          */
-        const val MIN_SHARE_DENOMINATOR = 3
+        private const val MIN_SHARE_DENOMINATOR = 3
     }
 }

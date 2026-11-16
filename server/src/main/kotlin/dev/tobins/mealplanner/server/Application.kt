@@ -45,8 +45,6 @@ import java.io.File
 import java.time.Duration
 import kotlin.time.Duration.Companion.hours
 
-const val APP_VERSION = "0.1.0"
-
 /** Runtime settings, read from the environment in [ServerConfig.fromEnv]. */
 data class ServerConfig(
     val port: Int,
@@ -197,7 +195,7 @@ fun Application.module(
     attributes.put(ScopeFactory, ::scope)
 
     routing {
-        publicRoutes(config, verifier)
+        publicRoutes(config, verifier, offers, prices)
         authenticate("api") {
             accountRoutes(cooking)
             recipeRoutes()

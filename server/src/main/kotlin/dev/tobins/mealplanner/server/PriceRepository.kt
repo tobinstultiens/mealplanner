@@ -262,21 +262,36 @@ class PriceRepository(
     /** Ingredients worth a price: not negligible, and not tap water or salt. */
     private fun priceable(ingredient: Ingredient) = !ingredient.negligible && ingredient.name !in FREE
 
-    private companion object {
-        const val FETCHED_KEY = "pricesFetchedAt"
-        const val BY_HAND = "Set by hand"
-        const val MAX_SEARCHES = 4
+    /**
+     * What is wrong with the regular prices as of [now], for `GET /health/data`: the last complete
+     * lookup is older than [STALE_AFTER] (the job tries weekly). Null when all is well, when no lookup
+     * is configured, or when none has finished yet (a new server fills in within hours).
+     */
+    fun problem(now: Instant): String? {
+        if (source == null) return null
+        val last = db.foodQueries.selectMeta(FETCHED_KEY).executeAsOneOrNull() ?: return null
+        return "The regular prices were last looked up at $last, more than ${STALE_AFTER.toDays()} days ago"
+            .takeIf { Duration.between(Instant.parse(last), now) > STALE_AFTER }
+    }
+
+    companion object {
+        /** How long the regular prices may go without a complete lookup before the health check says so. */
+        val STALE_AFTER: Duration = Duration.ofDays(14)
+
+        private const val FETCHED_KEY = "pricesFetchedAt"
+        private const val BY_HAND = "Set by hand"
+        private const val MAX_SEARCHES = 4
 
         /**
          * Prices of names that found nothing are deleted only when at least 1 in this many of the names priced
          * before found one again (half). A few products leaving the shelves is normal; AH answering in a
          * changed shape finds nothing for every name and must not wipe the prices, aisles and pictures.
          */
-        const val MIN_STILL_FOUND_DENOMINATOR = 2
+        private const val MIN_STILL_FOUND_DENOMINATOR = 2
 
         /** With fewer stored prices than this a lookup cannot tell a changed answer from a few products gone, so the rule is not applied. */
-        const val MIN_PRICES_TO_JUDGE = 5
-        val FREE = setOf("Water", "Salt")
-        val unitPrice = Regex("""per\s*(kg|kilo|liter|l)\s*€\s*(\d+(?:[.,]\d+)?)""")
+        private const val MIN_PRICES_TO_JUDGE = 5
+        private val FREE = setOf("Water", "Salt")
+        private val unitPrice = Regex("""per\s*(kg|kilo|liter|l)\s*€\s*(\d+(?:[.,]\d+)?)""")
     }
 }
