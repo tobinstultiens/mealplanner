@@ -165,7 +165,6 @@ class PlanRepository(
         ingredients.useUp(MealRef(start, meal.day, meal.slot), gramsUsed(recipe, meal.portions))
     }
 
-
     /** The meals planned for one date; the plan week is the one starting on that date's Monday. */
     fun mealsOn(date: LocalDate): Triple<LocalDate, Int, List<PlannedMeal>> {
         val start = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
