@@ -47,7 +47,9 @@ data class ProductKey(val store: Store, val title: String, val pack: String) {
 
 /**
  * An offer as the history compares it: the [product] and how it is offered. The pack size is part of the
- * product, so another pack is another product, and a new row either way.
+ * product, so another pack is another product, and a new row either way. The store's category and the
+ * product's address are not: stores move products between categories and change their addresses without
+ * changing the offer, and a new row for that would read as an offer that ended and came back.
  */
 data class OfferIdentity(val product: ProductKey, val price: Double?, val originalPrice: Double?, val deal: String)
 

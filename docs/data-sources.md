@@ -182,6 +182,17 @@ pack size is another product. A row is one period in which the product was offer
 - The catalogue ingredient the product matches is kept by name (`ingredient`), from every account's
   ingredients and aliases, as the regular prices are kept by name. It is matched when a row starts; a row
   that matched nothing is matched again on each refresh, so it gets an ingredient an account adds later.
+- The store's own category (`category`, as the store gave it: AH and Lidl give one, Jumbo none), the
+  product's address at the store (`url`, kept only when it is an `https` address) and a price per litre
+  (`eurosPerLitre`, below) are kept with each row since version 15 of the database; rows recorded before
+  have them empty until a refresh continues them. Neither the category nor the address is part of what a
+  row is: a refresh that sees the same offer with another category or address continues the row, which
+  keeps the ones it began with and only fills in what it lacked. So a change in only these never writes a
+  row, and an unchanged offer is still one row however many nights it is seen.
+- Each refresh of a store that records anything also leaves a row in `offerRecording`: the store, its
+  time (`seenAt`, the `lastSeen` it gave the rows it saw) and the number of offers it saw. A refresh that
+  failed, saw no running offers or came after a later one leaves none, so "not on offer for three weeks"
+  can be told from "the store could not be read for three weeks". Recordings are kept as long as the rows.
 - Recording happens once the store's offers are stored, in a transaction of its own: the history never
   costs a store its offers. If recording fails, the error is logged and nothing of that refresh is
   written, so the next good refresh continues the rows as if the night had not happened (as for a store
@@ -207,8 +218,24 @@ share of the regular price paid when the deal is used in full, from the offer al
 against the store's price before where it gives one, otherwise the deal's own share (1+1 0.50, 2+1 0.67,
 2e halve prijs 0.75, 25% korting 0.75). Deals stated as a price have no share without a price before; a later
 step can compare them with the regular price history. `eurosPerKg` and `eurosPerPiece` are the price at that
-share, where the pack size (or else the title) gives a weight or a count; volumes are left out. Online-only
-deals keep their share; their text says where they apply.
+share, where the pack size (or else the title) gives a weight or a count; volumes are no weight without a
+density, so a pack written as a volume ("1,5 l", "6 x 330 ml", "75 cl") gets `eurosPerLitre` instead, from
+the first of the pack size and the title that gives a size at all. A "2 voor 7,00" of 6 x 330 ml is 7,00 for
+both packs' 3,96 litres. Deals by weight (`PRICE_PER_KG`) get no price per litre. Online-only deals keep
+their share; their text says where they apply.
+
+**Whose ingredient.** The `ingredient` of a row is the match at the time the row began, by every account's
+names together, and it is not changed afterwards: a match that was wrong stays, and an ingredient renamed
+since does not find its rows by name. An account's live offers are matched differently, by its own names
+and aliases, with the store's category to keep out cold cuts, ready meals and drinks (`OfferMatcher`).
+Reading the history for an account should therefore match the rows again, by `title` and `category`, with
+that account's own matcher, and not trust `ingredient`; rows from before version 15 have no category to
+check against.
+
+Reading the history (the queries `selectOfferPeriods` and `selectOfferRecordings`,
+`PriceHistoryRepository.offerPeriods` and `recordings`): the rows of one or more stores seen between two
+instants (begun by the end, last seen from the start on), and the recordings of a store between two instants,
+both on an index. Nothing reads them through the API yet.
 
 In the offers of 2026-11-15 (426: 111 AH, 270 Jumbo, 45 Lidl) all but 7 were recognised. Unknown were
 "2 stapelen tot 35%", "2 stapelen voor 3.99" and "3 stapelen voor 7.99" (AH), "2 gratis blikjes bij 1
@@ -224,12 +251,14 @@ a new row starts (the gap shows); a name whose search failed, or that a stopped 
 row open, as it keeps its price.
 
 **Kept for two years.** Rows whose `lastSeen` is more than two years old are removed during the refreshes
-(offers on each store's refresh, regular prices at the end of a lookup).
+(offers and their recordings on each store's refresh, regular prices at the end of a lookup).
 
 A copy of a real database can be checked with
-`PRICE_HISTORY_DB=/path/to/copy.db ./gradlew :server:test --tests '*PriceHistoryRealDataTest*' -i`: it copies
-the file again, migrates it, compares row counts and `integrity_check`/`foreign_key_check` around the last
-migration, then replays its stored offers through six refreshes and prints the history's rows and timings.
+`PRICE_HISTORY_DB=/path/to/copy.db ./gradlew :server:test --tests '*PriceHistoryRealDataTest*' --rerun -i`:
+it copies the file again and migrates it, comparing row counts, the history's rows and
+`integrity_check`/`foreign_key_check` around each migration of the history the copy is from before (to
+versions 13 and 15), then replays its stored offers through six refreshes and prints the history's rows, how
+many have a category, an address and a price per litre, the recordings and timings.
 
 ## Buying ahead and stocking up
 

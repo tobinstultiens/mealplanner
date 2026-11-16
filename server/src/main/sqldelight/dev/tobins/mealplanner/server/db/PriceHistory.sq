@@ -2,6 +2,7 @@
 -- which a product was offered the same way: a refresh that sees it again unchanged only moves lastSeen,
 -- a change (price, price before, deal) starts a new row, and so does an offer that comes back after a
 -- refresh without it. A product is its store, title and pack size, normalised (PriceHistoryRepository).
+-- The last three columns came later (14.sqm): rows recorded before then have them NULL.
 CREATE TABLE offerHistory (
     id INTEGER PRIMARY KEY,
     store TEXT NOT NULL,
@@ -24,12 +25,26 @@ CREATE TABLE offerHistory (
     validFrom TEXT NOT NULL,           -- of the first offer of the period
     validUntil TEXT NOT NULL,          -- of the last
     firstSeen TEXT NOT NULL,           -- instants of the refreshes, to the second (UTC, fixed width)
-    lastSeen TEXT NOT NULL
+    lastSeen TEXT NOT NULL,
+    category TEXT,                     -- the store's own, as it gave it when the period began
+    url TEXT,                          -- the product's https address at the store, as first given
+    eurosPerLitre REAL                 -- at paidShare, where the pack is written as a volume
 );
 
 CREATE INDEX offerHistory_product ON offerHistory(store, productKey, packKey);
 CREATE INDEX offerHistory_seen ON offerHistory(store, lastSeen);
 CREATE INDEX offerHistory_ingredient ON offerHistory(ingredient);
+
+-- Which refreshes of a store recorded anything, so that a product missing from the history can be told
+-- from a store that was not read: one row per store and refresh that started or continued a period, with
+-- the number of offers it saw. A failed refresh, an empty one or one older than the last records none.
+-- seenAt is that refresh's lastSeen, in the same form.
+CREATE TABLE offerRecording (
+    store TEXT NOT NULL,
+    seenAt TEXT NOT NULL,
+    offers INTEGER NOT NULL,
+    PRIMARY KEY (store, seenAt)
+);
 
 -- The regular prices looked up over time, keyed by ingredient name like ingredientPrice. A new row only
 -- when the product or its price changed, or when the lookup found nothing for the name in between.
@@ -59,20 +74,39 @@ SELECT * FROM offerHistory WHERE store = ? AND lastSeen = ?;
 insertOfferPeriod:
 INSERT INTO offerHistory (
     store, productKey, packKey, title, packSize, ingredient, deal, dealKind, dealPacks, dealFree, dealPercent, dealEuros,
-    price, originalPrice, paidShare, eurosPerKg, eurosPerPiece, validFrom, validUntil, firstSeen, lastSeen
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    price, originalPrice, paidShare, eurosPerKg, eurosPerPiece, validFrom, validUntil, firstSeen, lastSeen,
+    category, url, eurosPerLitre
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- Seen again unchanged; :ingredient is the period's own, or a match found for it since.
+-- Seen again unchanged; :ingredient is the period's own, or a match found for it since. A category,
+-- address or price per litre the period does not have yet (a row from before 14.sqm, or a refresh that
+-- did not give one) is filled in; one it has is kept, so a period stays as it began.
 continueOfferPeriod:
 UPDATE offerHistory
-SET lastSeen = :lastSeen, validFrom = min(validFrom, :validFrom), validUntil = max(validUntil, :validUntil), ingredient = :ingredient
+SET lastSeen = :lastSeen, validFrom = min(validFrom, :validFrom), validUntil = max(validUntil, :validUntil), ingredient = :ingredient,
+    category = coalesce(category, :category), url = coalesce(url, :url), eurosPerLitre = coalesce(eurosPerLitre, :eurosPerLitre)
 WHERE id = :id;
+
+insertOfferRecording:
+INSERT INTO offerRecording (store, seenAt, offers) VALUES (?, ?, ?);
+
+-- The periods of these stores that were seen between :from and :until (inclusive, instants as stored):
+-- those that began before :until and were last seen after :from.
+selectOfferPeriods:
+SELECT * FROM offerHistory WHERE store IN :stores AND lastSeen >= :from AND firstSeen <= :until;
+
+-- The refreshes of a store that recorded anything between :from and :until (inclusive), in order.
+selectOfferRecordings:
+SELECT * FROM offerRecording WHERE store = :store AND seenAt BETWEEN :from AND :until ORDER BY seenAt;
 
 selectOfferHistory:
 SELECT * FROM offerHistory ORDER BY store, productKey, packKey, firstSeen, id;
 
 pruneOffers:
 DELETE FROM offerHistory WHERE lastSeen < ?;
+
+pruneOfferRecordings:
+DELETE FROM offerRecording WHERE seenAt < ?;
 
 -- The period of this name's price that the lookup at :lastSeen saw, if it was seen then.
 selectOpenRegularPrice:

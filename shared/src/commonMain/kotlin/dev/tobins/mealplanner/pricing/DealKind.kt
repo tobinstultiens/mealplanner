@@ -43,9 +43,10 @@ sealed interface DealKind {
 
 /**
  * What an offer comes to when its deal is used in full: its [kind], the [packs] it wants bought together
- * ([Discounts.packsNeeded]), the [paidShare] of the regular price and the price per kg or per piece at that
- * share. Worked out from the offer alone, without an ingredient's regular price, so it stays the same for as
- * long as the offer does: "2 voor 3,00" without the store's price before has no share, only its price per kg.
+ * ([Discounts.packsNeeded]), the [paidShare] of the regular price and the price per kg, per piece or per
+ * litre at that share. Worked out from the offer alone, without an ingredient's regular price, so it stays
+ * the same for as long as the offer does: "2 voor 3,00" without the store's price before has no share, only
+ * its price per kg.
  */
 data class DealTerms(
     val kind: DealKind,
@@ -53,6 +54,11 @@ data class DealTerms(
     val paidShare: Double?,
     val eurosPerKg: Double?,
     val eurosPerPiece: Double?,
+    /**
+     * For a pack written as a volume ("1,5 l", "6 x 330 ml"), which has no price per kg without a density:
+     * oil, milk, passata and stock are what stocking up is about, so their deals must be comparable too.
+     */
+    val eurosPerLitre: Double?,
 ) {
     companion object {
         fun of(offer: Offer): DealTerms {
@@ -68,6 +74,7 @@ data class DealTerms(
                 paidShare = share,
                 eurosPerKg = (kind as? DealKind.PricePerKg)?.euros ?: perPack?.let { paid -> grams?.let { paid / it * 1000 } },
                 eurosPerPiece = perPack?.let { paid -> pieces?.let { paid / it } },
+                eurosPerLitre = perPack?.let { paid -> millilitresOf(offer)?.let { paid / it * 1000 } },
             )
         }
 
@@ -96,6 +103,18 @@ data class DealTerms(
                 PackSize.pieces(text)?.takeIf { it > 0 }?.let { return null to it }
             }
             return null to null
+        }
+
+        /**
+         * Millilitres in one pack, from the first of the pack size and the title that gives a size at all: a
+         * pack size in grams or pieces is no volume, whatever the title says.
+         */
+        private fun millilitresOf(offer: Offer): Double? {
+            for (text in listOfNotNull(offer.packSize, offer.title)) {
+                if (PackSize.isVolume(text)) return PackSize.millilitres(text)?.takeIf { it > 0 }
+                if (PackSize.grams(text) != null || PackSize.pieces(text) != null) return null
+            }
+            return null
         }
     }
 }
