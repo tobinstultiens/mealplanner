@@ -96,7 +96,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.DAY_LOAD_FAILED), current.message) { reload++ }
+                ErrorMessage(t(Msg.DAY_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val day = current.value

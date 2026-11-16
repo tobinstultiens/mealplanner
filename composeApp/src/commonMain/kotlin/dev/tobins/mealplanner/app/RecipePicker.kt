@@ -60,7 +60,7 @@ fun RecipePicker(api: ApiClient, slot: MealSlot, title: String, onDismiss: () ->
         text = {
             when (val current = state) {
                 Load.Loading -> LoadingState()
-                is Load.Failed -> ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current.message) { reload++ }
+                is Load.Failed -> ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current) { reload++ }
                 is Load.Ready -> Column {
                     RecipePickerBody(current.value, slot) { recipe ->
                         scope.launch {

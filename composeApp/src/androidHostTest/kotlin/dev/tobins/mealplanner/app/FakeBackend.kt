@@ -123,13 +123,15 @@ class FakeBackend(
 
     /**
      * Feta on hand by hand, how much not known; what is left of the chicken bought ahead last week and
-     * of the yoghurt and oats stocked up; the minced beef bought ahead for next week, untouched.
+     * of the yoghurt and oats stocked up; the minced beef bought ahead for next week, untouched. The
+     * yoghurt was stocked up in two weeks.
      */
     private val pantry = Pantry(
         staples = ingredients.filter { it.isStaple },
         onHand = ingredients.filter { it.id in setOf(1L, 2L, 3L, 4L, 6L) },
         onHandGrams = mapOf(1L to 300.0, 3L to 650.0, 4L to 1000.0, 6L to 200.0),
         onHandFrom = mapOf(1L to "2026-11-09", 3L to "2026-11-16", 4L to "2026-11-23", 6L to "2026-11-16"),
+        onHandWeeks = mapOf(1L to listOf("2026-11-09"), 3L to listOf("2026-11-16", "2026-11-23"), 4L to listOf("2026-11-23"), 6L to listOf("2026-11-16")),
     )
 
     private fun meal(day: Int, slot: MealSlot, id: Long, title: String, kcal: Double, protein: Double, cost: Double = 2.4) =

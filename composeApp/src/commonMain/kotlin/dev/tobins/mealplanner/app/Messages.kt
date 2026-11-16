@@ -286,6 +286,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     ON_HAND("On hand", "In huis"),
     PANTRY_LEFT("{0} left", "nog {0}"),
     PANTRY_FROM_WEEK("for the week of {0}", "voor de week van {0}"),
+    PANTRY_FROM_WEEKS("for the weeks of {0}", "voor de weken van {0}"),
 
     // --- Regular prices
     LOOKING_UP_PRICES("Looking up prices", "Prijzen opzoeken"),

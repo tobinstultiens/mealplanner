@@ -72,7 +72,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.OFFERS_LOAD_FAILED), current.message) { reload++ }
+                ErrorMessage(t(Msg.OFFERS_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val all = current.value.offers

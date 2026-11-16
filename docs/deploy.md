@@ -36,8 +36,44 @@ nothing needs setting. Lost pictures come back at the next cooking-site sync. A 
 ## Updating
 
 Watchtower pulls the new `:latest` nightly, like every other container. Database migrations run when
-the new container starts. To update right away, run the playbook again or `docker restart` after a
+the new container starts (take a backup first, see below). To update right away, run the playbook again or `docker restart` after a
 `docker pull`.
+
+## Backing up the database
+
+The container applies pending migrations in one transaction when it starts: one that fails (an
+error in its SQL) changes nothing, and the old file stays as it was. So a backup does not guard against
+a migration that stops half-way. It guards against what the transaction cannot see: a migration that
+succeeds and moves data wrongly (`13.sqm` moved rows), a release that writes wrong data, a disk that
+fails. Without a copy, the old state cannot be got back.
+
+Take it with SQLite's own copy, not with `cp`. The database is in WAL mode, so the newest writes live in
+`mealplanner.db-wal` until a checkpoint, and `cp mealplanner.db` of a running server can give a file
+that lacks them or that is torn. `.backup` copies a consistent state while the server runs; the
+container has no `sqlite3`, so run it on the host, on the file the container's `/data` is mounted from
+(a local disk, not a network share):
+
+    sqlite3 <docker_config_dir>/mealplanner/mealplanner.db ".backup '<docker_config_dir>/mealplanner/backup/mealplanner-$(date +%F).db'"
+
+(`VACUUM INTO 'file'` does the same.) Do it from a daily cron job or systemd timer that runs before
+Watchtower's nightly pull, and delete the copies older than a week
+(`find .../backup -name 'mealplanner-*.db' -mtime +7 -delete`). Or stop the container first
+(`docker stop mealplanner`) and copy `mealplanner.db` together with `mealplanner.db-wal` and
+`mealplanner.db-shm`, if there are any. A copy on the same disk does not guard against the disk:
+keep one on another machine as well. The pictures need none (see above).
+
+**Going back** after a bad update:
+
+1. `docker stop mealplanner`.
+2. Put the copy in place of `mealplanner.db` and delete `mealplanner.db-wal` and `mealplanner.db-shm`
+   next to it (a leftover log of the new state would be replayed into the old file). Owner uid 1000, as
+   before.
+3. Start the image of before, not `:latest`: `kick1999/mealplanner:<commit sha>` (CI pushes one per
+   commit; `/health` says which commit ran before). The old image does not know the new schema, and
+   Watchtower would pull `:latest` again, so pin the tag in the container's `image` until a fix is merged.
+
+Everything written since the copy is lost, so check the data of a release that has migrations (`git log`
+shows the new `.sqm` files) soon after the nightly update.
 
 ## What runs, and whether its data is fresh
 

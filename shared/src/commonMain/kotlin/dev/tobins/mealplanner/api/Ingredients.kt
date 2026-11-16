@@ -154,4 +154,10 @@ data class Pantry(
      * at once and is not here. A separate map, as [onHandGrams] is.
      */
     val onHandFrom: Map<Long, String> = emptyMap(),
+    /**
+     * Every week an entry of [onHand] counts from, by ingredient id, earliest first and each once:
+     * [onHandFrom] is the first of them. For an ingredient stocked up in one week and bought ahead
+     * for another, the pantry can say both. Apps that predate it read [onHandFrom].
+     */
+    val onHandWeeks: Map<Long, List<String>> = emptyMap(),
 )

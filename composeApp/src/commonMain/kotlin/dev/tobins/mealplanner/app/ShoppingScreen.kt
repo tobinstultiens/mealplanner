@@ -405,7 +405,7 @@ internal fun ShoppingScreen(
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.SHOPPING_LOAD_FAILED), current.message) { retry() }
+                ErrorMessage(t(Msg.SHOPPING_LOAD_FAILED), current) { retry() }
             }
             is Load.Ready -> {
                 val list = current.value

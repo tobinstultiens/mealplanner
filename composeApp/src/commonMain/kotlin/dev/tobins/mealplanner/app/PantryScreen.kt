@@ -35,12 +35,20 @@ import kotlinx.coroutines.launch
 /**
  * What the pantry says under an on-hand ingredient: `280 g left · for the week of 23 Nov`, from the
  * amount left and the week the stock was bought for, each only when known (an amount that is not
- * known is left out, never shown as none). Null for what is not on hand and when neither is known.
+ * known is left out, never shown as none). Stock of several weeks names each: `for the weeks of
+ * 16 Nov, 23 Nov`. A server that does not give the weeks gives the first one only. Null for what is not on hand and when neither is known.
  */
 internal fun pantryNote(pantry: Pantry, id: Long, strings: Strings): String? {
     if (pantry.onHand.none { it.id == id }) return null
     val left = pantry.onHandGrams[id]?.let { strings(Msg.PANTRY_LEFT, weightText(it, strings.locale)) }
-    val week = pantry.onHandFrom[id]?.let { strings(Msg.PANTRY_FROM_WEEK, dayMonthLabel(it, strings.locale)) }
+    // A date never breaks across lines: its day and month are joined by a no-break space.
+    fun date(iso: String) = dayMonthLabel(iso, strings.locale).replace(' ', '\u00A0')
+    val weeks = pantry.onHandWeeks[id].orEmpty().ifEmpty { listOfNotNull(pantry.onHandFrom[id]) }
+    val week = when (weeks.size) {
+        0 -> null
+        1 -> strings(Msg.PANTRY_FROM_WEEK, date(weeks.single()))
+        else -> strings(Msg.PANTRY_FROM_WEEKS, weeks.joinToString(", ") { date(it) })
+    }
     return listOfNotNull(left, week).joinToString(" · ").ifEmpty { null }
 }
 
@@ -68,7 +76,7 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.PANTRY_LOAD_FAILED), current.message) { reload++ }
+                ErrorMessage(t(Msg.PANTRY_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val (ingredients, pantry) = current.value
