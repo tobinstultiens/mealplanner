@@ -139,7 +139,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                         onAction = onOpenProfile,
                     )
                 } else {
-                    ErrorMessage(t(Msg.PLAN_LOAD_FAILED), current.message) { weekStart = weekStart.also { state = Load.Loading } }
+                    ErrorMessage(t(Msg.PLAN_LOAD_FAILED), current) { weekStart = weekStart.also { state = Load.Loading } }
                 }
             }
             is Load.Ready -> {

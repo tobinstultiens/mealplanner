@@ -98,7 +98,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.WEIGHT_LOAD_FAILED), current.message) { reload++ }
+                ErrorMessage(t(Msg.WEIGHT_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val log = current.value

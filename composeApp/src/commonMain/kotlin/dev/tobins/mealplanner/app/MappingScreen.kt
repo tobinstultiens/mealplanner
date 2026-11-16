@@ -97,7 +97,7 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.INGREDIENTS_LOAD_FAILED), current.message) { reload++ }
+                ErrorMessage(t(Msg.INGREDIENTS_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> LazyColumn(
                 Modifier.padding(padding).fillMaxSize(),

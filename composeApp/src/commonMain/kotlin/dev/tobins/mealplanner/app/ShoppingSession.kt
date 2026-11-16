@@ -81,16 +81,16 @@ internal class Notice(val msg: Msg, val detail: String, val technical: String? =
 
 /** The notice that [msg] failed because of [failed]: a plain sentence, and the exception's text behind "Details". */
 internal fun noticeFor(msg: Msg, failed: Load.Failed): Notice =
-    if (failed.technical) {
-        val plain = when {
-            failed.unreadable -> Msg.UNREADABLE_ANSWER
-            failed.lostConnection -> Msg.NO_CONNECTION
-            else -> Msg.WENT_WRONG
-        }
-        Notice(msg, Strings.current(plain), failed.message)
-    } else {
-        Notice(msg, failed.message)
-    }
+    if (failed.technical) Notice(msg, plainReason(failed), failed.message) else Notice(msg, failed.message)
+
+/** What a technical failure means in a few plain words, such as "the server could not be reached". */
+internal fun plainReason(failed: Load.Failed): String = Strings.current(
+    when {
+        failed.unreadable -> Msg.UNREADABLE_ANSWER
+        failed.lostConnection -> Msg.NO_CONNECTION
+        else -> Msg.WENT_WRONG
+    },
+)
 
 /**
  * The Shopping screen's state, owned by the app for as long as one account is logged in, so that

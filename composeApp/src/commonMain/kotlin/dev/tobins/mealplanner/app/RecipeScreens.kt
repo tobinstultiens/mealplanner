@@ -207,7 +207,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
             }
             when (val current = state) {
                 Load.Loading -> LoadingState()
-                is Load.Failed -> ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current.message) { reload++ }
+                is Load.Failed -> ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current) { reload++ }
                 is Load.Ready -> {
                     val shown = current.value.filter { recipe ->
                         (!mealsOnly || recipe.kind == RecipeKind.MEAL) &&
@@ -350,7 +350,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Box(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.RECIPE_LOAD_FAILED), current.message) { reload++ }
+                ErrorMessage(t(Msg.RECIPE_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val recipe = current.value
@@ -572,8 +572,9 @@ private fun CostCard(cost: RecipeCost) {
 }
 
 @Composable
-internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
+internal fun ErrorMessage(title: String, failed: Load.Failed, onRetry: () -> Unit) {
     val t = LocalStrings.current
+    val detail = failed.message
     val openServer = LocalOpenServerSettings.current
     Column(
         Modifier.fillMaxSize().padding(Spacing.Message),
@@ -581,8 +582,12 @@ internal fun ErrorMessage(title: String, detail: String, onRetry: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
-        // A long technical message gets a one-line summary and a "Details" button.
-        if (detail.length <= 100 && '\n' !in detail) {
+        // An exception's own text ("unexpected end of stream on http://...") is no sentence for the user:
+        // a plain one says what happened and the text stays behind "Details".
+        if (failed.technical) {
+            val plain = plainReason(failed)
+            ErrorBanner(summary = plain.replaceFirstChar { it.uppercase() } + ".", details = detail, modifier = Modifier.fillMaxWidth())
+        } else if (detail.length <= 100 && '\n' !in detail) {
             Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             ErrorBanner(summary = detail.lineSequence().first().take(100) + "…", details = detail, modifier = Modifier.fillMaxWidth())

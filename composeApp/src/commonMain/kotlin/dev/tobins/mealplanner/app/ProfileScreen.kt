@@ -99,7 +99,7 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
         when (val current = loaded) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.PROFILE_LOAD_FAILED), current.message) { reload++ }
+                ErrorMessage(t(Msg.PROFILE_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> Column(
                 Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),

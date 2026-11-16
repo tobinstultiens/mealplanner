@@ -68,7 +68,7 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.PANTRY_LOAD_FAILED), current.message) { reload++ }
+                ErrorMessage(t(Msg.PANTRY_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val (ingredients, pantry) = current.value
