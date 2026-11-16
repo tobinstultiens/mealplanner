@@ -32,7 +32,7 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
      * Offers valid on [date] with the store statuses. With [terms] (see [byIngredient])
      * each offer also names the ingredient it matches.
      */
-    fun state(date: LocalDate = LocalDate.now(), terms: Map<Long, List<String>>? = null, names: Map<Long, String> = emptyMap()): OffersState {
+    fun state(date: LocalDate = serverToday(), terms: Map<Long, List<String>>? = null, names: Map<Long, String> = emptyMap()): OffersState {
         val matcher = terms?.let(::OfferMatcher)
         val counts = q.countOffers().executeAsList().associate { it.store to it.n.toInt() }
         val recorded = q.selectSources().executeAsList().associateBy { it.store }
@@ -72,7 +72,7 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                 else -> null
             }
         }
-        return stale + warnings(LocalDate.ofInstant(now, AMSTERDAM))
+        return stale + warnings(serverDay(now))
     }
 
     /** A stored error for the public health check: its first line only, cut short, as it may quote a store's page. */
@@ -103,7 +103,7 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
             if (olderThan != null && last != null && Duration.between(last, now) < olderThan) continue
             try {
                 val offers = source.fetch()
-                val today = LocalDate.ofInstant(now, AMSTERDAM)
+                val today = serverDay(now)
                 refusal(source.store, offers.size, q.selectOffersValidOn(today.toString()).executeAsList().count { it.store == source.store.name })
                     ?.let { throw RefusedResult(it) }
                 db.transaction {
@@ -134,7 +134,7 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                 q.recordFailure(e.message ?: e::class.simpleName ?: "unknown error", source.store.name)
             }
         }
-        val today = LocalDate.ofInstant(now, AMSTERDAM)
+        val today = serverDay(now)
         warnings(today).forEach { log.warn(it) }
         return state(today)
     }
@@ -178,8 +178,6 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
         val STALE_AFTER: Duration = Duration.ofHours(48)
 
         private const val MAX_PUBLIC_ERROR = 200
-
-        private val AMSTERDAM: java.time.ZoneId = java.time.ZoneId.of("Europe/Amsterdam")
 
         /**
          * A result with fewer than 1 in this many of the valid stored offers is refused. A third: a quiet

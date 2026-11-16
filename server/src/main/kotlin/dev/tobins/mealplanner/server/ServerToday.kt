@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server
 
 import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -8,4 +9,7 @@ import java.time.ZoneId
 val SERVER_ZONE: ZoneId = ZoneId.of("Europe/Amsterdam")
 
 /** Today's date as the household sees it: one answer wherever the server needs "today". */
-fun serverToday(clock: Clock = Clock.systemUTC()): LocalDate = LocalDate.ofInstant(clock.instant(), SERVER_ZONE)
+fun serverToday(clock: Clock = Clock.systemUTC()): LocalDate = serverDay(clock.instant())
+
+/** The household's day an instant falls on. */
+fun serverDay(instant: Instant): LocalDate = LocalDate.ofInstant(instant, SERVER_ZONE)
