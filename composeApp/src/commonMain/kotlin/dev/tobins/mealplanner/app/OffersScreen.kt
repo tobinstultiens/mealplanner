@@ -59,7 +59,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
 
     LaunchedEffect(loaded, reload, frontReturns, today) { loaded.refresh { api.offers(today) } }
 
-    SubScreen(t(Msg.OFFERS), onBack, snackbar, notice = { RefreshNotice(loaded) { reload++ } }, actions = {
+    SubScreen(t(Msg.OFFERS), onBack, snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
         BarAction(AppIcons.Refresh, if (refreshing) t(Msg.FETCHING_OFFERS) else t(Msg.REFRESH_OFFERS), busy = refreshing, onClick = {
             refreshing = true
             scope.launch {

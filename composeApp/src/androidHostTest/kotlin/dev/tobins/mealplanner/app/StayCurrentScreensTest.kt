@@ -1,6 +1,13 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.CompositionLocalProvider
+import android.view.View
+import androidx.compose.ui.platform.LocalView
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.Pantry
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -144,5 +151,30 @@ class StayCurrentScreensTest {
         compose.onNodeWithText("Retry").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithTag(RefreshNoticeTag).fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithText("No recipes yet", substring = true).assertExists()
+    }
+
+    @Test
+    fun theLineOnAScreenWithoutNavigationBarClearsTheSystemBar() {
+        val server = Flaky().apply { up = false }
+        val memory = ScreenMemory().apply { keep("pantry", emptyList<Ingredient>() to Pantry(emptyList(), emptyList())) }
+        lateinit var window: View
+        compose.setContent {
+            window = LocalView.current
+            CompositionLocalProvider(LocalStrings provides Strings.English, LocalScreenMemory provides memory) {
+                PantryScreen(server.api, onBack = {})
+            }
+        }
+        waitFor("Could not refresh")
+        val before = compose.onNodeWithTag(RefreshNoticeTag).getBoundsInRoot()
+
+        // Robolectric has no system bars of its own, so the test hands the window a navigation bar of 48 pixels.
+        compose.runOnUiThread {
+            val bar = Insets.of(0, 0, 0, 48)
+            val insets = WindowInsetsCompat.Builder().setInsets(WindowInsetsCompat.Type.navigationBars(), bar).build()
+            ViewCompat.dispatchApplyWindowInsets(window, insets)
+        }
+        compose.waitForIdle()
+        val after = compose.onNodeWithTag(RefreshNoticeTag).getBoundsInRoot()
+        assertTrue(after.bottom - after.top > before.bottom - before.top, "the line must grow by the system bar (was ${before.bottom - before.top}, is ${after.bottom - after.top})")
     }
 }
