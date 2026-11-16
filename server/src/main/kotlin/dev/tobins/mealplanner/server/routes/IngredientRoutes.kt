@@ -53,7 +53,7 @@ fun Route.ingredientRoutes(config: ServerConfig, foods: FoodRepository, users: U
         call.respond(call.user.sections.setKeeps(id, call.receive<KeepsChoice>()))
     }
 
-    get("/api/pantry") { call.respond(call.user.ingredients.pantry()) }
+    get("/api/pantry") { call.respond(call.user.stock.pantry()) }
 
     // PUT adds an ingredient to the staples or on-hand list, DELETE removes it.
     for (list in listOf("staples", "on-hand")) {
@@ -62,8 +62,8 @@ fun Route.ingredientRoutes(config: ServerConfig, foods: FoodRepository, users: U
                 handle {
                     val id = call.parameters["id"]?.toLongOrNull()
                         ?: throw IllegalArgumentException("Ingredient id must be a number")
-                    if (list == "staples") call.user.ingredients.setStaple(id, present) else call.user.ingredients.setOnHand(id, present)
-                    call.respond(call.user.ingredients.pantry())
+                    if (list == "staples") call.user.ingredients.setStaple(id, present) else call.user.stock.setOnHand(id, present)
+                    call.respond(call.user.stock.pantry())
                 }
             }
         }

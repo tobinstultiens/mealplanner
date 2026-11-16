@@ -403,15 +403,15 @@ class AccountsTest {
         val users = UserRepository(db)
         val aliceId = users.resolve(Identity("sub-alice", "alice")).id
         val bobId = users.resolve(Identity("sub-bob", "bob")).id
-        val alice = IngredientRepository(db, foods, aliceId)
-        val bob = IngredientRepository(db, foods, bobId)
+        val alice = StockRepository(db, foods, aliceId)
+        val bob = StockRepository(db, foods, bobId)
         val week = java.time.LocalDate.parse("2026-11-23")
         // Both have a dinner on Monday: the same place in the plan, so the same key for what it took.
         val dinner = MealRef(week, 0, MealSlot.DINNER)
         for (id in listOf(aliceId, bobId)) {
             db.planQueries.upsertMeal(id, week.toString(), 0, "DINNER", 1, "Stew", 2.0, 800.0, 40.0, 0, 0, "EATEN")
         }
-        val chicken = alice.create(IngredientInput("Chicken thigh"))
+        val chicken = IngredientRepository(db, foods, aliceId).create(IngredientInput("Chicken thigh"))
         alice.putOnHandFrom(chicken.id, week, grams = 1000.0, source = StockSource.STOCK_UP)
         fun left() = db.pantryQueries.selectStock(aliceId, week.toString(), listOf(chicken.id)).executeAsOneOrNull()?.grams
 
@@ -439,10 +439,10 @@ class AccountsTest {
         val users = UserRepository(db)
         val aliceId = users.resolve(Identity("sub-alice", "alice")).id
         val bobId = users.resolve(Identity("sub-bob", "bob")).id
-        val alice = IngredientRepository(db, FoodRepository(db), aliceId)
+        val alice = StockRepository(db, FoodRepository(db), aliceId)
         val week = "2026-11-23"
-        val chicken = alice.create(IngredientInput("Chicken thigh")).id
-        val rice = alice.create(IngredientInput("Rice")).id
+        val chicken = IngredientRepository(db, FoodRepository(db), aliceId).create(IngredientInput("Chicken thigh")).id
+        val rice = IngredientRepository(db, FoodRepository(db), aliceId).create(IngredientInput("Rice")).id
         alice.putOnHandFrom(chicken, java.time.LocalDate.parse(week), grams = 1000.0, source = StockSource.STOCK_UP)
         alice.setOnHand(rice, true)
         val p = db.pantryQueries
@@ -478,7 +478,7 @@ class AccountsTest {
             val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
             val id = db.userQueries.selectBySubject("sub-$name").executeAsOne().id
             db.planQueries.upsertMeal(id, week, 0, "DINNER", stew.id, stew.title, 2.0, 800.0, 40.0, 0, 0, "PLANNED")
-            IngredientRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 1000.0, source = StockSource.STOCK_UP)
+            StockRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 1000.0, source = StockSource.STOCK_UP)
             Triple(client, id, beef.id)
         }
         fun left(name: String): Double? {
@@ -579,7 +579,7 @@ class AccountsTest {
             val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
             val id = db.userQueries.selectBySubject("sub-$name").executeAsOne().id
             for (day in 0L..1L) db.planQueries.upsertMeal(id, week, day, "DINNER", stew.id, stew.title, 2.0, 800.0, 40.0, 0, 0, "PLANNED")
-            if (name == "alice") IngredientRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 500.0, source = StockSource.STOCK_UP)
+            if (name == "alice") StockRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 500.0, source = StockSource.STOCK_UP)
             client
         }
         // What each is told the meals to come need, and what is at home: their own amounts only.

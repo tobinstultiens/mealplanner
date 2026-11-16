@@ -32,6 +32,7 @@ class ShoppingListRepository(
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
     private val ingredients: IngredientRepository,
+    private val stock: StockRepository,
     /** Offers valid between two dates at every store, grouped by ingredient id. */
     private val offersByIngredient: (LocalDate, LocalDate) -> Map<Long, List<Offer>> = { _, _ -> emptyMap() },
     /** The stores the account shops at: only their offers count for the advice. */
@@ -74,7 +75,7 @@ class ShoppingListRepository(
         val checked = ticks.keys
         // Only own items on this week's list come back, so one with a week it was bought in was ticked off in this one.
         val ticked = checked + ownRows.filter { it.boughtWeek != null }.map { ShoppingKey.Extra(it.id) }
-        val stock = ingredients.onHandGramsFor(start)
+        val stock = this.stock.onHandGramsFor(start)
         val onHand = stock.keys
         // Every store's offers: the app chooses among those of the stores it shows.
         val offers = offersByIngredient(start, start.plusDays(DAYS - 1L))
@@ -268,7 +269,7 @@ class ShoppingListRepository(
             meals,
             recipes.linesWithIngredients(meals.map { it.recipeId }),
             ratings,
-            onHand = ingredients.onHandFor(next),
+            onHand = stock.onHandFor(next),
             onOfferNextWeek = plans.onOffer(next),
         )
         return BuyAheadAdvice(items, provisional = nextWeek.isEmpty())
@@ -277,7 +278,7 @@ class ShoppingListRepository(
     /**
      * Ticks an item off, or back on. A buy-ahead item ticked is on hand from next week, a stock-up
      * item from this week, in the amount the list advises buying ([boughtGrams]); un-ticking takes
-     * that back (see [IngredientRepository.putOnHandFrom]). An own item ticked off is bought in this
+     * that back (see [StockRepository.putOnHandFrom]). An own item ticked off is bought in this
      * week ([setBought]).
      * A row of what the meals need remembers what it says as it is ticked ([neededRow]); ticking a
      * ticked one again keeps what it said first. A key no list has is refused; one that names no row
@@ -331,7 +332,7 @@ class ShoppingListRepository(
     /**
      * Puts a bought item no meal needs any more ([ShoppingList.noLongerNeeded], key `i<id>`) on hand
      * and takes it out of that group, in one step. What its tick remembers was bought is stock from
-     * the list's week on ([IngredientRepository.addToStock]), which meals eat from and the pantry and
+     * the list's week on ([StockRepository.addToStock]), which meals eat from and the pantry and
      * the list count; without a remembered weight it is put on hand by hand, as the pantry does. Then
      * the tick goes: the pantry has it now. Only an item of that group is used up: another kind of
      * key is refused (400), one the meals need again is a 409, as it is a row of the list then, and
@@ -351,7 +352,7 @@ class ShoppingListRepository(
             val tick = ticks(start)[key] ?: throw NotFoundException("Nothing bought of ${input.key} in the week of $start")
             val grams = tick.grams?.takeIf { it >= IngredientRepository.USED_UP_GRAMS }
             // Both refuse an ingredient of another account (NotFoundException), and the transaction takes it all back.
-            if (grams == null) ingredients.setOnHand(key.id, true) else ingredients.addToStock(key.id, start, grams)
+            if (grams == null) stock.setOnHand(key.id, true) else stock.addToStock(key.id, start, grams)
             q.deleteCheck(userId, start.toString(), key.toString())
         }
         return get(weekStart)
@@ -395,7 +396,7 @@ class ShoppingListRepository(
             else -> return
         }
         // Both refuse an ingredient of another account (NotFoundException), before anything is stored.
-        if (checked) ingredients.putOnHandFrom(id, from, grams, source) else ingredients.takeBackOnHand(id, from, source)
+        if (checked) stock.putOnHandFrom(id, from, grams, source) else stock.takeBackOnHand(id, from, source)
     }
 
     /**

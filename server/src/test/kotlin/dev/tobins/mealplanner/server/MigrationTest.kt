@@ -302,7 +302,7 @@ class MigrationTest {
         assertEquals(emptyMap(), ingredients.keepsByHand(), "by the section until set by hand")
         assertEquals("MEAT", db.ingredientQueries.selectIngredientByName(1, "Chicken fillet").executeAsOne().section)
         // What was on hand was put there by hand: it counts at once, in any week.
-        assertEquals(setOf(2L), ingredients.onHandFor(LocalDate.parse("2026-11-16")))
+        assertEquals(setOf(2L), StockRepository(db, FoodRepository(db), 1).onHandFor(LocalDate.parse("2026-11-16")))
         assertEquals(listOf(2L), db.pantryQueries.selectOnHandByHand(1).executeAsList())
         driver.close()
     }
@@ -332,7 +332,7 @@ class MigrationTest {
         val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
         openDatabase(fresh).first.close()
         assertEquals(columns(fresh, "onHand"), columns(url, "onHand"), "table onHand after migration")
-        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        val ingredients = StockRepository(db, FoodRepository(db), 1)
         val week = LocalDate.parse("2026-11-23")
         assertEquals(setOf(1L, 2L), ingredients.onHandFor(week))
         assertEquals(setOf(2L), ingredients.onHandFor(week.minusDays(7)), "the tick still counts from its week")
@@ -406,7 +406,7 @@ class MigrationTest {
         val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
         openDatabase(fresh).first.close()
         assertEquals(columns(fresh, "stockUse"), columns(url, "stockUse"), "table stockUse after migration")
-        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        val ingredients = StockRepository(db, FoodRepository(db), 1)
         val week = LocalDate.parse("2026-11-23")
         fun left(id: Long) = db.pantryQueries.selectStock(1, week.toString(), listOf(id)).executeAsOneOrNull()?.grams
         // Monday's dinner was eaten before what it took was kept: un-eating it gives nothing back.
@@ -585,14 +585,14 @@ class MigrationTest {
         )
         val uses = single(url, "SELECT ingredientId || ':' || source || ':' || grams FROM stockUse ORDER BY ingredientId")
         assertEquals("2:STOCK_UP:100.0,3:USE_UP:50.0", uses)
-        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        val ingredients = StockRepository(db, FoodRepository(db), 1)
         assertEquals(listOf(4L, 5L, 1L, 2L, 3L), ingredients.pantry().onHand.map { it.id }, "in the order they came, as before")
 
         // Un-ticking now takes back that tick's entry alone, and what meals took from it stays taken.
         ingredients.takeBackOnHand(2, LocalDate.parse(week), StockSource.STOCK_UP)
         ingredients.giveBack(MealRef(LocalDate.parse(week), 0, MealSlot.DINNER))
         assertEquals(mapOf(1L to 3600.0, 3L to 150.0, 5L to 800.0), ingredients.pantry().onHandGrams)
-        assertEquals(mapOf(6L to 500.0), IngredientRepository(db, FoodRepository(db), 2).pantry().onHandGrams, "Bob's stock is his")
+        assertEquals(mapOf(6L to 500.0), StockRepository(db, FoodRepository(db), 2).pantry().onHandGrams, "Bob's stock is his")
         driver.close()
     }
 
@@ -651,7 +651,7 @@ class MigrationTest {
             single(url, "SELECT ingredientId || ':' || source FROM stockUse ORDER BY ingredientId, day"),
             "a use of an entry that is gone gets the tick that put it there",
         )
-        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        val ingredients = StockRepository(db, FoodRepository(db), 1)
         val ref = { weekStart: String, day: Int, slot: MealSlot -> MealRef(LocalDate.parse(weekStart), day, slot) }
 
         // Un-eaten, each meal gives back what it took, the used-up stock coming back as it was.
