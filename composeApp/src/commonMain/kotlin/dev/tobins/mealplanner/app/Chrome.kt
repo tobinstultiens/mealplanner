@@ -125,14 +125,18 @@ private fun DetailsBanner(summary: String, details: String, icon: ImageVector, t
         Text(summary, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = tint)
         TextButton(onClick = { open = true }) { Text(LocalStrings.current(Msg.DETAILS)) }
     }
-    if (open) {
-        AlertDialog(
-            onDismissRequest = { open = false },
-            title = { Text(summary) },
-            text = { Text(details, Modifier.verticalScroll(rememberScrollState())) },
-            confirmButton = { TextButton(onClick = { open = false }) { Text(LocalStrings.current(Msg.CLOSE)) } },
-        )
-    }
+    if (open) DetailsDialog(summary, details) { open = false }
+}
+
+/** The full [details] of a failure under its [title], for the technical text the summary leaves out. */
+@Composable
+fun DetailsDialog(title: String, details: String, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(title) },
+        text = { Text(details, Modifier.verticalScroll(rememberScrollState())) },
+        confirmButton = { TextButton(onClick = onClose) { Text(LocalStrings.current(Msg.CLOSE)) } },
+    )
 }
 
 /** A small icon with a short [text], for a warning that doesn't need a sentence. */

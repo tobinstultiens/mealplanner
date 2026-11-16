@@ -951,4 +951,118 @@ class ShoppingSessionTest {
         assertEquals(1L, ShoppingItem("x:1", "Coffee", null, null, "Other", emptyList(), onHand = false, checked = false).extraId)
         assertNull(ShoppingItem("a", "a", null, null, "Other", emptyList(), onHand = false, checked = false).extraId)
     }
+
+    @Test
+    fun withoutAConnectionTickingAgainSaysItIsNotSavedAndAsksNothing() = runTest {
+        server.lists[monday] = listWith(needsMore)
+        val session = session()
+        session.resume()
+        settle()
+        server.unreachable = true
+        session.tick("b", true)
+        settle()
+        assertNotNull(session.offlineSince, "the line says ticks are sent later")
+        server.asked.clear()
+
+        session.tickAgain("a")
+        settle()
+
+        // Not the generic "could not save the tick" beside a line that promises ticks are sent later.
+        assertEquals(listOf(Msg.TICK_AGAIN_NEEDS_CONNECTION), session.notices.map { it.msg })
+        assertEquals(emptyList(), server.asked, "the server cannot answer")
+        assertEquals(emptyMap(), pending().filterKeys { it == "a" }, "ticking again is not kept for later")
+    }
+
+    @Test
+    fun tickingAgainThatGetsNoAnswerSaysItNeedsAConnectionAndKeepsTheTechnicalTextBehindDetails() = runTest {
+        server.lists[monday] = listWith(needsMore)
+        val session = session()
+        session.resume()
+        settle()
+
+        server.oneStepAnswer = Load.Failed("unexpected end of stream on http://192.168.1.2:8080/...", technical = true, lostConnection = true)
+        session.tickAgain("a")
+        settle()
+
+        val notice = session.notices.single()
+        assertEquals(Msg.TICK_AGAIN_NEEDS_CONNECTION, notice.msg)
+        assertEquals("unexpected end of stream on http://192.168.1.2:8080/...", notice.technical)
+        assertFalse(Strings.English(notice.msg, notice.detail).contains("http"), "a plain sentence")
+    }
+
+    @Test
+    fun aFailureWithATechnicalTextSaysItPlainlyAndKeepsTheTextForDetails() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+        server.addAnswer = Load.Failed("unexpected end of stream on http://192.168.1.2:8080/...", technical = true, lostConnection = true)
+
+        session.add("Coffee") {}
+        settle()
+
+        val notice = session.notices.single()
+        assertEquals("Could not add the item: the server could not be reached", Strings.English(notice.msg, notice.detail))
+        assertEquals("unexpected end of stream on http://192.168.1.2:8080/...", notice.technical)
+    }
+
+    @Test
+    fun aTechnicalFailureThatIsNoLostConnectionIsNotCalledOne() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+        server.addAnswer = Load.Failed("Cannot read property of undefined", technical = true)
+
+        session.add("Coffee") {}
+        settle()
+
+        val notice = session.notices.single()
+        assertEquals("Could not add the item: something went wrong", Strings.English(notice.msg, notice.detail))
+        assertEquals("Cannot read property of undefined", notice.technical)
+    }
+
+    @Test
+    fun anAnswerTheAppCannotReadIsNoMissingAnswerSoTheListLoadsAndTheTickIsCounted() = runTest {
+        ShoppingCache(storage).apply {
+            save(server.listFor(monday), "earlier")
+            choose(monday, "b", true)
+        }
+        server.tickElsewhere(monday, "c", true)
+        server.answer = { _, _ -> Load.Failed("Unexpected JSON token at offset 0", technical = true, unreadable = true) }
+        val session = session()
+        session.inFront(true)
+        session.resume()
+        wait(2 * server.latency)
+
+        assertEquals(listOf("check $monday b", "list $monday"), server.asked, "the list is not held back")
+        assertNull(session.offlineSince)
+        assertEquals(mapOf("b" to true), pending(), "kept for later")
+        assertEquals(1, session.stuckTicks, "the quiet hint that it has not reached the server")
+
+        // Once the server takes it, the hint goes.
+        server.answer = null
+        wait(10 * ShoppingSession.RECONNECT.inWholeMilliseconds)
+        assertEquals(emptyMap(), pending())
+        assertEquals(0, session.stuckTicks)
+    }
+
+    @Test
+    fun aStoredTickThatKeepsGettingAServerErrorIsCountedAndNoAnswerIsNot() = runTest {
+        ShoppingCache(storage).apply {
+            save(server.listFor(monday), "earlier")
+            choose(monday, "b", true)
+        }
+        server.answer = { _, _ -> Load.Failed("Internal server error", 500) }
+        val session = session()
+        session.resume()
+        wait(2 * server.latency)
+        assertEquals(1, session.stuckTicks)
+
+        // Nothing answering is the offline line's business, not this hint's.
+        server.answer = { _, _ -> Load.Failed("Unable to resolve host") }
+        session.retry()
+        settle()
+        assertEquals(0, session.stuckTicks)
+        assertNotNull(session.offlineSince)
+    }
 }
+

@@ -8,6 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class ShoppingNeedsTest {
+    private val onion = Ingredient(2, "Onion", null, null, null, null, null, isStaple = false)
     private val spinach = Ingredient(1, "Spinach", null, null, null, null, null, isStaple = false)
 
     private fun grams(amount: Double, item: String) = IngredientLine(amount, "g", Dimension.WEIGHT, amount, item, null)
@@ -68,5 +69,57 @@ class ShoppingNeedsTest {
 
         assertEquals(2.0, need.pieces)
         assertEquals(emptyList(), need.otherAmounts)
+    }
+
+    @Test
+    fun theOnionsAreKeptNextToABagOfThem() {
+        val onion = Ingredient(2, "Onion", null, null, null, null, null, isStaple = false)
+        val item = needs(
+            1.0,
+            listOf(count(2.0, "onion", "") to onion),
+            listOf(count(1.0, "bag", "onions") to onion),
+        ).single().toItem(ShoppingKey.Ingredient(2), checked = false, onHand = false, offers = emptyList(), productImage = null, perKg = null)
+
+        assertEquals(listOf("1 bag"), item.otherAmounts)
+        assertEquals(2.0, item.ownPieces, "the two onions themselves, which the bag is not")
+    }
+
+    @Test
+    fun onionsWithAWeightPerPieceAreInTheWeightAndNotCountedAgain() {
+        val onion = Ingredient(2, "Onion", null, 110.0, null, null, null, isStaple = false)
+        val item = needs(
+            1.0,
+            listOf(count(2.0, "onion", "") to onion),
+            listOf(count(1.0, "bag", "onions") to onion),
+        ).single().toItem(ShoppingKey.Ingredient(2), checked = false, onHand = false, offers = emptyList(), productImage = null, perKg = null)
+
+        assertEquals(330.0, item.grams, "the two onions and the bag, all weighed")
+        assertEquals(emptyList(), item.otherAmounts)
+        assertNull(item.ownPieces, "the onions are in the weight already")
+    }
+
+    @Test
+    fun aWeighedLineIsNotCountedInOwnPiecesWhileAnUnweighedOneIs() {
+        // No weight per piece: the two onions and the bag cannot be weighed, the 200 g line can.
+        val item = needs(
+            1.0,
+            listOf(grams(200.0, "onion") to onion),
+            listOf(count(2.0, "onion", "") to onion),
+            listOf(count(1.0, "bag", "onions") to onion),
+        ).single().toItem(ShoppingKey.Ingredient(2), checked = false, onHand = false, offers = emptyList(), productImage = null, perKg = null)
+
+        assertEquals(200.0, item.knownGrams)
+        assertEquals(2.0, item.ownPieces)
+        assertEquals(listOf("1 bag"), item.otherAmounts)
+    }
+
+    @Test
+    fun withoutOtherAmountsThePiecesSayItAll() {
+        val onion = Ingredient(2, "Onion", null, null, null, null, null, isStaple = false)
+        val item = needs(1.0, listOf(count(2.0, "onion", "") to onion)).single()
+            .toItem(ShoppingKey.Ingredient(2), checked = false, onHand = false, offers = emptyList(), productImage = null, perKg = null)
+
+        assertEquals(2.0, item.pieces)
+        assertNull(item.ownPieces)
     }
 }

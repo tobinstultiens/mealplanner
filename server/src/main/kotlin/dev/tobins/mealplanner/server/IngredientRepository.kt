@@ -52,17 +52,19 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     }
 
     /**
-     * The staples and what is on hand, with the grams left of each entry whose amount is known:
-     * also of what was bought ahead for next week, as that is at home already.
+     * The staples and what is on hand, with the grams left of each entry whose amount is known and
+     * the week each counts from when a tick put it there: also what was bought ahead for next week,
+     * as that is at home already.
      */
     fun pantry(): Pantry {
         val all = list()
         val byId = all.associateBy { it.id }
+        val stock = pantry.selectOnHandWeeks(userId).executeAsList()
         return Pantry(
             staples = all.filter { it.isStaple },
             onHand = pantry.selectOnHand(userId).executeAsList().mapNotNull(byId::get),
-            onHandGrams = pantry.selectOnHandWeeks(userId).executeAsList()
-                .mapNotNull { row -> row.grams?.let { row.ingredientId to it } }.toMap(),
+            onHandGrams = stock.mapNotNull { row -> row.grams?.let { row.ingredientId to it } }.toMap(),
+            onHandFrom = stock.mapNotNull { row -> row.fromWeek?.let { row.ingredientId to it } }.toMap(),
         )
     }
 

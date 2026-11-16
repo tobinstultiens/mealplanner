@@ -89,16 +89,19 @@ fun PacksToBuy.text(strings: Strings): String {
     return if (dealFits) strings(Msg.PACKS_TO_TAKE, packs, size) else strings(Msg.PACKS_DEAL_NEEDS, packs, size, dealPacks)
 }
 
+/** `3 ×`: a count of pieces, rounded up, as nobody buys 1.5 onions. */
+private fun piecesText(pieces: Double): String = "${ceil(pieces - 1e-9).toInt()} ×"
+
 /**
- * `3 × · 330 g`, `450 g`, `2 ×`, `200 g + 1 bag`, `250 ml`, or empty when the recipes give no
- * quantity. What could not be weighed ([ShoppingItem.otherAmounts]) follows the known weight; the
- * piece count is left out then, as it would count those amounts a second time.
+ * `3 × · 330 g`, `450 g`, `2 ×`, `200 g + 2 × + 1 bag`, `250 ml`, or empty when the recipes give no
+ * quantity. What could not be weighed ([ShoppingItem.otherAmounts]) follows the known weight, with
+ * the count of the ingredient itself between ([ShoppingItem.ownPieces]); the piece count is left out
+ * then, as it would count those amounts a second time.
  */
 fun ShoppingItem.quantityText(locale: FormatLocale): String {
     val weight = (grams ?: knownGrams)?.let { weightText(it, locale) }
-    if (otherAmounts.isNotEmpty()) return (listOfNotNull(weight) + otherAmounts).joinToString(" + ")
-    // Pieces are rounded up: nobody buys 1.5 onions.
-    return listOfNotNull(pieces?.let { "${ceil(it - 1e-9).toInt()} ×" }, weight).joinToString(" · ")
+    if (otherAmounts.isNotEmpty()) return (listOfNotNull(weight, ownPieces?.let(::piecesText)) + otherAmounts).joinToString(" + ")
+    return listOfNotNull(pieces?.let(::piecesText), weight).joinToString(" · ")
 }
 
 /** Less than a gram still to buy is nothing to buy, as the server drops a stock once less than a gram is left. */
@@ -146,15 +149,18 @@ internal val ShoppingItem.covered: Boolean get() = !checked && nothingToBuy()
  * The row's amount column: the week's need ([quantityText]), but on a row not ticked yet whose meals
  * are partly done what the meals to come need, so it adds up with the line under the name
  * ([toBuyText]), and nothing once no meal to come needs it. A ticked row keeps the week's need, which
- * its "more" line ([moreNeeded]) counts from. Pieces are left out with the meals to come, as the
- * server weighs them only.
+ * its "more" line ([moreNeeded]) counts from. The pieces are those of the meals to come
+ * ([ShoppingItem.toComePieces]), left out when the server does not say them or other amounts follow.
  */
 internal fun ShoppingItem.amountText(locale: FormatLocale): String = when {
     checked -> quantityText(locale)
     mealsDone -> ""
-    partlyDone -> weightText(toComeGrams ?: 0.0, locale)
+    partlyDone -> listOfNotNull(toComePieces?.takeIf { otherAmounts.isEmpty() }?.let(::piecesText), weightText(toComeGrams ?: 0.0, locale)).joinToString(" · ")
     else -> quantityText(locale)
 }
+
+/** The meals to name as the row's source: those still to cook when the server says them, else the week's. */
+internal val ShoppingItem.sourceMeals: List<String> get() = toComeRecipes ?: recipes
 
 /**
  * What a row not ticked yet says under its name of what is at home and still to buy: `300 g on
@@ -253,13 +259,21 @@ internal fun ShoppingScreen(
         onDispose { session.leave() }
     }
 
-    // What the session has to tell, also from while the screen was not shown.
+    // What the session has to tell, also from while the screen was not shown. A technical text
+    // stays behind "Details", as in an error banner.
     val notice = session.notices.firstOrNull()
+    var technicalDetails by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(notice) {
         if (notice == null) return@LaunchedEffect
-        snackbar.showSnackbar(t(notice.msg, notice.detail))
+        val answer = snackbar.showSnackbar(
+            t(notice.msg, notice.detail),
+            actionLabel = notice.technical?.let { t(Msg.DETAILS) },
+            duration = if (notice.technical != null) SnackbarDuration.Long else SnackbarDuration.Short,
+        )
+        if (answer == SnackbarResult.ActionPerformed) technicalDetails = notice.technical
         session.shown(notice)
     }
+    technicalDetails?.let { DetailsDialog(t(Msg.DETAILS), it) { technicalDetails = null } }
 
     /** Sets one item's tick: shown at once, the server hears of it in the background. */
     fun tick(key: String, checked: Boolean) = session.tick(key, checked)
@@ -444,6 +458,16 @@ internal fun ShoppingScreen(
                                 )
                                 TextButton(onClick = { retry() }) { Text(t(Msg.RETRY)) }
                             }
+                        }
+                    }
+                    if (session.stuckTicks > 0) {
+                        item(key = "stuck-ticks") {
+                            Text(
+                                t.plural(Plural.TICKS_NOT_SENT, session.stuckTicks),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
+                            )
                         }
                     }
                     item {
@@ -836,9 +860,9 @@ private fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, to
                 Text(toBuy, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             // Stock-up advice is for no meal in particular; a provisional buy-ahead meal is only an example.
-            if (item.recipes.isNotEmpty()) {
+            if (item.sourceMeals.isNotEmpty()) {
                 Text(
-                    item.recipes.joinToString().let { if (suggested) t(Msg.SUGGESTED_MEALS, it) else it },
+                    item.sourceMeals.joinToString().let { if (suggested) t(Msg.SUGGESTED_MEALS, it) else it },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

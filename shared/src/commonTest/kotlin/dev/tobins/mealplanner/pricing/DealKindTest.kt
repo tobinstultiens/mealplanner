@@ -42,6 +42,7 @@ class DealKindTest {
             "1,09 per 500 gram · Alleen in de winkel" to DealKind.PricePerKg(2.18),
             "1,00 per 100 gram" to DealKind.PricePerKg(10.0),
             "100 gram voor 1.59" to DealKind.PricePerKg(15.9),
+            "2 stapelen voor 3.99" to DealKind.MultiPrice(2, 3.99),
         )
         for ((text, kind) in expected) {
             val read = Discounts.kind(text)
@@ -53,7 +54,6 @@ class DealKindTest {
     fun formsThatAreNotKnownStayUnknownWithTheirText() {
         for (text in listOf(
             "2 stapelen tot 35%",
-            "2 stapelen voor 3.99",
             "voor 1,00 per hamburger",
             "Gratis beanie bij 2 stuks · Alleen online - OP=OP",
             "2 gratis blikjes bij 1 multipack · Alleen online - OP=OP",

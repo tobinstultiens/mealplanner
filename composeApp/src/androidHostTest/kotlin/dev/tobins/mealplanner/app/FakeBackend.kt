@@ -127,6 +127,7 @@ class FakeBackend(
         staples = ingredients.filter { it.isStaple },
         onHand = ingredients.filter { it.id in setOf(1L, 2L, 3L, 4L, 6L) },
         onHandGrams = mapOf(1L to 300.0, 3L to 650.0, 4L to 1000.0, 6L to 200.0),
+        onHandFrom = mapOf(1L to "2026-11-09", 3L to "2026-11-16", 4L to "2026-11-23", 6L to "2026-11-16"),
     )
 
     private fun meal(day: Int, slot: MealSlot, id: Long, title: String, kcal: Double, protein: Double, cost: Double = 2.4) =
@@ -185,7 +186,9 @@ class FakeBackend(
             items = listOf(
                 item("pepper", "Red bell pepper", null, 4.0, ShopSection.FRUIT_VEG, chickpea, offers = listOf(offerList[0].copy(paidShare = 0.75)), imageUrl = offerList[0].imageUrl),
                 // Weighed in one recipe and counted in bags in another: the weight is known only in part.
-                item("spinach", "Spinach", null, 1.0, ShopSection.FRUIT_VEG, chicken, knownGrams = 600.0, otherAmounts = listOf("1 bag")),
+                // Two whole plants are counted in a third, next to the bag.
+                item("spinach", "Spinach", null, 3.0, ShopSection.FRUIT_VEG, chicken, knownGrams = 600.0, otherAmounts = listOf("1 bag"))
+                    .copy(ownPieces = 2.0),
                 item(
                     // Bought for the 800 g a reroll needed; the meals need 1.4 kg now: 600 g more. 300 g
                     // bought ahead last week is in the freezer: counted in when the row said 800 g, so the
@@ -208,10 +211,11 @@ class FakeBackend(
                 ),
                 // What is left of a stock-up bag covers part of it. Wednesday's breakfast was eaten from it
                 // (50 g): the six still to come need 300 g, the amount shown, so 100 g is still to buy.
+                // The eaten breakfast is no longer named as its source: only the meals still to cook are.
                 item(
                     "oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries",
                     offers = listOf(offerList[3].copy(paidShare = 0.79)), regularPrice = 0.76, onHand = true, onHandGrams = 200.0, toComeGrams = 300.0,
-                ),
+                ).let { it.copy(recipes = listOf("Porridge with banana") + it.recipes, toComeRecipes = listOf("Overnight oats with blueberries")) },
                 // Own items, typed by hand: one the server filed under a section, one it could not place.
                 item("x:1", "Coffee", null, null, ShopSection.DRINKS, null),
                 item("x:2", "Birthday candles", null, null, ShopSection.OTHER, null),

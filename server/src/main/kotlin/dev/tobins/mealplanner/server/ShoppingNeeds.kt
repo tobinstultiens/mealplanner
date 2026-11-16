@@ -19,6 +19,9 @@ class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: 
     var gramsKnown = true
     var pieces = 0.0
 
+    /** The part of [pieces] counted in the ingredient itself (`2 | onion`) that has no weight, not in a container (`1 bag`). */
+    private var ownPieces = 0.0
+
     /** What could not be converted to grams and is not the ingredient itself, summed per unit as written, scaled. */
     private val others = linkedMapOf<String, Double>()
     val recipes = linkedSetOf<String>()
@@ -31,6 +34,11 @@ class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: 
 
     /** `1 bag`, `250 ml`: [others] rounded up to whole units, in the order first met. */
     val otherAmounts: List<String> get() = others.map { (unit, amount) -> "${ceil(amount - 1e-9).toInt()} $unit" }
+
+    /** Adds a count of the ingredient itself, which [pieces] counts too. */
+    fun addOwnPieces(amount: Double) {
+        ownPieces += amount
+    }
 
     /** Adds a line that has no weight: a count in a container or a volume without a density. */
     fun addOther(unit: String, amount: Double) {
@@ -52,6 +60,7 @@ class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: 
         knownGrams = knownGrams,
         otherAmounts = otherAmounts,
         pieces = pieces.takeIf { it > 0 },
+        ownPieces = ownPieces.takeIf { it > 0 && otherAmounts.isNotEmpty() },
         category = section.title,
         recipes = recipes.toList(),
         onHand = onHand,
@@ -101,6 +110,8 @@ fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, s
             val grams = gramsOf(line, ingredient)
             if (grams != null) need.grams += grams * factor else need.gramsKnown = false
             if (line.dimension == Dimension.COUNT) need.pieces += amount * factor
+            // Only a count that adds no weight: one with a weight per piece is in the grams already.
+            if (line.unitIsTheIngredient && grams == null) need.addOwnPieces(amount * factor)
             val unit = line.unit
             if (grams == null && unit != null && !line.unitIsTheIngredient) need.addOther(unit, amount * factor)
         }

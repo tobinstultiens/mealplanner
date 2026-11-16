@@ -41,12 +41,12 @@ private fun ShoppingItem.groupStore(shops: Set<Store>, today: String): Store? = 
 
 /**
  * The full deals of the item's offers in [shops] for the row's snackbar, one per line: those valid
- * today as they are, those that start later with their day. Ended offers are left out, as they
+ * today as they are, those that start later with the days they start and end. Ended offers are left out, as they
  * are everywhere on the list.
  */
 fun ShoppingItem.dealText(shops: Set<Store>, today: String, strings: Strings): String =
     offers.filter { it.store in shops && it.validUntil >= today }.distinctBy { it.store to it.deal }.joinToString("\n") {
-        val later = if (it.startsAfter(today)) " ${it.startLabel(today, strings)}" else ""
+        val later = if (it.startsAfter(today)) " ${it.startLabel(today, strings)} ${it.endLabel(today, strings)}" else ""
         // The pack size is added when the title does not already say it.
         val pack = it.packSize?.takeIf { size -> size.isNotBlank() && !it.title.contains(size, ignoreCase = true) }
         "${it.shortText(strings)}$later (${listOfNotNull(it.title, pack).joinToString(", ")})"

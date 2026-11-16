@@ -720,6 +720,8 @@ class BuyAheadTest {
         assertEquals(1800.0, assertNotNull(row().grams), 1e-9, "the week's need, as installed apps read it")
         assertEquals(600.0, assertNotNull(row().toComeGrams), 1e-9)
         assertEquals(300.0, toBuy(), 1e-9)
+        assertEquals(listOf("Chicken 0", "Chicken 1"), row().recipes, "the week's meals, as installed apps read them")
+        assertEquals(listOf("Chicken 1"), row().toComeRecipes, "only the meal still to cook is its source")
         http.mark(week, lunch, MealStatus.EATEN)
         assertEquals(600.0, assertNotNull(row().toComeGrams), 1e-9, "the leftovers were cooked with the dinner")
 
@@ -748,6 +750,7 @@ class BuyAheadTest {
         http.mark(week, other, MealStatus.EATEN)
         val list = http.list()
         assertEquals(0.0, list.items.single { it.name == "Chicken fillet" }.toComeGrams)
+        assertEquals(emptyList(), list.items.single { it.name == "Chicken fillet" }.toComeRecipes, "no meal left to name")
         assertTrue(list.noLongerNeeded.isEmpty())
     }
 

@@ -145,7 +145,8 @@ class PriceHistoryTest {
         assertEquals(listOf("NTH_HALF_PRICE", 2L, null, null, null), row("Halve prijs"))
         assertEquals("PRICE_PER_KG", row("Per kilo")[0])
         near(2.18, rows.getValue("Per kilo").dealEuros)
-        assertEquals(listOf("UNKNOWN", 1L, null, null, null), row("Stapel"))
+        // "Up to" 35 % is no firm percentage, but stacking two says the deal wants two packs.
+        assertEquals(listOf("UNKNOWN", 2L, null, null, null), row("Stapel"))
 
         fun share(title: String) = rows.getValue(title).paidShare
         near(0.75, share("Procent"))

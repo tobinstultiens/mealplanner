@@ -101,7 +101,9 @@ data class PacksToBuy(val packs: Int, val packGrams: Double?, val packPieces: In
 object Discounts {
     private val percent = Regex("""(\d+(?:\.\d+)?)\s*%\s*korting""")
     private val free = Regex("""(\d+)\s*\+\s*(\d+)\s*gratis""")
-    private val multiPrice = Regex("""(\d+)\s*voor\s*(\d+(?:\.\d+)?)""")
+    // AH writes "2 stapelen voor 3.99" for "2 voor 3.99": stack that many packs for the price.
+    private val multiPrice = Regex("""(\d+)\s*(?:stapelen\s*)?voor\s*(\d+(?:\.\d+)?)""")
+    private val stacked = Regex("""(\d+)\s*stapelen""")
     private val fixedPrice = Regex("""^voor\s*(\d+(?:\.\d+)?)""")
     private val halfPriceNth = Regex("""(\d+)\s*e\s*halve prijs""")
     private val amountOff = Regex("""^(\d+(?:\.\d+)?)\s*korting""")
@@ -116,8 +118,8 @@ object Discounts {
      * own price: without a deal text (Lidl) the offer is that lower price.
      *
      * Only what the store says after a "·" ("· Alleen online") is left out. The rest must be one of the
-     * known forms as a whole: "2 stapelen tot 35%" or "voor 1,00 per hamburger" are [DealKind.Unknown]
-     * rather than read as something they may not be.
+     * known forms as a whole: "2 stapelen tot 35%" ("up to", so not a firm percentage) or "voor 1,00
+     * per hamburger" are [DealKind.Unknown] rather than read as something they may not be.
      */
     fun kind(deal: String?, price: Double? = null): DealKind {
         if (deal.isNullOrBlank()) return price?.let(DealKind::LowerPrice) ?: DealKind.Unknown(deal)
@@ -138,13 +140,14 @@ object Discounts {
 
     /**
      * How many packs the deal wants bought together: 2 for "2 voor 3,99", "1+1 gratis" and "2e halve
-     * prijs", 4 for "3+1 gratis"; 1 for a percentage, a price or a deal that says nothing of the kind.
+     * prijs", "2 stapelen tot 35%" (AH: stack two packs) and "2 stapelen voor 3,99", 4 for "3+1 gratis"; 1 for a percentage, a price or a deal that says nothing of the kind.
      */
     fun packsNeeded(deal: String?): Int {
         val text = deal?.lowercase()?.replace(',', '.')?.trim() ?: return 1
         val count = free.find(text)?.let { it.groupValues[1].toInt() + it.groupValues[2].toInt() }
             ?: multiPrice.find(text)?.groupValues?.get(1)?.toInt()
             ?: halfPriceNth.find(text)?.groupValues?.get(1)?.toInt()
+            ?: stacked.find(text)?.groupValues?.get(1)?.toInt()
         return (count ?: 1).coerceAtLeast(1)
     }
 

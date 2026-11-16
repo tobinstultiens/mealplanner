@@ -232,7 +232,11 @@ class ShoppingStoresTest {
         assertEquals(listOf(Store.AH), storeOverview(listOf(milk), all, monday).stores.map { it.store })
         assertEquals(0.5, savingOf(listOf(milk), all, monday)!!, 1e-9)
         // The Lidl deal is still there to read, with its day.
-        assertEquals("AH: €2.00 (Product)\nLidl: €1.00 from Thu (Product)", milk.dealText(all, monday, Strings.English))
+        assertEquals("AH: €2.00 (Product)\nLidl: €1.00 from Thu until 25 Nov (Product)", milk.dealText(all, monday, Strings.English))
+        // Within the week the end is a day name too, in either language.
+        val short = milk.copy(offers = listOf(dated(Store.LIDL, 1.0, 0.4, "2026-11-19", "2026-11-22")))
+        assertEquals("Lidl: €1.00 from Thu until Sun (Product)", short.dealText(all, monday, Strings.English))
+        assertEquals("Lidl: €1,00 vanaf do t/m zo (Product)", short.dealText(all, monday, Strings.Dutch))
     }
 
     private fun packItem(grams: Double?, pieces: Double?, offer: Offer, otherAmounts: List<String> = emptyList()) =
@@ -306,6 +310,24 @@ class ShoppingStoresTest {
         assertNull(notOnHand.toBuyText(Strings.English))
         assertEquals("1.4 kg", notOnHand.amountText(FormatLocale.English))
         assertEquals("2 × 700 g", notOnHand.packsStillToBuy(offer)?.text(Strings.English))
+    }
+
+    @Test
+    fun theMealsToComeKeepTheirPieceCountAndAreTheOnlyMealsNamed() {
+        val offer = packOffer("400 g", "25% korting", 0.75)
+        // Ten pieces and 1.3 kg for the week; the meals to come need 680 g of it, in six pieces.
+        val part = packItem(1304.0, 10.0, offer).copy(toComeGrams = 680.0, toComePieces = 5.2, recipes = listOf("Eaten", "Cooked later"), toComeRecipes = listOf("Cooked later"))
+        assertEquals("6 × · 680 g", part.amountText(FormatLocale.English))
+        assertEquals("10 × · 1.3 kg", part.copy(checked = true).amountText(FormatLocale.English), "a ticked row keeps the week's need")
+        assertEquals(listOf("Cooked later"), part.sourceMeals)
+        // A server from before says no pieces and no meals: the weight alone and the week's meals.
+        val old = part.copy(toComePieces = null, toComeRecipes = null)
+        assertEquals("680 g", old.amountText(FormatLocale.English))
+        assertEquals(listOf("Eaten", "Cooked later"), old.sourceMeals)
+        // Nothing left to cook: no meal to name.
+        assertEquals(emptyList(), part.copy(toComeGrams = 0.0, toComeRecipes = emptyList()).sourceMeals)
+        // Other amounts follow the weight, so the count would be told twice.
+        assertEquals("680 g", part.copy(otherAmounts = listOf("1 bag")).amountText(FormatLocale.English))
     }
 
     @Test
@@ -409,8 +431,9 @@ class ShoppingStoresTest {
         assertEquals(listOf("covered", "done"), keys(overview.covered))
         assertEquals("0 of 2 · 2 sections to go", shoppingProgress(items, Strings.English))
         assertEquals(2, overview.stores.sumOf { it.items.size } + overview.anyStore.size)
-        assertEquals("Nothing left to buy · 2 items", Strings.English.plural(Plural.NOTHING_LEFT_ITEMS, 2))
-        assertEquals("Niets meer te kopen · 2 producten", Strings.Dutch.plural(Plural.NOTHING_LEFT_ITEMS, 2))
+        // Not the progress line's own words, which sit right above it when everything is covered.
+        assertEquals("Covered · 2 items", Strings.English.plural(Plural.NOTHING_LEFT_ITEMS, 2))
+        assertEquals("Gedekt · 2 producten", Strings.Dutch.plural(Plural.NOTHING_LEFT_ITEMS, 2))
         assertNull(savingOf(listOf(covered), all, today))
         assertEquals(0.0, covered.saving(lidl))
         // At another store it is not "cheaper elsewhere": there is nothing to buy of it.

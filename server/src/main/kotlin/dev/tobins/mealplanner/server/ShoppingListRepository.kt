@@ -86,7 +86,7 @@ class ShoppingListRepository(
             need.toItem(need.key, need.key in ticked, id in onHand, id?.let { offers[it] }.orEmpty(), id?.let { images[it] }, id?.let { perKg[it] })
                 .withBought(ticks[need.key])
                 .withStock(id, stock)
-                .copy(toComeGrams = toComeGrams(need, toCook[need.key]))
+                .withToCome(need, toCook[need.key])
         }
 
         val wanted = advice()
@@ -136,6 +136,19 @@ class ShoppingListRepository(
         sectionOf: Map<Long, ShopSection>,
         lines: Map<Long, RecipeLines> = recipes.linesWithIngredients(meals.map { it.recipeId }),
     ): ShoppingNeeds = shoppingNeeds(planned(meals), lines, sectionOf)
+
+    /**
+     * This row with what the meals still to cook need of it ([toComeGrams]), their pieces and the
+     * meals themselves, so the row does not name or count what was eaten. An own item is for no meal.
+     */
+    private fun ShoppingItem.withToCome(need: ShoppingNeed, toCook: ShoppingNeed?): ShoppingItem {
+        val forMeals = need.key is ShoppingKey.Ingredient || need.key is ShoppingKey.Text
+        return copy(
+            toComeGrams = toComeGrams(need, toCook),
+            toComePieces = toCook?.pieces?.takeIf { forMeals && it > 0 },
+            toComeRecipes = if (forMeals) toCook?.recipes?.toList().orEmpty() else null,
+        )
+    }
 
     /**
      * The weight the meals still to cook need of [need], a row of the list: what [toCook], their row

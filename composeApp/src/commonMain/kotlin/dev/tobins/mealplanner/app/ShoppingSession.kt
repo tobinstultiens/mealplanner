@@ -73,8 +73,24 @@ private suspend fun <T : Any> loadUnlessOld(block: suspend () -> T?): Load<T>? =
 /** The id of an own item, the number in its key `x:<id>`; null for a row that comes from the plan. */
 internal val ShoppingItem.extraId: Long? get() = if (key.startsWith("x:")) key.removePrefix("x:").toLongOrNull() else null
 
-/** Something to tell the user in a snackbar the next time the list shows: [msg] filled in with [detail]. */
-internal class Notice(val msg: Msg, val detail: String)
+/**
+ * Something to tell the user in a snackbar the next time the list shows: [msg] filled in with
+ * [detail]. [technical] is an exception's own text that goes with it, kept behind "Details".
+ */
+internal class Notice(val msg: Msg, val detail: String, val technical: String? = null)
+
+/** The notice that [msg] failed because of [failed]: a plain sentence, and the exception's text behind "Details". */
+internal fun noticeFor(msg: Msg, failed: Load.Failed): Notice =
+    if (failed.technical) {
+        val plain = when {
+            failed.unreadable -> Msg.UNREADABLE_ANSWER
+            failed.lostConnection -> Msg.NO_CONNECTION
+            else -> Msg.WENT_WRONG
+        }
+        Notice(msg, Strings.current(plain), failed.message)
+    } else {
+        Notice(msg, failed.message)
+    }
 
 /**
  * The Shopping screen's state, owned by the app for as long as one account is logged in, so that
@@ -144,6 +160,14 @@ internal class ShoppingSession(
 
     /** When the stored copy shown was saved, while the server cannot be reached; null when online. */
     var offlineSince: String? by mutableStateOf(null)
+        private set
+
+    /**
+     * How many stored ticks the server answered with an error or an answer the app could not read at
+     * the last attempt, so they have not reached it yet; they stay stored and are tried again. Ticks
+     * that got no answer at all are the offline line's business ([offlineSince]).
+     */
+    var stuckTicks: Int by mutableStateOf(0)
         private set
 
     /** Finished sections and Done groups the user opened; everything else stays collapsed. */
@@ -222,16 +246,22 @@ internal class ShoppingSession(
     /**
      * The user ticks a row again whose need grew since it was bought: the server keeps what a tick
      * said first, so it is asked to tick it again for what it needs now, in one step. Not shown at
-     * once, as the amount comes from the server's answer; offline it is reported, not kept for later.
+     * once, as the amount comes from the server's answer; offline it is reported (without asking the
+     * server, which cannot answer) and not kept for later, and says so, as the line about the stored
+     * list promises only plain ticks are sent later.
      * A server from before that step gets what the app sent then: an un-tick and a tick
      * ([untickAndTick]). On a failure the list is fetched again, so the row shows what the server has.
      */
     fun tickAgain(key: String) {
+        if (!online) {
+            waitingNotices += Notice(Msg.TICK_AGAIN_NEEDS_CONNECTION, "")
+            return
+        }
         val week = weekStart
         scope.launch {
             turn.withLock {
                 val result = timedUnlessOld { server.tickAgain(week, key) } ?: untickAndTick(week, key)
-                showAnswer(week, result, Msg.TICK_FAILED)
+                showAnswer(week, result, Msg.TICK_FAILED, lostConnection = Msg.TICK_AGAIN_NEEDS_CONNECTION)
             }
         }
     }
@@ -268,23 +298,24 @@ internal class ShoppingSession(
     private suspend fun putOnHand(week: String, id: Long) {
         when (val result = withTimeoutOrNull(TIME_LIMIT) { server.putOnHand(id) } ?: Load.Failed(Strings.current(Msg.NO_ANSWER))) {
             is Load.Ready -> load(week)
-            is Load.Failed -> waitingNotices += Notice(Msg.USE_UP_FAILED, result.message)
+            is Load.Failed -> waitingNotices += noticeFor(Msg.USE_UP_FAILED, result)
             Load.Loading -> Unit
         }
     }
 
     /**
-     * Shows the list the server answered with; or says why it failed ([failed]) and fetches the list
-     * again, so that the screen shows what the server has, whatever part of the change went through.
+     * Shows the list the server answered with; or says why it failed ([failed], or [lostConnection]
+     * when nothing answered) and fetches the list again, so that the screen shows what the server
+     * has, whatever part of the change went through.
      */
-    private suspend fun showAnswer(week: String, result: Load<ShoppingList>, failed: Msg) {
+    private suspend fun showAnswer(week: String, result: Load<ShoppingList>, failed: Msg, lostConnection: Msg = failed) {
         when (result) {
             is Load.Ready -> {
                 cache.save(result.value, nowIso())
                 display(week, ticksOf(week).reset(result.value))
             }
             is Load.Failed -> {
-                waitingNotices += Notice(failed, result.message)
+                waitingNotices += noticeFor(if (result.noAnswer) lostConnection else failed, result)
                 load(week)
             }
             Load.Loading -> Unit
@@ -301,15 +332,18 @@ internal class ShoppingSession(
                         cache.save(result.value, nowIso())
                         display(week, ticksOf(week).reset(result.value))
                     }
-                    is Load.Failed -> waitingNotices += Notice(Msg.ADVICE_CHANGE_FAILED, result.message)
+                    is Load.Failed -> waitingNotices += noticeFor(Msg.ADVICE_CHANGE_FAILED, result)
                     Load.Loading -> Unit
                 }
             }
         }
     }
 
-    /** Whether own items can be added or deleted: not while the list shown is the stored copy of a lost connection. */
-    val canChangeExtras: Boolean get() = offlineSince == null
+    /** False while the list shown is the stored copy of a lost connection. */
+    private val online: Boolean get() = offlineSince == null
+
+    /** Whether own items can be added or deleted: only with a connection. */
+    val canChangeExtras: Boolean get() = online
 
     /**
      * Puts [name] on the list as an own item; [added] is called once the server has it, so the
@@ -330,7 +364,7 @@ internal class ShoppingSession(
                             display(week, ticksOf(week).reset(result.value))
                             added()
                         }
-                        is Load.Failed -> waitingNotices += Notice(Msg.EXTRA_ADD_FAILED, result.message)
+                        is Load.Failed -> waitingNotices += noticeFor(Msg.EXTRA_ADD_FAILED, result)
                         Load.Loading -> Unit
                     }
                 }
@@ -352,7 +386,7 @@ internal class ShoppingSession(
                         cache.save(result.value, nowIso())
                         display(week, ticksOf(week).reset(result.value))
                     }
-                    is Load.Failed -> waitingNotices += Notice(Msg.EXTRA_REMOVE_FAILED, result.message)
+                    is Load.Failed -> waitingNotices += noticeFor(Msg.EXTRA_REMOVE_FAILED, result)
                     Load.Loading -> Unit
                 }
             }
@@ -468,9 +502,11 @@ internal class ShoppingSession(
      * and reported. One it fails on (a 5xx) stays stored for the next time and the rest still go:
      * the server answered, so the list can load, and one tick it keeps failing on must not stop
      * every list from loading. When one gets no answer at all the rest wait for the next time, and
-     * that failure is returned.
+     * that failure is returned. An answer the app cannot read is the server's answer too, so it
+     * counts as an error and not as no answer. The ticks left stored are counted in [stuckTicks].
      */
     private suspend fun sendWaiting(): Load.Failed? {
+        var stuck = 0
         for (week in cache.weeksWithTicks()) {
             // Ticks of this session that are still to go are sent in their own turn.
             val waiting = cache.pending(week) - ticks[week]?.unsent.orEmpty()
@@ -480,15 +516,20 @@ internal class ShoppingSession(
                     is Load.Failed -> when {
                         result.refused -> {
                             cache.forget(week, key, checked)
-                            waitingNotices += Notice(Msg.TICK_FAILED, result.message)
+                            waitingNotices += noticeFor(Msg.TICK_FAILED, result)
                         }
-                        // Without a status nothing answered: no connection, or the time limit ran out.
-                        result.status == null -> return result
+                        // Nothing answered: no connection, or the time limit ran out.
+                        result.noAnswer -> {
+                            stuckTicks = stuck
+                            return result
+                        }
+                        else -> stuck++
                     }
                     Load.Loading -> Unit
                 }
             }
         }
+        stuckTicks = stuck
         return null
     }
 

@@ -76,6 +76,9 @@ class FormattingTest {
         assertEquals("1,25 kg + 1 bag", item(1250.0, 1.0, "1 bag").quantityText(nl))
         assertEquals("250 ml", item(null, null, "250 ml").quantityText(en))
         assertEquals("2 can", item(null, 2.0, "2 can").quantityText(nl))
+        // 2 onions and a bag of them: the count of the ingredient itself is not lost behind the bag.
+        assertEquals("2 × + 1 bag", item(null, 3.0, "1 bag").copy(ownPieces = 2.0).quantityText(en))
+        assertEquals("200 g + 2 × + 1 bag", item(200.0, 2.5, "1 bag").copy(ownPieces = 1.5).quantityText(en), "rounded up")
         // Weight known, and a piece count that has no unit of its own.
         assertEquals("2 × · 200 g", item(200.0, 2.0).quantityText(en))
         assertEquals("", item(null, null).quantityText(en))
