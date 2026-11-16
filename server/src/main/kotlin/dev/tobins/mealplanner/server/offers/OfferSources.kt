@@ -69,7 +69,7 @@ class JumboOfferSource(private val http: HttpClient, private val url: String = "
 
     override suspend fun fetch(): List<Offer> {
         val page = http.get(url) { browserHeaders() }.ok().bodyAsText()
-        return JumboParser.page(page).also { check(it.isNotEmpty()) { "Jumbo offers page held no promotions; its layout may have changed" } }
+        return JumboParser.page(page)
     }
 }
 

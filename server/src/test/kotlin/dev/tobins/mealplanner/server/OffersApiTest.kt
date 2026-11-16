@@ -53,6 +53,81 @@ class OffersApiTest {
     private fun offer(store: Store, title: String, from: String = "2026-11-09", until: String = "2026-11-15") =
         Offer(store, title, "25% korting", validFrom = from, validUntil = until)
 
+    private fun wide(store: Store, title: String, ended: Boolean = false) = Offer(
+        store, title, "25% korting",
+        validFrom = LocalDate.now().minusDays(if (ended) 40 else 3).toString(),
+        validUntil = LocalDate.now().plusDays(if (ended) -30 else 30).toString(),
+    )
+
+    private fun many(store: Store, prefix: String, n: Int, ended: Boolean = false) = (1..n).map { wide(store, "$prefix $it", ended) }
+
+    /** Refreshes AH with [first], then with [second] (Jumbo gets a second offer meanwhile); returns what the API shows after. */
+    private fun refreshTwice(first: List<Offer>, second: List<Offer>): OffersState {
+        lateinit var state: OffersState
+        testApplication {
+            val ah = FakeSource(Store.AH, first)
+            val jumbo = FakeSource(Store.JUMBO, listOf(wide(Store.JUMBO, "Zalm")))
+            val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+            application { module(config, openDatabase(config.databaseUrl).second, listOf(ah, jumbo), verifier = TestTokens) }
+            val http = createClient {
+                install(ContentNegotiation) { json() }
+                defaultRequest { bearerAuth("t") }
+            }
+            http.post("/api/offers/refresh")
+            ah.offers = second
+            jumbo.offers = listOf(wide(Store.JUMBO, "Zalm"), wide(Store.JUMBO, "Tonijn"))
+            http.post("/api/offers/refresh")
+            state = http.get("/api/offers").body<OffersState>()
+        }
+        return state
+    }
+
+    @Test
+    fun anEmptyResultKeepsTheStoredOffersSetsTheErrorAndLeavesTheOtherStoresUpdating() {
+        val state = refreshTwice(many(Store.AH, "Offer", 40), emptyList())
+        val ah = state.sources.single { it.store == Store.AH }
+        assertEquals(40, state.offers.count { it.store == Store.AH })
+        assertEquals(40, ah.offerCount)
+        assertContains(ah.error.orEmpty(), "returned no offers; kept the stored ones")
+        assertEquals(2, state.offers.count { it.store == Store.JUMBO }, "the other store still updates")
+        assertNull(state.sources.single { it.store == Store.JUMBO }.error)
+    }
+
+    @Test
+    fun aCollapsedResultKeepsTheStoredOffersAndNamesBothNumbers() {
+        val state = refreshTwice(many(Store.AH, "Offer", 40), many(Store.AH, "New", 5))
+        assertEquals(many(Store.AH, "Offer", 40).map { it.title }.sorted(), state.offers.filter { it.store == Store.AH }.map { it.title }.sorted())
+        val error = state.sources.single { it.store == Store.AH }.error.orEmpty()
+        assertContains(error, "5 offers")
+        assertContains(error, "40")
+    }
+
+    @Test
+    fun aQuietWeekOfMoreThanAThirdIsStored() {
+        val state = refreshTwice(many(Store.AH, "Offer", 40), many(Store.AH, "New", 14))
+        assertEquals(14, state.offers.count { it.store == Store.AH }, "14 of 40 is a quiet week, not a broken page")
+        assertNull(state.sources.single { it.store == Store.AH }.error)
+    }
+
+    @Test
+    fun aSmallResultReplacesStoredOffersThatHaveAllEnded() {
+        val state = refreshTwice(many(Store.AH, "Old", 40, ended = true), many(Store.AH, "New", 5))
+        assertEquals(many(Store.AH, "New", 5).map { it.title }.sorted(), state.offers.filter { it.store == Store.AH }.map { it.title }.sorted())
+        assertNull(state.sources.single { it.store == Store.AH }.error)
+    }
+
+    @Test
+    fun aRefusedRefreshEndsNoPeriodInThePriceHistory() = runBlocking {
+        val db = openDatabase("jdbc:sqlite::memory:").second
+        val source = FakeSource(Store.AH, many(Store.AH, "Offer", 40))
+        val offers = OfferRepository(db, listOf(source))
+        offers.refresh(now = Instant.now())
+        val before = db.priceHistoryQueries.selectOfferHistory().executeAsList()
+        source.offers = many(Store.AH, "New", 5)
+        offers.refresh(now = Instant.now().plusSeconds(3600))
+        assertEquals(before, db.priceHistoryQueries.selectOfferHistory().executeAsList())
+    }
+
     @Test
     fun refreshStoresOffersPerStoreAndKeepsOldOnesWhenAStoreFails() = testApplication {
         val ah = FakeSource(Store.AH, listOf(offer(Store.AH, "Kipfilet"), offer(Store.AH, "Next week", "2026-11-16", "2026-11-22")))

@@ -79,6 +79,9 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
             if (olderThan != null && last != null && Duration.between(last, now) < olderThan) continue
             try {
                 val offers = source.fetch()
+                val today = LocalDate.ofInstant(now, AMSTERDAM)
+                refusal(source.store, offers.size, q.selectOffersValidOn(today.toString()).executeAsList().count { it.store == source.store.name })
+                    ?.let { throw RefusedResult(it) }
                 db.transaction {
                     q.deleteOffers(source.store.name)
                     offers.forEach {
@@ -96,15 +99,36 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                 recordHistory(source.store, offers, { ingredientOf(it) }, now)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: RefusedResult) {
+                // Said loudly: the nightly job has nobody watching, and this means a store's page probably changed.
+                log.error("Refused the offers of ${source.store.label}, kept the stored ones: ${e.message}")
+                q.ensureSource(source.store.name)
+                q.recordFailure(e.message!!, source.store.name)
             } catch (e: Exception) {
                 log.warn("Could not fetch offers from ${source.store.label}: ${e.message}")
                 q.ensureSource(source.store.name)
                 q.recordFailure(e.message ?: e::class.simpleName ?: "unknown error", source.store.name)
             }
         }
-        val today = LocalDate.ofInstant(now, java.time.ZoneId.of("Europe/Amsterdam"))
+        val today = LocalDate.ofInstant(now, AMSTERDAM)
         warnings(today).forEach { log.warn(it) }
         return state(today)
+    }
+
+    /** A fetch that parsed but cannot be the store's real week; thrown to keep the stored offers like a failed fetch. */
+    private class RefusedResult(message: String) : Exception(message)
+
+    /**
+     * Why a fetch of [fetched] offers must not replace the [valid] stored ones that are still valid
+     * today, or null when it may. None of the store pages is an official API: when one changes shape the
+     * parser finds nothing or a few, and storing that would wipe good offers without an error.
+     * Nothing valid stored means anything is better than nothing.
+     */
+    private fun refusal(store: Store, fetched: Int, valid: Int): String? = when {
+        fetched == 0 -> "${store.label} returned no offers; kept the stored ones"
+        valid > 0 && fetched * MIN_SHARE_DENOMINATOR < valid ->
+            "${store.label} returned $fetched offers where $valid stored ones are still valid; kept the stored ones"
+        else -> null
     }
 
     /**
@@ -123,5 +147,17 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
         } catch (e: Exception) {
             log.warn("Could not keep the offers of ${store.label} in the price history; the offers themselves are stored", e)
         }
+    }
+
+    private companion object {
+        val AMSTERDAM: java.time.ZoneId = java.time.ZoneId.of("Europe/Amsterdam")
+
+        /**
+         * A result with fewer than 1 in this many of the valid stored offers is refused. A third: a quiet
+         * week is rarely under half of a big one, while a changed page typically yields none or a handful.
+         * A truly small week after a big one is refused once and accepted the next time, when the big
+         * week's offers have ended.
+         */
+        const val MIN_SHARE_DENOMINATOR = 3
     }
 }

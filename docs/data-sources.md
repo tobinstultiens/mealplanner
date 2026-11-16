@@ -19,6 +19,16 @@ tested against trimmed real responses in `server/src/test/resources/offers/`; th
 `LIVE_OFFERS=1 ./gradlew :server:test --tests '*OfferSourcesTest.liveStores'`.
 On 2026-11-13 it returned 111 AH, 137 Jumbo and 39 Lidl offers.
 
+### A changed page cannot wipe the stored offers
+Before a store's offers are replaced, the result is compared with what is stored. It is refused, and
+the stored offers kept, when it holds no offers, or fewer than a third of the stored offers that are
+still valid today (both numbers are in the message). A store whose stored offers have all ended takes
+any result. A refusal records the message as the store's error under `/api/offers`, writes an error to
+the server log (so the nightly refresh does not fail silently) and nothing to the price history; the
+other stores are fetched and stored as usual. A third is judgement: a quiet week is rarely that small, a
+changed page usually yields none or a handful. A truly small week after a big one is refused once and
+accepted the next time, once the big week's offers have ended: that is the price of the guard.
+
 ### AH
 1. `POST /mobile-auth/v1/auth/token/anonymous` with body `{"clientId":"appie"}` returns an
    access token valid for about a week.
@@ -96,6 +106,11 @@ cheap, the server keeps a regular price per kg for each ingredient (`PriceReposi
   group maps to AH main categories (`AhAisles`; vegetables to "Groente, aardappelen", canned goods
   to "Pasta, rijst, wereldkeuken", sugar to "Koffie, thee"). This keeps out flavoured products
   from other aisles such as "croissants cinnamon" or cumin cheese.
+- A name for which nothing is found loses its stored price (with its shop section and picture) only
+  when the lookup still found a price for at least half of the names that had one. Otherwise nothing is
+  deleted, a warning with the numbers goes to the log and the lookup is not recorded as done, so the next
+  round tries again: AH answering in a changed shape finds nothing for every name. With fewer than five
+  stored prices the rule is not applied.
 - Of the matching products, only those in the category holding most of them count (stray matches
   such as "croissants cinnamon" sit elsewhere); of those, the middle of the three cheapest per kg is used.
 - A price set by hand on the ingredient (`pricePerKg`) wins. Ingredients without a price are
