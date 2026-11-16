@@ -191,27 +191,42 @@ class ShoppingTicksTest {
         assertEquals(100.0, assertNotNull(http.get("/api/pantry").body<Pantry>().onHandGrams[id]), 1e-9)
         // Stock counted from the list's week, which its meals eat from; the tick is gone.
         val stock = db.pantryQueries.selectStock(userId(), week, listOf(id)).executeAsOne()
-        assertEquals(week to 100.0, stock.fromWeek to stock.grams)
+        assertEquals(Triple(week, "USE_UP", 100.0), Triple(stock.fromWeek, stock.source, stock.grams))
         assertTrue(db.shoppingQueries.selectChecks(userId(), week).executeAsList().none { it.itemKey == lettuce.key })
 
         assertEquals(HttpStatusCode.NotFound, http.useUp(lettuce.key).status, "used up already")
     }
 
+    /** The grams of [id] on hand for meals of the week starting [weekStart], of every entry of the stock. */
+    private fun stockFor(id: Long, weekStart: String) =
+        db.pantryQueries.selectStock(userId(), weekStart, listOf(id)).executeAsList().map { it.fromWeek to it.grams }
+
     @Test
-    fun usingUpAddsToTheStockBoughtAheadAndCountsItFromTheListsWeek() = testApplication {
+    fun usingUpIsAnEntryOfItsOwnSoUnTickingAnotherItemLeavesIt() = testApplication {
         val http = start().planned()
         assertEquals("Chicken salad", http.rerollMonday())
         val lettuce = http.list().item("Lettuce")
         http.tick(lettuce.key)
         assertEquals("Rice bowl", http.rerollMonday())
         val id = http.ingredient("Lettuce").id
-        // Bought ahead for next week, so not on hand for this week's list: the button shows.
-        db.pantryQueries.insertOnHandFrom("2026-11-15T10:00:00Z", "2026-11-23", 200.0, id, userId())
-        assertEquals(false, http.list().noLongerNeeded.single().onHand)
+        val nextWeek = "2026-11-23"
+        // Also bought ahead for next week (200 g) and stocked up this week (500 g), each ticked on this week's list.
+        for ((key, grams) in listOf("ahead:i$id" to 200.0, "stock:i$id" to 500.0)) {
+            http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, true, grams)) }
+        }
 
+        // The 100 g used up count from the list's week, apart from both ticks (issue 116): before, they were
+        // added to the one entry, which then counted from this week and was deleted by its week.
         http.useUp(lettuce.key)
-        val stock = db.pantryQueries.selectStock(userId(), week, listOf(id)).executeAsOne()
-        assertEquals(week to 300.0, stock.fromWeek to stock.grams)
+        assertEquals(listOf(week to 500.0, week to 100.0), stockFor(id, week))
+        assertEquals(800.0, http.get("/api/pantry").body<Pantry>().onHandGrams[id])
+
+        // Un-ticking either takes back what that tick put there, and no more.
+        http.tick("stock:i$id", checked = false)
+        assertEquals(listOf(week to 100.0), stockFor(id, week), "the used-up grams stay")
+        http.tick("ahead:i$id", checked = false)
+        assertEquals(listOf(week to 100.0), stockFor(id, nextWeek), "the bought-ahead grams go, though something counts from earlier")
+        assertEquals(100.0, http.get("/api/pantry").body<Pantry>().onHandGrams[id])
     }
 
     @Test

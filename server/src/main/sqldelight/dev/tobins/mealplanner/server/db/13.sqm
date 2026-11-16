@@ -1,0 +1,87 @@
+-- Version 13 -> 14: the stock is kept per thing that put it there (issue 116), so that un-ticking an
+-- item takes back only what its tick put there. Until now an ingredient had one entry, which a second
+-- tick left as it was, a used-up item and a meal un-eaten added to, and un-ticking deleted by its week.
+--
+-- onHand keeps what was put on hand by hand (fromWeek NULL); the entries a tick put there (fromWeek set)
+-- move to the new table stock, with what put them there: a buy-ahead tick of the week before (key
+-- ahead:i<id>), else a stock-up tick of that week (stock:i<id>), else an item used up (no tick is left
+-- of it). An entry both a buy-ahead and a stock-up tick could have put there is the buy-ahead one, the
+-- earlier list. What meals took (stockUse) gets the same source, so un-eating puts it back there. One
+-- entry stays one entry: what was added to it before stays in it, and one whose week was moved earlier
+-- (by an item used up or a meal un-eaten) matches no tick, so it is kept as an item used up, which no
+-- un-tick takes away: an entry is never lost to the migration, at worst an un-tick leaves it at home.
+--
+-- Both tables are rebuilt: the old ones are renamed out of the way first, and nothing refers to them,
+-- so dropping them at the end cascades nowhere.
+
+ALTER TABLE onHand RENAME TO onHand_old;
+ALTER TABLE stockUse RENAME TO stockUse_old;
+
+CREATE TABLE onHand (
+    ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE,
+    addedAt TEXT NOT NULL
+);
+
+INSERT INTO onHand (ingredientId, addedAt) SELECT ingredientId, addedAt FROM onHand_old WHERE fromWeek IS NULL;
+
+CREATE TABLE stock (
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    fromWeek TEXT NOT NULL,
+    source TEXT NOT NULL,
+    addedAt TEXT NOT NULL,
+    grams REAL,
+    PRIMARY KEY (ingredientId, fromWeek, source)
+);
+
+INSERT INTO stock (ingredientId, fromWeek, source, addedAt, grams)
+SELECT o.ingredientId, o.fromWeek,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM shoppingCheck c
+            WHERE c.userId = i.userId AND c.weekStart = date(o.fromWeek, '-7 days') AND c.itemKey = 'ahead:i' || o.ingredientId
+        ) THEN 'BUY_AHEAD'
+        WHEN EXISTS (
+            SELECT 1 FROM shoppingCheck c
+            WHERE c.userId = i.userId AND c.weekStart = o.fromWeek AND c.itemKey = 'stock:i' || o.ingredientId
+        ) THEN 'STOCK_UP'
+        ELSE 'USE_UP'
+    END,
+    o.addedAt, o.grams
+FROM onHand_old o JOIN ingredient i ON i.id = o.ingredientId
+WHERE o.fromWeek IS NOT NULL;
+
+CREATE TABLE stockUse (
+    userId INTEGER NOT NULL,
+    weekStart TEXT NOT NULL,
+    day INTEGER NOT NULL,
+    slot TEXT NOT NULL,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    fromWeek TEXT NOT NULL,
+    source TEXT NOT NULL,
+    addedAt TEXT NOT NULL,
+    grams REAL,
+    PRIMARY KEY (userId, weekStart, day, slot, ingredientId, fromWeek, source),
+    FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE
+);
+
+-- The same rule as for the stock, by the same account, ingredient and week: a use names its entry by them.
+INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, source, addedAt, grams)
+SELECT u.userId, u.weekStart, u.day, u.slot, u.ingredientId, u.fromWeek,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM shoppingCheck c
+            WHERE c.userId = u.userId AND c.weekStart = date(u.fromWeek, '-7 days') AND c.itemKey = 'ahead:i' || u.ingredientId
+        ) THEN 'BUY_AHEAD'
+        WHEN EXISTS (
+            SELECT 1 FROM shoppingCheck c
+            WHERE c.userId = u.userId AND c.weekStart = u.fromWeek AND c.itemKey = 'stock:i' || u.ingredientId
+        ) THEN 'STOCK_UP'
+        ELSE 'USE_UP'
+    END,
+    u.addedAt, u.grams
+FROM stockUse_old u;
+
+DROP TABLE onHand_old;
+DROP TABLE stockUse_old;
+
+CREATE INDEX stockUse_ingredient ON stockUse(ingredientId);

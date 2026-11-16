@@ -53,12 +53,11 @@ class PriceHistoryRealDataTest {
         original.copyTo(copy)
         val url = "jdbc:sqlite:${copy.path}"
         println("As copied: version ${version(url)}, checks ${checks(url)}, rows ${counts(url)}")
-        // Up to the version before the last migration first, so that the last one is compared on its own.
-        val last = Database.Schema.version
-        migrate(url, last - 1)
+        // Up to the version before the price history first (12.sqm), so that its migration is compared on its own.
+        migrate(url, HISTORY_VERSION - 1)
         val before = counts(url)
-        println("Before the last migration: version ${version(url)}, checks ${checks(url)}, rows $before")
-        migrate(url, last)
+        println("Before the price history: version ${version(url)}, checks ${checks(url)}, rows $before")
+        migrate(url, HISTORY_VERSION)
         val after = counts(url)
         println("After: version ${version(url)}, checks ${checks(url)}, rows $after")
         for ((table, n) in before) assertEquals(n, after[table], "rows of $table")
@@ -89,5 +88,10 @@ class PriceHistoryRealDataTest {
 
     private class Replay(override val store: Store, var offers: List<Offer>) : OfferSource {
         override suspend fun fetch() = offers
+    }
+
+    private companion object {
+        /** The version the price history came with (12.sqm); later migrations move rows of their own (13.sqm: the stock). */
+        const val HISTORY_VERSION = 13L
     }
 }

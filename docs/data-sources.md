@@ -256,14 +256,24 @@ regular price are those of all the packs, its saving is counted and its tick sto
 a size that cannot be weighed is not advised. Advice only: it never changes the plan.
 
 **Ticked items go to the pantry.** Ticking a buy-ahead item puts its ingredient on hand from next
-week (`onHand.fromWeek`), so this week's meals, list and recipe ideas still get their own amount and
+week (`stock.fromWeek`), so this week's meals, list and recipe ideas still get their own amount and
 next week's plan prefers the meals that use it (the planner's on-hand bonus); ticking a stock-up item
-puts it on hand from this week. Un-ticking takes back only what that tick put there. Next week's
-plan is not fixed in advance; only what was ticked carries over.
+puts it on hand from this week. Next week's plan is not fixed in advance; only what was ticked
+carries over.
 
-**Eating from it.** A ticked item is on hand in the amount the list advised buying (`onHand.grams`:
+**The stock is kept per tick.** Each tick that puts something at home is an entry of its own
+(`stock`, by ingredient, week and `source`: `STOCK_UP`, `BUY_AHEAD`, or `USE_UP` for a bought item
+used up, below), and so is each item used up. Un-ticking takes back that tick's entry: what is left
+of what it put there, and no more, whatever else came in since. Another tick of the same ingredient,
+an item used up, or what an un-eaten meal gave back to another entry stays (issue 116; before, one
+entry per ingredient held it all, so un-ticking could take the grams of another, or find nothing of
+its week to take). Ticking a ticked item again changes nothing. What the list and the pantry say is
+on hand is all entries of the ingredient added up; unknown when one of them has no amount.
+
+**Eating from it.** A ticked item is on hand in the amount the list advised buying (`stock.grams`:
 three batches of chicken for three meals, one pack of rice). Each meal of that week or later that
-uses it is eaten from it when it is marked eaten: a dinner takes what it was cooked with, its
+uses it is eaten from it when it is marked eaten, from the oldest entry first (by its week, then by
+when it came) and from the next once that one is used up: a dinner takes what it was cooked with, its
 leftover lunch included (which then takes nothing more), and marking a meal eaten twice takes it
 once. A leftover lunch eaten while its dinner is not (skipped, say) was cooked for itself and takes
 its own share. The item stays on hand until less than a gram is left, or until it is removed in the
@@ -333,25 +343,36 @@ A ticked row says nothing of the stock: what it said when ticked already counted
 was, so on a row that needs more the one number still to buy is its "more" line, never that less
 the stock again (the pantry still shows the amount); that "more" is never more than what is still to
 buy, so once the meals that need it are eaten, it needs nothing more. The
-pantry gives the grams left of each entry (`Pantry.onHandGrams`, next week's stock included, as it is
-at home) and the app shows `300 g left` under its name, with the week the stock was bought for
-(`Pantry.onHandFrom`, the week its tick counts from, for an entry a tick put there): `300 g left · for the
-week of 23 Nov`. An entry set by hand, or ticked without an
-amount, has no amount: the row says `(on hand?)` as before and the pantry no number, never zero.
+pantry gives the grams left of each ingredient, all its entries added up (`Pantry.onHandGrams`, next
+week's stock included, as it is at home) and the app shows `300 g left` under its name, with the week
+the stock was bought for (`Pantry.onHandFrom`, the week its tick counts from, for stock a tick put
+there): `300 g left · for the week of 23 Nov`. An ingredient with stock of several weeks (bought ahead
+and stocked up again, say) gives the earliest of them, the week meals start eating it from, oldest
+first; one set by hand only gives none. An entry set by hand, or ticked without an amount, has no
+amount: the row says `(on hand?)` as before and the pantry no number, never zero.
 Ticking the row stays the user's choice: the app does not tick a row off for them, as a tick says
 what was bought.
 
-**Un-eating.** What each meal took is kept (`stockUse`, under the meal whose portions it was for), so
-marking an eaten meal skipped or planned again puts exactly that back, also when it had used the
-item up; eaten again, it takes it again. A dinner un-eaten while its leftover lunch stays eaten gives
+**Un-eating.** What each meal took is kept (`stockUse`, under the meal whose portions it was for, per
+entry it took from), so marking an eaten meal skipped or planned again puts exactly that back, each
+share into the entry it came from, also when it had used the entry up; eaten again, it takes it again. A dinner un-eaten while its leftover lunch stays eaten gives
 back only its own share, and a leftover lunch un-eaten while its dinner stays eaten gives back
 nothing (the leftovers were cooked): whatever order the two are marked in, the stock ends the same.
-Nothing comes back once the owner has said otherwise: after the item was un-ticked (not bought) or
-put on hand or removed by hand in the pantry. A meal replaced or removed in the plan leaves what it
-took taken, and meals eaten before version 11 of the database have nothing kept to give back.
+Nothing comes back once the owner has said otherwise: after the tick of that entry was taken back
+(not bought), or the ingredient was put on hand or removed by hand in the pantry. A meal replaced or
+removed in the plan leaves what it took taken, and meals eaten before version 11 of the database have
+nothing kept to give back.
 
-Marking an item on hand in the pantry makes it one set by hand, even if a tick put it there: those
-stay until removed by hand, whatever is ticked or eaten.
+Marking an item on hand in the pantry makes it one set by hand, even if ticks put it there (its stock
+goes, and it keeps its place in the pantry's list): those stay until removed by hand, whatever is
+ticked or eaten, and ticks add no stock to them.
+
+Version 14 of the database split the one entry per ingredient it had into these entries. Each kept
+its grams and was given the tick that could have put it there: a buy-ahead tick of the week before
+it, else a stock-up tick of its week, else none (kept as an item used up, which no un-tick takes
+away). What was added to an entry before stays in it, and one whose week was moved earlier matches no
+tick: such an entry stays at home when its tick is taken back, until it is eaten or removed in the
+pantry.
 
 **The plan's cost** stays at the week's own prices, bought-ahead food included. The saving shows
 where the money is spent, on the buy-ahead item of the week it is bought in; pricing next week's
@@ -399,8 +420,12 @@ saved and sent later" would contradict. A failure with no answer is told in a pl
 (catalogue ingredients only, not on hand already) and "Remove" (un-ticks it). "Use it up" (`POST
 /api/plans/{weekStart}/shopping/use-up` with the key) puts what the tick remembers was bought on
 hand as stock counted from the list's week, which meals eat from, and the pantry and the list say
-how much is left; added to a stock there already (such as one bought ahead for next week), which
-then counts from the earlier week. Without a remembered weight (counted in pieces with no weight
+how much is left; an entry of its own beside any stock there already, so un-ticking a buy-ahead or
+stock-up item of that ingredient leaves it. Used up on next week's list, it counts from next week,
+as what is bought ahead does: it was bought for that week, this week's list and meals have rows of
+their own and never count on next week's list, and the server goes by the list's week rather than
+guess from its clock when it was bought (a tick also arrives late). The pantry shows it at once, as
+it is at home. Without a remembered weight (counted in pieces with no weight
 per piece) it is put on hand by hand, as the pantry does, with no number. Either way the tick goes,
 so the item leaves the group, all in one transaction. An item the group does not have is refused:
 one the meals of the week need again (409), and one not bought in that week or another account's

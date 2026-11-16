@@ -389,13 +389,13 @@ class ShoppingListRepository(
 
     /** [grams] is the amount bought; null when not known, such as for an item the list no longer advises. */
     private fun onHandFromTick(start: LocalDate, key: ShoppingKey, checked: Boolean, grams: Double?) {
-        val (id, from) = when (key) {
-            is ShoppingKey.Ahead -> key.id to start.plusDays(DAYS.toLong())
-            is ShoppingKey.Stock -> key.id to start
+        val (id, from, source) = when (key) {
+            is ShoppingKey.Ahead -> Triple(key.id, start.plusDays(DAYS.toLong()), StockSource.BUY_AHEAD)
+            is ShoppingKey.Stock -> Triple(key.id, start, StockSource.STOCK_UP)
             else -> return
         }
         // Both refuse an ingredient of another account (NotFoundException), before anything is stored.
-        if (checked) ingredients.putOnHandFrom(id, from, grams) else ingredients.takeBackOnHand(id, from)
+        if (checked) ingredients.putOnHandFrom(id, from, grams, source) else ingredients.takeBackOnHand(id, from, source)
     }
 
     /**
