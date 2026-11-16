@@ -35,8 +35,10 @@ import kotlin.test.fail
  *    offer ("Alle ..."), which the made-up histories never are.
  * 6. A real deal is never clearly dearer, in its measure, than any other offer of the product dated up to today,
  *    ended or running; and "less than ever" means clearly less than every one of them.
- * 7. A real, usual or worse-than-usual verdict never passes over an offer running now that is clearly cheaper in
- *    its measure; "cheaper another way" names one that is.
+ * 7. No verdict but "not a deal" passes over an offer running now that is clearly cheaper in what is paid: by the
+ *    first price both have (per kg, litre or piece, per pack only of the same pack), else by the share only within the
+ *    same pack; "cheaper another way" names one that is, by that measure. Worked out here from [DealTerms.of] of the
+ *    two offers, not from the measure the verdict compares earlier offers by.
  * 8. "Always on offer" only when offers of today's pack and deal were dated over at least [ALWAYS_SHARE] of the days
  *    read.
  * 9. The summary says "no earlier offer of it ended" only when none did, names every other offer running now, speaks
@@ -108,6 +110,25 @@ class VerdictPropertiesTest {
         )
     }
 
+    /**
+     * The offers among [shown], worked out here and not by [joinOffers]: prices of one pack and deal (its text, or its
+     * price without one) whose store dates share a day or run on are one offer, at the price with the lowest price
+     * before (then the lowest price), over all their dates. For a price this is its lowest; for a share it is the share
+     * against the lowest price before, which is how a reduction is measured: "VOOR 1.99" against 3,19 on Thursday is no
+     * deeper deal than against 2,49 on Monday.
+     */
+    private fun offersOf(shown: List<Offer>): List<Offer> =
+        shown.groupBy { CurrentOffer(it).offerKey }.values.flatMap { same ->
+            same.sortedBy { it.validFrom }.fold(mutableListOf<MutableList<Offer>>()) { offers, next ->
+                val last = offers.lastOrNull()
+                if (last != null && LocalDate.parse(next.validFrom) <= LocalDate.parse(last.maxOf { it.validUntil }).plusDays(1)) last += next else offers += mutableListOf(next)
+                offers
+            }.map { parts ->
+                parts.minWith(compareBy({ it.originalPrice ?: Double.MAX_VALUE }, { it.price ?: Double.MAX_VALUE }))
+                    .copy(validFrom = parts.minOf { it.validFrom }, validUntil = parts.maxOf { it.validUntil })
+            }
+        }
+
     /** [offer]'s value in [measure] as the history reads it; a price per pack only of [pack]. */
     private fun valueOf(offer: Offer, measure: Measure, pack: String): Double? =
         CurrentOffer(offer).takeIf { measure != Measure.PER_PACK || it.identity.product.pack == pack }?.measures?.get(measure)
@@ -143,8 +164,8 @@ class VerdictPropertiesTest {
         for ((i, a) in verdict.earlier.withIndex()) for (b in verdict.earlier.drop(i + 1)) {
             if (a.offerKey == b.offerKey && a.touches(b.validFrom, b.validUntil)) fails("$a and $b are one offer counted twice")
         }
-        /** The other offers of the product as the store showed them, each price apart: not today's own, dated by today. */
-        val others = case.sightings.map { it.first }.filter { !today.isItself(row(it, 0, 0)) && !LocalDate.parse(it.validFrom).isAfter(day) }
+        /** The other offers of the product, as the store dated them: not today's own, dated by today. */
+        val others = offersOf(case.sightings.map { it.first }).filter { !today.isItself(row(it, 0, 0)) && !LocalDate.parse(it.validFrom).isAfter(day) }
         val running = others.filter { !LocalDate.parse(it.validUntil).isBefore(day) }
         for (offer in running) {
             if (verdict.alongside.none { it.offerKey == CurrentOffer(offer).offerKey && it.dated(day) }) fails("$offer runs today, yet is not among the offers alongside")
@@ -175,13 +196,26 @@ class VerdictPropertiesTest {
                 if (verdict.lastAsCheap == null && verdict.value!! * (1 + TOLERANCE) >= other) fails("less than ever at ${verdict.value}, where $offer gave $other")
             }
         }
-        // 7. No comparing verdict passes over a cheaper offer running now; "cheaper another way" names one.
-        if (verdict.verdict in comparing) for (offer in running) valueOf(offer, verdict.measure!!, pack)?.let { other ->
-            if (verdict.value!! > other * (1 + TOLERANCE)) fails("${verdict.verdict} at ${verdict.value}, where $offer runs today at $other")
+        // 7. No verdict passes over an offer running now that is clearly cheaper in what is paid; "cheaper another way" names one.
+        val todayShare = verdict.raise?.let { (terms.eurosPerPack ?: terms.paidShare?.times(it.now))?.div(it.before) } ?: terms.paidShare
+        val todays = Measures(terms.eurosPerKg, terms.eurosPerLitre, terms.eurosPerPiece, terms.eurosPerPack, todayShare)
+        /** How [other], of [otherPack], compares with today's offer in what is paid: the measure and its value, or null. */
+        fun paid(other: Measures, otherPack: String): Pair<Measure, Double>? {
+            val prices = listOf(Measure.PER_KG, Measure.PER_LITRE, Measure.PER_PIECE) + (if (otherPack == pack) listOf(Measure.PER_PACK) else emptyList())
+            val m = prices.firstOrNull { todays[it] != null && other[it] != null }
+                ?: Measure.PAID_SHARE.takeIf { otherPack == pack && todays[it] != null && other[it] != null } ?: return null
+            return m to other[m]!!
+        }
+        if (verdict.verdict != Verdict.NOT_A_DEAL && verdict.verdict != Verdict.CHEAPER_ANOTHER_WAY) for (offer in running) {
+            val read = CurrentOffer(offer)
+            paid(read.measures, read.identity.product.pack)?.let { (m, other) ->
+                if (todays[m]!! > other * (1 + TOLERANCE)) fails("${verdict.verdict}, where $offer runs today at $other $m against ${todays[m]}")
+            }
         }
         if (verdict.verdict == Verdict.CHEAPER_ANOTHER_WAY) {
             val cheaper = verdict.cheaperNow!!
-            if (!cheaper.dated(day) || today.isItself(cheaper) || verdict.value!! <= cheaper.measures[verdict.measure!!]!! * (1 + TOLERANCE)) fails("$cheaper is not cheaper now")
+            val (m, other) = paid(cheaper.measures, cheaper.identity.product.pack) ?: fails("$cheaper can't be compared with today's in what is paid")
+            if (!cheaper.dated(day) || today.isItself(cheaper) || m != verdict.measure || todays[m]!! <= other * (1 + TOLERANCE)) fails("$cheaper is not cheaper now")
         }
         // 8. Always on offer, by today's pack and deal.
         if (verdict.verdict == Verdict.ALWAYS_ON_OFFER) {
@@ -341,6 +375,32 @@ class VerdictPropertiesTest {
         assertTrue("Also on offer now: \"1+1 gratis\" for 500 g, dated until 8 Dec 2026." in verdict.summary("AH"), verdict.summary("AH"))
     }
 
+    /** Round 5: a deeper share on another pack is not cheaper; only what is paid decides, and a share only within one pack. */
+    @Test
+    fun probeC3AShareAcrossPacksIsNotCheaper() {
+        // 25 % off 4,00 for 500 g (€6,00 a kg), alongside 35 % off 6,00 for 4 pieces: no price both have.
+        val c3 = probe("c3", Dated("500 g", QUARTER, 67, 73, listOf(67 to 4.00)), Dated("4 stuks", Deal("35% korting"), 60, 80, listOf(60 to 6.00)))
+        assertTrue(c3.verdict != Verdict.CHEAPER_ANOTHER_WAY && "Also on offer now: \"35% korting\" for 4 stuks" in c3.summary("AH"), c3.summary("AH"))
+        // Today's measure is the share (earlier offers without a size); the 500 g at 35 % off 5,00 is €6,50 a kg against €6,00.
+        val c3b = probe(
+            "c3b", Dated("", QUARTER, 14, 20, listOf(14 to 4.00)), Dated("", QUARTER, 42, 48, listOf(42 to 4.00)),
+            Dated("500 g", Deal("35% korting"), 60, 80, listOf(60 to 5.00)), Dated("1 kg", QUARTER, 67, 73, listOf(67 to 8.00)),
+        )
+        assertTrue(c3b.verdict != Verdict.CHEAPER_ANOTHER_WAY && "Also on offer now: \"35% korting\" for 500 g" in c3b.summary("AH"), c3b.summary("AH"))
+    }
+
+    /** Round 5: "less than ever" must hold against an offer running alongside at about the same price. */
+    @Test
+    fun probeR8LessThanEverHoldsAgainstOffersAlongside() {
+        // Today 1+1 on the kilo at 2,99 (€1,50 a kg); earlier 25 % off (€2,24); the 500 g on 1+1 at 1,50 runs alongside at €1,50 a kg.
+        val verdict = probe(
+            "R8", Dated("1 kg", QUARTER, 14, 20, listOf(14 to 2.99)), Dated("1 kg", QUARTER, 42, 48, listOf(42 to 2.99)),
+            Dated("500 g", ONE_PLUS_ONE, 60, 80, listOf(60 to 1.50)), onePlusOne(67, 73, 67 to 2.99),
+        )
+        assertEquals(Verdict.REAL_DEAL, verdict.verdict)
+        assertTrue("is as low as it has been (€1.50 per kg with \"1+1 gratis\"" in verdict.summary("AH"), verdict.summary("AH"))
+    }
+
     /** Round 4: a deeper deal on top of a long-dated ordinary one says the ordinary one runs, not "not on offer before". */
     @Test
     fun probeL1TheSummaryNamesTheOfferRunningAlongside() {
@@ -360,7 +420,8 @@ class VerdictPropertiesTest {
     private companion object {
         const val CASES = 600L
         const val DROPS = 3
-        val PACKS = listOf("1 kg", "500 g")
+        // Weights, pieces and no size at all, so that offers of two packs can share no price and only a share.
+        val PACKS = listOf("1 kg", "500 g", "4 stuks", "")
         val BEFORE = listOf(2.49, 2.99, 3.19)
         val ONE_PLUS_ONE = Deal("1+1 gratis")
 

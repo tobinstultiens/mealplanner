@@ -7,7 +7,7 @@ import java.time.LocalDate
 
 /** Whether an offer is a good deal, compared with its own product's history at its store. */
 enum class Verdict {
-    /** At or below the lowest seen before, and clearly below at least half of the earlier offers. */
+    /** At or below the lowest seen, before or running now, and clearly below at least half of the earlier offers. */
     REAL_DEAL,
 
     /** About what it usually goes for on offer: neither at the lowest, nor clearly dearer than most earlier offers. */
@@ -104,7 +104,8 @@ const val NO_SAVING_SHARE = 0.97
  * 1. A regular price raised in the [REFERENCE_DAYS] before the offer began is the price the share is
  *    measured against; a deal that then pays [NO_SAVING_SHARE] or more of it is [Verdict.NOT_A_DEAL].
  * 2. Another offer of the product dated over today too (alongside, below) that is clearly cheaper, by [TOLERANCE],
- *    in today's measure: [Verdict.CHEAPER_ANOTHER_WAY]. Like rule 1, a fact that needs no history.
+ *    in a price both have, or by the share within today's pack: [Verdict.CHEAPER_ANOTHER_WAY]. Like rule 1, a fact
+ *    that needs no history.
  * 3. Fewer than [MIN_DAYS_READ] days read: [Verdict.NOT_ENOUGH_HISTORY].
  * 4. Dated on offer in today's pack and deal on [ALWAYS_SHARE] of those days: [Verdict.ALWAYS_ON_OFFER].
  * 5. No measure at all: [Verdict.NOT_COMPARABLE]; fewer than [MIN_EARLIER_OFFERS] earlier offers with today's
@@ -135,7 +136,7 @@ fun judge(today: CurrentOffer, periods: List<OfferPeriod>, recordings: List<Inst
     val now = today.measures.copy(paidShare = share)
     val pack = today.identity.product.pack
     val measure = measureOf(now, earlier, pack)
-    val cheaperNow = measure?.let { cheaperAlongside(now, it, alongside, pack) }
+    val cheaperNow = cheaperAlongside(now, alongside, pack)
     val facts = DealVerdict(
         verdict = Verdict.NOT_ENOUGH_HISTORY, measure = null, value = null, typical = null, lowest = null, lastAsCheap = null, compared = 0,
         earlier = earlier, daysRead = days.size, daysOnOffer = daysWith(runs), daysThisDeal = daysWith(runs.filter { it.offerKey == today.offerKey }),
@@ -174,14 +175,23 @@ private fun measureOf(now: Measures, earlier: List<OfferPeriod>, pack: String): 
 
 /**
  * The offer of [alongside] most clearly cheaper than today's ([now]), with the measure that says so, or null when
- * none is: each compared in today's [measure] where it has it, else in the first measure both have.
+ * none is. "Cheaper" is what is paid: each is compared by the first price both have (per kg, litre or piece, per
+ * pack only of today's [pack]), and by the share of the regular price only within today's pack. A share alone says
+ * nothing across packs: 35 % off a 500 g pack may cost more per kg than 25 % off the kilo. An offer that can be
+ * compared neither way is not "cheaper"; the summary still names it as running alongside.
  */
-private fun cheaperAlongside(now: Measures, measure: Measure, alongside: List<OfferPeriod>, pack: String): Pair<OfferPeriod, Measure>? =
+private fun cheaperAlongside(now: Measures, alongside: List<OfferPeriod>, pack: String): Pair<OfferPeriod, Measure>? =
     alongside.mapNotNull { other ->
-        val m = measure.takeIf { valueOf(other, it, pack) != null } ?: Measure.entries.firstOrNull { now[it] != null && valueOf(other, it, pack) != null }
-        m?.let { Triple(other, it, now[it]!! / valueOf(other, it, pack)!!) }
+        comparableBy(now, other, pack)?.let { m -> Triple(other, m, now[m]!! / valueOf(other, m, pack)!!) }
     }.filter { it.third > 1 + TOLERANCE }
         .maxWithOrNull(compareBy({ it.third }, { it.first.validFrom }))?.let { it.first to it.second }
+
+/** The measure [now] and [other] can be compared by as to what is paid: a price both have, else the share within [pack]. */
+private fun comparableBy(now: Measures, other: OfferPeriod, pack: String): Measure? =
+    PRICES.firstOrNull { now[it] != null && valueOf(other, it, pack) != null }
+        ?: Measure.PAID_SHARE.takeIf { other.identity.product.pack == pack && now[it] != null && other.measures[it] != null }
+
+private val PRICES = listOf(Measure.PER_KG, Measure.PER_LITRE, Measure.PER_PIECE, Measure.PER_PACK)
 
 private fun compare(facts: DealVerdict, now: Measures, measure: Measure, pack: String): DealVerdict {
     val value = now[measure]!!
@@ -191,13 +201,17 @@ private fun compare(facts: DealVerdict, now: Measures, measure: Measure, pack: S
     val lowest = compared.minBy { it.second }
     val cheaperThanNow = compared.count { (_, earlier) -> value > earlier * (1 + TOLERANCE) }
     val dearerThanNow = compared.count { (_, earlier) -> value < earlier * (1 - TOLERANCE) }
+    val alongside = facts.alongside.mapNotNull { run -> valueOf(run, measure, pack)?.let { run to it } }
+    // At the lowest seen: of the earlier offers and of those running now, in this measure (rule 2 only takes what is
+    // paid, so a deeper share of another pack running now can be left to this).
+    val lowestOfAll = (compared + alongside).minOf { it.second }
     val verdict = when {
-        value <= lowest.second * (1 + TOLERANCE) && dearerThanNow * 2 >= compared.size -> Verdict.REAL_DEAL
+        value <= lowestOfAll * (1 + TOLERANCE) && dearerThanNow * 2 >= compared.size -> Verdict.REAL_DEAL
         cheaperThanNow * 2 > compared.size -> Verdict.WORSE_THAN_USUAL
         else -> Verdict.USUAL_DEAL
     }
     // The latest offer at least as cheap, of the earlier ones and those on offer now: "less than ever" must hold for both.
-    val asCheap = (compared + facts.alongside.mapNotNull { run -> valueOf(run, measure, pack)?.let { run to it } }).filter { it.second <= value * (1 + TOLERANCE) }
+    val asCheap = (compared + alongside).filter { it.second <= value * (1 + TOLERANCE) }
     return measured.copy(
         verdict = verdict,
         typical = median(compared.map { it.second }),

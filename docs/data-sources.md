@@ -313,10 +313,10 @@ never do: the store parsers skip an item with a missing field without a word. Ni
 decide it either. The same deal again the next week is the offer going on, not a second one: an offer that continues
 says nothing about how often the product is on offer, and a product that is always on offer has its own rule (rule 4).
 An offer is earlier when its store dates ended before today and it is not today's offer itself. An offer is *alongside*
-when its store dates include today and it is not today's offer: it has not ended, so it is no earlier offer, but it can
-be bought now, so it counts against today's (rule 2) and the summary names it. Each row of this table is a test in
+when its store dates include today and it is not today's offer: it has not ended, so it is no earlier offer, but it is
+dated as running today, so it counts against today's (rules 2 and 6) and the summary names it. Each row of this table is a test in
 `history/OfferPeriodsTest.kt` or `history/VerdictPropertiesTest.kt`. The latter checks the properties behind the
-rules on 600 made-up histories (fixed seeds, under two seconds), which include offers dated over months and from
+rules on 600 made-up histories (fixed seeds, under two seconds; packs by weight, by pieces and without a size), which include offers dated over months and from
 before the first read, other deals running alongside for weeks, and looked-up regular prices:
 - the verdict and every number in it stay the same when nights are dropped from the sightings;
 - today's value is what `DealTerms.of` gives for today's offer as shown today (but for the share against a reported
@@ -327,7 +327,9 @@ before the first read, other deals running alongside for weeks, and looked-up re
 - a raise is reported exactly when a price before of the same pack in the 30 days before was lower;
 - a real deal is never clearly dearer, in its measure, than any other offer of the product dated up to today, ended or
   running, and "less than ever" is clearly less than every one;
-- a real, usual or worse-than-usual verdict never passes over a clearly cheaper offer running now;
+- no verdict but "not a deal" passes over an offer running now that is clearly cheaper in what is paid (worked out in
+  the test from the two offers' prices, not from the measure the verdict chose), and "less than ever" holds against
+  offers running now too;
 - "always on offer" only when offers of today's pack and deal were dated over 90 % of the days read;
 - the summary names every offer running alongside, says "no earlier offer of it ended" only when none did, and speaks of
   a share against a raise only when it compares by the share.
@@ -376,8 +378,8 @@ never compares an old reading with a new one. The measure is one of: the price p
 pack sizes), the price of one pack (only between offers of the same pack size, for products whose size can't be read,
 such as AH's "2 voor 5.50" of "AH Goudse plakken" or a Lidl price without a pack size), or the share of the regular
 price paid. Of those today's offer has, the one most earlier offers have too is used; on a tie the prices come before
-the share, as a price does not depend on what the store says the price was before. An offer alongside is compared in
-that measure where it has it, else in the first measure both have.
+the share, as a price does not depend on what the store says the price was before. An offer alongside is compared
+for rule 2 by what is paid, below.
 
 **The rules,** in this order (the constants are named in `history/DealVerdict.kt` and `history/RegularPrices.kt`):
 1. *Not a deal* (`NOT_A_DEAL`): the regular price of the same pack went up in the 30 days before the offer began, and
@@ -398,7 +400,10 @@ that measure where it has it, else in the first measure both have.
    products so ("AH Ananas zonder kroon"), and the rule holds for them. The day the price before was "seen" is at the
    latest the day before today's offer began.
 2. *Cheaper another way* (`CHEAPER_ANOTHER_WAY`): an offer of the product alongside (dated over today, row 15) is clearly
-   cheaper, by more than 3 %, than today's, in today's measure: Jumbo's "2 voor 6,00" hamburgers (€1,50 a piece) dated
+   cheaper, by more than 3 %, than today's in what is paid: by the first price both have (per kg, litre or piece; per
+   pack only of the same pack), else by the share of the regular price, but only within the same pack. A share alone
+   says nothing across packs: 35 % off a 500 g pack can cost more per kg than 25 % off the kilo. An offer that can be
+   compared neither way is not "cheaper", and is only named. Jumbo's "2 voor 6,00" hamburgers (€1,50 a piece) dated
    all year make today's "voor 3,19" (€1,60 a piece) no real deal, though it is less than the earlier "voor 3,49" weeks.
    Like rule 1, a fact that needs no history; the summary names the cheaper offer.
 3. *Not enough history yet* (`NOT_ENOUGH_HISTORY`) when the store was read on fewer than 56 days (`MIN_DAYS_READ`, 8
@@ -413,7 +418,8 @@ that measure where it has it, else in the first measure both have.
    offer with neither deal nor price). *Not enough history yet* when fewer than 2 earlier offers have the measure
    (`MIN_EARLIER_OFFERS`): one could be the odd one out.
 6. Against those earlier offers, prices within 3 % being the same (`TOLERANCE`: "2 voor 3,99" and "2 voor 4,00", packs
-   of "ca. 450 g"): a *real deal* (`REAL_DEAL`) at or below the lowest seen and clearly below at least half of them;
+   of "ca. 450 g"): a *real deal* (`REAL_DEAL`) at or below the lowest seen, of the earlier offers and of those
+   running now in the same measure, and clearly below at least half of the earlier offers;
    *worse than usual* (`WORSE_THAN_USUAL`) when more than half of them were clearly cheaper; else *the usual deal*
    (`USUAL_DEAL`). An offer clearly below the usual but not at the lowest is a usual deal too, and its summary says so
    ("Better than usual, but it has been cheaper"). The usual value said with it is the median.
