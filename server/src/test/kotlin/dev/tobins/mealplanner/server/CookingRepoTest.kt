@@ -14,12 +14,19 @@ import io.ktor.client.request.post
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.api.errors.GitAPIException
 import java.io.File
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.util.concurrent.CountDownLatch
+import com.sun.net.httpserver.HttpServer
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CookingRepoTest {
     private val units = """
@@ -86,6 +93,25 @@ class CookingRepoTest {
         assertEquals("second", File(repo.dir, "content/a.md").readText())
         assertEquals("new", File(repo.dir, "content/b.md").readText())
         assertNotEquals(first, second)
+    }
+
+    @Test
+    fun aRemoteThatNeverAnswersFailsTheUpdateInsteadOfHoldingItForever() {
+        // Takes the request and then says nothing, like a stalled git server.
+        val release = CountDownLatch(1)
+        val silent = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
+            createContext("/") { release.await() }
+            start()
+        }
+        try {
+            val repo = CookingRepo(File(createTempDirectory("local").toFile(), "cooking"), "http://127.0.0.1:${silent.address.port}/cooking.git", timeoutSeconds = 1)
+            val started = System.nanoTime()
+            assertFailsWith<GitAPIException> { repo.update() }
+            assertTrue((System.nanoTime() - started) / 1_000_000_000 < 30, "gave up after the timeout")
+        } finally {
+            release.countDown()
+            silent.stop(0)
+        }
     }
 
     @Test

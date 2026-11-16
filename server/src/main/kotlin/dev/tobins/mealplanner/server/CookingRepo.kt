@@ -14,8 +14,10 @@ import java.io.File
  * Keeps a local checkout of the cooking repo up to date. With no [url] the directory is
  * used as it is (a checkout managed by hand); with one, it is cloned on first use and
  * reset to the remote branch on every [update], so local edits there are discarded.
+ * A remote that says nothing for [timeoutSeconds] fails the update: it runs under the account's
+ * sync lock, and the scheduled loop syncs the accounts one after another.
  */
-class CookingRepo(val dir: File, val url: String?) {
+class CookingRepo(val dir: File, val url: String?, private val timeoutSeconds: Int = 60) {
 
     /**
      * Brings the checkout up to date with the repo's default branch (whatever it is called).
@@ -25,10 +27,10 @@ class CookingRepo(val dir: File, val url: String?) {
         if (url == null) return null
         if (!File(dir, ".git").isDirectory) {
             dir.mkdirs()
-            Git.cloneRepository().setURI(url).setDirectory(dir).call().close()
+            Git.cloneRepository().setURI(url).setDirectory(dir).setTimeout(timeoutSeconds).call().close()
         }
         Git.open(dir).use { git ->
-            git.fetch().setRemote("origin").call()
+            git.fetch().setRemote("origin").setTimeout(timeoutSeconds).call()
             // The clone checked out the default branch; follow that branch on the remote.
             git.reset().setMode(ResetCommand.ResetType.HARD).setRef("origin/${git.repository.branch}").call()
             return git.repository.resolve("HEAD")?.name
