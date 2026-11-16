@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.shopping.bestOffer
 
 /** The texts of one advice group: its title, what it is for, and the line shown while it is hidden. */
 enum class AdviceTexts(val group: ShoppingAdviceGroup, val title: Msg, val hint: Msg, val hidden: Msg) {

@@ -3,6 +3,10 @@ package dev.tobins.mealplanner.app
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.shopping.bestOffer
+import dev.tobins.mealplanner.shopping.packsToBuy
+import dev.tobins.mealplanner.shopping.saving
+import dev.tobins.mealplanner.shopping.savingOffer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -487,5 +491,63 @@ class ShoppingStoresTest {
         assertTrue(plain.dealText(all, today, Strings.English).endsWith("(Chicken, 500 g)"))
         val named = packItem(450.0, null, packOffer("500 g", "1+1 gratis").copy(title = "Kip 500 g"))
         assertTrue(named.dealText(all, today, Strings.English).endsWith("(Kip 500 g)"))
+    }
+
+    /** A quarter off a kilo pack at Jumbo, until 7 January. */
+    private val jumboDeal = Offer(Store.JUMBO, "Chicken", "25% korting", null, packSize = "1 kg", validFrom = "2026-01-01", validUntil = "2026-01-07", paidShare = 0.75)
+
+    /**
+     * A kilo of chicken at €4 regular, ticked when its Jumbo offer saved €1 on all of it; since then half
+     * its meals were eaten, so bought now it would save €0.50.
+     */
+    private val bought = ShoppingItem(
+        "chicken", "Chicken", 1000.0, null, "Meat", emptyList(), onHand = false, checked = true, offers = listOf(jumboDeal),
+        regularPrice = 4.0, toComeGrams = 500.0, boughtSaving = 1.0, boughtOfferStore = Store.JUMBO,
+    )
+
+    @Test
+    fun aBoughtRowCountsWhatItSavedWhenItWasTicked() {
+        assertEquals(1.0, storeOverview(listOf(bought), all, today).stores.single().saving)
+        assertEquals(1.0, savingOf(listOf(bought.copy(toComeGrams = 0.0)), all, today), "all its meals eaten")
+        // With a row still to buy at the same store: what was saved and what will be.
+        val open = bought.copy(key = "open", checked = false, toComeGrams = 1000.0, boughtSaving = null, boughtOfferStore = null)
+        assertEquals(2.0, storeOverview(listOf(bought, open), all, today).stores.single().saving)
+        // Ticked when it saved nothing (the offer had ended, or only started later): nothing, whatever offer there is now.
+        assertNull(savingOf(listOf(bought.copy(boughtSaving = 0.0, boughtOfferStore = null)), all, today))
+    }
+
+    @Test
+    fun withoutAKeptSavingARowSavesWhatItWouldNowAsBefore() {
+        // A server from before it, or a tick not sent yet.
+        assertEquals(0.5, savingOf(listOf(bought.copy(boughtSaving = null, boughtOfferStore = null)), all, today)!!, 1e-9)
+        // Un-ticked, though the list still has the saving of its tick (an un-tick waiting to be sent).
+        assertEquals(0.5, savingOf(listOf(bought.copy(checked = false)), all, today)!!, 1e-9)
+    }
+
+    @Test
+    fun aBoughtRowStaysUnderTheStoreItWasBoughtAt() {
+        // Its offer has ended: still Jumbo's, with what it saved.
+        val afterwards = storeOverview(listOf(bought), all, "2026-01-08").stores.single()
+        assertEquals(Triple(Store.JUMBO, listOf("chicken"), 1.0), Triple(afterwards.store, keys(afterwards.items), afterwards.saving))
+        // A better offer at AH since: still Jumbo's.
+        val better = bought.copy(offers = listOf(jumboDeal, jumboDeal.copy(store = Store.AH, paidShare = 0.5)))
+        assertEquals(Store.AH, better.bestOffer(all, today)?.store)
+        assertEquals(listOf(Store.JUMBO to 1.0), storeOverview(listOf(better), all, today).stores.map { it.store to it.saving })
+        // Jumbo no longer in use: the row goes by today's offers, and what it saved goes with the store.
+        val withoutJumbo = storeOverview(listOf(better), setOf(Store.AH, Store.LIDL), today)
+        assertEquals(listOf(Store.AH), withoutJumbo.stores.map { it.store })
+        assertNull(withoutJumbo.stores.single().saving)
+    }
+
+    @Test
+    fun aVisitCountsWhatWasBoughtAtThatStoreOnly() {
+        assertEquals(1.0, storeVisit(listOf(bought), Store.JUMBO, all, today, shoppingMode = false).saving)
+        // At AH it is set apart with Jumbo's offer while that lasts, and counts nothing there.
+        val atAh = storeVisit(listOf(bought), Store.AH, all, today, shoppingMode = false)
+        assertEquals(listOf(CheaperElsewhere(bought, jumboDeal)), atAh.elsewhere)
+        assertNull(atAh.saving)
+        val ended = storeVisit(listOf(bought), Store.AH, all, "2026-01-08", shoppingMode = false)
+        assertEquals(listOf(CheaperElsewhere(bought, null)), ended.elsewhere)
+        assertNull(ended.elsewhere.single().where(Strings.English, "2026-01-08"))
     }
 }

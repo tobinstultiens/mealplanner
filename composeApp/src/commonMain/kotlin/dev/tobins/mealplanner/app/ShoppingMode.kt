@@ -2,6 +2,8 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.shopping.leftToBuyGrams
+import dev.tobins.mealplanner.shopping.nothingToBuy
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.isoDayNumber
 import kotlin.math.ceil

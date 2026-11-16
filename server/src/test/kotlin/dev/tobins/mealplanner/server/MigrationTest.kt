@@ -114,8 +114,14 @@ class MigrationTest {
 
     /** Version 15 added the category, address and price per litre to the history, and its recordings (14.sqm). */
     private fun dropVerdictRecords(statement: Statement) {
+        dropTickSavings(statement)
         for (column in listOf("category", "url", "eurosPerLitre")) statement.execute("ALTER TABLE offerHistory DROP COLUMN $column")
         statement.execute("DROP TABLE offerRecording")
+    }
+
+    /** Version 16 added what a tick's offer saved (15.sqm). */
+    private fun dropTickSavings(statement: Statement) {
+        for (column in listOf("saving", "savingStore")) statement.execute("ALTER TABLE shoppingCheck DROP COLUMN $column")
     }
 
     @Test
@@ -738,6 +744,55 @@ class MigrationTest {
         assertEquals(listOf("2026-11-17T03:00:00Z", "Olie en azijn", "https://www.ah.nl/producten/product/wi1234"), listOf(oil.lastSeen, oil.category, oil.url))
         assertTrue(oil.eurosPerLitre?.let { abs(it - 6.0) < 1e-9 } == true, "4,50 for 750 ml: ${oil.eurosPerLitre}")
         assertEquals("AH:1", single(url, "SELECT store || ':' || offers FROM offerRecording"))
+        driver.close()
+    }
+
+    @Test
+    fun aVersionFifteenDatabaseKeepsEveryTickWithNothingKnownOfWhatItSaved() {
+        val file = createTempFile("v15", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        // Version 15 is today's schema without what a tick's offer saved.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropTickSavings(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name) VALUES (1, 1, 'Kipfilet'), (2, 2, 'Kipfilet')")
+                // Alice: a row of her meals that remembers what it said, a plain tick from before that, advice and a
+                // dismissed group. Bob: his own row.
+                statement.execute(
+                    "INSERT INTO shoppingCheck (userId, weekStart, itemKey, name, grams, pieces) VALUES " +
+                        "(1, '$week', 'i1', 'Kipfilet', 1000.0, NULL), (1, '$week', 't:leek', NULL, NULL, NULL), " +
+                        "(1, '$week', 'stock:i1', NULL, NULL, NULL), (1, '$week', 'dismissed:buy-ahead', NULL, NULL, NULL), " +
+                        "(2, '$week', 'i2', 'Kipfilet', 500.0, 2.0)",
+                )
+                statement.execute("PRAGMA user_version = 15")
+            }
+        }
+        val oldColumns = columns(url, "shoppingCheck")
+        fun rows() = single(url, "SELECT ${oldColumns.joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }} FROM shoppingCheck ORDER BY userId, itemKey")
+        val before = rows()
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, rows(), "every tick as it was")
+        assertEquals("5:0", single(url, "SELECT count(*) || ':' || (count(saving) + count(savingStore)) FROM shoppingCheck"))
+
+        // Alice's chicken is still ticked with what it said, and nothing is known of what it saved: the app
+        // works that out as before.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val scope = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+        val chicken = scope.recipes.create(RecipeInput("Chicken", 1, "1000 | g | kipfilet")).summary
+        db.planQueries.upsertMeal(1, week, 0, "DINNER", chicken.id, chicken.title, 1.0, 800.0, 40.0, 0, 0, "PLANNED")
+        val row = scope.shopping.get(week).items.single()
+        assertEquals(listOf("i1", true, 1000.0, null, null), listOf(row.key, row.checked, row.boughtGrams, row.boughtSaving, row.boughtOfferStore))
         driver.close()
     }
 }

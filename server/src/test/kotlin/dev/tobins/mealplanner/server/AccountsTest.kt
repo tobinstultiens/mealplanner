@@ -14,6 +14,7 @@ import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
@@ -32,6 +33,7 @@ import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
+import dev.tobins.mealplanner.server.offers.OfferSource
 import dev.tobins.mealplanner.shopping.ShopSection
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -349,6 +351,54 @@ class AccountsTest {
         assertEquals(mapOf(beef.id to 400.0), alice.get("/api/pantry").body<Pantry>().onHandGrams)
         assertTrue(bob.get("/api/pantry").body<Pantry>().onHandGrams.isEmpty())
         assertEquals(emptyList(), bob.get("/api/pantry").body<Pantry>().onHand)
+    }
+
+    @Test
+    fun whatABoughtRowSavedIsSeenAndChangedByItsAccountAlone() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        // Offers are shared: chicken at a quarter off, valid whatever day the test runs on.
+        val jumbo = object : OfferSource {
+            override val store = Store.JUMBO
+            override suspend fun fetch() = listOf(Offer(Store.JUMBO, "Jumbo Kipfilet 1 kg", "25% korting", packSize = "1 kg", validFrom = "2000-01-01", validUntil = "2999-12-31"))
+        }
+        application { module(config, db, offerSources = listOf(jumbo), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val week = "2026-11-16"
+        alice.post("/api/offers/refresh")
+        suspend fun HttpClient.list() = get("/api/plans/$week/shopping").body<ShoppingList>()
+        suspend fun HttpClient.tick(key: String, checked: Boolean = true) = put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, checked)) }
+        // Each has a kilo of chicken to buy, at a regular price of their own: €10 for Alice, €20 for Bob.
+        val keys = mapOf("alice" to 10.0, "bob" to 20.0).mapValues { (name, price) ->
+            val client = if (name == "alice") alice else bob
+            val chicken = client.post("/api/ingredients") { setBody(IngredientInput("Kipfilet", pricePerKg = price)) }.body<Ingredient>()
+            val recipe = client.post("/api/recipes") { setBody(RecipeInput("Chicken", 1, "1000 | g | kipfilet")) }.body<RecipeDetail>().summary
+            db.planQueries.upsertMeal(db.userQueries.selectBySubject("sub-$name").executeAsOne().id, week, 0, "DINNER", recipe.id, recipe.title, 1.0, 1000.0, 50.0, 0, 0, "PLANNED")
+            "i${chicken.id}"
+        }
+        val hers = keys.getValue("alice")
+        val his = keys.getValue("bob")
+        suspend fun HttpClient.saved(key: String) = list().items.single { it.key == key }.let { it.boughtSaving to it.boughtOfferStore }
+
+        // Alice's tick keeps what her row saved; Bob's list knows nothing of it.
+        alice.tick(hers)
+        assertEquals(2.5 to Store.JUMBO, alice.saved(hers))
+        assertEquals(null to null, bob.saved(his))
+        assertTrue(bob.list().items.none { it.key == hers })
+
+        // Bob ticking and un-ticking her key touches only a tick of his own, which keeps nothing: her row isn't on his list.
+        bob.tick(hers)
+        bob.tick(hers, checked = false)
+        bob.tick(hers)
+        assertEquals(2.5 to Store.JUMBO, alice.saved(hers))
+        val bobId = db.userQueries.selectBySubject("sub-bob").executeAsOne().id
+        assertEquals(listOf(Triple(hers, null, null)), db.shoppingQueries.selectChecks(bobId, week).executeAsList().map { Triple(it.itemKey, it.saving, it.savingStore) })
+
+        // His own tick keeps his own saving, at his price; hers stays as it was.
+        bob.tick(his)
+        assertEquals(5.0 to Store.JUMBO, bob.saved(his))
+        assertEquals(2.5 to Store.JUMBO, alice.saved(hers))
     }
 
     @Test

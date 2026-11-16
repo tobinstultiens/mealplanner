@@ -1,7 +1,9 @@
 -- Items ticked off on a week's shopping list, and dismissed advice groups (ShoppingKey). A tick of a
 -- row of what the week's meals need keeps what the row said then (name, grams, pieces), so that the
 -- list can tell when the plan needs more since, or no longer needs it; all three are NULL for other
--- ticks and for ticks from before version 12.
+-- ticks and for ticks from before version 12. Since version 16 it also keeps what the row's offer
+-- saved then (saving, savingStore), so that a store's saving does not shrink as meals are eaten or
+-- offers end; NULL for other ticks and for ticks from before.
 CREATE TABLE shoppingCheck (
     userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
     weekStart TEXT NOT NULL,
@@ -9,15 +11,17 @@ CREATE TABLE shoppingCheck (
     name TEXT,
     grams REAL,                        -- the weight the row said; its known part when not all of it could be weighed
     pieces REAL,
+    saving REAL,                       -- euros the row's offer saved then; 0 when it saved nothing
+    savingStore TEXT,                  -- the Store of that offer; NULL when it saved nothing
     PRIMARY KEY (userId, weekStart, itemKey)
 );
 
 selectChecks:
-SELECT itemKey, name, grams, pieces FROM shoppingCheck WHERE userId = ? AND weekStart = ?;
+SELECT itemKey, name, grams, pieces, saving, savingStore FROM shoppingCheck WHERE userId = ? AND weekStart = ?;
 
 -- Ticking a ticked item again keeps what its first tick said.
 insertCheck:
-INSERT OR IGNORE INTO shoppingCheck (userId, weekStart, itemKey, name, grams, pieces) VALUES (?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO shoppingCheck (userId, weekStart, itemKey, name, grams, pieces, saving, savingStore) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteCheck:
 DELETE FROM shoppingCheck WHERE userId = ? AND weekStart = ? AND itemKey = ?;
