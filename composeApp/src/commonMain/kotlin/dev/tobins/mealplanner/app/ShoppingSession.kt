@@ -153,6 +153,9 @@ internal class ShoppingSession(
         keepCurrent()
     }
 
+    /** Calls [inFront] whenever [front] changes, until cancelled; never in front while not [loggedIn]. */
+    suspend fun follow(front: AppFront, loggedIn: Boolean): Nothing = front.inFront.collect { inFront(it && loggedIn) }
+
     /**
      * Fetches the current week's list into the device's storage, so it is there in a shop without
      * reception even if the list was not opened, and it follows a plan that just changed. Not

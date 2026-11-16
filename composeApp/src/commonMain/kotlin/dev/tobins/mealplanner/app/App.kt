@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import coil3.compose.LocalPlatformContext
 import dev.tobins.mealplanner.api.Me
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,11 +113,13 @@ fun App(
     DisposableEffect(shopping) { onDispose { shopping.close() } }
     // The list keeps itself current only while the app is in front; on start and on coming back
     // it sends what was ticked offline and fetches the list, also before the Shopping tab is opened.
-    val inFront = appInFront()
+    // Told the moment the app goes behind or comes back, also in a browser tab that draws nothing while
+    // hidden. The first time at once, as before the Shopping screen's own effect resumes the list.
+    val front = rememberAppFront()
     val loggedIn = session != null
-    DisposableEffect(shopping, inFront, loggedIn) {
-        shopping.inFront(inFront && loggedIn)
-        onDispose {}
+    DisposableEffect(shopping, front, loggedIn) {
+        val following = scope.launch(start = CoroutineStart.UNDISPATCHED) { shopping.follow(front, loggedIn) }
+        onDispose { following.cancel() }
     }
 
     /** Logs out; the shopping requests still going stop first, so nothing of the account is written back afterwards. */

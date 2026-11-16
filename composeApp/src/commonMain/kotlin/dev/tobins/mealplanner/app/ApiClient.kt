@@ -48,6 +48,7 @@ import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.timeout
@@ -89,8 +90,9 @@ private val lenientJson = Json {
 }
 
 /**
- * Talks to the meal planner server as the logged-in account. Calls throw on network errors
- * and non-2xx responses. An expired access token is renewed with [refresh] and the call retried.
+ * Talks to the meal planner server as the logged-in account. Calls throw on network errors (an
+ * IOException on every platform) and non-2xx responses. An expired access token is renewed with
+ * [refresh] and the call retried.
  */
 class ApiClient(
     settings: ServerSettings,
@@ -100,6 +102,11 @@ class ApiClient(
 ) {
     private val setUp: HttpClientConfig<*>.() -> Unit = {
         expectSuccess = true
+        // A request that cannot reach the server fails as an IOException on every platform, the
+        // lost connection the screens catch; the login's renewal fails through here too (connectionFailure).
+        HttpResponseValidator {
+            handleResponseExceptionWithRequest { cause, _ -> connectionFailure(cause)?.let { throw it } }
+        }
         install(ContentNegotiation) { json(lenientJson) }
         install(HttpTimeout)
         if (session != null) {

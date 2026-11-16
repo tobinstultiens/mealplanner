@@ -696,6 +696,32 @@ class ShoppingSessionTest {
     }
 
     @Test
+    fun followingTheFrontStopsTheChecksBehindAndFetchesOnceOnReturn() = runTest {
+        val session = session(shoppingMode = true)
+        val front = AppFront(inFront = true)
+        backgroundScope.launch { session.follow(front, loggedIn = true) }
+        session.resume()
+        wait(3000)
+        val shown = server.asked.size
+
+        front.report(false)
+        wait(10 * 60_000)
+        assertEquals(shown, server.asked.size, "nothing while behind")
+
+        front.report(true)
+        wait(3000)
+        assertEquals(shown + 1, server.asked.size, "fetched once on coming back")
+    }
+
+    @Test
+    fun loggedOutTheFrontAsksNothing() = runTest {
+        val session = session(shoppingMode = true)
+        backgroundScope.launch { session.follow(AppFront(inFront = true), loggedIn = false) }
+        wait(10 * 60_000)
+        assertEquals(emptyList(), server.asked)
+    }
+
+    @Test
     fun theChecksStopWhenTheSessionCloses() = runTest(timeout = 10.seconds) {
         // In the test's own scope, which ends only when every coroutine in it has: a check left running fails the test.
         val session = ShoppingSession(this, server, ShoppingCache(storage), { "2026-11-18" }, shoppingMode = { true })

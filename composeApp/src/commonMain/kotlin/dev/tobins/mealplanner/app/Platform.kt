@@ -4,6 +4,7 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
 import coil3.ImageLoader
 import coil3.PlatformContext
+import kotlinx.io.IOException
 
 /** Runs [onBack] instead of the platform's default back action while [enabled]. */
 @Composable
@@ -37,9 +38,10 @@ expect fun KeepScreenOn(enabled: Boolean)
 /**
  * Whether the app is in front: on screen, not behind another app (Android) or in a hidden browser
  * tab. The shopping list keeps itself current only then, and is fetched again when it comes back.
+ * The platform keeps the [AppFront] current for as long as this call is part of the composition.
  */
 @Composable
-expect fun appInFront(): Boolean
+internal expect fun rememberAppFront(): AppFront
 
 /**
  * The loader of product pictures. It sends its own User-Agent (Jumbo resets connections that
@@ -52,3 +54,11 @@ expect fun productImageLoader(context: PlatformContext): ImageLoader
 
 /** True in the browser, where a picture can only be drawn when its host sends CORS headers. */
 expect fun runsInBrowser(): Boolean
+
+/**
+ * [cause] as an [IOException], when it is this platform's HTTP engine saying that a request never
+ * reached the server or was cut off; null for anything else. The app catches `Exception`s and counts
+ * an [IOException] as a lost connection (see [load]); OkHttp throws those already, but Ktor's browser
+ * engine throws a `kotlin.Error`, which is no `Exception`, so on the web it went past every catch (#200).
+ */
+internal expect fun connectionFailure(cause: Throwable): IOException?

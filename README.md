@@ -93,6 +93,12 @@ primary colour (`FocusRing.kt`), on Android with a keyboard too. Before the app 
 background from the Light/Dark choice in Settings, which `index.html` reads from `localStorage` (key `theme`).
 The ingredients and steps of a recipe can be selected and copied, on Android too. Known difference: typing a
 new fragment into the address of an open page does not move the app (a reload does).
+A server that cannot be reached is a lost connection as on Android (the plain error with Try again, the refresh
+line, the shopping list's offline line): Ktor's browser engine reports a rejected fetch as a `kotlin.Error`, no
+`Exception`, so `ApiClient` turns it into an `IOException` (`connectionFailure` in `Platform.wasmJs.kt`). "In front"
+is the tab being visible, taken from the browser's `visibilitychange` event as it comes and not through the
+composition, since a hidden tab draws no frames: hiding the tab stops the shopping list's checks and the clock,
+and showing it again fetches the screen in front once.
 
 ## Android app
 
