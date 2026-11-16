@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -29,6 +30,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,8 +55,15 @@ import kotlin.math.roundToInt
 @Composable
 fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfile: () -> Unit) {
     val t = LocalStrings.current
-    var weekStart by rememberSaveable { mutableStateOf(mondayOf(todayIso())) }
-    var state by remember { mutableStateOf<Load<WeekPlan>>(Load.Loading) }
+    val now = mondayOf(rememberToday())
+    val frontReturns = rememberFrontReturns()
+    // The week that was this week when the screen last looked; the shown week follows it when it moves on (see followedDate).
+    var thisWeek by rememberSaveable { mutableStateOf(now) }
+    var weekStart by rememberSaveable { mutableStateOf(thisWeek) }
+    val loaded = rememberLoad<WeekPlan>("plan:$weekStart")
+    var state by loaded
+    var reload by remember { mutableIntStateOf(0) }
+    val listState = rememberLazyListState()
     var busy by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -64,9 +73,19 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfil
     // The slot a recipe is being chosen for: a planned meal's or an empty one's.
     var choosingFor by remember { mutableStateOf<Pair<Int, MealSlot>?>(null) }
 
-    LaunchedEffect(weekStart) {
-        state = Load.Loading
-        state = load { api.plan(weekStart) }
+    LaunchedEffect(now) {
+        if (now != thisWeek) {
+            weekStart = followedDate(thisWeek, weekStart, now)
+            thisWeek = now
+            listState.scrollToItem(0)
+        }
+    }
+    LaunchedEffect(weekStart, reload, frontReturns) { loaded.refresh { api.plan(weekStart) } }
+
+    /** Shows another week the user stepped to, from its top. */
+    fun show(week: String) {
+        weekStart = week
+        scope.launch { listState.scrollToItem(0) }
     }
 
     /** Runs a change on the server and shows the plan it returns. */
@@ -120,8 +139,8 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfil
                         label = t(Msg.WEEK_OF, dayMonthLabel(weekStart, t.locale)),
                         previous = t(Msg.PREVIOUS_WEEK),
                         next = t(Msg.NEXT_WEEK),
-                        onPrevious = { weekStart = plusDays(weekStart, -7) },
-                        onNext = { weekStart = plusDays(weekStart, 7) },
+                        onPrevious = { show(plusDays(weekStart, -7)) },
+                        onNext = { show(plusDays(weekStart, 7)) },
                     )
                 },
             )
@@ -139,7 +158,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfil
                         onAction = onOpenProfile,
                     )
                 } else {
-                    ErrorMessage(t(Msg.PLAN_LOAD_FAILED), current) { weekStart = weekStart.also { state = Load.Loading } }
+                    ErrorMessage(t(Msg.PLAN_LOAD_FAILED), current) { reload++ }
                 }
             }
             is Load.Ready -> {
@@ -147,6 +166,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfil
                 val hasMeals = plan.days.any { it.meals.isNotEmpty() }
                 LazyColumn(
                     Modifier.padding(padding).fillMaxSize(),
+                    state = listState,
                     contentPadding = PaddingValues(Spacing.ScreenEdge),
                     verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {

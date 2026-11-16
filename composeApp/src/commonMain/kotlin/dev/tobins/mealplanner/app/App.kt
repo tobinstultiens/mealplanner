@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import coil3.compose.LocalPlatformContext
@@ -141,6 +142,27 @@ fun App(
     var pricesOpen by rememberSaveable { mutableStateOf(start.prices) }
     // Not logged in, nothing works yet: start on the settings, where the login is.
     var serverOpen by rememberSaveable { mutableStateOf(session == null || start.settings) }
+    // What each screen keeps in its remembered state (scroll, search, the week or day looked at) outlives the
+    // screen being drawn: a screen covered by another (a tab by a recipe, a recipe by its editor) is saved
+    // under its key and restored when it is drawn again, also after Android re-created the activity.
+    val screenStates = rememberSaveableStateHolder()
+    // What the screens loaded last: made with the client, so it never outlives a login.
+    val screenMemory = remember(api) { ScreenMemory() }
+    // A screen that was closed (as opposed to covered) forgets its state: opening it again starts afresh.
+    val openKeys = buildSet {
+        editing?.let { add("editor:$it") }
+        openRecipeId?.let { add("recipe:$it") }
+        if (mapping) add("mapping")
+        if (profileOpen) add("profile")
+        if (pantryOpen) add("pantry")
+        if (offersOpen) add("offers")
+        if (pricesOpen) add("prices")
+    }
+    var previousKeys by remember { mutableStateOf(openKeys) }
+    LaunchedEffect(openKeys) {
+        (previousKeys - openKeys).forEach(screenStates::removeState)
+        previousKeys = openKeys
+    }
     // The address follows the open screen, so that a reload comes back to it.
     val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen)
     LaunchedEffect(open, session != null) { addressFor(open, loggedIn = session != null)?.let(routes::write) }
@@ -188,6 +210,7 @@ fun App(
         LocalStrings provides strings,
         LocalProductImageLoader provides imageLoader.takeIf { productPictures },
         LocalRecipeImages provides recipeImages,
+        LocalScreenMemory provides screenMemory,
     ) {
     MealPlannerTheme(dark, systemColors) {
       // On a wide browser window the app keeps a phone-like column in the middle.
@@ -265,7 +288,7 @@ fun App(
                 val recipeId = openRecipeId
                 val editingId = editing
                 when {
-                    editingId != null -> {
+                    editingId != null -> screenStates.SaveableStateProvider("editor:$editingId") {
                         BackHandler(enabled = true) { editing = null }
                         RecipeEditorScreen(
                             api = api,
@@ -277,27 +300,27 @@ fun App(
                             onCancel = { editing = null },
                         )
                     }
-                    pricesOpen -> {
+                    pricesOpen -> screenStates.SaveableStateProvider("prices") {
                         BackHandler(enabled = true) { pricesOpen = false }
                         PricesScreen(api, onBack = { pricesOpen = false })
                     }
-                    offersOpen -> {
+                    offersOpen -> screenStates.SaveableStateProvider("offers") {
                         BackHandler(enabled = true) { offersOpen = false }
                         OffersScreen(api, onBack = { offersOpen = false }, onOpenPrices = { pricesOpen = true })
                     }
-                    pantryOpen -> {
+                    pantryOpen -> screenStates.SaveableStateProvider("pantry") {
                         BackHandler(enabled = true) { pantryOpen = false }
                         PantryScreen(api, onBack = { pantryOpen = false })
                     }
-                    profileOpen -> {
+                    profileOpen -> screenStates.SaveableStateProvider("profile") {
                         BackHandler(enabled = true) { profileOpen = false }
                         ProfileScreen(api, onBack = { profileOpen = false })
                     }
-                    mapping -> {
+                    mapping -> screenStates.SaveableStateProvider("mapping") {
                         BackHandler(enabled = true) { mapping = false }
                         MappingScreen(api, onBack = { mapping = false })
                     }
-                    recipeId != null -> {
+                    recipeId != null -> screenStates.SaveableStateProvider("recipe:$recipeId") {
                         BackHandler(enabled = true) { openRecipeId = null }
                         RecipeDetailScreen(api, recipeId, nutritionSource, onBack = { openRecipeId = null }, onEdit = { editing = recipeId }, meal = openMeal)
                     }
@@ -319,7 +342,9 @@ fun App(
                         // navigation area, while each screen's own top bar still has to clear the status bar.
                         val bottom = PaddingValues(bottom = padding.calculateBottomPadding())
                         Box(Modifier.padding(bottom).consumeWindowInsets(bottom)) {
-                            when (tab) {
+                            // Each tab keeps its own place while another tab or a screen opened from it is in front.
+                            screenStates.SaveableStateProvider("tab:${tab.slug}") {
+                              when (tab) {
                                 Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it.recipeId; openMeal = it.toCook() }, onOpenPlan = { tab = Tab.PLAN })
                                 Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it.recipeId; openMeal = it.toCook() }, onOpenProfile = { profileOpen = true })
                                 Tab.SHOPPING -> ShoppingScreen(shopping, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
@@ -334,6 +359,7 @@ fun App(
                                     onOpenProfile = { profileOpen = true },
                                     onOpenServer = { serverOpen = true },
                                 )
+                              }
                             }
                         }
                     }
