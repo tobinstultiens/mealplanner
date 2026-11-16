@@ -103,6 +103,9 @@ a price or an amount off ("voor 1,99 bij 2 stuks") it may mean each pack or all 
 `UNKNOWN`, as does every "Tot 25% korting" (not a firm percentage). The packs a deal wants (`packsNeeded`) come
 from the same reading; only an unknown deal that says "N stapelen" still wants N.
 
+Each refresh logs a warning per store when some of its deal texts are not read: how many of its offers, and the
+most common texts, so that a new wording of a store is noticed.
+
 | `dealKind` | Store text | Numbers | Share |
 |---|---|---|---|
 | `LOWER_PRICE` | "voor 1,99", "14,99 · OP=OP", no text with a price (Lidl) | `dealEuros`: the price | against the regular price of a pack |
