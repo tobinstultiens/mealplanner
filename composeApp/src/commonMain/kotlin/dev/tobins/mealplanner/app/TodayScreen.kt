@@ -50,7 +50,7 @@ import kotlin.math.roundToInt
 /** One day: what is planned, what has been eaten, and how that compares with the targets. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> Unit) {
+fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenPlan: () -> Unit) {
     val t = LocalStrings.current
     val today = remember { todayIso() }
     var date by rememberSaveable { mutableStateOf(today) }
@@ -113,7 +113,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenPlan: () -> 
                         MealCard(
                             meal = meal,
                             pictureUrl = pictures[meal.recipeId],
-                            onOpen = { onOpenRecipe(meal.recipeId) },
+                            onOpen = { onOpenRecipe(meal) },
                             onStatus = { status -> change { api.setMealStatus(day.weekStart, day.dayIndex, meal.slot, status) } },
                         )
                     }

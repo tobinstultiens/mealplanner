@@ -31,6 +31,13 @@ data class PlannedMeal(
     val status: MealStatus = MealStatus.PLANNED,
     /** Estimated euros for the portions eaten, with the week's offers; null when unknown. */
     val cost: Double? = null,
+    /**
+     * The servings to cook when this meal is made, what the recipe shows when opened from it; null
+     * from a server that does not send it. A dinner: its own [portions] plus those of the next day's
+     * leftover lunch cooked with it. That lunch: 0, it was cooked the day before. A skipped meal: 0.
+     * Not stored: it follows from the week's meals, and agrees with what the shopping list counts.
+     */
+    val cookPortions: Double? = null,
 )
 
 /**

@@ -383,6 +383,13 @@ ticked:
 - a skipped meal needs nothing; un-eating or un-skipping a meal brings back its need and (above) what
   it took, so the number is as before.
 
+A planned meal also says how much to cook when it is made (`PlannedMeal.cookPortions`, in the plan and
+in `GET /api/days/{date}`, not stored): its own portions plus those of the leftover lunch cooked with
+it, 0 for a skipped meal and for that lunch (cooked the evening before), unless its dinner was skipped
+and it is cooked for itself. The recipe opened from the meal shows its amounts for that many servings,
+so what is cooked is what the list buys. An app from before it, or a server without the field,
+shows the recipe as written.
+
 It is exactly 0 when no meal still to cook uses the row, whatever its unit: a row counted in pieces or
 written without an amount ("a bit of pesto") is done with once its meals are. Null when it can't be
 told: a meal to come uses it but the need can't be weighed in full, or uses it only without an amount;

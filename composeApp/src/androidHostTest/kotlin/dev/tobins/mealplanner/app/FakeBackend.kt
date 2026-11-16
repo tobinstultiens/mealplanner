@@ -152,6 +152,13 @@ class FakeBackend(
                 index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true)
                 else -> meal
             }
+        }.map { meal ->
+            // What the server says to cook: Friday's lentil soup also feeds Saturday's lunch, which cooks nothing.
+            meal.copy(cookPortions = when {
+                meal.status == MealStatus.SKIPPED || meal.leftover -> 0.0
+                index == 4 && meal.slot == MealSlot.DINNER -> 2.0
+                else -> meal.portions
+            })
         }
         val counted = meals.filter { it.status != MealStatus.SKIPPED }
         return PlanDay(plusDays(WEEK_START, index), meals, counted.sumOf { it.kcal }, counted.sumOf { it.proteinG })

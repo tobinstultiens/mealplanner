@@ -213,7 +213,8 @@ class PlanRepository(
     fun mealsOn(date: LocalDate): Triple<LocalDate, Int, List<PlannedMeal>> {
         val start = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         val index = (date.toEpochDay() - start.toEpochDay()).toInt()
-        return Triple(start, index, meals(start).filter { it.day == index }.sortedBy { it.slot.ordinal })
+        val week = meals(start)
+        return Triple(start, index, week.filter { it.day == index }.sortedBy { it.slot.ordinal }.map { it.copy(cookPortions = cookPortions(it, week)) })
     }
 
     /** Titles of meals planned from two weeks before [today] up to [today], newest first. */
@@ -265,9 +266,10 @@ class PlanRepository(
     private fun view(start: LocalDate): WeekPlan {
         val prices = pricing(start, start.plusDays(DAYS - 1L))
         val costs = HashMap<Long, dev.tobins.mealplanner.api.RecipeCost?>()
-        val meals = meals(start).map { meal ->
+        val week = meals(start)
+        val meals = week.map { meal ->
             val cost = costs.getOrPut(meal.recipeId) { recipes.cost(meal.recipeId, prices) }
-            meal.copy(cost = cost?.let { it.perServingWithOffers * meal.portions })
+            meal.copy(cost = cost?.let { it.perServingWithOffers * meal.portions }, cookPortions = cookPortions(meal, week))
         }
         // A skipped meal is not eaten: it counts towards neither the day nor the week.
         val priced = meals.filter { it.cost != null && it.status != MealStatus.SKIPPED }
@@ -325,6 +327,22 @@ class PlanRepository(
                 dinner == null -> meal.status == MealStatus.PLANNED
                 else -> dinner.status != MealStatus.EATEN && MealStatus.PLANNED in setOf(meal.status, dinner.status)
             }
+        }
+
+        /**
+         * The servings to cook when [meal] is made ([PlannedMeal.cookPortions]): its own portions plus
+         * those of the leftover lunch cooked with it, unless that lunch was eaten and took its own. A
+         * skipped meal, an eaten leftover lunch (cooked already) and a leftover lunch whose dinner is in
+         * the plan (cooked then, or skipped and then not cooked, as [toCook] has it) are 0, except the lunch of a skipped dinner, which
+         * is cooked for itself. So for a week where a recipe is planned once, the amounts of
+         * these servings are what the shopping list counts for it.
+         */
+        fun cookPortions(meal: PlannedMeal, week: List<PlannedMeal>): Double {
+            if (meal.status == MealStatus.SKIPPED || (meal.leftover && meal.status == MealStatus.EATEN)) return 0.0
+            val dinner = dinnerOf(meal, week)
+            if (dinner != null) return if (dinner.status == MealStatus.SKIPPED) meal.portions else 0.0
+            val leftovers = leftoversOf(meal, week)?.takeIf { it.status != MealStatus.EATEN }
+            return meal.portions + (leftovers?.portions ?: 0.0)
         }
 
         /** The next day's leftover lunch cooked with [meal], when it is a dinner that has one. */

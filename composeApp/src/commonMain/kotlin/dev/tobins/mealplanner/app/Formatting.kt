@@ -34,6 +34,24 @@ fun IngredientLine.displayText(locale: FormatLocale): String =
         }
     }
 
+/**
+ * This line for [factor] times its amounts, rounded so that it can be measured: grams and millilitres
+ * to whole ones (one decimal below 10, so a pinch does not vanish), spoons, cups and counts
+ * (cloves, pieces, "1 onion") to a quarter, never to nothing. Other units (kg, l, oz, lb) are
+ * not rounded further than [formatAmount] shows them. A line without an amount stays as it is.
+ */
+fun IngredientLine.scaled(factor: Double): IngredientLine {
+    val value = amount ?: return this
+    val scaledValue = value * factor
+    val rounded = when {
+        unit == "g" || unit == "ml" ->
+            if (scaledValue < 10) (scaledValue * 10).roundToLong() / 10.0 else scaledValue.roundToLong().toDouble()
+        unit == "kg" || unit == "l" || unit == "oz" || unit == "lb" -> scaledValue
+        else -> maxOf((scaledValue * 4).roundToLong() / 4.0, 0.25)
+    }
+    return copy(amount = rounded, baseAmount = baseAmount?.let { it * rounded / value })
+}
+
 /** `512 kcal · 38 g protein`, prefixed with `~` when a density was assumed. */
 fun RecipeNutrition.headline(strings: Strings): String {
     val kcal = perServing.kcal?.roundToLong() ?: 0
@@ -73,6 +91,23 @@ fun servingsText(portions: Double, strings: Strings): String =
 /** What a planned meal gives, e.g. `1.75 servings · 461 kcal · 46 g protein`; its cost is shown apart. */
 fun PlannedMeal.macrosText(strings: Strings): String =
     "${servingsText(portions, strings)} · ${strings(Msg.KCAL_PROTEIN, kcal.roundToLong(), proteinG.roundToLong())}"
+
+/**
+ * What a planned meal tells the recipe opened from it, in a sentence: how much to cook now and for
+ * whom, or that there is nothing to cook (skipped, or the leftovers of yesterday's dinner).
+ */
+fun MealToCook.sentence(strings: Strings): String {
+    val locale = strings.locale
+    return when {
+        skipped -> strings(Msg.NOTHING_TO_COOK_SKIPPED)
+        cookPortions <= 0.0 -> strings(Msg.NOTHING_TO_COOK_LEFTOVERS)
+        cookPortions > portions + 1e-9 -> strings(
+            Msg.COOK_WITH_LEFTOVERS, servingsText(cookPortions, strings),
+            formatAmount(portions, locale), formatAmount(cookPortions - portions, locale),
+        )
+        else -> strings(Msg.COOK_SERVINGS, servingsText(cookPortions, strings))
+    }
+}
 
 /**
  * The parts of a recipe list row, kept apart so each has a fixed place: [nutrition] left and
