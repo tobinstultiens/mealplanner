@@ -1,108 +1,122 @@
--- Perishables currently at home that should be used up. Belongs to the account through the ingredient.
--- fromWeek NULL: put on hand by hand; presence only, until removed by hand.
--- fromWeek set: a ticked buy-ahead or stock-up item of the shopping list, on hand from that plan week
--- on. Meals of that week or later that use it are eaten from it: grams is what is left of what was
--- bought, and the entry goes once it is used up. With grams NULL (weight unknown, or ticked before
--- version 9) the first such meal uses it up. What each meal took is kept in stockUse.
+-- Perishables currently at home that should be used up, of an account through the ingredient. Two kinds:
+-- put on hand by hand (onHand), which says only that it is there, until removed by hand; and the stock
+-- the shopping list put there (stock), which meals eat from. An ingredient is one or the other: marked on
+-- hand by hand, its stock goes and ticks add none, as the owner says what is at home.
 CREATE TABLE onHand (
     ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE,
-    addedAt TEXT NOT NULL,
-    fromWeek TEXT,
-    grams REAL
+    addedAt TEXT NOT NULL
 );
 
-selectOnHand:
-SELECT o.ingredientId FROM onHand o JOIN ingredient i ON i.id = o.ingredientId
-WHERE i.userId = ? ORDER BY o.addedAt, o.ingredientId;
+-- The stock, one entry for each thing that put some there (issue 116), so that taking one back takes
+-- back only what it put there, whatever meals ate or gave back in between. On hand from fromWeek on:
+-- meals of that week or later that use it are eaten from it, the oldest entry first; grams is what is
+-- left of what was bought, and the entry goes once it is used up. With grams NULL (weight unknown, or
+-- ticked before version 9) the first such meal uses it up. What each meal took is kept in stockUse.
+CREATE TABLE stock (
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    fromWeek TEXT NOT NULL,            -- ISO date of the plan week it counts from
+    source TEXT NOT NULL,              -- STOCK_UP | BUY_AHEAD | USE_UP (StockSource)
+    addedAt TEXT NOT NULL,
+    grams REAL,
+    PRIMARY KEY (ingredientId, fromWeek, source)
+);
 
--- Every statement that changes onHand names the account: an ingredient of another one changes nothing.
+-- The pantry's list: what is on hand by hand or in stock (next week's too), in the order it came.
+selectOnHand:
+SELECT o.ingredientId FROM (
+    SELECT ingredientId, addedAt FROM onHand
+    UNION ALL
+    SELECT ingredientId, addedAt FROM stock
+) o JOIN ingredient i ON i.id = o.ingredientId
+WHERE i.userId = ?
+GROUP BY o.ingredientId
+ORDER BY min(o.addedAt), o.ingredientId;
+
+-- Every statement that changes onHand or stock names the account: an ingredient of another one changes nothing.
+
+-- Put on hand by hand. An ingredient in stock keeps its place in the pantry's list (the stock then goes: deleteStockOf).
 insertOnHand:
 INSERT OR IGNORE INTO onHand (ingredientId, addedAt)
-SELECT id, :addedAt FROM ingredient WHERE id = :id AND userId = :userId;
+SELECT id, coalesce((SELECT min(addedAt) FROM stock WHERE ingredientId = :id), :addedAt) FROM ingredient WHERE id = :id AND userId = :userId;
 
 deleteOnHand:
 DELETE FROM onHand WHERE ingredientId = :id AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
 
--- With the week each entry counts from (NULL: at once) and the grams left of it (NULL: not known).
-selectOnHandWeeks:
-SELECT o.ingredientId, o.fromWeek, o.grams FROM onHand o JOIN ingredient i ON i.id = o.ingredientId
+selectOnHandByHand:
+SELECT o.ingredientId FROM onHand o JOIN ingredient i ON i.id = o.ingredientId WHERE i.userId = ?;
+
+-- Every entry of the account's stock, with the week it counts from and the grams left of it (NULL: not known).
+selectStockOfAccount:
+SELECT s.ingredientId, s.fromWeek, s.grams FROM stock s JOIN ingredient i ON i.id = s.ingredientId
 WHERE i.userId = ?;
 
--- Marked on hand by hand: an entry a tick put there becomes one set by hand, so un-ticking or eating
--- never takes it away.
-setOnHandByHand:
-UPDATE onHand SET fromWeek = NULL, grams = NULL
-WHERE ingredientId = :id AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
-
--- A ticked item of the shopping list; an entry already there (put on hand by hand) stays as it is.
-insertOnHandFrom:
-INSERT OR IGNORE INTO onHand (ingredientId, addedAt, fromWeek, grams)
-SELECT id, :addedAt, :fromWeek, :grams FROM ingredient WHERE id = :id AND userId = :userId;
-
--- Un-ticking takes back only what that tick put there.
-deleteOnHandFrom:
-DELETE FROM onHand
-WHERE ingredientId = :id AND fromWeek = :fromWeek AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
-
--- What a meal of :week that uses these ingredients is eaten from: what was ticked for that week or before.
+-- What a meal of :week that uses these ingredients is eaten from: what counts from that week or before, oldest first.
 selectStock:
-SELECT o.ingredientId, o.grams, o.fromWeek, o.addedAt FROM onHand o JOIN ingredient i ON i.id = o.ingredientId
-WHERE i.userId = :userId AND o.fromWeek IS NOT NULL AND o.fromWeek <= :week AND o.ingredientId IN :ids;
+SELECT s.ingredientId, s.fromWeek, s.source, s.addedAt, s.grams FROM stock s JOIN ingredient i ON i.id = s.ingredientId
+WHERE i.userId = :userId AND s.fromWeek <= :week AND s.ingredientId IN :ids
+ORDER BY s.ingredientId, s.fromWeek, s.addedAt, s.source;
 
--- What is left after a meal was eaten from it.
+-- A ticked item of the shopping list, or a used-up entry a meal un-eaten puts back as it was. An entry of
+-- the same source and week there already stays as it is (ticking a ticked item again), and an ingredient
+-- on hand by hand gets none.
+insertStock:
+INSERT OR IGNORE INTO stock (ingredientId, fromWeek, source, addedAt, grams)
+SELECT id, :fromWeek, :source, :addedAt, :grams FROM ingredient
+WHERE id = :id AND userId = :userId AND id NOT IN (SELECT ingredientId FROM onHand);
+
+-- Grams added to an entry that is there: what a meal un-eaten took from it, or more of an item used up.
+-- An amount unknown on either side makes the total unknown.
+addToStock:
+UPDATE stock SET grams = grams + :grams
+WHERE ingredientId = :id AND fromWeek = :fromWeek AND source = :source AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
+
+-- What is left of an entry after a meal was eaten from it.
 setStockGrams:
-UPDATE onHand SET grams = :grams
-WHERE ingredientId = :id AND fromWeek IS NOT NULL AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
+UPDATE stock SET grams = :grams
+WHERE ingredientId = :id AND fromWeek = :fromWeek AND source = :source AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
 
--- A meal was eaten from it and nothing is left.
-deleteUsedUp:
-DELETE FROM onHand
-WHERE ingredientId = :id AND fromWeek IS NOT NULL AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
+-- The entry goes: un-ticked (it was not bought), or a meal used it up.
+deleteStock:
+DELETE FROM stock
+WHERE ingredientId = :id AND fromWeek = :fromWeek AND source = :source AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
 
--- A meal un-eaten gives back what it took to the stock that is there: an amount unknown on either side
--- makes the total unknown, and the stock counts from the earlier of the two weeks. An entry set by
--- hand is presence only and stays as it is.
-giveBackToStock:
-UPDATE onHand SET grams = grams + :grams, fromWeek = min(fromWeek, :fromWeek)
-WHERE ingredientId = :id AND fromWeek IS NOT NULL AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
+-- Put on hand or taken off by hand: the owner says what is at home.
+deleteStockOf:
+DELETE FROM stock WHERE ingredientId = :id AND ingredientId IN (SELECT id FROM ingredient WHERE userId = :userId);
 
--- ... or, when the meal used the stock up, puts it back as it was.
-restoreStock:
-INSERT OR IGNORE INTO onHand (ingredientId, addedAt, fromWeek, grams)
-SELECT id, :addedAt, :fromWeek, :grams FROM ingredient WHERE id = :id AND userId = :userId;
-
--- What eating a meal took from the stock of one ingredient (issue 84), kept under the meal whose
--- portions it was for, so that un-eating the meal puts exactly that back. A dinner is cooked with its
--- leftovers: what it took for the next day's leftover lunch is kept under that lunch. The rows go with
--- their meal: a meal replaced or removed leaves what was taken for it taken.
+-- What eating a meal took from one entry of the stock (issue 84), kept under the meal whose portions it
+-- was for, so that un-eating the meal puts exactly that back, into the entry it came from. A dinner is
+-- cooked with its leftovers: what it took for the next day's leftover lunch is kept under that lunch.
+-- The rows go with their meal: a meal replaced or removed leaves what was taken for it taken.
 CREATE TABLE stockUse (
     userId INTEGER NOT NULL,
     weekStart TEXT NOT NULL,
     day INTEGER NOT NULL,
     slot TEXT NOT NULL,
     ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
-    fromWeek TEXT NOT NULL,            -- onHand.fromWeek of the stock it was taken from
-    addedAt TEXT NOT NULL,             -- onHand.addedAt of that stock
-    grams REAL,                        -- taken; NULL when the stock's amount was unknown and the meal used it up
-    PRIMARY KEY (userId, weekStart, day, slot, ingredientId),
+    fromWeek TEXT NOT NULL,            -- stock.fromWeek of the entry it was taken from
+    source TEXT NOT NULL,              -- stock.source of that entry
+    addedAt TEXT NOT NULL,             -- stock.addedAt of that entry
+    grams REAL,                        -- taken; NULL when the entry's amount was unknown and the meal used it up
+    PRIMARY KEY (userId, weekStart, day, slot, ingredientId, fromWeek, source),
     FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE
 );
 
 CREATE INDEX stockUse_ingredient ON stockUse(ingredientId);
 
 selectStockUses:
-SELECT ingredientId, fromWeek, addedAt, grams FROM stockUse
+SELECT ingredientId, fromWeek, source, addedAt, grams FROM stockUse
 WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
 
 insertStockUse:
-INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, addedAt, grams) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, source, addedAt, grams) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteStockUses:
 DELETE FROM stockUse WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
 
--- The stock was declared not bought (un-ticked): what meals took from it is not given back either.
+-- The entry was declared not bought (un-ticked): what meals took from it is not given back either.
 deleteStockUsesFrom:
-DELETE FROM stockUse WHERE userId = :userId AND ingredientId = :id AND fromWeek = :fromWeek;
+DELETE FROM stockUse WHERE userId = :userId AND ingredientId = :id AND fromWeek = :fromWeek AND source = :source;
 
 -- The ingredient was put on hand or taken off by hand: from then on the owner says what is at home.
 deleteStockUsesOf:

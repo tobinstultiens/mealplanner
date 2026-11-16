@@ -389,13 +389,13 @@ class ShoppingListRepository(
 
     /** [grams] is the amount bought; null when not known, such as for an item the list no longer advises. */
     private fun onHandFromTick(start: LocalDate, key: ShoppingKey, checked: Boolean, grams: Double?) {
-        val (id, from) = when (key) {
-            is ShoppingKey.Ahead -> key.id to start.plusDays(DAYS.toLong())
-            is ShoppingKey.Stock -> key.id to start
+        val (id, from, source) = when (key) {
+            is ShoppingKey.Ahead -> Triple(key.id, start.plusDays(DAYS.toLong()), StockSource.BUY_AHEAD)
+            is ShoppingKey.Stock -> Triple(key.id, start, StockSource.STOCK_UP)
             else -> return
         }
         // Both refuse an ingredient of another account (NotFoundException), before anything is stored.
-        if (checked) ingredients.putOnHandFrom(id, from, grams) else ingredients.takeBackOnHand(id, from)
+        if (checked) ingredients.putOnHandFrom(id, from, grams, source) else ingredients.takeBackOnHand(id, from, source)
     }
 
     /**
@@ -456,5 +456,10 @@ class ShoppingListRepository(
     }
 }
 
-/** The order of the walk through the shop, as [shoppingNeeds] gives it: by section, then by name. */
-private val walkingOrder = compareBy<ShoppingNeed>({ it.section.ordinal }, { it.name.lowercase() })
+/**
+ * The order of the walk through the shop, as [shoppingNeeds] gives it: by section, then by name, the
+ * name of the ingredient a row is for where it has one. So an own item named by an alias
+ * ("Olijfolie") sorts next to the meals' row of its ingredient ("Olive oil"), after it, as the sort
+ * keeps the meals' rows first among equals (issue 116).
+ */
+private val walkingOrder = compareBy<ShoppingNeed>({ it.section.ordinal }, { (it.ingredient?.name ?: it.name).lowercase() })

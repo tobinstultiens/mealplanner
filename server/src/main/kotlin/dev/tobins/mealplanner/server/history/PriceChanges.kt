@@ -58,13 +58,27 @@ data class OfferSighting(val offer: Offer) {
     companion object {
         /**
          * What a store's refresh on [today] saw, for the history. Offers that have already ended are left out:
-         * a page that still shows them does not make them run longer. The same offer listed twice (Jumbo shows
-         * this week's and next week's) is one sighting valid over both; the same product offered two ways is two.
+         * a page that still shows them does not make them run longer. So are offers whose dates are not
+         * [readable]. The same offer listed twice (Jumbo shows this week's and next week's) is one sighting
+         * valid over both; the same product offered two ways is two.
          */
         fun of(offers: List<Offer>, today: LocalDate): List<OfferSighting> =
-            offers.filter { LocalDate.parse(it.validUntil) >= today }
+            offers.filter { readable(it) && LocalDate.parse(it.validUntil) >= today }
                 .groupBy { OfferSighting(it).identity }.values
                 .map { same -> OfferSighting(same.first().copy(validFrom = same.minOf { it.validFrom }, validUntil = same.maxOf { it.validUntil })) }
+
+        /**
+         * Whether both of [offer]'s dates are ISO dates (2026-11-16), as the history compares them as text: a
+         * store page that writes a date another way would otherwise stop the whole store's recording, or put
+         * a date out of order into a period.
+         */
+        fun readable(offer: Offer): Boolean = isoDate(offer.validFrom) && isoDate(offer.validUntil)
+
+        private fun isoDate(text: String): Boolean =
+            text.length == ISO_DATE_LENGTH && runCatching { LocalDate.parse(text) }.isSuccess
+
+        /** `yyyy-mm-dd`: a year of five digits or a sign would parse, but not sort as text. */
+        private const val ISO_DATE_LENGTH = 10
     }
 }
 

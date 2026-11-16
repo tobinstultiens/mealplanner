@@ -14,6 +14,7 @@ import dev.tobins.mealplanner.server.history.RegularPriceSighting
 import dev.tobins.mealplanner.server.history.changes
 import dev.tobins.mealplanner.server.history.normalised
 import dev.tobins.mealplanner.server.offers.OfferMatcher
+import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -28,6 +29,7 @@ import java.time.temporal.ChronoUnit
  */
 class PriceHistoryRepository(private val db: Database) {
     private val q = db.priceHistoryQueries
+    private val log = LoggerFactory.getLogger(PriceHistoryRepository::class.java)
 
     /**
      * The catalogue ingredient each offer is for, by name: every account's ingredients, one per name, known
@@ -45,12 +47,14 @@ class PriceHistoryRepository(private val db: Database) {
     }
 
     /**
-     * Records one store's successful refresh at [now]; called in the transaction that stores its offers.
+     * Records one store's successful refresh at [now], once its offers are stored; the caller runs it in a
+     * transaction of its own, so that a failure here leaves the offers stored and writes nothing here.
      *
      * The periods still open are the ones the last recording saw (`max(lastSeen)` of the store). A refresh
      * that saw nothing (an empty page that did not fail) writes nothing, so that stays the last recording
      * and the refresh ends no offer. A refresh no later than the last one recorded (two at once) records
-     * nothing either, rather than put its older view on top.
+     * nothing either, rather than put its older view on top. An offer whose dates are no ISO dates is left
+     * out and logged ([OfferSighting.readable]); the rest of the store's offers are recorded.
      *
      * [ingredientOf] is asked only for a period that starts, or one still without an ingredient: what a
      * period is for stays as it was matched, and one that matched nothing gets the ingredient an account
@@ -60,6 +64,13 @@ class PriceHistoryRepository(private val db: Database) {
         val seen = seen(now)
         val last = q.lastOfferRecording(store.name).executeAsOne().lastSeen
         if (last != null && last >= seen) return
+        offers.filterNot(OfferSighting::readable).takeIf { it.isNotEmpty() }?.let { unreadable ->
+            val example = unreadable.first()
+            log.warn(
+                "Left ${unreadable.size} offers of ${store.label} out of the price history, as their dates are no ISO dates: " +
+                    "such as ${example.title}, ${example.validFrom} to ${example.validUntil}",
+            )
+        }
         val saw = OfferSighting.of(offers, LocalDate.ofInstant(now, ZONE))
         val open = last?.let { q.selectOpenOffers(store.name, it).executeAsList() }.orEmpty().associateBy { it.id }
         val (continued, started) = changes(open.values.map { it.id to it.identity() }, saw) { it.identity }

@@ -28,48 +28,86 @@ class MigrationTest {
         connection.createStatement().executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
     }
 
-    /** Version 7 added the recipe pictures' columns (6.sqm); older versions are made from today's schema without them. */
+    /**
+     * A table as SQLite has it: its columns (name, type, not null, default, place in the key), its
+     * indexes and its foreign keys, so that a rebuilt table is compared in full with a fresh one.
+     */
+    private fun shape(url: String, table: String): List<String> = DriverManager.getConnection(url).use { connection ->
+        fun rows(pragma: String, vararg columns: String) = connection.createStatement().executeQuery("PRAGMA $pragma($table)").use { rows ->
+            generateSequence { if (rows.next()) columns.joinToString("|") { rows.getString(it).orEmpty() } else null }.toList()
+        }
+        rows("table_info", "name", "type", "notnull", "dflt_value", "pk") +
+            rows("index_list", "name", "unique", "origin", "partial").sorted() +
+            rows("foreign_key_list", "table", "from", "to", "on_delete").sorted()
+    }
+
+    // Older versions are made from today's schema by taking back each version's changes, the newest first.
+
+    /** Version 7 added the recipe pictures' columns (6.sqm). */
     private fun dropRecipePictureColumns(statement: Statement) {
+        dropBuyAheadColumns(statement)
         statement.execute("ALTER TABLE recipe DROP COLUMN imageSourceHash")
         statement.execute("ALTER TABLE recipe DROP COLUMN imageVersion")
-        dropBuyAheadColumns(statement)
     }
 
     /** Version 8 added what keeps, and since when a ticked item is on hand (7.sqm). */
     private fun dropBuyAheadColumns(statement: Statement) {
-        statement.execute("ALTER TABLE ingredient DROP COLUMN keeps")
         dropStockAmountColumn(statement)
+        statement.execute("ALTER TABLE ingredient DROP COLUMN keeps")
         statement.execute("ALTER TABLE onHand DROP COLUMN fromWeek")
     }
 
     /** Version 9 added what is left of a ticked item (8.sqm). */
     private fun dropStockAmountColumn(statement: Statement) {
-        statement.execute("ALTER TABLE onHand DROP COLUMN grams")
         dropOwnItems(statement)
+        statement.execute("ALTER TABLE onHand DROP COLUMN grams")
     }
 
     /** Version 10 added the own items of the shopping list (9.sqm); dropping the table drops its index. */
     private fun dropOwnItems(statement: Statement) {
-        statement.execute("DROP TABLE shoppingExtra")
         dropStockUses(statement)
+        statement.execute("DROP TABLE shoppingExtra")
     }
 
     /** Version 11 added what eating a meal took from the stock (10.sqm). */
     private fun dropStockUses(statement: Statement) {
-        statement.execute("DROP TABLE stockUse")
         dropTickMemory(statement)
+        statement.execute("DROP TABLE stockUse")
     }
 
     /** Version 12 added what a tick remembers of its row (11.sqm). */
     private fun dropTickMemory(statement: Statement) {
-        for (column in listOf("name", "grams", "pieces")) statement.execute("ALTER TABLE shoppingCheck DROP COLUMN $column")
         dropPriceHistory(statement)
+        for (column in listOf("name", "grams", "pieces")) statement.execute("ALTER TABLE shoppingCheck DROP COLUMN $column")
     }
 
     /** Version 13 added the price history (12.sqm); dropping the tables drops their indexes. */
     private fun dropPriceHistory(statement: Statement) {
+        dropStockSources(statement)
         statement.execute("DROP TABLE offerHistory")
         statement.execute("DROP TABLE regularPriceHistory")
+    }
+
+    /**
+     * Version 14 kept the stock per source (13.sqm): until then one onHand entry per ingredient held both
+     * what was put on hand by hand (fromWeek NULL) and what a tick put there, and stockUse named its stock
+     * by week alone. The tables as version 13 had them, empty.
+     */
+    private fun dropStockSources(statement: Statement) {
+        statement.execute("DROP TABLE stock")
+        statement.execute("DROP TABLE onHand")
+        statement.execute("DROP TABLE stockUse")
+        statement.execute(
+            "CREATE TABLE onHand (ingredientId INTEGER PRIMARY KEY REFERENCES ingredient(id) ON DELETE CASCADE, " +
+                "addedAt TEXT NOT NULL, fromWeek TEXT, grams REAL)",
+        )
+        statement.execute(
+            "CREATE TABLE stockUse (userId INTEGER NOT NULL, weekStart TEXT NOT NULL, day INTEGER NOT NULL, slot TEXT NOT NULL, " +
+                "ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE, fromWeek TEXT NOT NULL, addedAt TEXT NOT NULL, grams REAL, " +
+                "PRIMARY KEY (userId, weekStart, day, slot, ingredientId), " +
+                "FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE)",
+        )
+        statement.execute("CREATE INDEX stockUse_ingredient ON stockUse(ingredientId)")
     }
 
     @Test
@@ -97,7 +135,7 @@ class MigrationTest {
         val tables = listOf(
             "appUser", "userMeta", "recipe", "recipeIngredient", "ingredient", "ingredientAlias", "onHand",
             "ingredientPrice", "planMeal", "shoppingCheck", "shoppingExtra", "stockUse", "offer", "foodLog", "weight",
-            "offerHistory", "regularPriceHistory",
+            "offerHistory", "regularPriceHistory", "stock",
         )
         for (table in tables) {
             assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
@@ -257,7 +295,7 @@ class MigrationTest {
         assertEquals("MEAT", db.ingredientQueries.selectIngredientByName(1, "Chicken fillet").executeAsOne().section)
         // What was on hand was put there by hand: it counts at once, in any week.
         assertEquals(setOf(2L), ingredients.onHandFor(LocalDate.parse("2026-11-16")))
-        assertEquals(null, db.pantryQueries.selectOnHandWeeks(1).executeAsOne().fromWeek)
+        assertEquals(listOf(2L), db.pantryQueries.selectOnHandByHand(1).executeAsList())
         driver.close()
     }
 
@@ -470,6 +508,157 @@ class MigrationTest {
         runBlocking { OfferRepository(db, listOf(lidl)).refresh(now = Instant.parse("2026-11-17T01:00:00Z")) }
         val row = db.priceHistoryQueries.selectOfferHistory().executeAsOne()
         assertEquals(Triple("LOWER_PRICE", "2026-11-17T01:00:00Z", "2026-11-17T01:00:00Z"), Triple(row.dealKind, row.firstSeen, row.lastSeen))
+        driver.close()
+    }
+
+    private fun single(url: String, sql: String): String = DriverManager.getConnection(url).use { connection ->
+        connection.createStatement().executeQuery(sql).use { rows -> generateSequence { if (rows.next()) rows.getString(1) else null }.joinToString(",") }
+    }
+
+    @Test
+    fun aVersionThirteenDatabaseKeepsItsStockEachEntryWithTheTickThatPutItThere() {
+        val file = createTempFile("v13", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        val next = "2026-11-23"
+        // Version 13 is today's schema with one onHand entry per ingredient, by hand or ticked, and uses named by week.
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropStockSources(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', '2026-11-01T00:00:00Z')")
+                statement.execute(
+                    "INSERT INTO ingredient (id, userId, name) VALUES " +
+                        "(1, 1, 'Chicken fillet'), (2, 1, 'Rice'), (3, 1, 'Lettuce'), (4, 1, 'Olive oil'), (5, 1, 'Beef'), (6, 2, 'Chicken fillet')",
+                )
+                // Alice: chicken bought ahead last week, rice stocked up and lettuce used up this week, oil on hand by hand,
+                // beef stocked up this week and bought ahead last week (one entry: the second tick added nothing).
+                // Bob: chicken of which he has no tick (Alice's tick of his key is hers, and changes nothing of his).
+                statement.execute(
+                    "INSERT INTO onHand (ingredientId, addedAt, fromWeek, grams) VALUES " +
+                        "(1, '2026-11-12T10:00:00Z', '$next', 3600.0), (2, '2026-11-16T10:00:00Z', '$week', 900.0), " +
+                        "(3, '2026-11-17T10:00:00Z', '$week', 100.0), (4, '2026-11-01T10:00:00Z', NULL, NULL), " +
+                        "(5, '2026-11-10T10:00:00Z', '$week', 800.0), (6, '2026-11-12T10:00:00Z', '$next', 500.0)",
+                )
+                statement.execute(
+                    "INSERT INTO shoppingCheck (userId, weekStart, itemKey) VALUES " +
+                        "(1, '2026-11-16', 'ahead:i1'), (1, '$week', 'stock:i2'), (1, '2026-11-09', 'ahead:i5'), (1, '$week', 'stock:i5'), " +
+                        "(1, '2026-11-16', 'ahead:i6')",
+                )
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) " +
+                        "VALUES (1, '$week', 0, 'DINNER', 1, 'Bowl', 2.0, 800.0, 40.0, 0, 0, 'EATEN')",
+                )
+                // Monday's dinner took 100 g of the rice and 50 g of the lettuce.
+                statement.execute(
+                    "INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, addedAt, grams) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 2, '$week', '2026-11-16T10:00:00Z', 100.0), (1, '$week', 0, 'DINNER', 3, '$week', '2026-11-17T10:00:00Z', 50.0)",
+                )
+                statement.execute("PRAGMA user_version = 13")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        for (table in listOf("onHand", "stock", "stockUse")) assertEquals(shape(fresh, table), shape(url, table), "table $table after migration")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals("", single(url, "SELECT name FROM sqlite_master WHERE name LIKE '%_old'"), "the old tables are gone")
+
+        // Every entry is kept, by hand or in stock, with the tick that put it there.
+        assertEquals(listOf(4L), db.pantryQueries.selectOnHandByHand(1).executeAsList())
+        val stock = single(url, "SELECT ingredientId || ':' || fromWeek || ':' || source || ':' || grams FROM stock ORDER BY ingredientId")
+        assertEquals(
+            "1:$next:BUY_AHEAD:3600.0,2:$week:STOCK_UP:900.0,3:$week:USE_UP:100.0,5:$week:BUY_AHEAD:800.0,6:$next:USE_UP:500.0",
+            stock,
+            "the earlier list's tick for one both could have put there; none for what was used up, or for another account's tick",
+        )
+        val uses = single(url, "SELECT ingredientId || ':' || source || ':' || grams FROM stockUse ORDER BY ingredientId")
+        assertEquals("2:STOCK_UP:100.0,3:USE_UP:50.0", uses)
+        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        assertEquals(listOf(4L, 5L, 1L, 2L, 3L), ingredients.pantry().onHand.map { it.id }, "in the order they came, as before")
+
+        // Un-ticking now takes back that tick's entry alone, and what meals took from it stays taken.
+        ingredients.takeBackOnHand(2, LocalDate.parse(week), StockSource.STOCK_UP)
+        ingredients.giveBack(MealRef(LocalDate.parse(week), 0, MealSlot.DINNER))
+        assertEquals(mapOf(1L to 3600.0, 3L to 150.0, 5L to 800.0), ingredients.pantry().onHandGrams)
+        assertEquals(mapOf(6L to 500.0), IngredientRepository(db, FoodRepository(db), 2).pantry().onHandGrams, "Bob's stock is his")
+        driver.close()
+    }
+
+    /**
+     * Rows as the old server wrote them through its API (the check on a copy of dev.db for PR 126): stock that
+     * meals used up, so only what they took is left of it, and a used-up item merged into what was bought ahead.
+     */
+    @Test
+    fun aVersionThirteenDatabaseGivesBackWhatMealsUsedUpAndKeepsAMergedUseUpAtHome() {
+        val file = createTempFile("v13", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        val next = "2026-11-23"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropStockSources(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'tester', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name) VALUES (1, 1, 'Tuna'), (2, 1, 'Chicken fillet'), (3, 1, 'Minced beef')")
+                // Tuna stocked up this week (200 g). Chicken bought ahead on this week's list (500 g) and stocked up on
+                // next week's, which added nothing. Minced beef bought ahead (262.5 g), then 75 g of it used up on this
+                // week's list, which the old server added to that entry and counted from this week.
+                statement.execute(
+                    "INSERT INTO shoppingCheck (userId, weekStart, itemKey) VALUES " +
+                        "(1, '$week', 'stock:i1'), (1, '$week', 'ahead:i2'), (1, '$next', 'stock:i2'), (1, '$week', 'ahead:i3')",
+                )
+                statement.execute("INSERT INTO onHand (ingredientId, addedAt, fromWeek, grams) VALUES (3, '2026-11-16T00:28:24.382531489Z', '$week', 75.0)")
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, 'Tuna bowl', 1.75, 800.0, 40.0, 0, 0, 'EATEN'), " +
+                        "(1, '$next', 2, 'DINNER', 2, 'Chicken Boursin', 2.0, 800.0, 40.0, 0, 0, 'EATEN'), " +
+                        "(1, '$next', 3, 'LUNCH', 2, 'Chicken Boursin', 1.0, 400.0, 20.0, 1, 0, 'PLANNED'), " +
+                        "(1, '$next', 4, 'DINNER', 3, 'Bolognese', 2.0, 800.0, 40.0, 0, 0, 'EATEN'), " +
+                        "(1, '$next', 5, 'LUNCH', 3, 'Bolognese', 1.5, 600.0, 30.0, 1, 0, 'EATEN')",
+                )
+                // The tuna and the chicken were used up by their dinners (the chicken's leftover lunch kept its own share);
+                // the bolognese and its lunch took 262.5 g of the merged minced beef.
+                statement.execute(
+                    "INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, addedAt, grams) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, '$week', '2026-11-16T00:28:24.795235719Z', 200.0), " +
+                        "(1, '$next', 2, 'DINNER', 2, '$next', '2026-11-16T00:28:25.283499610Z', 333.333333333333), " +
+                        "(1, '$next', 3, 'LUNCH', 2, '$next', '2026-11-16T00:28:25.283499610Z', 166.666666666667), " +
+                        "(1, '$next', 4, 'DINNER', 3, '$week', '2026-11-16T00:28:24.382531489Z', 150.0), " +
+                        "(1, '$next', 5, 'LUNCH', 3, '$week', '2026-11-16T00:28:24.382531489Z', 112.5)",
+                )
+                statement.execute("PRAGMA user_version = 13")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals("3:$week:USE_UP:75.0", single(url, "SELECT ingredientId || ':' || fromWeek || ':' || source || ':' || grams FROM stock"))
+        assertEquals(
+            "1:STOCK_UP,2:BUY_AHEAD,2:BUY_AHEAD,3:USE_UP,3:USE_UP",
+            single(url, "SELECT ingredientId || ':' || source FROM stockUse ORDER BY ingredientId, day"),
+            "a use of an entry that is gone gets the tick that put it there",
+        )
+        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        val ref = { weekStart: String, day: Int, slot: MealSlot -> MealRef(LocalDate.parse(weekStart), day, slot) }
+
+        // Un-eaten, each meal gives back what it took, the used-up stock coming back as it was.
+        ingredients.giveBack(ref(week, 0, MealSlot.DINNER))
+        for ((day, slot) in listOf(2 to MealSlot.DINNER, 3 to MealSlot.LUNCH, 4 to MealSlot.DINNER, 5 to MealSlot.LUNCH)) ingredients.giveBack(ref(next, day, slot))
+        assertEquals(mapOf(1L to 200.0, 2L to 500.0, 3L to 337.5), ingredients.pantry().onHandGrams.mapValues { Math.round(it.value * 1000) / 1000.0 })
+
+        // Un-ticking takes back what each tick put there: the chicken's second tick put nothing there, its first all
+        // of it. The merged minced beef matches no tick: un-ticking the buy-ahead leaves it at home, as 13.sqm says.
+        ingredients.takeBackOnHand(1, LocalDate.parse(week), StockSource.STOCK_UP)
+        ingredients.takeBackOnHand(2, LocalDate.parse(next), StockSource.STOCK_UP)
+        assertEquals(setOf(2L, 3L), ingredients.pantry().onHandGrams.keys)
+        ingredients.takeBackOnHand(2, LocalDate.parse(next), StockSource.BUY_AHEAD)
+        ingredients.takeBackOnHand(3, LocalDate.parse(next), StockSource.BUY_AHEAD)
+        assertEquals(mapOf(3L to 337.5), ingredients.pantry().onHandGrams)
         driver.close()
     }
 }

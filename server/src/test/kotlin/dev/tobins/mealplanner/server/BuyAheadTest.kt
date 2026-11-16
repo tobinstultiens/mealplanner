@@ -19,6 +19,7 @@ import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
@@ -528,9 +529,11 @@ class BuyAheadTest {
     /** The test account's id, for what the API doesn't show. */
     private fun accountId() = UserRepository(db).resolve(Identity("sub-t", "t", "T")).id
 
-    /** Grams left of the stock of [ingredient] for meals of [weekStart]; null when there is none or its amount is unknown. */
-    private fun left(ingredient: Ingredient, weekStart: String) =
-        db.pantryQueries.selectStock(accountId(), weekStart, listOf(ingredient.id)).executeAsOneOrNull()?.grams
+    /** Grams left of the stock of [ingredient] for meals of [weekStart], all entries; null when there is none or an amount is unknown. */
+    private fun left(ingredient: Ingredient, weekStart: String): Double? {
+        val grams = db.pantryQueries.selectStock(accountId(), weekStart, listOf(ingredient.id)).executeAsList().map { it.grams }
+        return grams.takeIf { it.isNotEmpty() && null !in it }?.sumOf { it!! }
+    }
 
     /** Puts [portions] of the recipe titled [title] in a slot of the week starting [weekStart], as the planner would. */
     private suspend fun HttpClient.plan(weekStart: String, day: Int, slot: MealSlot, title: String, portions: Double, leftover: Boolean = false): PlannedMeal {
@@ -645,6 +648,106 @@ class BuyAheadTest {
 
     private suspend fun HttpClient.pantryGrams() = get("/api/pantry").body<Pantry>().onHandGrams
 
+    private suspend fun HttpClient.tickOn(weekStart: String, key: String, checked: Boolean = true, grams: Double? = null) =
+        put("/api/plans/$weekStart/shopping") { setBody(ShoppingCheck(key, checked, grams)) }
+
+    @Test
+    fun thePantrySaysTheEarliestWeekAnIngredientsStockCountsFrom() = testApplication {
+        val http = start().ready()
+        val chicken = http.ingredient("Chicken fillet")
+        val lettuce = http.ingredient("Lettuce")
+        suspend fun pantry() = http.get("/api/pantry").body<Pantry>()
+
+        // One entry: bought ahead on this week's list, for next week.
+        http.tick(http.list().buyAhead.single().key)
+        assertEquals(mapOf(chicken.id to nextWeek), pantry().onHandFrom)
+
+        // Two entries in neighbouring weeks (stocked up this week as well): one week per ingredient, as apps
+        // read it, the earliest, from which meals eat it; the grams are both added up.
+        http.tick("stock:i${chicken.id}", grams = 300.0)
+        assertEquals(mapOf(chicken.id to week), pantry().onHandFrom)
+        assertEquals(mapOf(chicken.id to 3900.0), pantry().onHandGrams)
+        http.tick("stock:i${chicken.id}", checked = false)
+        assertEquals(mapOf(chicken.id to nextWeek), pantry().onHandFrom, "that entry gone, the other's week")
+
+        // On hand by hand only: it counts at once, and has no week.
+        http.put("/api/pantry/on-hand/${lettuce.id}")
+        assertTrue("Lettuce" in http.onHand())
+        assertEquals(setOf(chicken.id), pantry().onHandFrom.keys)
+    }
+
+    @Test
+    fun aStockAMealUsedUpComesBackToItsOwnEntryWhichAnotherWeeksUnTickLeaves() = testApplication {
+        val http = start().ready()
+        val rice = http.ingredient("White rice")
+        // A kilo of rice stocked up this week, all of it eaten by a feast of twenty servings this week.
+        http.tick(http.list().stockUp.single { it.name == "White rice" }.key)
+        val feast = http.plan(week, 2, MealSlot.DINNER, "Chicken 1", 20.0)
+        http.mark(week, feast, MealStatus.EATEN)
+        assertNull(left(rice, nextWeek), "used up")
+
+        // Stocked up again on next week's list, then the feast is un-eaten: its kilo comes back, from this week.
+        http.tickOn(nextWeek, "stock:i${rice.id}", grams = 800.0)
+        val bought = assertNotNull(left(rice, nextWeek))
+        http.mark(week, feast, MealStatus.PLANNED)
+        assertEquals(1000.0, left(rice, week))
+        assertEquals(bought + 1000.0, left(rice, nextWeek))
+
+        // Un-ticking next week's takes back what that tick put there, and no more (issue 107). Before, the kilo
+        // given back had joined its entry, which then counted from this week, so the un-tick found nothing.
+        http.tickOn(nextWeek, "stock:i${rice.id}", checked = false)
+        assertEquals(1000.0, left(rice, nextWeek))
+        assertEquals(1000.0, http.pantryGrams()[rice.id])
+    }
+
+    @Test
+    fun aMealEatsTheOldestEntryFirstAndUnEatenGivesEachItsOwnShareBack() = testApplication {
+        val http = start().ready()
+        val chicken = http.ingredient("Chicken fillet")
+        // 3.6 kg bought ahead on this week's list, then 500 g stocked up on next week's: both for next week's meals.
+        val ahead = http.list().buyAhead.single().key
+        http.tick(ahead)
+        http.tickOn(nextWeek, "stock:i${chicken.id}", grams = 500.0)
+        fun entries() = db.pantryQueries.selectStock(accountId(), nextWeek, listOf(chicken.id)).executeAsList().map { it.source to it.grams }
+        assertEquals(listOf("BUY_AHEAD" to 3600.0, "STOCK_UP" to 500.0), entries())
+
+        // A feast of thirteen servings takes 3.9 kg: all of the older entry, and 300 g of the other.
+        val feast = http.plan(nextWeek, 2, MealSlot.DINNER, "Chicken 1", 13.0)
+        http.mark(nextWeek, feast, MealStatus.EATEN)
+        assertEquals(listOf("STOCK_UP" to 200.0), entries())
+        http.mark(nextWeek, feast, MealStatus.PLANNED)
+        assertEquals(listOf("BUY_AHEAD" to 3600.0, "STOCK_UP" to 500.0), entries(), "each entry gets its own share back")
+
+        // Eaten again, then the buy-ahead tick taken back: what the feast took of that entry was not bought, so
+        // un-eating gives back only what it took of the other.
+        http.mark(nextWeek, feast, MealStatus.EATEN)
+        http.tick(ahead, checked = false)
+        http.mark(nextWeek, feast, MealStatus.PLANNED)
+        assertEquals(listOf("STOCK_UP" to 500.0), entries())
+    }
+
+    @Test
+    fun anItemUsedUpOnNextWeeksListIsForNextWeeksMeals() = testApplication {
+        val http = start().ready()
+        val beef = http.ingredient("Beef")
+        // A beef dinner next week, its row ticked on next week's list (600 g), then the dinner removed.
+        http.plan(nextWeek, 0, MealSlot.DINNER, "Beef 0", 2.0)
+        http.tickOn(nextWeek, "i${beef.id}")
+        http.delete("/api/plans/$nextWeek/meals/0/dinner")
+        assertEquals(listOf("i${beef.id}"), http.list(nextWeek).noLongerNeeded.map { it.key })
+        http.post("/api/plans/$nextWeek/shopping/use-up") { setBody(ShoppingRowKey("i${beef.id}")) }
+
+        // Bought on next week's list, it counts from next week, as what is bought ahead does: this week's list
+        // and meals (the fillers use beef) don't count on it. The pantry shows it, as it is at home.
+        assertEquals(600.0, left(beef, nextWeek))
+        assertNull(left(beef, week))
+        assertFalse(http.list().items.single { it.name == "Beef" }.onHand)
+        val filler = http.get("/api/plans/$week").body<WeekPlan>().days.flatMap { it.meals }.first { it.title.startsWith("Filler") }
+        http.eat(week, filler)
+        assertEquals(600.0, left(beef, nextWeek))
+        assertEquals(600.0, http.pantryGrams()[beef.id])
+    }
+
     @Test
     fun theListSaysHowMuchIsOnHandWhereThatIsKnown() = testApplication {
         val http = start().ready()
@@ -656,9 +759,9 @@ class BuyAheadTest {
         fun ShoppingList.row(name: String) = items.single { it.name == name }
 
         // 300 g left of rice stocked up this week; lettuce on hand by hand; chicken bought ahead for next week.
-        scope().ingredients.putOnHandFrom(rice.id, LocalDate.parse(week), grams = 300.0)
+        scope().ingredients.putOnHandFrom(rice.id, LocalDate.parse(week), grams = 300.0, source = StockSource.STOCK_UP)
         http.put("/api/pantry/on-hand/${lettuce.id}")
-        scope().ingredients.putOnHandFrom(chicken.id, LocalDate.parse(nextWeek), grams = 2000.0)
+        scope().ingredients.putOnHandFrom(chicken.id, LocalDate.parse(nextWeek), grams = 2000.0, source = StockSource.BUY_AHEAD)
         val list = http.list()
         assertEquals(500.0, assertNotNull(list.row("White rice").grams), 1e-9)
         assertTrue(list.row("White rice").onHand)
@@ -705,7 +808,7 @@ class BuyAheadTest {
         val dinner = http.plan(week, 0, MealSlot.DINNER, "Chicken 0", 2.0)
         val lunch = http.plan(week, 1, MealSlot.LUNCH, "Chicken 0", 2.0, leftover = true)
         val other = http.plan(week, 2, MealSlot.DINNER, "Chicken 1", 2.0)
-        scope().ingredients.putOnHandFrom(chicken.id, LocalDate.parse(week), grams = 1500.0)
+        scope().ingredients.putOnHandFrom(chicken.id, LocalDate.parse(week), grams = 1500.0, source = StockSource.STOCK_UP)
         suspend fun row() = http.list().items.single { it.name == "Chicken fillet" }
         // What is still to buy, as the app works it out: what the meals to come need, less the stock.
         suspend fun toBuy() = row().let { assertNotNull(it.toComeGrams) - (it.onHandGrams ?: 0.0) }

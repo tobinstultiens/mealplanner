@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingItem
@@ -190,6 +191,26 @@ class ShoppingExtrasTest {
         // A name the catalogue doesn't know is in section Other, at the end of the walk.
         val paper = list.items.last()
         assertEquals("Toilet paper" to ShopSection.OTHER.title, paper.name to paper.category)
+    }
+
+    @Test
+    fun anOwnItemNamedByAnAliasSortsNextToTheMealsRowOfItsIngredient() = testApplication {
+        val http = start()
+        // Mayonnaise and olive oil in one section, both needed by this week's salad.
+        val mayonnaise = http.post("/api/ingredients") { setBody(IngredientInput("Mayonnaise")) }.body<Ingredient>()
+        val oil = http.ingredient("Olive oil")
+        for (id in listOf(mayonnaise.id, oil.id)) http.put("/api/ingredients/$id/section") { setBody(SectionChoice("SAUCES")) }
+        val salad = http.post("/api/recipes") {
+            setBody(RecipeInput(title = "Salad", servings = 2, ingredients = "30 | ml | olive oil\n30 | g | mayonnaise", instructions = "Mix."))
+        }.body<RecipeDetail>().summary
+        val userId = db.userQueries.selectBySubject("sub-t").executeAsOne().id
+        db.planQueries.upsertMeal(userId, week, 0, "DINNER", salad.id, salad.title, 2.0, 500.0, 10.0, 0, 0, "PLANNED")
+
+        // "Extra virgin olive oil" is one of the seed's aliases of olive oil: by its own name it would come
+        // before the mayonnaise; it sorts by its ingredient's name, right after the meals' row.
+        val list = http.add("Extra virgin olive oil").body<ShoppingList>()
+        assertEquals(listOf("i${mayonnaise.id}", "i${oil.id}", list.own("Extra virgin olive oil").key), list.items.map { it.key })
+        assertEquals("Extra virgin olive oil", list.items.last().name, "it keeps the name it was given")
     }
 
     @Test

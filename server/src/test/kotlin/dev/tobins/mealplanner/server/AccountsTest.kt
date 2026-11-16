@@ -225,6 +225,34 @@ class AccountsTest {
     }
 
     @Test
+    fun linkingATextMovesOnlyTheAccountsOwnTicks() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val week = "2026-11-16"
+        val accounts = listOf("alice", "bob").associateWith { clientFor(it) }
+        suspend fun HttpClient.list() = get("/api/plans/$week/shopping").body<ShoppingList>()
+        // Both have the stew, whose beef no ingredient is linked to yet, and both bought it (t:beef).
+        for ((name, client) in accounts) {
+            val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+            db.planQueries.upsertMeal(db.userQueries.selectBySubject("sub-$name").executeAsOne().id, week, 0, "DINNER", stew.id, stew.title, 2.0, 1000.0, 50.0, 0, 0, "PLANNED")
+            client.put("/api/plans/$week/shopping") { setBody(ShoppingCheck("t:beef", true)) }
+        }
+        val alice = accounts.getValue("alice")
+        val bob = accounts.getValue("bob")
+
+        // Alice's new ingredient links her text: her tick follows her row; Bob's list and tick are as they were.
+        val beef = alice.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+        val hers = alice.list()
+        assertEquals(true to 400.0, hers.items.single { it.key == "i${beef.id}" }.let { it.checked to it.boughtGrams })
+        assertEquals(emptyList(), hers.noLongerNeeded)
+        val his = bob.list()
+        assertEquals(true to 400.0, his.items.single { it.key == "t:beef" }.let { it.checked to it.boughtGrams })
+        assertEquals(emptyList(), his.noLongerNeeded)
+        assertEquals(listOf("t:beef"), db.shoppingQueries.selectChecks(db.userQueries.selectBySubject("sub-bob").executeAsOne().id, week).executeAsList().map { it.itemKey })
+    }
+
+    @Test
     fun whatAnAccountBoughtIsSeenAndChangedByItAlone() = testApplication {
         val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
         val db = openDatabase(config.databaseUrl).second
@@ -382,7 +410,7 @@ class AccountsTest {
             db.planQueries.upsertMeal(id, week.toString(), 0, "DINNER", 1, "Stew", 2.0, 800.0, 40.0, 0, 0, "EATEN")
         }
         val chicken = alice.create(IngredientInput("Chicken thigh"))
-        alice.putOnHandFrom(chicken.id, week, grams = 1000.0)
+        alice.putOnHandFrom(chicken.id, week, grams = 1000.0, source = StockSource.STOCK_UP)
         fun left() = db.pantryQueries.selectStock(aliceId, week.toString(), listOf(chicken.id)).executeAsOneOrNull()?.grams
 
         // Bob naming Alice's ingredient as one his meal used takes nothing from her pantry, nor does
@@ -397,7 +425,7 @@ class AccountsTest {
         // he can't take her stock off either, by hand or by un-ticking.
         bob.giveBack(dinner)
         assertFailsWith<NotFoundException> { bob.setOnHand(chicken.id, false) }
-        assertFailsWith<NotFoundException> { bob.takeBackOnHand(chicken.id, week) }
+        assertFailsWith<NotFoundException> { bob.takeBackOnHand(chicken.id, week, StockSource.STOCK_UP) }
         assertEquals(600.0, left())
         alice.giveBack(dinner)
         assertEquals(1000.0, left())
@@ -413,23 +441,25 @@ class AccountsTest {
         val week = "2026-11-23"
         val chicken = alice.create(IngredientInput("Chicken thigh")).id
         val rice = alice.create(IngredientInput("Rice")).id
-        alice.putOnHandFrom(chicken, java.time.LocalDate.parse(week), grams = 1000.0)
+        alice.putOnHandFrom(chicken, java.time.LocalDate.parse(week), grams = 1000.0, source = StockSource.STOCK_UP)
+        alice.setOnHand(rice, true)
         val p = db.pantryQueries
-        fun pantry() = p.selectStock(aliceId, week, listOf(chicken, rice)).executeAsList()
+        fun pantry() = p.selectStock(aliceId, week, listOf(chicken, rice)).executeAsList() to p.selectOnHandByHand(aliceId).executeAsList()
         val before = pantry()
 
         // Called with Bob's account and Alice's ingredients, as a caller that forgot its own check would.
-        assertEquals(0L, p.insertOnHand("2026-11-15T00:00:00Z", rice, bobId).value)
-        assertEquals(0L, p.insertOnHandFrom("2026-11-15T00:00:00Z", week, 500.0, rice, bobId).value)
-        assertEquals(0L, p.restoreStock("2026-11-15T00:00:00Z", week, 500.0, rice, bobId).value)
-        assertEquals(0L, p.giveBackToStock(500.0, week, chicken, bobId).value)
-        assertEquals(0L, p.setStockGrams(1.0, chicken, bobId).value)
-        assertEquals(0L, p.setOnHandByHand(chicken, bobId).value)
-        assertEquals(0L, p.deleteOnHandFrom(chicken, week, bobId).value)
-        assertEquals(0L, p.deleteUsedUp(chicken, bobId).value)
-        assertEquals(0L, p.deleteOnHand(chicken, bobId).value)
+        val source = StockSource.STOCK_UP.name
+        assertEquals(0L, p.insertOnHand(chicken, "2026-11-15T00:00:00Z", bobId).value)
+        assertEquals(0L, p.insertStock(week, StockSource.USE_UP.name, "2026-11-15T00:00:00Z", 500.0, chicken, bobId).value)
+        assertEquals(0L, p.addToStock(500.0, chicken, week, source, bobId).value)
+        assertEquals(0L, p.setStockGrams(1.0, chicken, week, source, bobId).value)
+        assertEquals(0L, p.deleteStock(chicken, week, source, bobId).value)
+        assertEquals(0L, p.deleteStockOf(chicken, bobId).value)
+        assertEquals(0L, p.deleteOnHand(rice, bobId).value)
         assertEquals(before, pantry())
         assertEquals(emptyList(), p.selectOnHand(bobId).executeAsList())
+        assertEquals(emptyList(), p.selectStockOfAccount(bobId).executeAsList())
+        assertEquals(emptyList(), p.selectOnHandByHand(bobId).executeAsList())
     }
 
     @Test
@@ -446,7 +476,7 @@ class AccountsTest {
             val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
             val id = db.userQueries.selectBySubject("sub-$name").executeAsOne().id
             db.planQueries.upsertMeal(id, week, 0, "DINNER", stew.id, stew.title, 2.0, 800.0, 40.0, 0, 0, "PLANNED")
-            IngredientRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 1000.0)
+            IngredientRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 1000.0, source = StockSource.STOCK_UP)
             Triple(client, id, beef.id)
         }
         fun left(name: String): Double? {
@@ -484,6 +514,56 @@ class AccountsTest {
     }
 
     @Test
+    fun unTickingTakesBackOnlyTheAccountsOwnEntryOfItsStock() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val week = "2026-11-16"
+        suspend fun HttpClient.tick(key: String, checked: Boolean = true, grams: Double? = null) =
+            put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, checked, grams)) }
+        suspend fun HttpClient.grams() = get("/api/pantry").body<Pantry>().onHandGrams
+        fun ticks(subject: String) =
+            db.shoppingQueries.selectChecks(db.userQueries.selectBySubject(subject).executeAsOne().id, week).executeAsList().map { it.itemKey }.toSet()
+
+        // Each buys beef three ways: 400 g for a stew the plan then dropped (used up), 500 g stocked up, 300 g bought ahead.
+        val beefOf = listOf("alice", "bob").associateWith { name ->
+            val client = clientFor(name)
+            val userId = { db.userQueries.selectBySubject("sub-$name").executeAsOne().id }
+            val beef = client.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>().id
+            val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+            val salad = client.post("/api/recipes") { setBody(RecipeInput("Salad", 2, "200 | g | lettuce")) }.body<RecipeDetail>().summary
+            db.planQueries.upsertMeal(userId(), week, 0, "DINNER", stew.id, stew.title, 2.0, 1000.0, 50.0, 0, 0, "PLANNED")
+            client.tick("i$beef")
+            db.planQueries.upsertMeal(userId(), week, 0, "DINNER", salad.id, salad.title, 2.0, 300.0, 5.0, 0, 0, "PLANNED")
+            assertEquals(HttpStatusCode.OK, client.post("/api/plans/$week/shopping/use-up") { setBody(ShoppingRowKey("i$beef")) }.status)
+            client.tick("stock:i$beef", grams = 500.0)
+            client.tick("ahead:i$beef", grams = 300.0)
+            assertEquals(mapOf(beef to 1200.0), client.grams())
+            beef
+        }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val alicesBeef = beefOf.getValue("alice")
+        val bobsBeef = beefOf.getValue("bob")
+        val bobsTicks = ticks("sub-bob")
+
+        // Bob can't take back what Alice's ticks put in her pantry.
+        for (key in listOf("stock:i$alicesBeef", "ahead:i$alicesBeef")) {
+            assertEquals(HttpStatusCode.NotFound, bob.tick(key, checked = false).status)
+        }
+        assertEquals(mapOf(alicesBeef to 1200.0), alice.grams())
+        assertEquals(setOf("stock:i$alicesBeef", "ahead:i$alicesBeef"), ticks("sub-alice"))
+
+        // Alice un-ticks both: what she used up stays, and Bob's stock and ticks are as they were.
+        alice.tick("stock:i$alicesBeef", checked = false)
+        alice.tick("ahead:i$alicesBeef", checked = false)
+        assertEquals(mapOf(alicesBeef to 400.0), alice.grams())
+        assertEquals(mapOf(bobsBeef to 1200.0), bob.grams())
+        assertEquals(bobsTicks, ticks("sub-bob"))
+        assertEquals(setOf("stock:i$bobsBeef", "ahead:i$bobsBeef"), bobsTicks)
+    }
+
+    @Test
     fun whatIsStillToBuyGoesByTheAccountsOwnMealsAndStock() = testApplication {
         val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
         val db = openDatabase(config.databaseUrl).second
@@ -497,7 +577,7 @@ class AccountsTest {
             val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
             val id = db.userQueries.selectBySubject("sub-$name").executeAsOne().id
             for (day in 0L..1L) db.planQueries.upsertMeal(id, week, day, "DINNER", stew.id, stew.title, 2.0, 800.0, 40.0, 0, 0, "PLANNED")
-            if (name == "alice") IngredientRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 500.0)
+            if (name == "alice") IngredientRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 500.0, source = StockSource.STOCK_UP)
             client
         }
         // What each is told the meals to come need, and what is at home: their own amounts only.
