@@ -1,4 +1,4 @@
-// Frozen from v0.1.3 (7123262bceced77d65a2a7e3eda0b816bd69dbad) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.4 (12dcec0137b710f972f7d35039ee32797a1ae2e7) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import dev.tobins.mealplanner.released.recipes.IngredientLine
@@ -116,12 +116,49 @@ data class IngredientSection(
     /** Where [automatic] comes from, e.g. "Albert Heijn: Kaas" or "NEVO food group: Cheese". */
     val source: String,
     val byHand: Boolean,
+    /**
+     * Whether it keeps until next week (in the freezer for fresh meat and fish), so it may be bought
+     * ahead: the one set by hand, else [keepsAutomatic].
+     */
+    val keeps: Boolean = false,
+    /** What [section]'s shelf life says ([dev.tobins.mealplanner.shopping.ShopSection.shelfLife]). */
+    val keepsAutomatic: Boolean = false,
+    val keepsByHand: Boolean = false,
 )
 
 /** Body for setting an ingredient's section by hand; a null section goes back to the automatic one. */
 @Serializable
 data class SectionChoice(val section: String?)
 
-/** What is at home: [staples] are always there, [onHand] are perishables to use up. */
+/** Body for setting by hand whether an ingredient keeps until next week; null goes back to the automatic answer. */
 @Serializable
-data class Pantry(val staples: List<Ingredient>, val onHand: List<Ingredient>)
+data class KeepsChoice(val keeps: Boolean?)
+
+/**
+ * What is at home: [staples] are always there, [onHand] are perishables to use up, and what was
+ * ticked on the shopping list's buy-ahead and stock-up advice (see [ShoppingList.buyAhead]).
+ */
+@Serializable
+data class Pantry(
+    val staples: List<Ingredient>,
+    val onHand: List<Ingredient>,
+    /**
+     * The grams left of entries of [onHand], by ingredient id: a ticked buy-ahead or stock-up item
+     * bought in a known amount, less what meals ate of it. An entry put on hand by hand, or ticked
+     * without an amount, is not here: how much there is is not known, which is not none. A separate
+     * map, so that apps that read [onHand] as a list of ingredients (v0.1.2 on) keep reading it.
+     */
+    val onHandGrams: Map<Long, Double> = emptyMap(),
+    /**
+     * The week (its Monday, an ISO date) each entry of [onHand] counts from, by ingredient id: the
+     * week a ticked buy-ahead or stock-up item was bought for. An entry put on hand by hand counts
+     * at once and is not here. A separate map, as [onHandGrams] is.
+     */
+    val onHandFrom: Map<Long, String> = emptyMap(),
+    /**
+     * Every week an entry of [onHand] counts from, by ingredient id, earliest first and each once:
+     * [onHandFrom] is the first of them. For an ingredient stocked up in one week and bought ahead
+     * for another, the pantry can say both. Apps that predate it read [onHandFrom].
+     */
+    val onHandWeeks: Map<Long, List<String>> = emptyMap(),
+)
