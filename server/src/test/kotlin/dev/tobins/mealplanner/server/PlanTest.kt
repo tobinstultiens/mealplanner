@@ -508,18 +508,36 @@ class PlanTest {
         // Removed as servers before issue 165 did: the dinner's own share stays taken, and its lunch keeps its share.
         db.planQueries.deleteMeal(userId(), week, 4, MealSlot.DINNER.name)
 
+        // Its share was taken, so it was cooked (issue 169): it cooks nothing, and the shopping list does not buy for it again.
+        suspend fun countedAsCooked(case: String) {
+            val plan = http.get("/api/plans/$week").body<WeekPlan>()
+            assertEquals(0.0, plan.meal(5, MealSlot.LUNCH)!!.cookPortions, case)
+            assertEquals(0.0, http.get("/api/days/2026-11-21").body<DayView>().meals.single { it.slot == MealSlot.LUNCH }.cookPortions, case)
+            val toCook = plan.days.flatMap { it.meals }.filter { it.status != MealStatus.EATEN }.sumOf { it.cookPortions!! * gramsPerServing(it.title) }
+            val beef = http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef raw" }
+            assertEquals(toCook, beef.toComeGrams!!, 1e-6, case)
+        }
+        countedAsCooked("its dinner removed")
+
         // A recipe for the empty dinner, a replan, "Another recipe" and removing all leave that lunch as it is.
         val other = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title.startsWith("Dinner") && it.id != lunch.recipeId }
         val chosen = http.put("/api/plans/$week/meals/4/dinner") { setBody(MealChoice(other.id)) }.body<WeekPlan>()
         assertEquals(other.id, chosen.meal(4, MealSlot.DINNER)!!.recipeId)
         assertEquals(lunch, chosen.meal(5, MealSlot.LUNCH).stored())
+        countedAsCooked("another dinner chosen")
         assertEquals(lunch, http.post("/api/plans/$week/generate").body<WeekPlan>().meal(5, MealSlot.LUNCH).stored())
+        countedAsCooked("replanned")
         val refused = http.post("/api/plans/$week/meals/5/lunch/reroll")
         assertEquals(HttpStatusCode.Conflict, refused.status)
         assertTrue("These leftovers were cooked with a dinner that was eaten" in refused.bodyAsText(), refused.bodyAsText())
         assertEquals(HttpStatusCode.Conflict, http.delete("/api/plans/$week/meals/5/lunch").status)
         assertEquals(lunch, http.get("/api/plans/$week").body<WeekPlan>().meal(5, MealSlot.LUNCH).stored())
         assertEquals(afterEating, stock(), 1e-6)
+
+        // Its own recipe chosen for the dinner again: the lunch is that dinner's leftovers once more, but cooked already.
+        val again = http.put("/api/plans/$week/meals/4/dinner") { setBody(MealChoice(lunch.recipeId)) }.body<WeekPlan>().meal(4, MealSlot.DINNER)!!
+        assertEquals(again.portions, again.cookPortions, "the dinner cooks only its own")
+        countedAsCooked("its recipe chosen for the dinner again")
 
         // Eaten, it takes nothing more; un-eaten, it gives its share back.
         http.put("/api/plans/$week/meals/5/lunch/status") { setBody(MealStatus.EATEN) }

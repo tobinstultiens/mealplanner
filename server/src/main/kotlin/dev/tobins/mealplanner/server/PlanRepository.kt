@@ -253,8 +253,20 @@ class PlanRepository(
         val start = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         val index = (date.toEpochDay() - start.toEpochDay()).toInt()
         val week = meals(start)
-        return Triple(start, index, week.filter { it.day == index }.sortedBy { it.slot.ordinal }.map { it.copy(cookPortions = cookPortions(it, week)) })
+        val holding = holdingStock(start, week)
+        return Triple(start, index, week.filter { it.day == index }.sortedBy { it.slot.ordinal }.map { it.copy(cookPortions = cookPortions(it, week, holding)) })
     }
+
+    /**
+     * The meals of [week] (starting [start]) that hold a share of the stock although they are not eaten
+     * ([holdsStock]), by day and slot, for [toCook] and [cookPortions]: the leftover lunch of an eaten
+     * dinner, also one whose eaten dinner a server before issue 165 removed.
+     */
+    private fun holdingStock(start: LocalDate, week: List<PlannedMeal>): Set<Pair<Int, MealSlot>> =
+        week.filter { it.status != MealStatus.EATEN && holdsStock(start, it) }.mapTo(HashSet()) { it.day to it.slot }
+
+    /** The meals of [week], the week starting [start], still to cook and to buy for ([toCook]). */
+    fun stillToCook(start: LocalDate, week: List<PlannedMeal>): List<PlannedMeal> = toCook(week, holdingStock(start, week))
 
     /** Titles of meals planned from two weeks before [today] up to [today], newest first. */
     fun recentTitles(today: LocalDate): List<String> {
@@ -315,9 +327,10 @@ class PlanRepository(
         val prices = pricing(start, start.plusDays(DAYS - 1L))
         val costs = HashMap<Long, dev.tobins.mealplanner.api.RecipeCost?>()
         val week = meals(start)
+        val holding = holdingStock(start, week)
         val meals = week.map { meal ->
             val cost = costs.getOrPut(meal.recipeId) { recipes.cost(meal.recipeId, prices) }
-            meal.copy(cost = cost?.let { it.perServingWithOffers * meal.portions }, cookPortions = cookPortions(meal, week))
+            meal.copy(cost = cost?.let { it.perServingWithOffers * meal.portions }, cookPortions = cookPortions(meal, week, holding))
         }
         // A skipped meal is not eaten: it counts towards neither the day nor the week.
         val priced = meals.filter { it.cost != null && it.status != MealStatus.SKIPPED }
@@ -367,11 +380,17 @@ class PlanRepository(
          * eaten meal is cooked, and so is a leftover lunch whose dinner was eaten; a skipped meal is
          * not cooked, unless it is a leftover lunch whose dinner still is, as that dinner is cooked
          * with its leftovers (and takes their share when eaten). Un-eating a meal brings it back.
+         *
+         * [holding] are the meals, by day and slot, that hold a share of the stock although not eaten: their
+         * share was taken, so they are cooked whatever the plan says now. That is only ever the leftover lunch
+         * of an eaten dinner, which the rules above have as cooked while the dinner is in the plan; a server
+         * before issue 165 could remove the dinner and leave the lunch with its share.
          */
-        fun toCook(week: List<PlannedMeal>): List<PlannedMeal> = week.filter { meal ->
+        fun toCook(week: List<PlannedMeal>, holding: Set<Pair<Int, MealSlot>> = emptySet()): List<PlannedMeal> = week.filter { meal ->
             val dinner = dinnerOf(meal, week)
             when {
                 meal.status == MealStatus.EATEN -> false
+                (meal.day to meal.slot) in holding -> false
                 dinner == null -> meal.status == MealStatus.PLANNED
                 else -> dinner.status != MealStatus.EATEN && MealStatus.PLANNED in setOf(meal.status, dinner.status)
             }
@@ -383,13 +402,17 @@ class PlanRepository(
          * skipped meal, an eaten leftover lunch (cooked already) and a leftover lunch whose dinner is in
          * the plan (cooked then, or skipped and then not cooked, as [toCook] has it) are 0, except the lunch of a skipped dinner, which
          * is cooked for itself. So for a week where a recipe is planned once, the amounts of
-         * these servings are what the shopping list counts for it.
+         * these servings are what the shopping list counts for it. A meal in [holding] was cooked, as for
+         * [toCook]; a dinner still to cook does not cook such a lunch again.
          */
-        fun cookPortions(meal: PlannedMeal, week: List<PlannedMeal>): Double {
+        fun cookPortions(meal: PlannedMeal, week: List<PlannedMeal>, holding: Set<Pair<Int, MealSlot>> = emptySet()): Double {
             if (meal.status == MealStatus.SKIPPED || (meal.leftover && meal.status == MealStatus.EATEN)) return 0.0
+            if ((meal.day to meal.slot) in holding) return 0.0
             val dinner = dinnerOf(meal, week)
             if (dinner != null) return if (dinner.status == MealStatus.SKIPPED) meal.portions else 0.0
-            val leftovers = leftoversOf(meal, week)?.takeIf { it.status != MealStatus.EATEN }
+            // An eaten dinner says what it was cooked with; one still to cook leaves out what was cooked already.
+            val leftovers = leftoversOf(meal, week)
+                ?.takeIf { it.status != MealStatus.EATEN && (meal.status == MealStatus.EATEN || (it.day to it.slot) !in holding) }
             return meal.portions + (leftovers?.portions ?: 0.0)
         }
 

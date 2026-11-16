@@ -68,7 +68,7 @@ class ShoppingListRepository(
         val lines = recipes.linesWithIngredients(meals.map { it.recipeId })
         val week = needsOf(meals, sectionOf, lines)
         // The stock went down for the meals eaten, so what is still needed goes by the meals still to cook.
-        val toCook = needsOf(PlanRepository.toCook(meals), sectionOf, lines).needs.associateBy { it.key }
+        val toCook = needsOf(plans.stillToCook(start, meals), sectionOf, lines).needs.associateBy { it.key }
         val ownRows = q.selectExtrasForWeek(userId, start.toString()).executeAsList()
         val own = ownNeeds(ownRows, sectionOf)
         val ticks = ticks(start)

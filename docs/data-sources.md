@@ -465,7 +465,10 @@ Removing the leftover lunch of an eaten dinner is refused rather than giving its
 dinner was cooked with it, so that share is used whether the lunch is eaten or not. Skipping it says
 it is not eaten, as for any meal. A replan counts a kept leftover lunch in its day's calories and
 protein, as it is still to eat, but not in what the shopping list still has to buy for (its share was
-taken when its dinner was eaten); the planner puts no other lunch in its slot.
+taken when its dinner was eaten); the planner puts no other lunch in its slot. So it is for a leftover
+lunch whose eaten dinner a server before issue 165 removed (issue 169): what is kept under its slot says
+its share was taken, so it counts as cooked (it cooks nothing itself, and the list does not buy for it),
+also when its recipe is chosen for that dinner again, which then cooks only its own portions.
 
 A dinner whose leftover lunch was swapped for another recipe before it was eaten was cooked for itself
 only, and eating it took only its own share. Neither a replan nor "Another recipe" for that lunch plans
