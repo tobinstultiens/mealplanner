@@ -59,11 +59,13 @@ import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
 import io.ktor.serialization.ContentConvertException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.io.IOException
 import kotlinx.serialization.SerializationException
 
 /** Result of loading something from the server. */
@@ -73,8 +75,15 @@ internal sealed interface Load<out T> {
      * [status] is the HTTP status when the server answered with an error. [technical]: [message] is
      * the text of an exception, such as "unexpected end of stream on http://...", not a sentence for
      * the user. [unreadable]: the server answered, but the app could not read the answer.
+     * [lostConnection]: the request could not connect, timed out or was cut off.
      */
-    data class Failed(val message: String, val status: Int? = null, val technical: Boolean = false, val unreadable: Boolean = false) : Load<Nothing>
+    data class Failed(
+        val message: String,
+        val status: Int? = null,
+        val technical: Boolean = false,
+        val unreadable: Boolean = false,
+        val lostConnection: Boolean = false,
+    ) : Load<Nothing>
     data class Ready<T>(val value: T) : Load<T>
 }
 
@@ -95,6 +104,7 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
         e.message ?: Strings.current(Msg.UNKNOWN_ERROR),
         technical = e.message != null,
         unreadable = e is SerializationException || e is ContentConvertException,
+        lostConnection = e is IOException || e is HttpRequestTimeoutException,
     )
 }
 

@@ -360,6 +360,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     UNKNOWN_ERROR("Unknown error", "Onbekende fout"),
     NO_ANSWER("The server did not answer in time", "De server antwoordde niet op tijd"),
     NO_CONNECTION("the server could not be reached", "de server is niet bereikbaar"),
+    WENT_WRONG("something went wrong", "er ging iets mis"),
     UNREADABLE_ANSWER("the server's answer could not be read", "het antwoord van de server was niet te lezen"),
 
     // --- Shopping

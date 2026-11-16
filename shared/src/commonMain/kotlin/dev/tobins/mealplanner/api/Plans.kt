@@ -144,8 +144,9 @@ data class ShoppingItem(
      */
     val toComeRecipes: List<String>? = null,
     /**
-     * The count of the ingredient itself (`2 | onion`) when the row also has [otherAmounts] such as
-     * `1 bag`: [pieces] then counts the bag as well, so it could not be shown next to them. Null
+     * The count of the ingredient itself (`2 | onion`) that could not be weighed, when the row also
+     * has [otherAmounts] such as `1 bag`: [pieces] then counts the bag as well, so it could not be
+     * shown next to them. A count with a weight per piece is in [knownGrams] already. Null
      * without [otherAmounts] or without such a count.
      */
     val ownPieces: Double? = null,

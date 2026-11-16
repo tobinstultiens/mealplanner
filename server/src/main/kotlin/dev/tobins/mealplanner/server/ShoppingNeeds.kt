@@ -19,7 +19,7 @@ class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: 
     var gramsKnown = true
     var pieces = 0.0
 
-    /** The part of [pieces] counted in the ingredient itself (`2 | onion`), not in a container (`1 bag`). */
+    /** The part of [pieces] counted in the ingredient itself (`2 | onion`) that has no weight, not in a container (`1 bag`). */
     private var ownPieces = 0.0
 
     /** What could not be converted to grams and is not the ingredient itself, summed per unit as written, scaled. */
@@ -110,7 +110,8 @@ fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, s
             val grams = gramsOf(line, ingredient)
             if (grams != null) need.grams += grams * factor else need.gramsKnown = false
             if (line.dimension == Dimension.COUNT) need.pieces += amount * factor
-            if (line.unitIsTheIngredient) need.addOwnPieces(amount * factor)
+            // Only a count that adds no weight: one with a weight per piece is in the grams already.
+            if (line.unitIsTheIngredient && grams == null) need.addOwnPieces(amount * factor)
             val unit = line.unit
             if (grams == null && unit != null && !line.unitIsTheIngredient) need.addOther(unit, amount * factor)
         }

@@ -980,7 +980,7 @@ class ShoppingSessionTest {
         session.resume()
         settle()
 
-        server.oneStepAnswer = Load.Failed("unexpected end of stream on http://192.168.1.2:8080/...", technical = true)
+        server.oneStepAnswer = Load.Failed("unexpected end of stream on http://192.168.1.2:8080/...", technical = true, lostConnection = true)
         session.tickAgain("a")
         settle()
 
@@ -995,7 +995,7 @@ class ShoppingSessionTest {
         val session = session()
         session.resume()
         settle()
-        server.addAnswer = Load.Failed("unexpected end of stream on http://192.168.1.2:8080/...", technical = true)
+        server.addAnswer = Load.Failed("unexpected end of stream on http://192.168.1.2:8080/...", technical = true, lostConnection = true)
 
         session.add("Coffee") {}
         settle()
@@ -1003,6 +1003,21 @@ class ShoppingSessionTest {
         val notice = session.notices.single()
         assertEquals("Could not add the item: the server could not be reached", Strings.English(notice.msg, notice.detail))
         assertEquals("unexpected end of stream on http://192.168.1.2:8080/...", notice.technical)
+    }
+
+    @Test
+    fun aTechnicalFailureThatIsNoLostConnectionIsNotCalledOne() = runTest {
+        val session = session()
+        session.resume()
+        settle()
+        server.addAnswer = Load.Failed("Cannot read property of undefined", technical = true)
+
+        session.add("Coffee") {}
+        settle()
+
+        val notice = session.notices.single()
+        assertEquals("Could not add the item: something went wrong", Strings.English(notice.msg, notice.detail))
+        assertEquals("Cannot read property of undefined", notice.technical)
     }
 
     @Test
