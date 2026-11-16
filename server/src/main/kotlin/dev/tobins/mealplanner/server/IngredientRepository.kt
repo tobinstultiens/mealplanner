@@ -34,7 +34,10 @@ enum class StockSource {
     /** A buy-ahead item ticked on the list of the week before the entry's; un-ticking it takes the entry back. */
     BUY_AHEAD,
 
-    /** A bought item no meal needed any more, used up on the list of the entry's week. Its tick is gone, so nothing takes it back but the pantry. */
+    /**
+     * A bought item no meal needed any more, used up on the list of the entry's week. Its tick is
+     * gone, so only the pantry takes it back.
+     */
     USE_UP,
 }
 
@@ -210,7 +213,9 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
                 for (entry in entries) {
                     if (wanted <= 0.0) break
                     val taken = takeFrom(entry, wanted)
-                    pantry.insertStockUse(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, id, entry.fromWeek, entry.source, entry.addedAt, taken)
+                    pantry.insertStockUse(
+                        userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, id, entry.fromWeek, entry.source, entry.addedAt, taken,
+                    )
                     // An entry of unknown amount covers what is wanted, as far as anyone can tell.
                     wanted = taken?.let { wanted - it } ?: 0.0
                 }
