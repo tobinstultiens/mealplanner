@@ -1,6 +1,5 @@
 package dev.tobins.mealplanner.app
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -40,9 +38,9 @@ import dev.tobins.mealplanner.api.ShoppingAdvice
 import kotlinx.coroutines.launch
 
 /**
- * App settings in cards: the server address (first while not logged in, since nothing works
- * without it; it can be tested before saving), the account, light or dark and (on Android 12+) the wallpaper colours, which apply at
- * once, and the app version.
+ * App settings in cards: the server address (first while not logged in, when the login screen's
+ * "Change server" opened it; it can be tested before saving), the account, light or dark and (on
+ * Android 12+) the wallpaper colours, which apply at once, and the app version.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -123,11 +121,8 @@ fun ServerSettingsScreen(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (!loggedIn) {
-                // The mark greets whoever has not logged in yet; once logged in the screen is only settings.
-                Image(Illustrations.Mark, contentDescription = null, Modifier.align(Alignment.CenterHorizontally).size(96.dp))
-                server()
-            }
+            // Opened from the login screen to change the server: that comes first.
+            if (!loggedIn) server()
             SettingsCard(t(Msg.CARD_ACCOUNT)) {
                 if (loggedIn) {
                     Text(if (account != null) t(Msg.LOGGED_IN_AS, account) else t(Msg.LOGGED_IN), style = MaterialTheme.typography.bodyMedium)

@@ -128,6 +128,17 @@ enum class Msg(private val english: String, private val dutch: String) {
     LOGIN_FAILED("Logging in failed", "Inloggen is mislukt"),
     LOGIN_START_FAILED("Could not start the login: {0}", "Kon het inloggen niet starten: {0}"),
 
+    // --- Login screen
+    APP_NAME("Meal planner", "Meal planner"),
+    LOGGED_OUT_BY_USER("You are logged out.", "Je bent uitgelogd."),
+    LOGGED_OUT_EXPIRED(
+        "You were logged out: your login ran out or was ended. Log in again to carry on.",
+        "Je bent uitgelogd: je inlog is verlopen of beëindigd. Log opnieuw in om verder te gaan.",
+    ),
+    LOGGING_IN("Logging in…", "Inloggen…"),
+    LOGIN_AT("Logs in at {0}", "Logt in bij {0}"),
+    CHANGE_SERVER("Change server", "Andere server"),
+
     // --- Settings
     SETTINGS("Settings", "Instellingen"),
     CARD_SERVER("Server", "Server"),

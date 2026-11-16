@@ -42,6 +42,12 @@ fun SettingsStorage.saveServerSettings(settings: ServerSettings) {
 
 private fun normalUrl(url: String) = url.trim().trimEnd('/')
 
+/** Whether a server was chosen on this device (saved in the settings, or logged in to), rather than taken from the build. */
+fun SettingsStorage.hasSavedServer(): Boolean = !get(URL_KEY).isNullOrBlank()
+
+/** Whether this looks like a server's address at all; the login and the settings take nothing else. */
+fun ServerSettings.isAddress(): Boolean = url.startsWith("http://") || url.startsWith("https://")
+
 /** Light, dark, or whatever the device uses. */
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 

@@ -69,6 +69,12 @@ class FakeBackend(
     override fun close() = server.stop(0)
 
     private fun HttpExchange.respond() {
+        // A session the server no longer accepts, as after its access token ran out.
+        if (requestHeaders.getFirst("Authorization") == "Bearer $REFUSED_TOKEN") {
+            sendResponseHeaders(401, -1)
+            close()
+            return
+        }
         val body = try {
             route(requestURI.path)
         } catch (e: Exception) {
@@ -354,5 +360,8 @@ class FakeBackend(
         /** The day all pictures are taken on: a Wednesday. */
         const val TODAY = "2026-11-18"
         val WEEK_START = mondayOf(TODAY)
+
+        /** An access token every call answers 401 to. */
+        const val REFUSED_TOKEN = "refused-token"
     }
 }
