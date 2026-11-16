@@ -470,7 +470,14 @@ taken when its dinner was eaten); the planner puts no other lunch in its slot.
 Each change of the plan reads it and writes it in one transaction that takes the database's write lock
 first, so a meal eaten meanwhile on another device is not replaced after all, and a write of the offer
 refresh or the price lookup in between makes the request wait for it instead of failing with
-"database is locked".
+"database is locked". So does every other change that reads before it writes (issue 169): the stock
+(ticks of the shopping list, using up, on hand by hand, eating and un-eating), the catalogue's links,
+editing a recipe and the cooking-site sync, and a login under new names. They share one helper
+(`Database.writing` in `Database.kt`), whose first statement changes nothing on `appUser` (a table of no
+account, so a login without an account yet takes it the same way). A login of a known account under
+the same names writes nothing and does not wait for the lock. None of them holds the lock across a
+network call: the cooking-site fetch, the store and price lookups and Claude's recipe writing all happen
+before or outside them.
 
 Marking an item on hand in the pantry makes it one set by hand, even if ticks put it there (its stock
 goes, and it keeps its place in the pantry's list): those stay until removed by hand, whatever is

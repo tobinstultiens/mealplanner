@@ -41,6 +41,13 @@ UPDATE appUser SET subject = ?, username = ?, displayName = ? WHERE id = ?;
 updateNames:
 UPDATE appUser SET username = ?, displayName = ? WHERE id = ?;
 
+-- Changes nothing, but takes SQLite's write lock: the first statement of a transaction that reads before
+-- it writes (Database.writing), so that it waits for another writer instead of failing. On appUser, the
+-- accounts themselves, which every database has and which belong to no account: so it needs no account,
+-- and logging in (UserRepository.resolve), which has none yet, takes it the same way.
+lockForWriting:
+UPDATE appUser SET subject = subject WHERE 0;
+
 selectUserMeta:
 SELECT value FROM userMeta WHERE userId = ? AND key = ?;
 

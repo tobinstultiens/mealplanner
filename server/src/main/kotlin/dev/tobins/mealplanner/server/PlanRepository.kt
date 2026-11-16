@@ -48,7 +48,7 @@ class PlanRepository(
      */
     fun generate(weekStart: String, seed: Long = Random.nextLong()): WeekPlan {
         val start = parseWeekStart(weekStart)
-        writing {
+        db.writing {
             val week = meals(start)
             val kept = week.filter { it.locked || it.status != MealStatus.PLANNED || whyKeepsItsRecipe(start, it, week) != null }
             val planned = WeekPlanner.plan(request(start, locked = kept, seed = seed))
@@ -67,7 +67,7 @@ class PlanRepository(
     fun reroll(weekStart: String, day: Int, slot: MealSlot, seed: Long = Random.nextLong()): WeekPlan {
         val start = parseWeekStart(weekStart)
         // Read and written in one transaction, so a meal eaten meanwhile is not replaced after all.
-        writing {
+        db.writing {
             val current = meals(start)
             val target = current.firstOrNull { it.day == day && it.slot == slot }
                 ?: throw NotFoundException("No meal planned for day $day $slot")
@@ -160,7 +160,7 @@ class PlanRepository(
         val targets = targets()
         val portions = WeekPlanner.portionsFor(candidate, targets.kcal * slot.share)
         val meal = PlannedMeal(day, slot, candidate.recipeId, candidate.title, portions, candidate.kcal * portions, candidate.proteinG * portions, locked = locked)
-        writing {
+        db.writing {
             val week = meals(start)
             requireReplaceable(start, week, day, slot)
             val nextLunch = leftoversToReplace(start, week, day, slot)
@@ -193,7 +193,7 @@ class PlanRepository(
      */
     fun setStatus(weekStart: String, day: Int, slot: MealSlot, status: MealStatus): WeekPlan {
         val start = parseWeekStart(weekStart)
-        writing {
+        db.writing {
             val meals = meals(start)
             val meal = meals.firstOrNull { it.day == day && it.slot == slot }
             q.setStatus(status.name, userId, start.toString(), day.toLong(), slot.name)
@@ -257,23 +257,11 @@ class PlanRepository(
      */
     fun remove(weekStart: String, day: Int, slot: MealSlot): WeekPlan {
         val start = parseWeekStart(weekStart)
-        writing {
+        db.writing {
             requireReplaceable(start, meals(start), day, slot)
             q.deleteMeal(userId, start.toString(), day.toLong(), slot.name)
         }
         return view(start)
-    }
-
-    /**
-     * Runs [body] in a transaction that takes the write lock before it reads, as BEGIN IMMEDIATE would.
-     * SQLDelight begins every transaction deferred: it reads from a snapshot, and its first write then
-     * fails at once with "database is locked" when another connection wrote since or is writing (the
-     * offer refresh, the price lookup), as SQLite's busy timeout does not wait for a reader that would
-     * write. Taken first, the lock is waited for instead, and what is read is what gets written over.
-     */
-    private fun <T> writing(body: () -> T): T = db.transactionWithResult {
-        q.lockForWriting(userId)
-        body()
     }
 
     private fun request(start: LocalDate, locked: List<PlannedMeal>, seed: Long) = PlanRequest(
