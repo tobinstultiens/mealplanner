@@ -1,6 +1,6 @@
 name: CI
 
-# Four jobs run side by side; the server image is pushed only when all of them pass on main.
+# Four jobs run side by side; then the server image is built and started, and pushed only on main.
 on:
   push:
     branches: [main]
@@ -86,6 +86,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The tags: the jar says which v* tag it was built after (GET /health).
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -106,9 +109,10 @@ jobs:
           name: profile-server-jar
           path: build/reports/profile/
 
-  # Same registry and secrets as the cooking site. The homelab is amd64 only.
+  # The server image: built and started on every run, so what only shows at start is found before the
+  # merge and not the morning after; pushed only on main. Same registry and secrets as the cooking
+  # site. The homelab is amd64 only.
   image:
-    if: github.ref == 'refs/heads/main'
     needs: [test, android, screenshots, server-jar]
     runs-on: ubuntu-latest
     steps:
@@ -118,16 +122,47 @@ jobs:
           name: server-jar
           path: server/build/libs
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      - name: Build and push server image
+      - name: Build the server image
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
-          push: true
-          tags: |
-            kick1999/mealplanner:latest
+          load: true
+          tags: kick1999/mealplanner:${{ github.sha }}
+      # No stores and no login provider: the server must still start and serve its health and the web client.
+      - name: Start the image
+        run: |
+          docker run -d --name mealplanner -p 8080:8080 \
+            -e MEALPLANNER_FETCH_OFFERS=off -e MEALPLANNER_DB_URL=jdbc:sqlite:/data/mealplanner.db \
             kick1999/mealplanner:${{ github.sha }}
+      - name: Wait for it to report this commit
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/health | tee health.json | grep -q "\"commit\":\"${GITHUB_SHA}\""; then
+              cat health.json; exit 0
+            fi
+            sleep 1
+          done
+          echo "No /health with commit ${GITHUB_SHA} within 60 seconds"
+          docker logs mealplanner
+          exit 1
+      - name: Check the web client and the data check
+        run: |
+          curl -fsS http://localhost:8080/ | grep -qi "<html" || { echo "/ does not serve the web client's page"; docker logs mealplanner; exit 1; }
+          curl -fsS http://localhost:8080/health/data
+      - name: Stop the image
+        if: always()
+        run: docker rm -f mealplanner
+      - name: Log in to Docker Hub
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      # The very image that was started, not a second build.
+      - name: Push the image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker tag kick1999/mealplanner:${{ github.sha }} kick1999/mealplanner:latest
+          docker push kick1999/mealplanner:${{ github.sha }}
+          docker push kick1999/mealplanner:latest
