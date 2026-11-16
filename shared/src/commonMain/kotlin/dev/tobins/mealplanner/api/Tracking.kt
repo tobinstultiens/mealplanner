@@ -2,7 +2,11 @@ package dev.tobins.mealplanner.api
 
 import kotlinx.serialization.Serializable
 
-/** What became of a planned meal. */
+/**
+ * What became of a planned meal. Annotated because the app sends it bare as a request body: the web
+ * client cannot find a serializer by reflection, as the JVM and Android do for an enum without one.
+ */
+@Serializable
 enum class MealStatus { PLANNED, EATEN, SKIPPED }
 
 /** Something eaten outside the plan, logged with rough numbers. */
