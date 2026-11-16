@@ -195,4 +195,60 @@ class DealKindTest {
     fun aShareAboveTheFullPriceIsNotKept() {
         assertNull(DealTerms.of(offer("voor 5,00", originalPrice = 4.0)).paidShare)
     }
+
+    /** A store's page can hold any digits: no text makes the readers throw, an unreadable number is an unknown deal. */
+    @Test
+    fun aNumberTooLongToReadMakesTheDealUnknownNeverAnException() {
+        val long = "9".repeat(400)
+        val texts = listOf(
+            "25% korting bij 99999999999 stuks", "25% korting bij 0 stuks", "25% korting bij $long stuks",
+            "99999999999+1 gratis", "1+99999999999 gratis", "0+0 gratis", "$long+1 gratis",
+            "99999999999 voor 3,99", "$long voor 3,99", "2 voor $long", "0 voor 3,99",
+            "99999999999e halve prijs", "0e halve prijs",
+            "$long% korting", "$long korting", "$long euro korting", "voor $long", long,
+            "$long per kilo", "$long per 500 gram", "1,09 per $long gram", "$long gram voor 1,59", "0 gram voor 1,59",
+        )
+        for (text in texts) {
+            assertEquals(DealKind.Unknown(text), Discounts.kind(text), text)
+            assertEquals(1, Discounts.packsNeeded(text), text)
+            Discounts.factor(offer(text, price = 1.0, originalPrice = 2.0), 1.0)
+            DealTerms.of(offer(text))
+        }
+        // "N stapelen" is read on its own too, with the same guard.
+        assertEquals(1, Discounts.packsNeeded("99999999999 stapelen tot 35%"))
+        assertEquals(1, Discounts.packsNeeded("0 stapelen tot 35%"))
+    }
+
+    @Test
+    fun aPackSizeWithANumberTooLongToReadIsNoSizeNeverAnException() {
+        val long = "9".repeat(400)
+        for (text in listOf("$long g", "$long x 330 ml", "6 x $long ml", "$long stuks", "99999999999 stuks", "$long,5 l", "${"9".repeat(300)} x ${"9".repeat(300)} kg")) {
+            assertNull(PackSize.grams(text, gramsPerPiece = 50.0), text)
+            assertNull(PackSize.pieces(text), text)
+            assertNull(PackSize.millilitres(text), text)
+            PackSize.toBuy(offer("2 voor 3,99", packSize = text, title = text), 500.0, 3.0)
+        }
+    }
+
+    /** A size that is finite but absurd (a denormal) gave an infinite price per kg and 2147483647 packs. */
+    @Test
+    fun aPackSizeNoPackCanHaveGivesNoSizeAndNoInfinitePrice() {
+        val tiny = "0." + "0".repeat(310) + "1"
+        for (text in listOf("$tiny g", "$tiny kg", "$tiny l", "$tiny ml", "2 x $tiny g", "2 x $tiny l", "0,0001 g", "2000000000 kg")) {
+            assertNull(PackSize.grams(text), text)
+            assertNull(PackSize.millilitres(text), text)
+            assertNull(PackSize.toBuy(offer("2 voor 3,99", packSize = text, title = "Product"), 500.0, 3.0), text)
+            val terms = DealTerms.of(offer("2 voor 3,99", packSize = text, originalPrice = 2.0))
+            for (value in listOf(terms.eurosPerKg, terms.eurosPerPiece, terms.eurosPerLitre)) assertNull(value, text)
+        }
+        // A real small pack is still read.
+        assertEquals(0.5, PackSize.grams("0,5 g"))
+        assertEquals(1, PackSize.toBuy(offer(null, packSize = "500 g"), 500.0, null)?.packs)
+    }
+
+    @Test
+    fun aLargeButPossibleCountIsStillRead() {
+        assertEquals(DealKind.MultiPrice(1000, 3.99), Discounts.kind("1000 voor 3,99"))
+        assertEquals(1000, Discounts.packsNeeded("25% korting bij 1000 stuks"))
+    }
 }

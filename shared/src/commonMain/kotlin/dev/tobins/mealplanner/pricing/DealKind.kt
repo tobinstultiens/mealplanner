@@ -72,11 +72,14 @@ data class DealTerms(
                 kind = kind,
                 packs = Discounts.packsNeeded(offer.deal),
                 paidShare = share,
-                eurosPerKg = (kind as? DealKind.PricePerKg)?.euros ?: perPack?.let { paid -> grams?.let { paid / it * 1000 } },
-                eurosPerPiece = perPack?.let { paid -> pieces?.let { paid / it } },
-                eurosPerLitre = perPack?.let { paid -> millilitresOf(offer)?.let { paid / it * 1000 } },
+                eurosPerKg = (kind as? DealKind.PricePerKg)?.euros?.let(::usable) ?: perPack?.let { paid -> grams?.let { usable(paid / it * 1000) } },
+                eurosPerPiece = perPack?.let { paid -> pieces?.let { usable(paid / it) } },
+                eurosPerLitre = perPack?.let { paid -> millilitresOf(offer)?.let { usable(paid / it * 1000) } },
             )
         }
+
+        /** A price that can be stored: finite and above 0, else null. */
+        private fun usable(euros: Double): Double? = euros.takeIf { it.isFinite() && it > 0 }
 
         /**
          * The price of one pack with the deal used in full, or null when it can't be told: a deal of free or

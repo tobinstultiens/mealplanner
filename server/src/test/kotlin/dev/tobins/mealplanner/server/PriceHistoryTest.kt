@@ -83,6 +83,20 @@ class PriceHistoryTest {
     }
 
     @Test
+    fun anOfferWhoseDealTextHoldsAHugeNumberIsStoredAndRecordedAsAnUnknownDeal() {
+        val huge = listOf("25% korting bij 99999999999 stuks", "99999999999+1 gratis", "99999999999 voor 3,99", "25% korting bij 0 stuks")
+        val ah = FakeSource(Store.AH, listOf(offer("Kaas")) + huge.mapIndexed { i, deal -> offer("Ham $i", deal = deal) })
+        refresh(ah, 0)
+
+        assertEquals(5, db.planQueries.countOffers().executeAsOne().n, "every offer is stored")
+        assertEquals(setOf("Kaas") + huge.indices.map { "Ham $it" }, periods().keys, "and recorded, the store's history is not skipped")
+        val tiny = "0." + "0".repeat(310) + "1"
+        refresh(FakeSource(Store.AH, listOf(offer("Rijst", deal = "2 voor 3,99", originalPrice = 2.0, packSize = "$tiny g"), offer("Melk", deal = "2 voor 3,99", originalPrice = 2.0, packSize = "$tiny l"))), 1)
+        val numbers = history().flatMap { listOfNotNull(it.eurosPerKg, it.eurosPerPiece, it.eurosPerLitre) }
+        assertTrue(numbers.all { it.isFinite() }, "no infinite number is written to the history: $numbers")
+    }
+
+    @Test
     fun aFailureToRecordTheHistoryIsLoggedAndLeavesTheStoresOffersRefreshed() {
         val ah = FakeSource(Store.AH, listOf(offer("Kaas")))
         refresh(ah, 0)
