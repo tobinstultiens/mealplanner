@@ -28,13 +28,13 @@ private fun RoutingCall.slot() = MealSlot.entries.firstOrNull { it.name.equals(p
 
 /**
  * Runs [block], answering a [ConflictException] (such as "This meal was eaten already") as 422 with its
- * message, and null then. The app's generate dialog reads any 409 as GenerationService's "set up your
- * profile first"; any other refusal it shows as the server wrote it.
+ * message followed by [more], and null then. The app's generate dialog reads any 409 as GenerationService's
+ * "set up your profile first"; any other refusal it shows as the server wrote it.
  */
-private suspend fun <T> RoutingCall.unprocessableOnConflict(block: () -> T): T? = try {
+private suspend fun <T> RoutingCall.unprocessableOnConflict(more: String = "", block: () -> T): T? = try {
     block()
 } catch (e: ConflictException) {
-    respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to (e.message ?: "conflict")))
+    respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to (e.message ?: "conflict") + more))
     null
 }
 
@@ -53,6 +53,7 @@ fun Route.planRoutes() {
             delete("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
             // The user's own choice of recipe, body {"recipeId": 12}; locked, so replanning keeps it.
             put { call.respond(call.user.plans.choose(call.week(), call.day(), call.slot(), call.receive<MealChoice>().recipeId)) }
+            // Not a meal the stock went down for (409): it keeps what was taken, to give back when un-eaten.
             delete { call.respond(call.user.plans.remove(call.week(), call.day(), call.slot())) }
             // Writes a new recipe for this meal with Claude and puts it in the plan; not for a meal that was cooked.
             post("/generate") {
@@ -66,7 +67,9 @@ fun Route.planRoutes() {
                 val recipe = service.generate(call.receive<GenerateRequest>().copy(slot = slot))
                 val candidate = call.user.recipes.candidate(recipe.summary.id)
                     ?: throw GenerationException("The generated recipe has no amounts to plan with")
-                call.unprocessableOnConflict { plans.place(week, day, slot, candidate) }?.let { call.respond(it) }
+                // Eaten while the recipe was written: the recipe stays in the account's recipes, and the dialog says so.
+                val kept = "; the new recipe \"${recipe.summary.title}\" is kept in your recipes"
+                call.unprocessableOnConflict(kept) { plans.place(week, day, slot, candidate) }?.let { call.respond(it) }
             }
             // Body: "EATEN", "SKIPPED" or "PLANNED".
             put("/status") {

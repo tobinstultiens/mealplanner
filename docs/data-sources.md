@@ -435,12 +435,42 @@ share into the entry it came from, also when it had used the entry up; eaten aga
 back only its own share, and a leftover lunch un-eaten while its dinner stays eaten gives back
 nothing (the leftovers were cooked): whatever order the two are marked in, the stock ends the same.
 Nothing comes back once the owner has said otherwise: after the tick of that entry was taken back
-(not bought), or the ingredient was put on hand or removed by hand in the pantry. A meal the stock
-went down for (eaten, or the leftover lunch of an eaten dinner) is not given another recipe: "Another
-recipe", choosing one and writing a new one are refused until it is un-eaten, and for a dinner they
-leave its eaten or skipped leftover lunch as it is. A meal removed from the plan leaves what it took
-taken, as does, for now, replanning the week for the planned leftover lunch of an eaten dinner (it is
-planned anew). Meals eaten before version 11 of the database have nothing kept to give back.
+(not bought), or the ingredient was put on hand or removed by hand in the pantry. Meals eaten before
+version 11 of the database have nothing kept to give back.
+
+What a meal took is kept under its day and slot and goes with the meal, so a meal the stock went down
+for keeps its recipe and its place: it was eaten, it is the leftover lunch of an eaten dinner, or what
+was taken for it is kept under its slot all the same (a leftover lunch whose eaten dinner was removed,
+which servers before issue 165 allowed). No way of replacing or removing a meal touches it until it,
+or its dinner, is un-eaten:
+
+| Action | Meal and its partner | What happens |
+|---|---|---|
+| "Another recipe" (`reroll`) | eaten; a leftover lunch (planned or skipped) of an eaten dinner; a lunch that keeps a removed dinner's share | 409, nothing changes |
+| "Another recipe" | a dinner whose leftover lunch is eaten, skipped, locked or keeps a share | the dinner changes, the lunch stays as it is |
+| "Another recipe" | a dinner whose leftover lunch is planned; any other meal | replaced (with its lunch); they hold no stock |
+| Choosing one (`PUT meals/{day}/{slot}`), writing one (`POST .../generate`) | as the first row | 409 (writing: 422, asked before Claude writes anything) |
+| Choosing, writing | a dinner whose leftover lunch is eaten, skipped, locked or keeps a share | the dinner changes, the lunch stays as it is |
+| Writing | eaten while the recipe is written | 422 "This meal was eaten already; the new recipe … is kept in your recipes", the meal stays |
+| Choosing, writing | anything else, or an empty slot | replaced or filled; it holds no stock |
+| Planning or replanning the week (`POST generate`) | locked, eaten, skipped; the planned leftover lunch of an eaten dinner; a lunch that keeps a share | kept as it is; the rest is planned around it |
+| Planning or replanning the week | any other meal | planned anew; it holds no stock |
+| Removing (`DELETE meals/{day}/{slot}`) | as the first row | 409, nothing changes |
+| Removing | any other meal | removed; it holds no stock, and an eaten leftover lunch of a removed dinner keeps its own share |
+| Deleting a recipe | planned this week or later | 409, naming the days |
+| Deleting a recipe | planned only in weeks that are over | the plan keeps the meals, and what they took |
+| Locking, marking eaten, skipped or planned | any | only that flag changes; marking takes and gives back as above |
+
+Removing the leftover lunch of an eaten dinner is refused rather than giving its share back: the
+dinner was cooked with it, so that share is used whether the lunch is eaten or not. Skipping it says
+it is not eaten, as for any meal. A replan counts a kept leftover lunch in its day's calories and
+protein, as it is still to eat, but not in what the shopping list still has to buy for (its share was
+taken when its dinner was eaten); the planner puts no other lunch in its slot.
+
+Each change of the plan reads it and writes it in one transaction that takes the database's write lock
+first, so a meal eaten meanwhile on another device is not replaced after all, and a write of the offer
+refresh or the price lookup in between makes the request wait for it instead of failing with
+"database is locked".
 
 Marking an item on hand in the pantry makes it one set by hand, even if ticks put it there (its stock
 goes, and it keeps its place in the pantry's list): those stay until removed by hand, whatever is
