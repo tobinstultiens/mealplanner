@@ -587,4 +587,78 @@ class MigrationTest {
         assertEquals(mapOf(6L to 500.0), IngredientRepository(db, FoodRepository(db), 2).pantry().onHandGrams, "Bob's stock is his")
         driver.close()
     }
+
+    /**
+     * Rows as the old server wrote them through its API (the check on a copy of dev.db for PR 126): stock that
+     * meals used up, so only what they took is left of it, and a used-up item merged into what was bought ahead.
+     */
+    @Test
+    fun aVersionThirteenDatabaseGivesBackWhatMealsUsedUpAndKeepsAMergedUseUpAtHome() {
+        val file = createTempFile("v13", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        val next = "2026-11-23"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropStockSources(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'tester', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name) VALUES (1, 1, 'Tuna'), (2, 1, 'Chicken fillet'), (3, 1, 'Minced beef')")
+                // Tuna stocked up this week (200 g). Chicken bought ahead on this week's list (500 g) and stocked up on
+                // next week's, which added nothing. Minced beef bought ahead (262.5 g), then 75 g of it used up on this
+                // week's list, which the old server added to that entry and counted from this week.
+                statement.execute(
+                    "INSERT INTO shoppingCheck (userId, weekStart, itemKey) VALUES " +
+                        "(1, '$week', 'stock:i1'), (1, '$week', 'ahead:i2'), (1, '$next', 'stock:i2'), (1, '$week', 'ahead:i3')",
+                )
+                statement.execute("INSERT INTO onHand (ingredientId, addedAt, fromWeek, grams) VALUES (3, '2026-11-16T00:28:24.382531489Z', '$week', 75.0)")
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, 'Tuna bowl', 1.75, 800.0, 40.0, 0, 0, 'EATEN'), " +
+                        "(1, '$next', 2, 'DINNER', 2, 'Chicken Boursin', 2.0, 800.0, 40.0, 0, 0, 'EATEN'), " +
+                        "(1, '$next', 3, 'LUNCH', 2, 'Chicken Boursin', 1.0, 400.0, 20.0, 1, 0, 'PLANNED'), " +
+                        "(1, '$next', 4, 'DINNER', 3, 'Bolognese', 2.0, 800.0, 40.0, 0, 0, 'EATEN'), " +
+                        "(1, '$next', 5, 'LUNCH', 3, 'Bolognese', 1.5, 600.0, 30.0, 1, 0, 'EATEN')",
+                )
+                // The tuna and the chicken were used up by their dinners (the chicken's leftover lunch kept its own share);
+                // the bolognese and its lunch took 262.5 g of the merged minced beef.
+                statement.execute(
+                    "INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, addedAt, grams) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, '$week', '2026-11-16T00:28:24.795235719Z', 200.0), " +
+                        "(1, '$next', 2, 'DINNER', 2, '$next', '2026-11-16T00:28:25.283499610Z', 333.333333333333), " +
+                        "(1, '$next', 3, 'LUNCH', 2, '$next', '2026-11-16T00:28:25.283499610Z', 166.666666666667), " +
+                        "(1, '$next', 4, 'DINNER', 3, '$week', '2026-11-16T00:28:24.382531489Z', 150.0), " +
+                        "(1, '$next', 5, 'LUNCH', 3, '$week', '2026-11-16T00:28:24.382531489Z', 112.5)",
+                )
+                statement.execute("PRAGMA user_version = 13")
+            }
+        }
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals("3:$week:USE_UP:75.0", single(url, "SELECT ingredientId || ':' || fromWeek || ':' || source || ':' || grams FROM stock"))
+        assertEquals(
+            "1:STOCK_UP,2:BUY_AHEAD,2:BUY_AHEAD,3:USE_UP,3:USE_UP",
+            single(url, "SELECT ingredientId || ':' || source FROM stockUse ORDER BY ingredientId, day"),
+            "a use of an entry that is gone gets the tick that put it there",
+        )
+        val ingredients = IngredientRepository(db, FoodRepository(db), 1)
+        val ref = { weekStart: String, day: Int, slot: MealSlot -> MealRef(LocalDate.parse(weekStart), day, slot) }
+
+        // Un-eaten, each meal gives back what it took, the used-up stock coming back as it was.
+        ingredients.giveBack(ref(week, 0, MealSlot.DINNER))
+        for ((day, slot) in listOf(2 to MealSlot.DINNER, 3 to MealSlot.LUNCH, 4 to MealSlot.DINNER, 5 to MealSlot.LUNCH)) ingredients.giveBack(ref(next, day, slot))
+        assertEquals(mapOf(1L to 200.0, 2L to 500.0, 3L to 337.5), ingredients.pantry().onHandGrams.mapValues { Math.round(it.value * 1000) / 1000.0 })
+
+        // Un-ticking takes back what each tick put there: the chicken's second tick put nothing there, its first all
+        // of it. The merged minced beef matches no tick: un-ticking the buy-ahead leaves it at home, as 13.sqm says.
+        ingredients.takeBackOnHand(1, LocalDate.parse(week), StockSource.STOCK_UP)
+        ingredients.takeBackOnHand(2, LocalDate.parse(next), StockSource.STOCK_UP)
+        assertEquals(setOf(2L, 3L), ingredients.pantry().onHandGrams.keys)
+        ingredients.takeBackOnHand(2, LocalDate.parse(next), StockSource.BUY_AHEAD)
+        ingredients.takeBackOnHand(3, LocalDate.parse(next), StockSource.BUY_AHEAD)
+        assertEquals(mapOf(3L to 337.5), ingredients.pantry().onHandGrams)
+        driver.close()
+    }
 }
