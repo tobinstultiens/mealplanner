@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server.routes
 
 import dev.tobins.mealplanner.api.GenerateRequest
+import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.server.generation.GenerationException
@@ -37,6 +38,8 @@ fun Route.planRoutes() {
             post("/reroll") { call.respond(call.user.plans.reroll(call.week(), call.day(), call.slot())) }
             put("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
             delete("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
+            // The user's own choice of recipe, body {"recipeId": 12}; locked, so replanning keeps it.
+            put { call.respond(call.user.plans.choose(call.week(), call.day(), call.slot(), call.receive<MealChoice>().recipeId)) }
             delete { call.respond(call.user.plans.remove(call.week(), call.day(), call.slot())) }
             // Writes a new recipe for this meal with Claude and puts it in the plan.
             post("/generate") {

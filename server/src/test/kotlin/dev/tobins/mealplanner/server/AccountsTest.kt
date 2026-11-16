@@ -11,6 +11,7 @@ import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.Me
+import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Pantry
@@ -103,6 +104,7 @@ class AccountsTest {
         assertNull(bob.get("/api/profile").body<ProfileState>().profile)
         assertEquals(emptyList(), bob.get("/api/weights").body<WeightLog>().entries)
         assertEquals(emptyList(), bob.get("/api/days/2026-11-10").body<DayView>().extras)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/2026-11-09/meals/4/dinner") { setBody(MealChoice(stew.id)) }.status, "a recipe of another account")
         bob.delete("/api/log/$logId")
         assertEquals(HttpStatusCode.Conflict, bob.post("/api/plans/2026-11-09/generate").status, "no profile of his own yet")
 

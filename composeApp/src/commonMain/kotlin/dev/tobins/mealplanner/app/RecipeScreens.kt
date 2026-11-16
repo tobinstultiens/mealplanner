@@ -304,7 +304,7 @@ private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: s
  * at the same place; one without keeps the plain row, with no box in its place.
  */
 @Composable
-private fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
+internal fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
     val text = recipe.rowText(LocalStrings.current)
     val picture = recipePicture(recipe.imageUrl)
     Row(
