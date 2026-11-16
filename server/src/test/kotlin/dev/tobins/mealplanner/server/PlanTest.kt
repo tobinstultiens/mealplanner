@@ -262,14 +262,19 @@ class PlanTest {
         assertEquals(null, http.get("/api/plans/$week").body<WeekPlan>().meal(0, MealSlot.DINNER))
     }
 
+    /** Stocks up 20 kg of beef for [week]; what is left of it is what the returned function reads. */
+    private suspend fun HttpClient.stockUpBeef(): () -> Double {
+        val beef = get("/api/ingredients").body<List<Ingredient>>().first { it.name == "Beef raw" }.id
+        val userId = db.userQueries.selectBySubject("sub-t").executeAsOne().id
+        IngredientRepository(db, FoodRepository(db), userId).putOnHandFrom(beef, LocalDate.parse(week), grams = 20_000.0, source = StockSource.STOCK_UP)
+        return { db.pantryQueries.selectStock(userId, week, listOf(beef)).executeAsOne().grams!! }
+    }
+
     @Test
     fun aLeftoverLunchOfAnEatenDinnerCannotBeReplacedAndTheStockStaysWhole() = testApplication {
         val http = start().ready()
         http.post("/api/plans/$week/generate")
-        val beef = http.get("/api/ingredients").body<List<Ingredient>>().first { it.name == "Beef raw" }.id
-        val userId = db.userQueries.selectBySubject("sub-t").executeAsOne().id
-        IngredientRepository(db, FoodRepository(db), userId).putOnHandFrom(beef, java.time.LocalDate.parse(week), grams = 20_000.0, source = StockSource.STOCK_UP)
-        fun stock() = db.pantryQueries.selectStock(userId, week, listOf(beef)).executeAsOne().grams!!
+        val stock = http.stockUpBeef()
         val other = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 9" }
         val lunch = http.get("/api/plans/$week").body<WeekPlan>().meal(5, MealSlot.LUNCH)!!
         assertTrue(lunch.leftover)
@@ -286,6 +291,78 @@ class PlanTest {
         assertEquals(afterEating, stock())
 
         http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.PLANNED) }
+        assertEquals(20_000.0, stock(), 1e-6)
+    }
+
+    @Test
+    fun anotherRecipeForADinnerLeavesItsEatenOrSkippedLeftoverLunchAndTheStockStaysWhole() = testApplication {
+        val http = start().ready()
+        val before = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        val stock = http.stockUpBeef()
+        assertTrue(before.meal(5, MealSlot.LUNCH)!!.leftover && before.meal(3, MealSlot.LUNCH)!!.leftover)
+
+        // The leftover lunch is eaten first: it takes its own share, as its dinner was not cooked yet.
+        http.put("/api/plans/$week/meals/5/lunch/status") { setBody(MealStatus.EATEN) }
+        val eaten = http.get("/api/plans/$week").body<WeekPlan>().meal(5, MealSlot.LUNCH)!!
+        val afterEating = stock()
+        assertTrue(afterEating < 20_000.0)
+
+        // "Another recipe" for its dinner changes the dinner only: the eaten lunch stays the eaten lunch.
+        val swapped = http.post("/api/plans/$week/meals/4/dinner/reroll")
+        assertEquals(HttpStatusCode.OK, swapped.status)
+        val plan = swapped.body<WeekPlan>()
+        assertNotEquals(before.meal(4, MealSlot.DINNER)!!.recipeId, plan.meal(4, MealSlot.DINNER)!!.recipeId)
+        assertEquals(eaten, plan.meal(5, MealSlot.LUNCH))
+        assertEquals(afterEating, stock())
+
+        // So un-eating it gives its share back, and eating it again takes the same share once.
+        http.put("/api/plans/$week/meals/5/lunch/status") { setBody(MealStatus.PLANNED) }
+        assertEquals(20_000.0, stock(), 1e-6)
+        http.put("/api/plans/$week/meals/5/lunch/status") { setBody(MealStatus.EATEN) }
+        assertEquals(afterEating, stock(), 1e-6)
+        http.put("/api/plans/$week/meals/5/lunch/status") { setBody(MealStatus.PLANNED) }
+        assertEquals(20_000.0, stock(), 1e-6)
+
+        // A skipped leftover lunch is left as it is too.
+        http.put("/api/plans/$week/meals/3/lunch/status") { setBody(MealStatus.SKIPPED) }
+        val skipped = http.get("/api/plans/$week").body<WeekPlan>().meal(3, MealSlot.LUNCH)!!
+        assertEquals(skipped, http.post("/api/plans/$week/meals/2/dinner/reroll").body<WeekPlan>().meal(3, MealSlot.LUNCH))
+        assertEquals(20_000.0, stock(), 1e-6)
+    }
+
+    @Test
+    fun aNewRecipeIsNotWrittenForAMealWhoseStockWasTaken() = testApplication {
+        val http = start().ready()
+        http.post("/api/plans/$week/generate")
+        val stock = http.stockUpBeef()
+
+        // An eaten dinner, and its leftover lunch, which the dinner took the stock for.
+        http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.EATEN) }
+        val afterEating = stock()
+        assertTrue(afterEating < 20_000.0)
+        val plan = http.get("/api/plans/$week").body<WeekPlan>()
+        for ((day, slot, reason) in listOf(
+            Triple(4, "dinner", "This meal was eaten already"),
+            Triple(5, "lunch", "The dinner before it was eaten, and these leftovers with it"),
+        )) {
+            val refused = http.post("/api/plans/$week/meals/$day/$slot/generate") { setBody(GenerateRequest(wish = "beef")) }
+            // Not 409: the app's generate dialog reads a 409 as "set up your profile first", and shows this one's text.
+            assertEquals(HttpStatusCode.UnprocessableEntity, refused.status)
+            assertTrue(reason in refused.bodyAsText(), refused.bodyAsText())
+        }
+        assertTrue(fake.contexts.isEmpty(), "refused before a recipe is written")
+        assertEquals(plan, http.get("/api/plans/$week").body<WeekPlan>())
+        assertEquals(afterEating, stock())
+        http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.PLANNED) }
+        assertEquals(20_000.0, stock(), 1e-6)
+
+        // A dinner whose leftover lunch was eaten first gets its new recipe; the eaten lunch stays as it is.
+        http.put("/api/plans/$week/meals/2/lunch/status") { setBody(MealStatus.EATEN) }
+        val eaten = http.get("/api/plans/$week").body<WeekPlan>().meal(2, MealSlot.LUNCH)!!
+        val written = http.post("/api/plans/$week/meals/1/dinner/generate") { setBody(GenerateRequest(wish = "beef")) }.body<WeekPlan>()
+        assertEquals("Beef bowl deluxe", written.meal(1, MealSlot.DINNER)!!.title)
+        assertEquals(eaten, written.meal(2, MealSlot.LUNCH))
+        http.put("/api/plans/$week/meals/2/lunch/status") { setBody(MealStatus.PLANNED) }
         assertEquals(20_000.0, stock(), 1e-6)
     }
 

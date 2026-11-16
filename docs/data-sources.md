@@ -423,9 +423,12 @@ share into the entry it came from, also when it had used the entry up; eaten aga
 back only its own share, and a leftover lunch un-eaten while its dinner stays eaten gives back
 nothing (the leftovers were cooked): whatever order the two are marked in, the stock ends the same.
 Nothing comes back once the owner has said otherwise: after the tick of that entry was taken back
-(not bought), or the ingredient was put on hand or removed by hand in the pantry. A meal replaced or
-removed in the plan leaves what it took taken, and meals eaten before version 11 of the database have
-nothing kept to give back.
+(not bought), or the ingredient was put on hand or removed by hand in the pantry. A meal the stock
+went down for (eaten, or the leftover lunch of an eaten dinner) is not given another recipe: "Another
+recipe", choosing one and writing a new one are refused until it is un-eaten, and for a dinner they
+leave its eaten or skipped leftover lunch as it is. A meal removed from the plan leaves what it took
+taken, as does, for now, replanning the week for the planned leftover lunch of an eaten dinner (it is
+planned anew). Meals eaten before version 11 of the database have nothing kept to give back.
 
 Marking an item on hand in the pantry makes it one set by hand, even if ticks put it there (its stock
 goes, and it keeps its place in the pantry's list): those stay until removed by hand, whatever is

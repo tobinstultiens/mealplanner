@@ -216,8 +216,9 @@ class ReleasedAppTest {
         http.post("$at/reroll").read<WeekPlan>()
         http.put("$at/lock").read<WeekPlan>()
         http.delete("$at/lock").read<WeekPlan>()
-        http.put("$at/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>()
+        // A new recipe before eating: an eaten meal keeps its recipe.
         http.post("$at/generate") { setBody(GenerateRequest(GenerationMode.PREFERENCE, first.slot, "")) }.read<WeekPlan>()
+        http.put("$at/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>()
 
         // The shopping list, an own item (a row of it for the released app, which cannot add one) and a tick.
         assertTrue(http.post("/api/plans/$week/shopping/extras") { setBody(mapOf("name" to "Coffee")) }.read<ShoppingList>().items.any { it.name == "Coffee" })
