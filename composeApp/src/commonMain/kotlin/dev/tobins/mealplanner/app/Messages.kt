@@ -118,6 +118,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     ALL_TICKED_OFF("All {0} ticked off", "Alle {0} afgevinkt"),
     BADGE_OFFER("offer", "aanbieding"),
     OFFER_FROM("from {0}", "vanaf {0}"),
+    OFFER_UNTIL("until {0}", "t/m {0}"),
     PACKS_TO_TAKE("{0} × {1}", "{0} × {1}"),
     PACKS_DEAL_NEEDS("{0} × {1} · deal needs {2}", "{0} × {1} · actie vraagt {2}"),
 
@@ -274,6 +275,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     STAPLE("Staple", "Basis"),
     ON_HAND("On hand", "In huis"),
     PANTRY_LEFT("{0} left", "nog {0}"),
+    PANTRY_FROM_WEEK("for the week of {0}", "voor de week van {0}"),
 
     // --- Regular prices
     LOOKING_UP_PRICES("Looking up prices", "Prijzen opzoeken"),
@@ -357,9 +359,15 @@ enum class Msg(private val english: String, private val dutch: String) {
     SERVER_ANSWERED("The server answered {0} {1}", "De server antwoordde met {0} {1}"),
     UNKNOWN_ERROR("Unknown error", "Onbekende fout"),
     NO_ANSWER("The server did not answer in time", "De server antwoordde niet op tijd"),
+    NO_CONNECTION("the server could not be reached", "de server is niet bereikbaar"),
+    UNREADABLE_ANSWER("the server's answer could not be read", "het antwoord van de server was niet te lezen"),
 
     // --- Shopping
     TICK_FAILED("Could not save the tick: {0}", "Afvinken opslaan is niet gelukt: {0}"),
+    TICK_AGAIN_NEEDS_CONNECTION(
+        "Not saved: ticking this again for the new amount needs a connection",
+        "Niet opgeslagen: dit opnieuw afvinken voor de nieuwe hoeveelheid kan alleen met een verbinding",
+    ),
     BACK_ON_LIST("{0} back on the list", "{0} staat weer op de lijst"),
     TICKED_OFF("{0} ticked off", "{0} afgevinkt"),
     EXTRA_FIELD("Add an item of your own", "Voeg een eigen product toe"),
@@ -622,9 +630,13 @@ enum class Plural(
         "Onvolledig: {0} ingrediënt is nog niet meegeteld ({1}).", "Onvolledig: {0} ingrediënten zijn nog niet meegeteld ({1}).",
     ),
     ANY_STORE_ITEMS("Any store · {0} item", "Any store · {0} items", "Elke winkel · {0} product", "Elke winkel · {0} producten"),
+    TICKS_NOT_SENT(
+        "{0} tick has not reached the server yet; it is sent again", "{0} ticks have not reached the server yet; they are sent again",
+        "{0} vinkje heeft de server nog niet bereikt; het wordt opnieuw verstuurd", "{0} vinkjes hebben de server nog niet bereikt; ze worden opnieuw verstuurd",
+    ),
     NOTHING_LEFT_ITEMS(
-        "Nothing left to buy · {0} item", "Nothing left to buy · {0} items",
-        "Niets meer te kopen · {0} product", "Niets meer te kopen · {0} producten",
+        "Covered · {0} item", "Covered · {0} items",
+        "Gedekt · {0} product", "Gedekt · {0} producten",
     ),
     USED_IN_RECIPES("Used in {0} recipe, e.g. {1}", "Used in {0} recipes, e.g. {1}", "Gebruikt in {0} recept, bijv. {1}", "Gebruikt in {0} recepten, bijv. {1}"),
     // --- end of plurals

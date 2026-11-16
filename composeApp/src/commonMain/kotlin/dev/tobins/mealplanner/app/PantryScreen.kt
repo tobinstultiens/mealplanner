@@ -33,6 +33,18 @@ import dev.tobins.mealplanner.api.Pantry
 import kotlinx.coroutines.launch
 
 /**
+ * What the pantry says under an on-hand ingredient: `280 g left · for the week of 23 Nov`, from the
+ * amount left and the week the stock was bought for, each only when known (an amount that is not
+ * known is left out, never shown as none). Null for what is not on hand and when neither is known.
+ */
+internal fun pantryNote(pantry: Pantry, id: Long, strings: Strings): String? {
+    if (pantry.onHand.none { it.id == id }) return null
+    val left = pantry.onHandGrams[id]?.let { strings(Msg.PANTRY_LEFT, weightText(it, strings.locale)) }
+    val week = pantry.onHandFrom[id]?.let { strings(Msg.PANTRY_FROM_WEEK, dayMonthLabel(it, strings.locale)) }
+    return listOfNotNull(left, week).joinToString(" · ").ifEmpty { null }
+}
+
+/**
  * What is at home. A staple is always there and never goes on the shopping list;
  * an on-hand item is a perishable to use up, which the planner favours. One bought from the
  * shopping list's advice says how much of it is left, when that is known.
@@ -99,13 +111,8 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(ingredient.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    // An amount that is not known is left out, never shown as none.
-                                    pantry.onHandGrams[ingredient.id]?.takeIf { ingredient.id in onHand }?.let { grams ->
-                                        Text(
-                                            t(Msg.PANTRY_LEFT, weightText(grams, t.locale)),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
+                                    pantryNote(pantry, ingredient.id, t)?.let { note ->
+                                        Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                                 FilterChip(

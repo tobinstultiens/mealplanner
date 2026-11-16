@@ -109,6 +109,12 @@ internal val Load.Failed.refused: Boolean
     get() = status != null && status in 400..499 && status !in setOf(401, 408, 429)
 
 /**
+ * Nothing answered: no connection, or the time limit ran out. Not a server error, and not an answer
+ * the app could not read ([Load.Failed.unreadable]): the server was there for those.
+ */
+internal val Load.Failed.noAnswer: Boolean get() = status == null && !unreadable
+
+/**
  * The list with [ticks] (checked or not, by item key) laid over every group that can be ticked:
  * this week's items and the buy-ahead and stock-up advice; an un-ticked row leaves the group of
  * bought items no meal needs any more.

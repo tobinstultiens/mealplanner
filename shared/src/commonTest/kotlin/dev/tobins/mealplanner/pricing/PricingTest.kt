@@ -67,6 +67,8 @@ class PricingTest {
         assertEquals(4, Discounts.packsNeeded("3+1 GRATIS"))
         assertEquals(2, Discounts.packsNeeded("2 voor 3,99"))
         assertEquals(2, Discounts.packsNeeded("2e halve prijs"))
+        assertEquals(2, Discounts.packsNeeded("2 stapelen voor 3.99"))
+        assertEquals(3, Discounts.packsNeeded("3 stapelen tot 35%"), "stacking says how many, though not what it saves")
         assertEquals(1, Discounts.packsNeeded("25% korting"))
         assertEquals(1, Discounts.packsNeeded("voor 3,49"))
         assertEquals(1, Discounts.packsNeeded(null))
@@ -99,6 +101,8 @@ class PricingTest {
         // Stated prices need the regular price of a pack: 2 for 3.99 against 2.99 each.
         near(1.995 / 2.99, Discounts.factor(offer("2 voor 3,99"), regularPackPrice = 2.99))
         near(4.49 / 5.99, Discounts.factor(offer("voor 4,49"), regularPackPrice = 5.99))
+        near(1.995 / 2.99, Discounts.factor(offer("2 stapelen voor 3.99"), regularPackPrice = 2.99))
+        assertNull(Discounts.factor(offer("2 stapelen tot 35%"), regularPackPrice = 2.99), "up to 35 %: no firm share")
         near(0.8, Discounts.factor(offer("1,00 korting"), regularPackPrice = 5.0))
         near(0.6, Discounts.factor(offer(null, price = 3.0, originalPrice = 5.0), null))
         near(0.5, Discounts.factor(offer(null, price = 2.5), regularPackPrice = 5.0))

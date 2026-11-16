@@ -148,4 +148,10 @@ data class Pantry(
      * map, so that apps that read [onHand] as a list of ingredients (v0.1.2 on) keep reading it.
      */
     val onHandGrams: Map<Long, Double> = emptyMap(),
+    /**
+     * The week (its Monday, an ISO date) each entry of [onHand] counts from, by ingredient id: the
+     * week a ticked buy-ahead or stock-up item was bought for. An entry put on hand by hand counts
+     * at once and is not here. A separate map, as [onHandGrams] is.
+     */
+    val onHandFrom: Map<Long, String> = emptyMap(),
 )

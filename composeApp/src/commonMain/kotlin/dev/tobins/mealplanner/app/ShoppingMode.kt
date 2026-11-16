@@ -103,8 +103,12 @@ fun Offer.badgeText(strings: Strings, today: String): String {
     return if (startsAfter(today)) "$text\n${startLabel(today, strings)}" else text
 }
 
+/** `Thu` for a day within the coming week, else `23 Nov`. */
+private fun dayLabelFor(date: String, today: String, strings: Strings): String =
+    if (daysBetween(today, date) < 7) strings.locale.dayNames[LocalDate.parse(date).dayOfWeek.isoDayNumber - 1] else dayMonthLabel(date, strings.locale)
+
 /** `from Thu` for a start within the coming week, else `from 23 Nov`: the day an offer can first be had. */
-fun Offer.startLabel(today: String, strings: Strings): String {
-    val day = if (daysBetween(today, validFrom) < 7) strings.locale.dayNames[LocalDate.parse(validFrom).dayOfWeek.isoDayNumber - 1] else dayMonthLabel(validFrom, strings.locale)
-    return strings(Msg.OFFER_FROM, day)
-}
+fun Offer.startLabel(today: String, strings: Strings): String = strings(Msg.OFFER_FROM, dayLabelFor(validFrom, today, strings))
+
+/** `until Sun`, or `until 30 Nov`: the last day an offer can be had, the way [startLabel] names its first. */
+fun Offer.endLabel(today: String, strings: Strings): String = strings(Msg.OFFER_UNTIL, dayLabelFor(validUntil, today, strings))

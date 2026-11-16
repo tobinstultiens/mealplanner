@@ -69,4 +69,27 @@ class ShoppingNeedsTest {
         assertEquals(2.0, need.pieces)
         assertEquals(emptyList(), need.otherAmounts)
     }
+
+    @Test
+    fun theOnionsAreKeptNextToABagOfThem() {
+        val onion = Ingredient(2, "Onion", null, null, null, null, null, isStaple = false)
+        val item = needs(
+            1.0,
+            listOf(count(2.0, "onion", "") to onion),
+            listOf(count(1.0, "bag", "onions") to onion),
+        ).single().toItem(ShoppingKey.Ingredient(2), checked = false, onHand = false, offers = emptyList(), productImage = null, perKg = null)
+
+        assertEquals(listOf("1 bag"), item.otherAmounts)
+        assertEquals(2.0, item.ownPieces, "the two onions themselves, which the bag is not")
+    }
+
+    @Test
+    fun withoutOtherAmountsThePiecesSayItAll() {
+        val onion = Ingredient(2, "Onion", null, null, null, null, null, isStaple = false)
+        val item = needs(1.0, listOf(count(2.0, "onion", "") to onion)).single()
+            .toItem(ShoppingKey.Ingredient(2), checked = false, onHand = false, offers = emptyList(), productImage = null, perKg = null)
+
+        assertEquals(2.0, item.pieces)
+        assertNull(item.ownPieces)
+    }
 }

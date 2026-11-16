@@ -130,6 +130,25 @@ data class ShoppingItem(
      * own items, advice and [ShoppingList.noLongerNeeded].
      */
     val toComeGrams: Double? = null,
+    /**
+     * On a row of what the week's meals need: the pieces the meals still to cook need of it, as
+     * [pieces] is the week's, so the amount column can keep its count once meals are done. Null when
+     * they need none, and on own items, advice and [ShoppingList.noLongerNeeded].
+     */
+    val toComePieces: Double? = null,
+    /**
+     * On a row of what the week's meals need: the meals still to cook that use it, as [recipes] names
+     * the whole week's, so a row does not name meals already eaten as its source. Empty when none is
+     * still to cook; null on own items, advice and [ShoppingList.noLongerNeeded], and from a server
+     * from before it, where [recipes] stands.
+     */
+    val toComeRecipes: List<String>? = null,
+    /**
+     * The count of the ingredient itself (`2 | onion`) when the row also has [otherAmounts] such as
+     * `1 bag`: [pieces] then counts the bag as well, so it could not be shown next to them. Null
+     * without [otherAmounts] or without such a count.
+     */
+    val ownPieces: Double? = null,
 )
 
 /**

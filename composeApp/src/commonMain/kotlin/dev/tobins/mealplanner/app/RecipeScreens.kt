@@ -61,14 +61,20 @@ import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
+import io.ktor.serialization.ContentConvertException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerializationException
 
 /** Result of loading something from the server. */
 internal sealed interface Load<out T> {
     data object Loading : Load<Nothing>
-    /** [status] is the HTTP status when the server answered with an error. */
-    data class Failed(val message: String, val status: Int? = null) : Load<Nothing>
+    /**
+     * [status] is the HTTP status when the server answered with an error. [technical]: [message] is
+     * the text of an exception, such as "unexpected end of stream on http://...", not a sentence for
+     * the user. [unreadable]: the server answered, but the app could not read the answer.
+     */
+    data class Failed(val message: String, val status: Int? = null, val technical: Boolean = false, val unreadable: Boolean = false) : Load<Nothing>
     data class Ready<T>(val value: T) : Load<T>
 }
 
@@ -85,7 +91,11 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
     }.getOrNull()
     Load.Failed(reason ?: Strings.current(Msg.SERVER_ANSWERED, e.response.status.value, e.response.status.description), e.response.status.value)
 } catch (e: Exception) {
-    Load.Failed(e.message ?: Strings.current(Msg.UNKNOWN_ERROR))
+    Load.Failed(
+        e.message ?: Strings.current(Msg.UNKNOWN_ERROR),
+        technical = e.message != null,
+        unreadable = e is SerializationException || e is ContentConvertException,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

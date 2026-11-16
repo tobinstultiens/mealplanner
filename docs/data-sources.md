@@ -128,7 +128,8 @@ keeps its badge but is listed under "Any store".
 The server sends every offer that overlaps the plan week, so the app judges each against today
 (the stores' weeks differ): an offer that has ended is ignored everywhere on the list; one that
 starts later keeps its badge with the day (`Lidl €1.79 / from Thu`) and stays under its store,
-but is left out of the saving, and an offer valid today always wins over one that starts later.
+but is left out of the saving, and an offer valid today always wins over one that starts later. Its
+full deal text (a tap on the badge) names both days: `Lidl: €1.79 from Thu until Sun`.
 A row with an offer also says what to pick up (`PackSize.toBuy`, in the app only): the packs to take
 (`2 × 700 g`), from the offer's pack size and the weight (or, for packs in pieces, the pieces) the
 recipes need. When the deal wants more packs than that (`1+1 gratis` for one pack: `1 × 500 g · deal
@@ -193,8 +194,9 @@ deals keep their share; their text says where they apply.
 In the offers of 2026-11-15 (426: 111 AH, 270 Jumbo, 45 Lidl) all but 7 were recognised. Unknown were
 "2 stapelen tot 35%", "2 stapelen voor 3.99" and "3 stapelen voor 7.99" (AH), "2 gratis blikjes bij 1
 multipack", "Gratis beanie bij 2 stuks" and "voor 1,00 per hamburger" (Jumbo), and one Lidl offer with
-neither a deal nor a price. "Stapelen" (mix and match) is left unknown because `packsNeeded` does not read it
-yet.
+neither a deal nor a price. Since then "N stapelen voor X" is read as "N voor X" (stack N packs for X, a
+multi-price), and any "N stapelen ..." makes the deal want N packs (`packsNeeded`); "N stapelen tot 35%"
+stays of unknown kind with no share, as "up to" 35 % is not a firm percentage.
 
 **Regular prices** (`regularPriceHistory`). Per ingredient name and store, like `ingredientPrice`: a new row
 only when the product (title, pack size) or its price (per pack, per kg) changed. A lookup that finds the same
@@ -282,7 +284,10 @@ on hand` when the need can't be weighed in full; the packs to take are for what 
 
 **What is still to buy** goes by what the meals to come need, which the server sends
 (`ShoppingItem.toComeGrams`): the weight the meals still to cook need. What is still to buy is that
-less the grams on hand. The stock goes down for a meal as it is eaten, so the meals eaten are left out
+less the grams on hand. The row's source meals (`ShoppingItem.toComeRecipes`, next to `recipes`, the
+whole week's) are only those still to cook, so a row does not name a meal already eaten; an app from
+before it shows `recipes`. The pieces the meals to come need (`toComePieces`) keep the piece count in the
+amount column once that shows the weight of the meals to come (`6 × · 680 g`). The stock goes down for a meal as it is eaten, so the meals eaten are left out
 of the need too, else mid-week a row would ask to buy again what the eaten meals took. The meals still
 to cook go by the rules of eating from the stock: an eaten meal is cooked, and so is a leftover lunch
 whose dinner was eaten; a skipped meal is not, unless it is a leftover lunch whose dinner is still to
@@ -310,8 +315,8 @@ none of them is still to come, the column is empty and the line says `Nothing to
 need it are done`; only then. A ticked row keeps the week's need in its column, which its "more" line
 counts from. A row with nothing left to buy that is not ticked (no meal to come needs it, or the stock
 covers them to within a gram) is no item to buy: the progress line leaves it out (`Nothing left to buy`
-when that leaves none); the per-store view puts it in a group of its own at the end, `Nothing left to
-buy · 2 items`, so the store and "any store" headers count what the progress line counts; the savings
+when that leaves none); the per-store view puts it in a group of its own at the end, `Covered ·
+2 items` (not the progress line's words, which sit just above it), so the store and "any store" headers count what the progress line counts; the savings
 leave it out; and shopping mode puts it in the Done group (a finished section says `✓ 3 done`, as not
 all of them need a tick). It stays on the list, and can be ticked as before. The gram of leeway is only
 for what a stock leaves over: a need under a gram with nothing at home (a pinch of oregano) is still
@@ -325,7 +330,9 @@ was, so on a row that needs more the one number still to buy is its "more" line,
 the stock again (the pantry still shows the amount); that "more" is never more than what is still to
 buy, so once the meals that need it are eaten, it needs nothing more. The
 pantry gives the grams left of each entry (`Pantry.onHandGrams`, next week's stock included, as it is
-at home) and the app shows `300 g left` under its name. An entry set by hand, or ticked without an
+at home) and the app shows `300 g left` under its name, with the week the stock was bought for
+(`Pantry.onHandFrom`, the week its tick counts from, for an entry a tick put there): `300 g left · for the
+week of 23 Nov`. An entry set by hand, or ticked without an
 amount, has no amount: the row says `(on hand?)` as before and the pantry no number, never zero.
 Ticking the row stays the user's choice: the app does not tick a row off for them, as a tick says
 what was bought.
@@ -379,6 +386,11 @@ groups; tapping it ticks it again (`PUT /api/plans/{weekStart}/shopping/again` w
 request never leaves the row un-ticked with what was bought forgotten; only a ticked row of what
 the meals need can be ticked again (another key is a 400, one without a tick of the account in that
 week a 404, one no meal needs any more a 409). A row without bought amounts is a plain tick.
+Ticking again needs the server: it is not kept for later like a plain tick, so without a connection
+(the offline line is shown, or nothing answers) the app says `Not saved: ticking this again for the new
+amount needs a connection` instead of "Could not save the tick", which the offline line's "ticks are
+saved and sent later" would contradict. A failure with no answer is told in a plain sentence, as
+`the server could not be reached`, with the exception's own text behind "Details".
 `noLongerNeeded` is the group "Bought, no longer needed" below the list, with "Use it up"
 (catalogue ingredients only, not on hand already) and "Remove" (un-ticks it). "Use it up" (`POST
 /api/plans/{weekStart}/shopping/use-up` with the key) puts what the tick remembers was bought on
@@ -419,7 +431,7 @@ How often the app asks:
 |---|---|
 | Shopping screen shown, app in front, shopping mode | the list every 30 s (two people in one shop) |
 | Shopping screen shown, app in front | the list every 2 minutes |
-| Offline (or the list failed to load), screen shown, in front | a check every 30 s: the stored ticks, oldest first, then the list. Without a connection that is one attempt, as the first tick without an answer holds back the rest and the list; when the server answers with errors (5xx), every stored tick goes out and then the list. On success the offline line goes, without Retry. A list the server refused (a 4xx) is not tried again by itself, only on Retry or when the screen or the app comes back |
+| Offline (or the list failed to load), screen shown, in front | a check every 30 s: the stored ticks, oldest first, then the list. Without a connection that is one attempt, as the first tick without an answer holds back the rest and the list; when the server answers with errors (5xx) or with an answer the app cannot read, every stored tick goes out and then the list, and a quiet line above the progress says how many ticks have not reached the server yet. On success the offline line goes, without Retry. A list the server refused (a 4xx) is not tried again by itself, only on Retry or when the screen or the app comes back |
 | App comes to the front (start, back from another app or browser tab) | stored ticks, then the list shown, or else the current week's list, so it is on the phone in a shop without reception even if it was not opened |
 | Leaving the Plan tab | the current week's list (the plan may have changed), unless the Shopping screen shows |
 | Another screen, or the app behind | nothing |
