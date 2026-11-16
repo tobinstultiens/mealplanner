@@ -1,0 +1,17 @@
+-- Version 14 -> 15: the price history records what judging a deal will need (issue 133, for issue 118):
+-- the store's category and the product's address with each period, a price per litre for packs written
+-- as a volume, and which refreshes of a store recorded anything, so that "not on offer" can be told from
+-- "not read". Only added columns and a new table, so no table is rebuilt and no row is touched: the
+-- periods recorded so far keep what they have, with the new columns empty (NULL), and the recordings
+-- start empty and fill from the first refresh after this.
+
+ALTER TABLE offerHistory ADD COLUMN category TEXT;
+ALTER TABLE offerHistory ADD COLUMN url TEXT;
+ALTER TABLE offerHistory ADD COLUMN eurosPerLitre REAL;
+
+CREATE TABLE offerRecording (
+    store TEXT NOT NULL,
+    seenAt TEXT NOT NULL,
+    offers INTEGER NOT NULL,
+    PRIMARY KEY (store, seenAt)
+);

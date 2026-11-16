@@ -40,6 +40,26 @@ object PackSize {
     fun isVolume(text: String): Boolean = volume.containsMatchIn(text.lowercase())
 
     /**
+     * Millilitres in a pack written as a volume ("1,5 l": 1500, "6 x 330 ml": 1980), or null when [text]
+     * gives none. Only a volume is read: a weight in the same text is not taken for one.
+     */
+    fun millilitres(text: String?): Double? {
+        val t = text?.lowercase() ?: return null
+        multi.findAll(t).firstOrNull { it.groupValues[3] in volumeUnits }?.let { m ->
+            return m.groupValues[1].toDouble() * toMillilitres(number(m.groupValues[2]), m.groupValues[3])
+        }
+        return single.findAll(t).firstOrNull { it.groupValues[2] in volumeUnits }?.let { m -> toMillilitres(number(m.groupValues[1]), m.groupValues[2]) }
+    }
+
+    private val volumeUnits = setOf("liter", "lt", "l", "ml", "cl")
+
+    private fun toMillilitres(amount: Double, unit: String): Double = when (unit) {
+        "l", "lt", "liter" -> amount * 1000
+        "cl" -> amount * 10
+        else -> amount
+    }
+
+    /**
      * What to pick up for an item that needs [gramsNeeded] (or [piecesNeeded]) when the store sells it as
      * [offer]: the packs to take and how many packs the deal wants. The pack size is read from
      * [Offer.packSize], else from the title. Packs in grams are compared with [gramsNeeded], packs in
