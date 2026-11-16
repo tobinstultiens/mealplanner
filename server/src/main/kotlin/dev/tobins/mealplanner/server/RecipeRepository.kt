@@ -3,7 +3,6 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.api.RecipeCost
 import java.time.LocalDate
-import java.time.ZoneId
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MealSlot
@@ -50,7 +49,7 @@ class RecipeRepository(
 
     /** Prices with this week's offers: what a recipe costs if bought now. */
     private fun currentPricing(): Pricing {
-        val today = LocalDate.now(ZoneId.of("Europe/Amsterdam"))
+        val today = serverToday()
         return pricing(today, today.plusDays(6))
     }
 

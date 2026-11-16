@@ -25,7 +25,7 @@ class GenerationService(
     /** The stores the account shops at: recipes are written around their offers only. */
     private val shops: () -> Set<Store> = { Store.entries.toSet() },
 ) {
-    suspend fun generate(request: GenerateRequest, today: LocalDate = LocalDate.now()): RecipeDetail {
+    suspend fun generate(request: GenerateRequest, today: LocalDate = serverToday()): RecipeDetail {
         val context = context(request, today)
         val generated = generator.generate(context)
         val detail = recipes.create(toInput(generated, request.slot), RecipeSource.GENERATED)

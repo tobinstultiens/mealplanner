@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server.routes
 
 import dev.tobins.mealplanner.server.OfferRepository
 import dev.tobins.mealplanner.server.PriceRepository
+import dev.tobins.mealplanner.server.serverToday
 import dev.tobins.mealplanner.server.user
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -15,7 +16,7 @@ fun Route.offerRoutes(offers: OfferRepository, prices: PriceRepository) {
     get("/api/offers") {
         val date = call.request.queryParameters["date"]?.let {
             runCatching { LocalDate.parse(it) }.getOrElse { throw IllegalArgumentException("date must be an ISO date") }
-        } ?: LocalDate.now()
+        } ?: serverToday()
         call.respond(call.user.ingredients.let { offers.state(date, it.matchTerms(), it.list().associate { i -> i.id to i.name }) })
     }
 
