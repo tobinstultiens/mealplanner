@@ -164,6 +164,8 @@ applies pending migrations on start. `MigrationTest` builds a version 1 database
 
 ## Working on issues with Claude Code
 
+`main` takes pull requests with green checks only, also from the owner's terminal.
+
 Changes go through a pull request: an issue is implemented on a branch `issue-<n>-…` in its own git
 worktree, CI runs on the pull request, and a reviewer that knows nothing about how the code was
 written checks it against the issue and squash-merges it. In Claude Code, `/work-issues 27 21`
