@@ -27,14 +27,26 @@ fun DealVerdict.summary(store: String): String {
         Verdict.REAL_DEAL -> "A real deal: ${amount(value!!)} " +
             (if (lastAsCheap == null) "is less than ever$since (lowest before: ${was(lowest!!)})" else "is as low as it has been (${was(lastAsCheap)})") +
             "; $before, usually at ${amount(typical!!)}."
-        Verdict.USUAL_DEAL -> "The usual deal: ${amount(value!!)}; $before, usually at ${amount(typical!!)}, lowest ${was(lowest!!)}."
+        Verdict.USUAL_DEAL -> if (value!! < typical!! * (1 - TOLERANCE)) {
+            "Better than usual, but it has been cheaper: ${amount(value)}, where it usually goes for ${amount(typical)}; ${lastCheap()}, lowest ${was(lowest!!)}; $before."
+        } else {
+            "The usual deal: ${amount(value)}; $before, usually at ${amount(typical)}, lowest ${was(lowest!!)}."
+        }
+        // More than half of the earlier offers were cheaper, so the last of them is never null here.
         Verdict.WORSE_THAN_USUAL -> "Worse than usual: ${amount(value!!)}, where it usually goes for ${amount(typical!!)}; " +
-            (lastAsCheap?.let { "last this cheap ${was(it)}" } ?: "never this dear before") + ", lowest ${was(lowest!!)}; $before."
+            "${lastCheap()}, lowest ${was(lowest!!)}; $before."
     }
     val raised = raise?.takeIf { verdict != Verdict.NOT_A_DEAL }?.let {
         " Its regular price went up from ${euros(it.before)} (seen ${date(it.beforeSeen)}) to ${euros(it.now)}; its share is measured against ${euros(it.before)}."
     }
     return text + raised.orEmpty()
+}
+
+/** The latest earlier offer at least as cheap as today's: "this cheap" when about the same, "cheaper" when clearly less. */
+private fun DealVerdict.lastCheap(): String {
+    val last = lastAsCheap!!
+    val cheaper = last.measures[measure!!]!! < value!! * (1 - TOLERANCE)
+    return (if (cheaper) "last cheaper " else "last this cheap ") + was(last)
 }
 
 /** An earlier offer: its value in the verdict's measure, its deal and when it ran. */

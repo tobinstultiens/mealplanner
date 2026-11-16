@@ -26,11 +26,12 @@ const val REFERENCE_DAYS = 30L
 
 /**
  * The raise of [offer]'s regular price in the [REFERENCE_DAYS] before it began, or null when it was not
- * raised by more than [TOLERANCE] or the prices to tell are missing. [regular] are the product's regular
- * prices, all of the same pack. The price now is the store's price before where the offer gives one, else
- * the last one seen.
+ * raised by more than [TOLERANCE], the prices to tell are missing, or the offer is a [group offer][isGroupOffer].
+ * [regular] are the product's regular prices, all of the same pack. The price now is the store's price before
+ * where the offer gives one, else the last one seen.
  */
 fun regularRaise(offer: CurrentOffer, regular: List<RegularPrice>): RegularRaise? {
+    if (isGroupOffer(offer.offer.title, offer.offer.packSize)) return null
     val start = offer.validFrom.atStartOfDay(SERVER_ZONE).toInstant()
     val windowStart = offer.validFrom.minusDays(REFERENCE_DAYS).atStartOfDay(SERVER_ZONE).toInstant()
     val before = regular.filter { it.firstSeen < start && it.lastSeen >= windowStart }.minByOrNull { it.packPrice } ?: return null
@@ -59,6 +60,15 @@ fun isSameProduct(product: String, packSize: String?, offerTitle: String, offerP
     val looked = sizeOf(packSize) ?: return false
     return offered.first == looked.first && abs(offered.second - looked.second) <= looked.second * SIZE_TOLERANCE
 }
+
+/**
+ * Whether an offer is for a group of products under one title: "Alle AH Gerookte zalm", "Alle Santa Maria, La
+ * Morena en Knorr wraps", or a title and pack size that name no size at all. AH gives such an offer the price
+ * before of whichever product of the group it shows, so two of them a few weeks apart can differ without any
+ * price having been raised: their prices before tell nothing about a raise.
+ */
+fun isGroupOffer(title: String, packSize: String?): Boolean =
+    normalised(title).startsWith("alle ") || (sizeOf(packSize) ?: sizeOf(title)) == null
 
 /** Words that only state a size: numbers, units, "x" between them, "ca." for about. */
 private val sizeWord = Regex("""\d+(\.\d+)?|x|ca\.?|g|gr|gram|kg|kilo|kilogram|ml|cl|l|lt|liter|st|stuk|stuks""")

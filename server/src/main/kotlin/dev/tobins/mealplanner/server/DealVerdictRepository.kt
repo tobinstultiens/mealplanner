@@ -58,7 +58,7 @@ class DealVerdictRepository(
             val own = periods[offer.store.name to normalised(offer.title)].orEmpty()
                 .filter { row -> matched.getOrPut(row.title to row.category) { matcher.match(row.title, row.category) } == offer.ingredientId }
             val regular = read.regular.filter { it.isFor(offer) }.mapNotNull { row -> row.packPrice?.let { RegularPrice(it, Instant.parse(row.firstSeen), Instant.parse(row.lastSeen)) } }
-            view(offer, judge(CurrentOffer.of(offer), own.map { it.period() }, read.recordings[offer.store].orEmpty(), regular))
+            view(offer, judge(CurrentOffer(offer), own.map { it.period() }, read.recordings[offer.store].orEmpty(), regular))
         }
         return DealVerdicts(verdicts.sortedWith(compareBy({ it.store }, { it.verdict }, { it.title })))
     }
@@ -67,15 +67,16 @@ class DealVerdictRepository(
 
     /**
      * What the verdicts on [onOffer] read, in one snapshot so that the recordings and the rows agree should a
-     * refresh record in between: the rows of the products on offer and the stores' recordings over the last
-     * [LOOKBACK_WEEKS] weeks, and the regular prices of the ingredients on offer. Three indexed reads, no write.
+     * refresh record in between: the rows of the products on offer (by product, not the stores' whole year) and
+     * the stores' recordings over the last [LOOKBACK_WEEKS] weeks, and the regular prices of the ingredients on
+     * offer. A few indexed reads per store, no write.
      */
     private fun read(onOffer: List<Offer>, stores: Set<Store>, now: Instant): Read {
         val from = now.minus(Duration.ofDays(LOOKBACK_WEEKS * 7))
-        val products = onOffer.mapTo(HashSet()) { ProductKey.of(it).let { key -> key.store.name to key.title } }
+        val products = onOffer.groupBy({ it.store }, { ProductKey.of(it).title })
         return db.transactionWithResult {
             Read(
-                history.offerPeriods(stores, from, now).filter { (it.store to it.productKey) in products },
+                products.flatMap { (store, titles) -> history.offerPeriods(store, titles, from, now) },
                 stores.associateWith { store -> history.recordings(store, from, now).map { Instant.parse(it.seenAt) } },
                 history.regularPrices(onOffer.mapNotNull { it.ingredientName }, from),
             )

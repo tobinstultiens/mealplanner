@@ -3,7 +3,10 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.pricing.DealTerms
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.history.LOOKBACK_WEEKS
 import dev.tobins.mealplanner.server.history.normalised
 import dev.tobins.mealplanner.server.offers.OfferSource
 import kotlinx.coroutines.runBlocking
@@ -27,6 +30,10 @@ import kotlin.test.Test
  * 2. The second copy gets twelve weeks of made-up history first: every store read every night, and a few of
  *    the account's real offers given earlier offers chosen to show each verdict's wording. Its verdicts are
  *    printed too; they say what the rules do, not what the stores did.
+ * 3. The third copy gets a made-up year: every store read every night, and each stored offer one week in four
+ *    with a row and half of them a second (a change mid-week), other products the other weeks, about as many
+ *    rows as a year of the real stores leaves. What a call costs is printed, and what reading the stores' whole
+ *    year (as the first version of this did) cost.
  */
 class DealVerdictRealDataTest {
     @Test
@@ -46,9 +53,49 @@ class DealVerdictRealDataTest {
             val verdict = shown.verdicts.firstOrNull { it.store == offer.store && it.title == offer.title }
             println("- [$scenario] ${offer.store.label}, ${offer.title} (${offer.packSize ?: "no pack size"}), ${dealOf(offer.deal)}: ${verdict?.verdict}\n  ${verdict?.summary}")
         }
+
+        println("\n== A made-up year: what a call costs")
+        val year = open(original) { db, _, first -> madeUpYear(db, first) }
+        cost(year)
     }
 
-    private class Opened(val db: Database, val account: Long, val now: Instant) {
+    private fun cost(year: Opened) {
+        val from = year.now.minus(Duration.ofDays(LOOKBACK_WEEKS * 7)).toString()
+        val rows = year.db.priceHistoryQueries.selectOfferHistory().executeAsList().size
+        val recordings = Store.entries.sumOf { PriceHistoryRepository(year.db).recordings(it, year.now.minus(Duration.ofDays(400)), year.now).size }
+        println("History: $rows rows, $recordings recordings")
+        val wholeYear = "SELECT * FROM offerHistory WHERE store IN ('AH', 'JUMBO', 'LIDL') AND lastSeen >= ? AND firstSeen <= ?"
+        repeat(3) {
+            var read = 0L
+            val ms = measureTimeMillis {
+                read = year.driver.executeQuery(null, wholeYear, { cursor ->
+                    var n = 0L
+                    while (cursor.next().value) {
+                        for (column in 0 until OFFER_HISTORY_COLUMNS) cursor.getString(column)
+                        n++
+                    }
+                    QueryResult.Value(n)
+                }, 2) {
+                    bindString(0, from)
+                    bindString(1, year.now.toString())
+                }.value
+            }
+            println("Reading the stores' whole year, as before: $read rows in $ms ms")
+        }
+        // The products of every offer valid today, more than any account's: what the verdicts read now, at most.
+        val products = year.db.planQueries.selectOffersValidOn(serverDay(year.now).toString()).executeAsList()
+            .groupBy({ Store.valueOf(it.store) }, { normalised(it.title) })
+        repeat(3) {
+            var read = 0
+            val ms = measureTimeMillis {
+                read = products.entries.sumOf { (store, titles) -> PriceHistoryRepository(year.db).offerPeriods(store, titles, Instant.parse(from), year.now).size }
+            }
+            println("Reading the rows of all ${products.values.sumOf { it.size }} products valid today: $read rows in $ms ms")
+        }
+        repeat(3) { year.verdicts() }
+    }
+
+    private class Opened(val driver: SqlDriver, val db: Database, val account: Long, val now: Instant) {
         fun verdicts(): DealVerdicts {
             val ingredients = IngredientRepository(db, FoodRepository(db), account)
             val repository = DealVerdictRepository(db, OfferRepository(db, emptyList()), ingredients, ShopsRepository(db, account)::inUse)
@@ -66,7 +113,7 @@ class DealVerdictRealDataTest {
     private fun open(original: File, before: (Database, Long, Instant) -> Unit = { _, _, _ -> }): Opened {
         val copy = File(createTempDirectory("deal-verdicts").toFile(), "copy.db")
         original.copyTo(copy)
-        val (_, db) = openDatabase("jdbc:sqlite:${copy.path}")
+        val (driver, db) = openDatabase("jdbc:sqlite:${copy.path}")
         val account = db.ingredientQueries.selectEveryIngredient().executeAsList().groupingBy { it.userId }.eachCount().maxBy { it.value }.key
         val stored = db.planQueries.selectOffersOverlapping(until = "9999-12-31", from = "0000-01-01").executeAsList().map {
             Offer(Store.valueOf(it.store), it.title, it.deal, it.price, it.originalPrice, it.packSize, it.category, it.validFrom, it.validUntil, it.url, imageUrl = it.imageUrl)
@@ -77,7 +124,7 @@ class DealVerdictRealDataTest {
         before(db, account, first)
         val offers = OfferRepository(db, stored.groupBy { it.store }.map { (store, offers) -> Replay(store, offers) })
         for (n in 0 until 5) runBlocking { offers.refresh(now = first.plus(Duration.ofMinutes(n * 10L))) }
-        return Opened(db, account, first.plus(Duration.ofMinutes(50)))
+        return Opened(driver, db, account, first.plus(Duration.ofMinutes(50)))
     }
 
     private class Replay(override val store: Store, val offers: List<Offer>) : OfferSource {
@@ -110,16 +157,9 @@ class DealVerdictRealDataTest {
         val h = db.priceHistoryQueries
         for (store in Store.entries) for (n in NIGHTS downTo 1) h.insertOfferRecording(store.name, night(n).toString(), 100)
 
-        /** An earlier offer of [offer]'s product with [deal], from [from] to [until] nights before the first refresh, read as the history reads every offer. */
-        fun earlier(offer: Offer, deal: String?, from: Int, until: Int, price: Double? = null, originalPrice: Double? = null) {
-            val past = offer.copy(deal = deal, price = price, originalPrice = originalPrice)
-            val terms = DealTerms.of(past)
-            h.insertOfferPeriod(
-                past.store.name, normalised(past.title), normalised(past.packSize), past.title, past.packSize, null, deal, terms.kind::class.simpleName!!, terms.packs.toLong(),
-                null, null, null, price, originalPrice, terms.paidShare, terms.eurosPerKg, terms.eurosPerPiece,
-                serverDay(night(from)).toString(), serverDay(night(until)).toString(), night(from).toString(), night(until).toString(), past.category, null, terms.eurosPerLitre,
-            )
-        }
+        /** An earlier offer of [offer]'s product with [deal], from [from] to [until] nights before the first refresh. */
+        fun earlier(offer: Offer, deal: String?, from: Int, until: Int, price: Double? = null, originalPrice: Double? = null) =
+            insertPeriod(db, offer.copy(deal = deal, price = price, originalPrice = originalPrice), night(from), night(until))
         fun percentOff(share: Double) = "${((1 - share) * 100).toInt()}% korting"
         fun euros(value: Double) = "voor " + String.format(Locale.ROOT, "%.2f", value).replace('.', ',')
 
@@ -160,8 +200,47 @@ class DealVerdictRealDataTest {
             for (weeks in listOf(9, 6, 3)) earlier(o, euros(cheaper), weeks * 7, weeks * 7 - 6, price = cheaper)
         }
         pick("not a deal: regular price raised", raised) { o -> earlier(o, euros(o.price!! * 0.9), 20, 14, price = o.price!! * 0.9, originalPrice = o.price) }
+        pick("group offer: earlier offers of the group with another price before", ours.filter { it.store == Store.AH && normalised(it.title).startsWith("alle ") && it.originalPrice == null }) { o ->
+            earlier(o, o.deal, 63, 57, originalPrice = 3.99)
+            earlier(o, o.deal, 35, 29, originalPrice = 5.49)
+        }
         pick("not comparable", nothing) { o -> for (weeks in listOf(9, 5)) earlier(o, o.deal, weeks * 7, weeks * 7 - 6, o.price, o.originalPrice) }
         return shown
+    }
+
+    /**
+     * Twelve months of made-up nights before [first]: every store read each night, and each stored offer on offer
+     * one week in four (with a second row for half of them, a price changed mid-week), other products the other
+     * weeks. About 1.5 rows per offer a week, as the real stores leave.
+     */
+    private fun madeUpYear(db: Database, first: Instant) {
+        val stored = db.planQueries.selectOffersOverlapping(until = "9999-12-31", from = "0000-01-01").executeAsList().map {
+            Offer(Store.valueOf(it.store), it.title, it.deal, it.price, it.originalPrice, it.packSize, it.category, it.validFrom, it.validUntil)
+        }
+        fun night(n: Int) = first.minus(Duration.ofDays(n.toLong()))
+        db.transaction {
+            for (store in Store.entries) for (n in 365 downTo 1) db.priceHistoryQueries.insertOfferRecording(store.name, night(n).toString(), 400)
+            for (week in 52 downTo 1) for ((i, offer) in stored.withIndex()) {
+                val product = if (week % 4 == 0) offer else offer.copy(title = "${offer.title} (another product, week ${week % 4})")
+                val monday = week * 7
+                if (i % 2 == 0) {
+                    insertPeriod(db, product, night(monday), night(monday - 6))
+                } else {
+                    insertPeriod(db, product, night(monday), night(monday - 3), validUntil = night(monday - 6))
+                    insertPeriod(db, product.copy(price = (product.price ?: 1.0) + 0.1), night(monday - 4), night(monday - 6), validFrom = night(monday))
+                }
+            }
+        }
+    }
+
+    /** A row of the history for [offer], seen from [from] to [until] and dated by the store over the same days unless given. */
+    private fun insertPeriod(db: Database, offer: Offer, from: Instant, until: Instant, validFrom: Instant = from, validUntil: Instant = until) {
+        val terms = DealTerms.of(offer)
+        db.priceHistoryQueries.insertOfferPeriod(
+            offer.store.name, normalised(offer.title), normalised(offer.packSize), offer.title, offer.packSize, null, offer.deal, terms.kind::class.simpleName!!,
+            terms.packs.toLong(), null, null, null, offer.price, offer.originalPrice, terms.paidShare, terms.eurosPerKg, terms.eurosPerPiece,
+            serverDay(validFrom).toString(), serverDay(validUntil).toString(), from.toString(), until.toString(), offer.category, null, terms.eurosPerLitre,
+        )
     }
 
     private fun dealOf(deal: String?) = deal?.let { "\"$it\"" } ?: "no deal text"
@@ -170,5 +249,8 @@ class DealVerdictRealDataTest {
         /** Twelve weeks of made-up nights. */
         const val NIGHTS = 84
         const val SAMPLE = 6
+
+        /** The columns a row of offerHistory has, all read as a mapped row would read them. */
+        const val OFFER_HISTORY_COLUMNS = 25
     }
 }

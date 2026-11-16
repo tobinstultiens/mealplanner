@@ -90,10 +90,12 @@ WHERE id = :id;
 insertOfferRecording:
 INSERT INTO offerRecording (store, seenAt, offers) VALUES (?, ?, ?);
 
--- The periods of these stores that were seen between :from and :until (inclusive, instants as stored):
--- those that began before :until and were last seen after :from.
+-- The periods of these products (normalised titles, every pack) of a store that were seen between :from and
+-- :until (inclusive, instants as stored): those that began before :until and were last seen after :from. By
+-- product, so that a year of a store's history is not read to judge a few offers: by offerHistory_product,
+-- named, as SQLite without statistics would take offerHistory_seen and read the store's whole year.
 selectOfferPeriods:
-SELECT * FROM offerHistory WHERE store IN :stores AND lastSeen >= :from AND firstSeen <= :until;
+SELECT * FROM offerHistory INDEXED BY offerHistory_product WHERE store = :store AND productKey IN :products AND lastSeen >= :from AND firstSeen <= :until;
 
 -- The refreshes of a store that recorded anything between :from and :until (inclusive), in order.
 selectOfferRecordings:

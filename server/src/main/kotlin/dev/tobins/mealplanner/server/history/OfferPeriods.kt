@@ -46,7 +46,7 @@ data class Measures(val perKg: Double?, val perLitre: Double?, val perPiece: Dou
 /**
  * A run of refreshes in which a product was offered one way ([identity]), with the [deal] as the store
  * wrote it, when it was first and last seen, and the dates the store gave. A row of the history is one;
- * [joinGaps] joins rows of one run that a short gap split.
+ * [joinGaps] joins the rows of one offer.
  */
 data class OfferPeriod(
     val identity: OfferIdentity,
@@ -60,11 +60,20 @@ data class OfferPeriod(
     /** The way of offering that "always the same deal" goes by: the deal and its price, whatever the price before. */
     val dealKey get() = identity.deal to identity.price
 
+    /** What makes rows one offer: the pack, the deal and its price; not the price before (see [joinGaps]). */
+    val offerKey get() = offerKey(identity)
+
     /** Whether the product was offered this way at the refresh at [instant]. */
     fun covers(instant: Instant) = instant in firstSeen..lastSeen
 
-    /** This run and a [later] one of the same offer as one: from the first sighting to the last, over both's dates. */
-    fun joinedWith(later: OfferPeriod) = copy(
+    /** Whether the store's dates of this offer share a day with [from] to [until]. */
+    fun overlaps(from: LocalDate, until: LocalDate) = !validFrom.isAfter(until) && !from.isAfter(validUntil)
+
+    /**
+     * This run and a [later] one of the same offer as one: from the first sighting to the last, over both's
+     * dates, measured against the lower of their prices before (see [joinGaps]).
+     */
+    fun joinedWith(later: OfferPeriod) = (if (lowerPriceBefore(later.identity, identity)) later else this).copy(
         firstSeen = minOf(firstSeen, later.firstSeen),
         lastSeen = maxOf(lastSeen, later.lastSeen),
         validFrom = minOf(validFrom, later.validFrom),
@@ -73,44 +82,61 @@ data class OfferPeriod(
 }
 
 /** An offer of today, as a verdict compares it with its history. */
-data class CurrentOffer(val identity: OfferIdentity, val measures: Measures, val validFrom: LocalDate, val originalPrice: Double?) {
+data class CurrentOffer(val offer: Offer) {
+    val identity = OfferSighting(offer).identity
+    val measures = Measures.of(offer)
+    val validFrom: LocalDate = LocalDate.parse(offer.validFrom)
+    val validUntil: LocalDate = LocalDate.parse(offer.validUntil)
+    val originalPrice = offer.originalPrice?.takeIf { it > 0 }
     val dealKey get() = identity.deal to identity.price
+    val offerKey get() = offerKey(identity)
 
-    companion object {
-        fun of(offer: Offer) = CurrentOffer(
-            OfferSighting(offer).identity,
-            Measures.of(offer),
-            LocalDate.parse(offer.validFrom),
-            offer.originalPrice?.takeIf { it > 0 },
-        )
-    }
+    /** Whether [run] is this offer itself: the same pack, deal and price, on dates that share a day with it. */
+    fun isItself(run: OfferPeriod) = run.offerKey == offerKey && run.overlaps(validFrom, validUntil)
+
+    /** The offer measured against [priceBefore] (see [joinGaps]). */
+    fun withPriceBefore(priceBefore: Double) = CurrentOffer(offer.copy(originalPrice = priceBefore))
 }
 
+private fun offerKey(identity: OfferIdentity) = Triple(identity.product.pack, identity.deal, identity.price)
+
+/** Whether [a] has a price before and [b] none, or a higher one. */
+private fun lowerPriceBefore(a: OfferIdentity, b: OfferIdentity): Boolean =
+    a.originalPrice != null && (b.originalPrice == null || a.originalPrice < b.originalPrice)
+
 /**
- * Most server days with a refresh that did not see a product, between two rows of one offer, for the rows
- * still to be one run. The store parsers skip an item with a missing field without a word, so a product can
- * miss one night and be back the next unchanged; that is no new offer. Nights the store was not read at all
- * are no nights without the offer, so they do not count.
+ * Most server days with a refresh that did not see a product, between two rows of an offer the store dated
+ * as two that run on, for the rows still to be one offer. The store parsers skip an item with a missing field
+ * without a word, so a product can miss one night and be back the next unchanged; that is no new offer.
+ * Nights the store was not read at all are no nights without the offer, so they do not count.
  */
 const val MAX_MISSED_DAYS = 1
 
 /**
- * Joins the periods of one product that are one run of the same offer split by a short gap: the same
- * [OfferPeriod.identity], at most [MAX_MISSED_DAYS] days between them on which the store was read
- * ([recordings]) without the product, and dates that run on (the later one starts by the day after the
- * earlier one ends). A gap only of nights the store was not read joins as well: nothing says the offer
- * stopped. Dates that do not run on mean the store itself ended the offer and began it again.
+ * Joins the rows of one product that are one offer: the same pack, deal and price ([OfferPeriod.offerKey]),
+ * and either
+ * - store dates that share a day: the store says it is one offer, however many nights it was missing from the
+ *   page in between, or
+ * - dates that run on (the later one starts the day after the earlier one ends) with at most
+ *   [MAX_MISSED_DAYS] days between the rows on which the store was read ([recordings]) without the product.
+ * Dates that neither overlap nor run on mean the store ended the offer and began it again.
+ *
+ * A price before that changed while the offer ran (AH showing another price before mid-week) does not make
+ * another offer: the deal and what is paid are the same. The joined offer is measured against the lowest
+ * price before seen while it ran, as a reduction is measured against the lowest price before it (see
+ * [REFERENCE_DAYS]); a share against a price raised mid-offer would look deeper than it is.
  */
 fun joinGaps(periods: List<OfferPeriod>, recordings: List<Instant>): List<OfferPeriod> =
-    periods.groupBy { it.identity }.values.flatMap { same ->
+    periods.groupBy { it.offerKey }.values.flatMap { same ->
         same.sortedBy { it.firstSeen }.fold(mutableListOf<OfferPeriod>()) { joined, next ->
             val last = joined.lastOrNull()
-            if (last != null && runsOn(last, next, recordings)) joined[joined.lastIndex] = last.joinedWith(next) else joined += next
+            if (last != null && oneOffer(last, next, recordings)) joined[joined.lastIndex] = last.joinedWith(next) else joined += next
             joined
         }
     }.sortedBy { it.firstSeen }
 
-private fun runsOn(earlier: OfferPeriod, later: OfferPeriod, recordings: List<Instant>): Boolean {
+private fun oneOffer(earlier: OfferPeriod, later: OfferPeriod, recordings: List<Instant>): Boolean {
+    if (later.overlaps(earlier.validFrom, earlier.validUntil)) return true
     val missed = recordings.filter { it > earlier.lastSeen && it < later.firstSeen }.mapTo(HashSet(), ::serverDay)
-    return missed.size <= MAX_MISSED_DAYS && !later.validFrom.isAfter(earlier.validUntil.plusDays(1))
+    return missed.size <= MAX_MISSED_DAYS && later.validFrom == earlier.validUntil.plusDays(1)
 }

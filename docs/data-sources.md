@@ -259,9 +259,9 @@ that account's own matcher, and not trust `ingredient`; rows from before version
 check against.
 
 Reading the history (the queries `selectOfferPeriods` and `selectOfferRecordings`,
-`PriceHistoryRepository.offerPeriods` and `recordings`): the rows of one or more stores seen between two
-instants (begun by the end, last seen from the start on), and the recordings of a store between two instants,
-both on an index. The verdicts below read them.
+`PriceHistoryRepository.offerPeriods` and `recordings`): the rows of some products (by normalised title) of a
+store seen between two instants (begun by the end, last seen from the start on), and the recordings of a store
+between two instants, both on an index. The verdicts below read them.
 
 In the offers of 2026-11-15 (426: 111 AH, 270 Jumbo, 45 Lidl) all but 7 were recognised. Unknown were
 "2 stapelen tot 35%", "2 stapelen voor 3.99" and "3 stapelen voor 7.99" (AH), "2 gratis blikjes bij 1
@@ -305,12 +305,20 @@ ingredient names.
 **This product.** The rows of the same store and the same normalised title, over the last year (52 weeks: a seasonal
 product's offers of last season count, older prices say little about today's), every pack size and every deal.
 
-**Earlier offers.** Rows of one product with the same price, price before and deal are one offer when they are split by
-at most one day on which the store was read without the product (a parser skipping an item for a night), and the
-store's dates run on (the later one starts by the day after the earlier one ends). Nights the store was not read at
-all (`offerRecording` has no row) are not nights without the offer: they never split one. An offer is earlier when it
-ended before the store's last recording; today's own offer, and another offer of the product running now (Jumbo lists
-next week's), are not earlier offers. A deal that changes counts again: 1+1 for a week and 25 % the next are two.
+**Earlier offers.** Rows of one product with the same pack, deal and price are one offer when
+- the store's dates of them share a day: the store says it is one offer, however many nights it was missing from the
+  page in between (a parser skipping an item for a few nights), or
+- the store dated them as two that run on (the later one starts the day after the earlier one ends) and at most one
+  day on which the store was read lacks the product between them. Nights the store was not read at all
+  (`offerRecording` has no row) are not nights without the offer, so they never count.
+
+A price before that changed while the offer ran (AH showing another price before mid-week) does not make another
+offer: the deal and what is paid stay the same. The offer is then measured against the lowest price before seen while
+it ran, as a reduction is measured against the lowest price before it (rule 1); today's offer too. An offer is earlier
+when it ended before the store's last recording and is not today's offer itself: rows with today's pack, deal and price
+on dates that share a day with today's offer are today's, however they were split. Another offer of the product
+running now (Jumbo lists next week's) is not an earlier one either. A deal that changes counts again: 1+1 for a week and
+25 % the next are two.
 
 **What is compared.** What is paid, never the deal's wording, so a "2+1 gratis" is compared with the "1+1 gratis" the
 product had before. Each offer, today's and every earlier one, is read by today's deal reader (`DealTerms.of` on the
@@ -331,7 +339,9 @@ the share, as a price does not depend on what the store says the price was befor
    and the same size ("AH Snoepgroente tomaat", 500 g, is "AH Snoepgroente tomaat 500 gram"). A price raised less than
    3 % is no raise. A raise that leaves a saving is reported with the verdict, and the deal's share is then measured
    against the price before the raise ("25 % off" a price raised from 2,49 to 2,99 pays 90 %). This rule needs no
-   offer history: two regular prices seen are enough to tell.
+   offer history: two regular prices seen are enough to tell. It is not applied to group offers: a title beginning
+   with "Alle" ("Alle AH Gerookte zalm"), or a title and pack size that name no size at all. AH gives such an offer the
+   price before of whichever product of the group it shows, so two of them can differ without any price raised.
 2. *Not enough history yet* (`NOT_ENOUGH_HISTORY`) when the store was read on fewer than 56 days (`MIN_DAYS_READ`, 8
    weeks of nightly refreshes). Stores run offers by the week and bring a product back every few weeks, so 8 weeks see
    a usual deal come back at least once. Days read, not calendar time: a store that could not be read was not watched.
@@ -344,13 +354,15 @@ the share, as a price does not depend on what the store says the price was befor
 5. Against those earlier offers, prices within 3 % being the same (`TOLERANCE`: "2 voor 3,99" and "2 voor 4,00", packs
    of "ca. 450 g"): a *real deal* (`REAL_DEAL`) at or below the lowest seen and clearly below at least half of them;
    *worse than usual* (`WORSE_THAN_USUAL`) when more than half of them were clearly cheaper; else *the usual deal*
-   (`USUAL_DEAL`), which includes an offer between the lowest and the usual. The usual value said with it is the median.
+   (`USUAL_DEAL`). An offer clearly below the usual but not at the lowest is a usual deal too, and its summary says so
+   ("Better than usual, but it has been cheaper"). The usual value said with it is the median.
 
 With each verdict come the facts it rests on: the measure and today's value in it, the usual (median) and the lowest
-earlier value with its deal and dates, the latest earlier offer at least as cheap as today's ("last this cheap"), the
+earlier value with its deal and dates, the latest earlier offer at least as cheap as today's (said as "last this
+cheap" when it was about the same, within 3 %, and "last cheaper" when it was clearly less), the
 earlier offers themselves with their dates, deal and values, and on how many of the days read the product was on offer,
 and a summary in English, such as: "Worse than usual: 67% of the regular price, where it usually goes for 50% of the
-regular price; last this cheap 50% of the regular price with "1+1 gratis" from 2 Nov 2026 to 8 Nov 2026, …".
+regular price; last cheaper 50% of the regular price with "1+1 gratis" from 2 Nov 2026 to 8 Nov 2026, …".
 
 A copy of a real database can be read with
 `PRICE_HISTORY_DB=/path/to/copy.db ./gradlew :server:test --tests '*DealVerdictRealDataTest*' --rerun -i`: it copies the

@@ -157,11 +157,12 @@ class PriceHistoryRepository(private val db: Database) {
         RegularPriceSighting(name, Store.valueOf(store), product, packSize, packPrice, eurosPerKg).identity
 
     /**
-     * The periods of [stores] seen at any time from [from] to [until] (both included), in no set order: those
-     * that began by [until] and were last seen from [from] on. With [recordings], what judging a deal reads.
+     * The periods of [store]'s [products] (normalised titles, [ProductKey.title]) seen at any time from [from] to
+     * [until] (both included), in no set order: those that began by [until] and were last seen from [from] on.
+     * With [recordings], what judging a deal reads.
      */
-    fun offerPeriods(stores: Collection<Store>, from: Instant, until: Instant): List<OfferHistory> =
-        q.selectOfferPeriods(stores.map { it.name }, seen(from), seen(until)).executeAsList()
+    fun offerPeriods(store: Store, products: Collection<String>, from: Instant, until: Instant): List<OfferHistory> =
+        if (products.isEmpty()) emptyList() else q.selectOfferPeriods(store.name, products.distinct(), seen(from), seen(until)).executeAsList()
 
     /** When [store]'s offers were recorded from [from] to [until] (both included), oldest first. */
     fun recordings(store: Store, from: Instant, until: Instant): List<OfferRecording> =

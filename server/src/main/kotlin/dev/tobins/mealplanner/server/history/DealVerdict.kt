@@ -102,13 +102,18 @@ const val NO_SAVING_SHARE = 0.97
  * 5. Against those earlier offers, [TOLERANCE] apart being the same: [Verdict.REAL_DEAL],
  *    [Verdict.WORSE_THAN_USUAL] or else [Verdict.USUAL_DEAL].
  *
- * Earlier offers are the [joinGaps] runs that ended before the store's last recording: the current one, and
- * another offer of the product running at the same time (Jumbo lists next week's), are not.
+ * Earlier offers are the [joinGaps] offers that ended before the store's last recording, other than today's
+ * offer itself ([CurrentOffer.isItself]: rows of it that a gap split stay today's). Another offer of the
+ * product running at the same time (Jumbo lists next week's) is not an earlier one either. Today's offer is
+ * measured against the lowest price before seen while it ran, as an earlier one is.
  */
-fun judge(offer: CurrentOffer, periods: List<OfferPeriod>, recordings: List<Instant>, regular: List<RegularPrice>): DealVerdict {
+fun judge(today: CurrentOffer, periods: List<OfferPeriod>, recordings: List<Instant>, regular: List<RegularPrice>): DealVerdict {
     val runs = joinGaps(periods, recordings)
     val latest = recordings.maxOrNull()
-    val earlier = runs.filter { latest == null || it.lastSeen < latest }
+    val itself = runs.filter(today::isItself)
+    val earlier = runs.filter { it !in itself && (latest == null || it.lastSeen < latest) }
+    val lowestBefore = (itself.mapNotNull { it.identity.originalPrice } + listOfNotNull(today.originalPrice)).minOrNull()
+    val offer = if (lowestBefore != null && lowestBefore != today.originalPrice) today.withPriceBefore(lowestBefore) else today
     val days = recordings.groupBy(::serverDay)
     fun daysWith(runs: List<OfferPeriod>) = days.values.count { seen -> seen.any { at -> runs.any { it.covers(at) } } }
     val raise = regularRaise(offer, regular + pricesBefore(runs, offer))
