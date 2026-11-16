@@ -1,8 +1,19 @@
-// Frozen from v0.1.3 (7123262bceced77d65a2a7e3eda0b816bd69dbad) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.4 (12dcec0137b710f972f7d35039ee32797a1ae2e7) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released
 
 import kotlinx.serialization.Serializable
 
-/** Response of `GET /health`; also the first type shared between server and app. */
+/**
+ * Response of `GET /health`; also the first type shared between server and app.
+ * [commit] is the commit the server was built from ("dev" outside CI); optional, so apps from before
+ * it and servers from before it keep reading each other.
+ */
 @Serializable
-data class Health(val status: String, val version: String)
+data class Health(val status: String, val version: String, val commit: String? = null)
+
+/**
+ * Response of `GET /health/data`: "ok", or "stale" with what is wrong with the shared store data
+ * (offers, regular prices). Public, so it says nothing about any account.
+ */
+@Serializable
+data class DataHealth(val status: String, val problems: List<String> = emptyList())

@@ -1,4 +1,4 @@
-// Frozen from v0.1.3 (7123262bceced77d65a2a7e3eda0b816bd69dbad) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.4 (12dcec0137b710f972f7d35039ee32797a1ae2e7) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.units
 
 enum class Dimension { WEIGHT, VOLUME, COUNT }

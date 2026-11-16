@@ -1,4 +1,4 @@
-// Frozen from v0.1.3 (7123262bceced77d65a2a7e3eda0b816bd69dbad) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.4 (12dcec0137b710f972f7d35039ee32797a1ae2e7) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -30,7 +30,22 @@ data class PlannedMeal(
     val status: MealStatus = MealStatus.PLANNED,
     /** Estimated euros for the portions eaten, with the week's offers; null when unknown. */
     val cost: Double? = null,
+    /**
+     * The servings to cook when this meal is made, what the recipe shows when opened from it; null
+     * from a server that does not send it. A dinner: its own [portions] plus those of the next day's
+     * leftover lunch cooked with it. That lunch: 0, it was cooked the day before. A skipped meal: 0.
+     * Not stored: it follows from the week's meals, and agrees with what the shopping list counts.
+     */
+    val cookPortions: Double? = null,
 )
+
+/**
+ * The recipe the user puts in a meal's slot themselves (`PUT /api/plans/{weekStart}/meals/{day}/{slot}`).
+ * A request type only: the answer is the week's [WeekPlan], unchanged. Leaving a meal out is the
+ * existing status route with [MealStatus.SKIPPED].
+ */
+@Serializable
+data class MealChoice(val recipeId: Long)
 
 @Serializable
 data class PlanDay(
@@ -53,57 +68,3 @@ data class WeekPlan(
     val cost: Double? = null,
     val costWithoutOffers: Double? = null,
 )
-
-/**
- * One thing to buy for a week plan. The section travels as [category] alone, and its position is
- * the order the server sends the items in.
- *
- * Apps from v0.1.2 on skip fields they don't know, so optional fields may be added here (see
- * README, "API compatibility"); removing or renaming one still breaks them.
- */
-@Serializable
-data class ShoppingItem(
-    /** Stable identifier of the item within the list, used to tick it off. */
-    val key: String,
-    val name: String,
-    /** Total weight needed, when every use could be converted to grams. */
-    val grams: Double?,
-    /** Total number of pieces, when the recipes count this ingredient in pieces. */
-    val pieces: Double?,
-    /** The shop section's title ([dev.tobins.mealplanner.shopping.ShopSection.title]); "Other" when unknown. */
-    val category: String,
-    val recipes: List<String>,
-    /** True when the pantry lists it as on hand: check before buying. */
-    val onHand: Boolean,
-    val checked: Boolean,
-    /** Store offers for this ingredient during the plan's week. */
-    val offers: List<Offer> = emptyList(),
-    /**
-     * A picture to recognise the item by: the best offer's (the cheapest that states a price,
-     * else the first), or else the AH product its regular price comes from. Null without either.
-     */
-    val imageUrl: String? = null,
-    /**
-     * Euros the needed amount costs at the regular price (AH's, or one set by hand in the
-     * catalogue): what an offer's saving is measured against, with [Offer.paidShare]. Null when the
-     * ingredient has no regular price or the amount isn't known in grams.
-     */
-    val regularPrice: Double? = null,
-)
-
-/**
- * Everything the week's meals need, without the staples that are always at home. [items] come
- * in walking order: by shop section, then by name; ticking an item off does not move it.
- */
-@Serializable
-data class ShoppingList(
-    val weekStart: String,
-    val items: List<ShoppingItem>,
-    /** Names of staples the plan uses, as a reminder to check the cupboard. */
-    val staples: List<String>,
-    /** Seasoning and garnish the recipes use "to taste", without an amount. */
-    val toTaste: List<String> = emptyList(),
-)
-
-@Serializable
-data class ShoppingCheck(val key: String, val checked: Boolean)
