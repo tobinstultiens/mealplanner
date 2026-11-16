@@ -274,7 +274,7 @@ class PlanTest {
     private suspend fun HttpClient.stockUpBeef(): () -> Double {
         val beef = get("/api/ingredients").body<List<Ingredient>>().first { it.name == "Beef raw" }.id
         val userId = db.userQueries.selectBySubject("sub-t").executeAsOne().id
-        IngredientRepository(db, FoodRepository(db), userId).putOnHandFrom(beef, LocalDate.parse(week), grams = 20_000.0, source = StockSource.STOCK_UP)
+        StockRepository(db, FoodRepository(db), userId).putOnHandFrom(beef, LocalDate.parse(week), grams = 20_000.0, source = StockSource.STOCK_UP)
         return { db.pantryQueries.selectStock(userId, week, listOf(beef)).executeAsOne().grams!! }
     }
 
@@ -510,7 +510,7 @@ class PlanTest {
             var writer: Thread? = null
             val userId = userId()
             val ingredients = IngredientRepository(db, FoodRepository(db), userId)
-            val plans = PlanRepository(db, userId, RecipeRepository(db, ingredients, userId), ProfileRepository(db, userId), ingredients, pricing = { _, _ ->
+            val plans = PlanRepository(db, userId, RecipeRepository(db, ingredients, userId), ProfileRepository(db, userId), StockRepository(db, FoodRepository(db), userId), pricing = { _, _ ->
                 if (writer == null) writer = thread { other.planQueries.recordFailure("written during $change", "AH") }.apply { join(500) }
                 Pricing.NONE
             })

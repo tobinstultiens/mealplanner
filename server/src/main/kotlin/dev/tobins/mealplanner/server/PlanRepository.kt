@@ -28,7 +28,7 @@ class PlanRepository(
     private val userId: Long,
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
-    private val ingredients: IngredientRepository,
+    private val stock: StockRepository,
     /** Offers valid between two dates at every store, grouped by ingredient id. */
     private val offersByIngredient: (LocalDate, LocalDate) -> Map<Long, List<Offer>> = { _, _ -> emptyMap() },
     /** Prices with the offers valid between two dates, at the stores the account shops at. */
@@ -205,7 +205,7 @@ class PlanRepository(
     }
 
     /**
-     * Takes from the stock what eating [meal] used ([IngredientRepository.useUp]), each share kept
+     * Takes from the stock what eating [meal] used ([StockRepository.useUp]), each share kept
      * under the meal whose portions it is for. A dinner is cooked with its leftovers, so it takes the
      * next day's leftover lunch's share too, unless that lunch was eaten already and took its own. A
      * leftover lunch takes its own share only when its dinner was not eaten: then it was cooked for
@@ -222,14 +222,14 @@ class PlanRepository(
      * leftover lunch's, unless that lunch is eaten.
      */
     private fun giveBackToStock(start: LocalDate, meal: PlannedMeal, week: List<PlannedMeal>) {
-        if (dinnerOf(meal, week)?.status != MealStatus.EATEN) ingredients.giveBack(MealRef(start, meal.day, meal.slot))
-        leftoversOf(meal, week)?.takeIf { it.status != MealStatus.EATEN }?.let { ingredients.giveBack(MealRef(start, it.day, it.slot)) }
+        if (dinnerOf(meal, week)?.status != MealStatus.EATEN) stock.giveBack(MealRef(start, meal.day, meal.slot))
+        leftoversOf(meal, week)?.takeIf { it.status != MealStatus.EATEN }?.let { stock.giveBack(MealRef(start, it.day, it.slot)) }
     }
 
     /** Takes [meal]'s portions of its recipe from the stock ([gramsUsed]), kept under [meal]. */
     private fun take(start: LocalDate, meal: PlannedMeal) {
         val recipe = recipes.linesWithIngredients(listOf(meal.recipeId))[meal.recipeId] ?: return
-        ingredients.useUp(MealRef(start, meal.day, meal.slot), gramsUsed(recipe, meal.portions))
+        stock.useUp(MealRef(start, meal.day, meal.slot), gramsUsed(recipe, meal.portions))
     }
 
     /** The meals planned for one date; the plan week is the one starting on that date's Monday. */
@@ -282,7 +282,7 @@ class PlanRepository(
             onOffer = onOffer(start),
             dislikes = profiles.profile()?.dislikes.orEmpty(),
             prices = pricing(start, start.plusDays(DAYS - 1L)),
-            onHand = ingredients.onHandFor(start),
+            onHand = stock.onHandFor(start),
         ),
         routines = recipes.routines().let { r ->
             listOfNotNull(r.breakfast?.let { MealSlot.BREAKFAST to it }, r.snack?.let { MealSlot.SNACK to it }).toMap()

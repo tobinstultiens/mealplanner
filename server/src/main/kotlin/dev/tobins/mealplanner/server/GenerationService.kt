@@ -19,6 +19,7 @@ class GenerationService(
     private val generator: RecipeGenerator,
     private val recipes: RecipeRepository,
     private val ingredients: IngredientRepository,
+    private val stock: StockRepository,
     private val profiles: ProfileRepository,
     private val plans: PlanRepository,
     private val offers: OfferRepository,
@@ -37,9 +38,9 @@ class GenerationService(
     fun context(request: GenerateRequest, today: LocalDate): GenerationContext {
         val targets = profiles.state().targets
             ?: throw ConflictException("Set up your profile first: a recipe is sized to your daily targets")
-        val pantry = ingredients.pantry()
+        val pantry = stock.pantry()
         // What was bought ahead for a later week is at home, but meant for that week's meals.
-        val onHandNow = ingredients.onHandFor(today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)))
+        val onHandNow = stock.onHandFor(today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)))
         val names = ingredients.list().associate { it.id to it.name }
         val inUse = shops()
         val onOffer = offers.byIngredient(today, today.plusDays(6), ingredients.matchTerms())

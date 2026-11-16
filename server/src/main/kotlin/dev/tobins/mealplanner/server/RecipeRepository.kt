@@ -110,7 +110,7 @@ class RecipeRepository(
     /**
      * @param dislikes words for ingredients never to plan; a recipe with a line whose text
      *   or linked ingredient name contains one of them as a word (or its plural) is left out.
-     * @param onHand the ingredients on hand in the week being planned ([IngredientRepository.onHandFor]).
+     * @param onHand the ingredients on hand in the week being planned ([StockRepository.onHandFor]).
      */
     fun planCandidates(
         onOffer: Set<Long> = emptySet(),

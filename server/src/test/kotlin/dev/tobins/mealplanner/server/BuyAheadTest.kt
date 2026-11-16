@@ -449,8 +449,8 @@ class BuyAheadTest {
         // The list: lettuce ticked as bought ahead is for next week's meals; this week's need their own.
         val lettuce = http.ingredient("Lettuce")
         http.tick("ahead:i${lettuce.id}")
-        assertEquals(setOf(lettuce.id), scope().ingredients.onHandFor(LocalDate.parse(nextWeek)))
-        assertEquals(emptySet(), scope().ingredients.onHandFor(LocalDate.parse(week)))
+        assertEquals(setOf(lettuce.id), scope().stock.onHandFor(LocalDate.parse(nextWeek)))
+        assertEquals(emptySet(), scope().stock.onHandFor(LocalDate.parse(week)))
         assertFalse(http.list().items.single { it.name == "Lettuce" }.onHand)
         http.post("/api/plans/$nextWeek/generate")
         assertTrue(http.list(nextWeek).items.single { it.name == "Lettuce" }.onHand)
@@ -480,7 +480,7 @@ class BuyAheadTest {
         val notCalled = object : RecipeGenerator {
             override suspend fun generate(context: GenerationContext): GeneratedRecipe = error("only the context is asked for")
         }
-        val generation = GenerationService(notCalled, user.recipes, user.ingredients, user.profiles, user.plans, OfferRepository(db, emptyList()))
+        val generation = GenerationService(notCalled, user.recipes, user.ingredients, user.stock, user.profiles, user.plans, OfferRepository(db, emptyList()))
         val wednesday = LocalDate.parse(week).plusDays(2)
 
         // The chicken is in the freezer for next week's meals: not something to use up now.
@@ -616,7 +616,7 @@ class BuyAheadTest {
         http.mark(nextWeek, feast, MealStatus.PLANNED)
         assertEquals(3600.0, left(chicken, nextWeek))
         assertTrue("Chicken fillet" in http.onHand())
-        assertTrue(scope().ingredients.onHandFor(LocalDate.parse(week)).isEmpty(), "still for next week only")
+        assertTrue(scope().stock.onHandFor(LocalDate.parse(week)).isEmpty(), "still for next week only")
     }
 
     @Test
@@ -762,9 +762,9 @@ class BuyAheadTest {
         fun ShoppingList.row(name: String) = items.single { it.name == name }
 
         // 300 g left of rice stocked up this week; lettuce on hand by hand; chicken bought ahead for next week.
-        scope().ingredients.putOnHandFrom(rice.id, LocalDate.parse(week), grams = 300.0, source = StockSource.STOCK_UP)
+        scope().stock.putOnHandFrom(rice.id, LocalDate.parse(week), grams = 300.0, source = StockSource.STOCK_UP)
         http.put("/api/pantry/on-hand/${lettuce.id}")
-        scope().ingredients.putOnHandFrom(chicken.id, LocalDate.parse(nextWeek), grams = 2000.0, source = StockSource.BUY_AHEAD)
+        scope().stock.putOnHandFrom(chicken.id, LocalDate.parse(nextWeek), grams = 2000.0, source = StockSource.BUY_AHEAD)
         val list = http.list()
         assertEquals(500.0, assertNotNull(list.row("White rice").grams), 1e-9)
         assertTrue(list.row("White rice").onHand)
@@ -811,7 +811,7 @@ class BuyAheadTest {
         val dinner = http.plan(week, 0, MealSlot.DINNER, "Chicken 0", 2.0)
         val lunch = http.plan(week, 1, MealSlot.LUNCH, "Chicken 0", 2.0, leftover = true)
         val other = http.plan(week, 2, MealSlot.DINNER, "Chicken 1", 2.0)
-        scope().ingredients.putOnHandFrom(chicken.id, LocalDate.parse(week), grams = 1500.0, source = StockSource.STOCK_UP)
+        scope().stock.putOnHandFrom(chicken.id, LocalDate.parse(week), grams = 1500.0, source = StockSource.STOCK_UP)
         suspend fun row() = http.list().items.single { it.name == "Chicken fillet" }
         // What is still to buy, as the app works it out: what the meals to come need, less the stock.
         suspend fun toBuy() = row().let { assertNotNull(it.toComeGrams) - (it.onHandGrams ?: 0.0) }

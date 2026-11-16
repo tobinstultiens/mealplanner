@@ -119,7 +119,7 @@ class ShopSectionsTest {
         val before = user.shopping.get(week)
         val milk = before.items.single { it.name == "Milk" }
         user.shopping.setChecked(week, ShoppingCheck(milk.key, true))
-        user.ingredients.setOnHand(before.items.single { it.name == "Onion" }.key.removePrefix("i").toLong(), true)
+        user.stock.setOnHand(before.items.single { it.name == "Onion" }.key.removePrefix("i").toLong(), true)
 
         val after = user.shopping.get(week)
         assertTrue(after.items.single { it.name == "Milk" }.checked)

@@ -20,6 +20,7 @@ class UserScope(
     imageDir: File,
 ) {
     val ingredients = IngredientRepository(db, foods, accountId)
+    val stock = StockRepository(db, foods, accountId)
     val shops = ShopsRepository(db, accountId)
     val recipes = RecipeRepository(db, ingredients, accountId) { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) }
     val profiles = ProfileRepository(db, accountId)
@@ -28,7 +29,7 @@ class UserScope(
     val shoppingAdvice = ShoppingAdviceRepository(db, accountId)
     val plans by lazy {
         PlanRepository(
-            db, accountId, recipes, profiles, ingredients,
+            db, accountId, recipes, profiles, stock,
             offersByIngredient = { from, until -> prices.offers(ingredients, from, until) },
             pricing = { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) },
             shops = shops::inUse,
@@ -36,7 +37,7 @@ class UserScope(
     }
     val shopping by lazy {
         ShoppingListRepository(
-            db, accountId, plans, recipes, profiles, ingredients,
+            db, accountId, plans, recipes, profiles, ingredients, stock,
             offersByIngredient = { from, until -> prices.offers(ingredients, from, until) },
             shops = shops::inUse,
             regularPerKg = { prices.perKg(ingredients) },
@@ -47,5 +48,5 @@ class UserScope(
         )
     }
     val tracking by lazy { TrackingRepository(db, accountId, plans, profiles) }
-    val generation by lazy { generator?.let { GenerationService(it, recipes, ingredients, profiles, plans, offers, shops::inUse) } }
+    val generation by lazy { generator?.let { GenerationService(it, recipes, ingredients, stock, profiles, plans, offers, shops::inUse) } }
 }
