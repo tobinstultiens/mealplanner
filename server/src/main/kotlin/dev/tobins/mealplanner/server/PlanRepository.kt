@@ -18,9 +18,6 @@ import java.time.temporal.TemporalAdjusters
 import java.time.format.DateTimeParseException
 import kotlin.random.Random
 
-/** Thrown when a request cannot be carried out in the current state; mapped to 409. */
-class ConflictException(message: String) : RuntimeException(message)
-
 /**
  * Week plans: generating them with [WeekPlanner] and storing the result. The shopping list of a
  * week is [ShoppingListRepository]'s; it reads the week's [meals] here.
