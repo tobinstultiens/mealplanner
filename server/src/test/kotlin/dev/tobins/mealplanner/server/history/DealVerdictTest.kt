@@ -72,7 +72,7 @@ class DealVerdictTest {
             verdict.summary("Albert Heijn"),
         )
         assertEquals(
-            "Not enough history yet: not on offer before since 14 Sep 2026; a verdict needs 2 earlier offers to compare with.",
+            "Not enough history yet: no earlier offer of it ended since 14 Sep 2026; a verdict needs 2 earlier offers to compare with.",
             verdict(today(twoPlusOne)).summary("Albert Heijn"),
         )
     }
@@ -273,7 +273,7 @@ class DealVerdictTest {
         val verdict = verdict(today(offer("2 stapelen tot 35%", title = "Alle AH Verse pizza's")))
         assertEquals(Verdict.NOT_COMPARABLE, verdict.verdict)
         assertEquals(
-            "Can't be compared: the deal gives no share of the regular price and no price per kg, litre, piece or pack; not on offer before since 14 Sep 2026.",
+            "Can't be compared: the deal gives no share of the regular price and no price per kg, litre, piece or pack; no earlier offer of it ended since 14 Sep 2026.",
             verdict.summary("Albert Heijn"),
         )
     }

@@ -7,6 +7,7 @@ import java.time.Duration
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Which rows of the history are one offer, and which offers are earlier offers: one test per row of the table in
@@ -142,10 +143,37 @@ class OfferPeriodsTest {
     }
 
     @Test
-    fun row14AnotherDealStillDatedToRunIsNoEarlierOfferWhateverTheLastNightSaw() {
+    fun row14AnOfferDatedToBeginAfterTodayIsNeitherEarlierNorAlongside() {
         // Jumbo lists next week's offer with this week's; the last refresh happened to miss it.
         val nextWeek = row(offer("VOOR 1.29", price = 1.29, from = TODAY + 4, until = TODAY + 10), TODAY - 2, TODAY - 1)
-        assertOnlyTheRealEarlierOffer(judged(thisWeek(), realEarlier, nextWeek, row(thisWeek(), TODAY - 3, TODAY)))
+        val verdict = judged(thisWeek(), realEarlier, nextWeek, row(thisWeek(), TODAY - 3, TODAY))
+        assertOnlyTheRealEarlierOffer(verdict)
+        assertEquals(emptyList(), verdict.alongside)
+    }
+
+    @Test
+    fun row15AnotherDealDatedOverTodayIsAlongsideAndCountsAgainstToday() {
+        // Dated all year, seen on two nights; and one that began after today's offer did, still running.
+        val allYear = row(offer("2 voor 3,00", from = -300, until = TODAY + 30), 0, 1)
+        val sinceSunday = row(offer("VOOR 2.19", price = 2.19, from = TODAY - 1, until = TODAY + 5), TODAY - 1, TODAY - 1)
+        val verdict = judged(thisWeek(), realEarlier, allYear, sinceSunday, row(thisWeek(), TODAY - 3, TODAY))
+        assertEquals(listOf(realEarlier.firstSeen), verdict.earlier.map { it.firstSeen }, "neither is an earlier offer")
+        assertEquals(setOf(allYear.offerKey, sinceSunday.offerKey), verdict.alongside.map { it.offerKey }.toSet())
+        // "2 voor 3,00" is €1,50 for the kilo, today's €1,99: cheaper another way.
+        assertEquals(Verdict.CHEAPER_ANOTHER_WAY to allYear.offerKey, verdict.verdict to verdict.cheaperNow?.offerKey)
+        // "VOOR 2.19", dearer, alongside alone only gets named.
+        val dearer = judged(thisWeek(), realEarlier, sinceSunday, row(thisWeek(), TODAY - 3, TODAY))
+        assertEquals(Verdict.NOT_ENOUGH_HISTORY, dearer.verdict)
+        assertTrue("Also on offer now: \"VOOR 2.19\", dated until " in dearer.summary("AH"), dearer.summary("AH"))
+    }
+
+    @Test
+    fun row16TodaysDealOnAnotherPackIsAlongsideAndItsDaysAreNotTodays() {
+        val otherPack = row(offer("VOOR 1.99", price = 1.99, packSize = "500 g", from = -300, until = TODAY + 30), 0, TODAY)
+        val verdict = judged(thisWeek(), realEarlier, otherPack, row(thisWeek(), TODAY - 3, TODAY))
+        assertEquals(listOf(otherPack.offerKey), verdict.alongside.map { it.offerKey })
+        assertEquals(4 to TODAY + 1, verdict.daysThisDeal to verdict.daysOnOffer)
+        assertEquals(Verdict.NOT_ENOUGH_HISTORY, verdict.verdict)
     }
 
     private companion object {

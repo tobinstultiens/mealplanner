@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.io.path.createTempDirectory
@@ -132,7 +133,14 @@ class DealVerdictRealDataTest {
     }
 
     private fun report(db: Database, account: Long, now: Instant, verdicts: DealVerdicts) {
-        val all = db.planQueries.selectOffersValidOn(serverDay(now).toString()).executeAsList().size
+        val valid = db.planQueries.selectOffersValidOn(serverDay(now).toString()).executeAsList()
+        val all = valid.size
+        // Offers the store dates over more than two weeks (Jumbo): what the rules make of them.
+        val longDated = valid.filter { java.time.temporal.ChronoUnit.DAYS.between(LocalDate.parse(it.validFrom), LocalDate.parse(it.validUntil)) > 14 }
+            .mapTo(HashSet()) { it.store to it.title }
+        val theirs = verdicts.verdicts.filter { (it.store.name to it.title) in longDated }
+        println("Long-dated offers valid today: ${longDated.size}, of them the account's: ${theirs.size}, by verdict " + theirs.groupingBy { it.verdict }.eachCount())
+        theirs.forEach { println("- long-dated: ${it.store.label}, ${it.title}, ${dealOf(it.deal)}: ${it.summary}") }
         println("Account $account, $now: ${verdicts.verdicts.size} of the $all offers valid today are for its ingredients at its stores")
         println("By verdict: " + verdicts.verdicts.groupingBy { it.verdict }.eachCount())
         println("By store and verdict: " + verdicts.verdicts.groupingBy { "${it.store} ${it.verdict}" }.eachCount())

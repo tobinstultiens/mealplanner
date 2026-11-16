@@ -39,7 +39,8 @@ fun regularRaise(offer: CurrentOffer, regular: List<RegularPrice>): RegularRaise
         .minWithOrNull(compareBy<RegularPrice> { it.packPrice }.thenByDescending { it.lastSeen }) ?: return null
     val now = offer.originalPrice ?: regular.maxWithOrNull(compareBy({ it.lastSeen }, { it.packPrice }))?.packPrice ?: return null
     if (now <= before.packPrice * (1 + TOLERANCE)) return null
-    return RegularRaise(before.packPrice, serverDay(before.lastSeen), now)
+    // Last seen before the offer began: a price before dated on past that day was not the price "before" any more.
+    return RegularRaise(before.packPrice, minOf(serverDay(before.lastSeen), offer.validFrom.minusDays(1)), now)
 }
 
 /**

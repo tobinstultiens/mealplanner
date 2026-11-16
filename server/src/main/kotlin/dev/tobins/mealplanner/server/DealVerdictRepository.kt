@@ -115,6 +115,8 @@ class DealVerdictRepository(
         daysThisDeal = verdict.daysThisDeal,
         regularRaise = verdict.raise?.let { RaisedPrice(it.before, it.beforeSeen.toString(), it.now) },
         earlier = verdict.earlier.map(::earlierOffer),
+        alongside = verdict.alongside.map(::earlierOffer),
+        cheaperNow = verdict.cheaperNow?.let(::earlierOffer),
     )
 
     private fun earlierOffer(run: OfferPeriod) = EarlierOffer(
@@ -157,6 +159,9 @@ data class OfferVerdict(
     val regularRaise: RaisedPrice?,
     /** The earlier offers of the product at the store, oldest first, from and until as the store dated them. */
     val earlier: List<EarlierOffer>,
+    /** The other offers of the product dated over today too, and the one clearly cheaper than this one, if any. */
+    val alongside: List<EarlierOffer>,
+    val cheaperNow: EarlierOffer?,
 )
 
 /** A regular price raised from [before] (last seen on [beforeSeen], an ISO date) to [now], a pack. */

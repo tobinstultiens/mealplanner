@@ -11,7 +11,8 @@ import kotlin.math.roundToInt
  */
 fun DealVerdict.summary(store: String): String {
     val since = firstRead?.let { " since ${date(it)}" }.orEmpty()
-    val before = if (earlier.isEmpty()) "not on offer before$since" else "on offer ${times(earlier.size)} before$since"
+    // Earlier offers are those that ended; offers running alongside are said apart, below.
+    val before = if (earlier.isEmpty()) "no earlier offer of it ended$since" else "on offer ${times(earlier.size)} before$since"
     val text = when (verdict) {
         Verdict.NOT_A_DEAL -> raise!!.let { "Not a deal: its regular price went up from ${euros(it.before)} (seen ${date(it.beforeSeen)}) to ${euros(it.now)}, " +
             "and with this deal you pay ${share(value!!)} of the price before." }
@@ -21,6 +22,7 @@ fun DealVerdict.summary(store: String): String {
             "Not enough history yet: $before" + (if (earlier.isEmpty()) "" else ", $compared of them with a ${name(measure!!)}") +
                 "; a verdict needs $MIN_EARLIER_OFFERS earlier offers to compare with."
         }
+        Verdict.CHEAPER_ANOTHER_WAY -> "Cheaper another way right now: ${amount(value!!)}, where ${offered(cheaperNow!!)} gives ${amount(cheaperNow.measures[measure!!]!!)}."
         Verdict.ALWAYS_ON_OFFER -> "The usual price, not a deal: $store dated it on offer this way on $daysThisDeal of the ${days(daysRead)} it was read$since."
         Verdict.NOT_COMPARABLE -> "Can't be compared: the deal gives no share of the regular price and no price per kg, litre, piece or pack; $before."
         Verdict.REAL_DEAL -> "A real deal: ${amount(value!!)} " +
@@ -36,9 +38,17 @@ fun DealVerdict.summary(store: String): String {
             "${lastCheap()}, lowest ${was(lowest!!)}; $before."
     }
     val raised = raise?.takeIf { verdict != Verdict.NOT_A_DEAL }?.let {
-        " Its regular price went up from ${euros(it.before)} (seen ${date(it.beforeSeen)}) to ${euros(it.now)}; its share is measured against ${euros(it.before)}."
+        " Its regular price went up from ${euros(it.before)} (seen ${date(it.beforeSeen)}) to ${euros(it.now)}" +
+            (if (measure == Measure.PAID_SHARE) "; its share is measured against ${euros(it.before)}." else ".")
     }
-    return text + raised.orEmpty()
+    val also = alongside.filter { verdict != Verdict.CHEAPER_ANOTHER_WAY || it != cheaperNow }.takeIf { it.isNotEmpty() }?.joinToString("; ", prefix = " Also on offer now: ", postfix = ".") { offered(it) }
+    return text + raised.orEmpty() + also.orEmpty()
+}
+
+/** Another offer of the product as the store dated it: its deal, its pack where it gives one, and until when. */
+private fun offered(run: OfferPeriod): String {
+    val pack = run.identity.product.pack.takeIf { it.isNotEmpty() }?.let { " for $it" }.orEmpty()
+    return "\"${run.deal?.takeIf { it.isNotBlank() } ?: "a lower price"}\"$pack, dated until ${date(run.validUntil)}"
 }
 
 /** The latest earlier offer at least as cheap as today's: "this cheap" when about the same, "cheaper" when clearly less. */
