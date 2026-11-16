@@ -73,7 +73,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenPlan:
             scroll.scrollTo(0)
         }
     }
-    LaunchedEffect(date, reload, frontReturns) { loaded.refresh { api.day(date) } }
+    LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.day(date) } }
 
     /** Shows another day the user stepped to, from its top. */
     fun show(other: String) {
@@ -106,7 +106,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenPlan:
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { Column { SnackbarHost(snackbar); RefreshNotice(loaded) { reload++ } } },
     ) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))

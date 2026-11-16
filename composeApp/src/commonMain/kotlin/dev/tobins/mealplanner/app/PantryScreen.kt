@@ -71,9 +71,9 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(reload, frontReturns) { loaded.refresh { api.ingredients() to api.pantry() } }
+    LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.ingredients() to api.pantry() } }
 
-    SubScreen(t(Msg.PANTRY), onBack, snackbar) { padding ->
+    SubScreen(t(Msg.PANTRY), onBack, snackbar, notice = { RefreshNotice(loaded) { reload++ } }) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {

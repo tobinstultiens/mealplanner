@@ -91,9 +91,10 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
 
     var syncStatus by remember { mutableStateOf<CookingSyncStatus?>(null) }
     var editingRepo by remember { mutableStateOf(false) }
-    LaunchedEffect(reload, frontReturns) {
+    LaunchedEffect(loaded, reload, frontReturns) {
         loaded.refresh { api.recipes() }
-        syncStatus = (load { api.cookingSyncStatus() } as? Load.Ready)?.value
+        // A failed fetch keeps the line that was shown.
+        (load { api.cookingSyncStatus() } as? Load.Ready)?.value?.let { syncStatus = it }
     }
 
     Scaffold(
@@ -127,7 +128,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { Column { SnackbarHost(snackbar); RefreshNotice(loaded) { reload++ } } },
     ) { padding ->
         if (generating) {
             GenerateDialog(onDismiss = { generating = false }) { request ->
@@ -324,12 +325,12 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
     var reload by remember { mutableIntStateOf(0) }
     val frontReturns = rememberFrontReturns()
     val scroll = rememberScrollState()
-    LaunchedEffect(recipeId, reload, frontReturns) {
+    LaunchedEffect(loaded, reload, frontReturns) {
         loaded.refresh { api.recipe(recipeId) }
-        routines = (load { api.routines() } as? Load.Ready)?.value
+        (load { api.routines() } as? Load.Ready)?.value?.let { routines = it }
     }
 
-    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: t(Msg.RECIPE), onBack, actions = {
+    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: t(Msg.RECIPE), onBack, notice = { RefreshNotice(loaded) { reload++ } }, actions = {
         if ((state as? Load.Ready)?.value?.summary?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }) {
             BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
         }

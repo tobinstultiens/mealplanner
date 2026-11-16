@@ -71,7 +71,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(reload, frontReturns) { loaded.refresh { api.weights() } }
+    LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.weights() } }
 
     fun change(action: suspend () -> WeightLog) {
         scope.launch {
@@ -93,7 +93,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { Column { SnackbarHost(snackbar); RefreshNotice(loaded) { reload++ } } },
     ) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))

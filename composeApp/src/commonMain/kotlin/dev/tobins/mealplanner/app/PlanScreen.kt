@@ -80,7 +80,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfil
             listState.scrollToItem(0)
         }
     }
-    LaunchedEffect(weekStart, reload, frontReturns) { loaded.refresh { api.plan(weekStart) } }
+    LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.plan(weekStart) } }
 
     /** Shows another week the user stepped to, from its top. */
     fun show(week: String) {
@@ -145,7 +145,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfil
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { Column { SnackbarHost(snackbar); RefreshNotice(loaded) { reload++ } } },
     ) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))

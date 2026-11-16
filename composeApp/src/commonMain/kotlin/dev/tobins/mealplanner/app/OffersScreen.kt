@@ -57,9 +57,9 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(reload, frontReturns, today) { loaded.refresh { api.offers(today) } }
+    LaunchedEffect(loaded, reload, frontReturns, today) { loaded.refresh { api.offers(today) } }
 
-    SubScreen(t(Msg.OFFERS), onBack, snackbar, actions = {
+    SubScreen(t(Msg.OFFERS), onBack, snackbar, notice = { RefreshNotice(loaded) { reload++ } }, actions = {
         BarAction(AppIcons.Refresh, if (refreshing) t(Msg.FETCHING_OFFERS) else t(Msg.REFRESH_OFFERS), busy = refreshing, onClick = {
             refreshing = true
             scope.launch {

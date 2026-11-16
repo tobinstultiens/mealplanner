@@ -2,7 +2,19 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 
@@ -42,6 +54,10 @@ internal val LocalScreenMemory = compositionLocalOf<ScreenMemory?> { null }
 internal class LoadState<T : Any>(private val memory: ScreenMemory, private val key: String) : MutableState<Load<T>> {
     private val state = mutableStateOf<Load<T>>(memory.recall<T>(key)?.let { Load.Ready(it) } ?: Load.Loading)
 
+    /** Whether the last [refresh] failed while content was kept: the screen shows it and offers a retry ([RefreshNotice]). */
+    var refreshFailed by mutableStateOf(false)
+        private set
+
     override var value: Load<T>
         get() = state.value
         set(new) {
@@ -56,9 +72,10 @@ internal class LoadState<T : Any>(private val memory: ScreenMemory, private val 
      * Fetches the value again behind what is shown. A screen showing nothing yet shows the spinner and
      * then the result or the failure; one showing content keeps it when the fetch fails (a dropped
      * connection must not wipe a screen that was fine a minute ago), unless the server says the thing
-     * is gone (404), which it then shows.
+     * is gone (404), which it then shows. Otherwise [refreshFailed] says so.
      */
     suspend fun refresh(fetch: suspend () -> T) {
+        refreshFailed = false
         if (value !is Load.Ready) value = Load.Loading
         when (val result = load(fetch)) {
             is Load.Ready -> value = result
@@ -67,6 +84,8 @@ internal class LoadState<T : Any>(private val memory: ScreenMemory, private val 
             } else if (result.status == 404) {
                 memory.forget(key)
                 value = result
+            } else {
+                refreshFailed = true
             }
             Load.Loading -> Unit
         }
@@ -78,4 +97,24 @@ internal class LoadState<T : Any>(private val memory: ScreenMemory, private val 
 internal fun <T : Any> rememberLoad(key: String): LoadState<T> {
     val memory = LocalScreenMemory.current ?: remember { ScreenMemory() }
     return remember(memory, key) { LoadState(memory, key) }
+}
+
+/**
+ * The line a screen shows at its bottom when fetching again failed behind the content it kept: the
+ * content stays, the user is told it may be out of date, and [onRetry] asks again. Nothing when all is well.
+ */
+@Composable
+internal fun RefreshNotice(loaded: LoadState<*>, onRetry: () -> Unit) {
+    if (!loaded.refreshFailed) return
+    val t = LocalStrings.current
+    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.errorContainer) {
+        Row(
+            Modifier.padding(start = Spacing.ScreenEdge),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(t(Msg.REFRESH_FAILED_KEPT), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            TextButton(onClick = onRetry) { Text(t(Msg.RETRY)) }
+        }
+    }
 }

@@ -61,6 +61,9 @@ class ScreenMemoryTest {
         state.refresh { throw IOException("offline") }
         assertEquals(Load.Ready("shown"), state.value)
         assertEquals("shown", memory.recall<String>("recipes"))
+        assertTrue(state.refreshFailed)
+        state.refresh { "fresh" }
+        assertEquals(false, state.refreshFailed)
     }
 
     @Test
