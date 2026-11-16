@@ -19,7 +19,6 @@ import org.slf4j.LoggerFactory
 import java.net.URI
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
@@ -76,7 +75,7 @@ class PriceHistoryRepository(private val db: Database) {
                     "such as ${example.title}, ${example.validFrom} to ${example.validUntil}",
             )
         }
-        val saw = OfferSighting.of(offers, LocalDate.ofInstant(now, ZONE))
+        val saw = OfferSighting.of(offers, serverDay(now))
         if (saw.isEmpty()) return
         val open = last?.let { q.selectOpenOffers(store.name, it).executeAsList() }.orEmpty().associateBy { it.id }
         val (continued, started) = changes(open.values.map { it.id to it.identity() }, saw) { it.identity }
@@ -200,7 +199,6 @@ class PriceHistoryRepository(private val db: Database) {
 
     private companion object {
         const val KEEP_YEARS = 2L
-        val ZONE: ZoneId = ZoneId.of("Europe/Amsterdam")
 
         /**
          * An instant as the history stores it: to the second, so every value has the same width and text

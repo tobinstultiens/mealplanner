@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.server.offers
 
+import dev.tobins.mealplanner.server.SERVER_ZONE
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Store
 import kotlinx.serialization.json.Json
@@ -16,7 +17,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.time.Instant
-import java.time.ZoneId
 
 /*
  * Parsers for the three stores' offer data. None of it is an official API, so every
@@ -165,7 +165,6 @@ object JumboParser {
 object LidlParser {
     /** Lidl's own tile categories that are food. Others are plants, flowers and non-food. */
     private val foodCategories = setOf("Food", "F+V")
-    private val amsterdam: ZoneId = ZoneId.of("Europe/Amsterdam")
 
     /** Product tiles of the offers page; each carries its data as HTML-escaped JSON. */
     fun page(html: String): List<Offer> =
@@ -196,7 +195,7 @@ object LidlParser {
     }
 
     private fun date(epochSeconds: JsonElement?): String? =
-        (epochSeconds as? JsonPrimitive)?.longOrNull?.let { Instant.ofEpochSecond(it).atZone(amsterdam).toLocalDate().toString() }
+        (epochSeconds as? JsonPrimitive)?.longOrNull?.let { Instant.ofEpochSecond(it).atZone(SERVER_ZONE).toLocalDate().toString() }
 }
 
 /** Decodes the HTML character references used in attribute values. */

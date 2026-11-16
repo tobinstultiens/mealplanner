@@ -26,6 +26,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 deleteUnlocked:
 DELETE FROM planMeal WHERE userId = ? AND weekStart = ? AND locked = 0 AND status = 'PLANNED';
 
+-- Where a recipe is planned in weeks that started after the given date (an ISO date).
+selectPlannedFrom:
+SELECT weekStart, day FROM planMeal WHERE userId = ? AND recipeId = ? AND weekStart > ? ORDER BY weekStart, day;
+
 setStatus:
 UPDATE planMeal SET status = ? WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?;
 
