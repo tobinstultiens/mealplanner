@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.app
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.shopping.bestOffer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

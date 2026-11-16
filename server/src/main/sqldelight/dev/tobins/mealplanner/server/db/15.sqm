@@ -1,0 +1,8 @@
+-- Version 15 -> 16: a tick of a row of what the week's meals need keeps what the row's offer saved when
+-- it was ticked (issue 116), so that a store's saving on the list says what the shop saved and does not
+-- shrink as meals are eaten or offers end. Only added columns, so no table is rebuilt and no row is
+-- touched: the ticks stored so far keep what they have, with the new columns empty (NULL), and for them
+-- the app works the saving out as before.
+
+ALTER TABLE shoppingCheck ADD COLUMN saving REAL;
+ALTER TABLE shoppingCheck ADD COLUMN savingStore TEXT;

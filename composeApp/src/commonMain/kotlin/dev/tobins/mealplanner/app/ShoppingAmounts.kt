@@ -3,21 +3,18 @@ package dev.tobins.mealplanner.app
 import androidx.compose.foundation.layout.size
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
-import dev.tobins.mealplanner.pricing.PackSize
 import dev.tobins.mealplanner.pricing.PacksToBuy
+import dev.tobins.mealplanner.shopping.SCRAP_GRAMS
+import dev.tobins.mealplanner.shopping.leftToBuyGrams
+import dev.tobins.mealplanner.shopping.mealsDone
+import dev.tobins.mealplanner.shopping.nothingToBuy
+import dev.tobins.mealplanner.shopping.packsLeftToBuy
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /** `450 g`, `1.4 kg`: a weight the way the list writes it. */
 fun weightText(grams: Double, locale: FormatLocale): String =
     if (grams >= 1000) "${formatAmount(grams / 1000, locale)} kg" else "${grams.roundToInt()} g"
-
-/**
- * What to pick up for this item when bought as [offer]: [PackSize.toBuy] for the weight the recipes
- * need, or their pieces. What could not be weighed is not guessed at, so an item with other amounts
- * (or without a weight) gets nothing.
- */
-fun ShoppingItem.packsToBuy(offer: Offer): PacksToBuy? = PackSize.toBuy(offer, grams, if (otherAmounts.isEmpty()) pieces else null)
 
 /** `2 × 700 g`, `1 × 500 g · deal needs 2`, `2 × 3 pieces`: the packs to take and, when the deal wants more than the amount needs, how many it wants. */
 fun PacksToBuy.text(strings: Strings): String {
@@ -40,39 +37,9 @@ fun ShoppingItem.quantityText(locale: FormatLocale): String {
     return listOfNotNull(pieces?.let(::piecesText), weight).joinToString(" · ")
 }
 
-/** Less than a gram still to buy is nothing to buy, as the server drops a stock once less than a gram is left. */
-internal const val SCRAP_GRAMS = 1.0
-
-/** No meal still to cook needs this row, whatever its unit: the server says the meals to come need exactly 0 ([ShoppingItem.toComeGrams]). */
-internal val ShoppingItem.mealsDone: Boolean get() = toComeGrams == 0.0
-
 /** Some of the row's meals are done, so the meals to come need less weight than the week ([ShoppingItem.grams]). */
 private val ShoppingItem.partlyDone: Boolean
     get() = toComeGrams.let { toCome -> toCome != null && grams.let { it != null && it - toCome >= SCRAP_GRAMS } }
-
-/**
- * The weight still to buy of this row, ticked or not: what the meals to come need
- * ([ShoppingItem.toComeGrams]) less what is on hand ([ShoppingItem.onHandGrams]), at least 0; 0 when
- * no meal to come needs it. Null when either is not known. On a ticked row it doesn't count what
- * was bought, which only the tick knows: there it is only a ceiling ([moreNeeded]) and the saving's share.
- */
-internal fun ShoppingItem.leftToBuyGrams(): Double? {
-    val toCome = toComeGrams ?: return null
-    if (toCome == 0.0) return 0.0
-    val left = if (onHand) onHandGrams ?: return null else 0.0
-    return (toCome - left).coerceAtLeast(0.0)
-}
-
-/**
- * Nothing of this row is left to buy, ticked or not: no meal to come needs it ([mealsDone]), or the
- * stock covers what they need to within [SCRAP_GRAMS]. The scrap only forgives what the stock leaves
- * over: a need of under a gram with nothing at home (a pinch of oregano) is still to buy.
- */
-internal fun ShoppingItem.nothingToBuy(): Boolean {
-    if (mealsDone) return true
-    val toBuy = leftToBuyGrams() ?: return false
-    return onHand && toBuy < SCRAP_GRAMS
-}
 
 /**
  * Not ticked, and nothing of it is left to buy ([nothingToBuy]). Such a row is no item to buy: the
@@ -127,19 +94,6 @@ internal fun ShoppingItem.toBuyText(strings: Strings): String? {
 /** The row's name, asking "(on hand?)" when it is on hand in an amount nobody knows, as before amounts were kept. */
 internal fun ShoppingItem.nameText(strings: Strings): String =
     if (onHand && onHandGrams == null) strings(Msg.ON_HAND_MAYBE, name) else name
-
-/**
- * [packsToBuy] for what is left to buy ([leftToBuyGrams]), ticked or not: none when nothing is
- * ([nothingToBuy]); for that weight alone when it is less than the whole need, pieces then left out
- * as a weight says nothing about them; else for the whole need. What the savings check a deal
- * against ([savingOf]).
- */
-internal fun ShoppingItem.packsLeftToBuy(offer: Offer): PacksToBuy? {
-    if (nothingToBuy()) return null
-    val toBuy = leftToBuyGrams()
-    if (toBuy == null || grams.let { it == null || it - toBuy < SCRAP_GRAMS }) return packsToBuy(offer)
-    return PackSize.toBuy(offer, toBuy, null)
-}
 
 /**
  * The packs line of a row not ticked yet: [packsLeftToBuy]. A ticked row has none: what was bought

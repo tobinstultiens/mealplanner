@@ -38,6 +38,7 @@ import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.shopping.bestOffer
 import kotlinx.coroutines.launch
 
 /**

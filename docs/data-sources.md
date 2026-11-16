@@ -411,8 +411,19 @@ all of them need a tick). It stays on the list, and can be ticked as before. The
 for what a stock leaves over: a need under a gram with nothing at home (a pinch of oregano) is still
 to buy.
 
-The savings go by what is still to buy, ticked or not, so ticking a row doesn't change them; the deal
-check ("1+1 gratis" wanting two packs) goes by the packs for that amount. A ticked row has no packs
+A row's saving goes by what is still to buy of it; the deal check ("1+1 gratis" wanting two packs) goes
+by the packs for that amount. Once ticked, a row keeps the saving it had at the tick
+(`ShoppingItem.boughtSaving`, kept with the tick since version 16 of the database), so a store's header
+says what the shop saved and does not shrink as meals are eaten or the offer ends: the server works it
+out by the app's rules (`shopping/RowSaving.kt` in `shared`), at the account's stores, on the day it
+stores the tick (for a tick an offline phone sends later, the day it arrives, as a tick does not say
+when it was made). The row stays under the store whose offer it was bought with
+(`ShoppingItem.boughtOfferStore`) while that store is in use, also when the offer has ended or another
+store's is better now; a tick that saved nothing (the offer had ended, starts later, or is at a store
+not in use) keeps 0. Un-ticking gives the saving up; ticking it again, or ticking a row that needs more
+again, keeps what it saves at that moment. Ticks from before version 16, the advice and own items, and
+apps before it go by what is still to buy, as before. A header's one number is what its store's deals
+save on the week's list, bought and still to buy together. A ticked row has no packs
 line: what was bought is not known in packs, and the whole need would count what was at home.
 A ticked row says nothing of the stock: what it said when ticked already counted the stock there
 was, so on a row that needs more the one number still to buy is its "more" line, never that less

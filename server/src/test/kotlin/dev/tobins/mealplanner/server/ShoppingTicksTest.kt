@@ -363,7 +363,7 @@ class ShoppingTicksTest {
         val lettuce = http.list().item("Lettuce")
         val chicken = http.list().item("Chicken fillet")
         // Ticks as version 11 of the database left them: the key only.
-        for (key in listOf(lettuce.key, chicken.key)) db.shoppingQueries.insertCheck(userId(), week, key, null, null, null)
+        for (key in listOf(lettuce.key, chicken.key)) db.shoppingQueries.insertCheck(userId(), week, key, null, null, null, null, null)
 
         var list = http.list()
         for (name in listOf("Lettuce", "Chicken fillet")) {

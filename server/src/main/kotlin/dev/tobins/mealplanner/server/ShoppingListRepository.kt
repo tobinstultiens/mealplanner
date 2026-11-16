@@ -16,14 +16,16 @@ import dev.tobins.mealplanner.server.PlanRepository.Companion.DAYS
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.ShoppingExtra
 import dev.tobins.mealplanner.shopping.ShopSection
+import dev.tobins.mealplanner.shopping.savingOffer
+import dev.tobins.mealplanner.shopping.savingToday
 import java.time.LocalDate
 
 /**
  * One account's shopping list for a week: what the planned meals need, the account's own items, the
  * advice next to it, and the ticks. The meals come from [plans], which plans them and never asks for
  * the list; the ticks are the account's own rows of `shoppingCheck`, kept under [ShoppingKey]s with
- * what a row of the meals' needs said when it was ticked, except those of own items, which are kept
- * with the item in `shoppingExtra`.
+ * what a row of the meals' needs said and saved when it was ticked, except those of own items, which
+ * are kept with the item in `shoppingExtra`.
  */
 class ShoppingListRepository(
     private val db: Database,
@@ -47,6 +49,8 @@ class ShoppingListRepository(
     private val advice: () -> ShoppingAdvice = { ShoppingAdvice() },
     /** The picture of the product each of the account's ingredients is priced with, by id. */
     private val productImages: () -> Map<Long, String> = { emptyMap() },
+    /** Today as the household sees it: the day a tick's saving is worked out for. */
+    private val today: () -> LocalDate = ::serverToday,
 ) {
     private val q = db.shoppingQueries
 
@@ -61,8 +65,13 @@ class ShoppingListRepository(
      * [ShoppingList.stockUp], unless switched off or dismissed for the week, and what was bought
      * that the meals no longer need ([ShoppingList.noLongerNeeded]).
      */
-    fun get(weekStart: String): ShoppingList {
-        val start = parseWeekStart(weekStart)
+    fun get(weekStart: String): ShoppingList = list(parseWeekStart(weekStart), advised = true)
+
+    /**
+     * The list of [get]; without the advice when not [advised], which is the costly part and holds no
+     * row of what the meals need.
+     */
+    private fun list(start: LocalDate, advised: Boolean): ShoppingList {
         val meals = plans.meals(start)
         val sectionOf = sections()
         val lines = recipes.linesWithIngredients(meals.map { it.recipeId })
@@ -90,7 +99,7 @@ class ShoppingListRepository(
                 .withToCome(need, toCook[need.key])
         }
 
-        val wanted = advice()
+        val wanted = if (advised) advice() else ShoppingAdvice(buyAhead = false, stockUp = false)
         val buyAheadDismissed = ShoppingKey.Dismissed(ShoppingAdviceGroup.BUY_AHEAD) in checked
         val stockUpDismissed = ShoppingKey.Dismissed(ShoppingAdviceGroup.STOCK_UP) in checked
         // Advice goes by the offers of the stores the account shops at only: it is about saving money there.
@@ -132,11 +141,8 @@ class ShoppingListRepository(
      * What [meals] need, in walking order, with the staples and to-taste names apart. [lines] are their
      * recipes' lines, which the list reads once for the week's meals and for those still to cook.
      */
-    private fun needsOf(
-        meals: List<PlannedMeal>,
-        sectionOf: Map<Long, ShopSection>,
-        lines: Map<Long, RecipeLines> = recipes.linesWithIngredients(meals.map { it.recipeId }),
-    ): ShoppingNeeds = shoppingNeeds(planned(meals), lines, sectionOf)
+    private fun needsOf(meals: List<PlannedMeal>, sectionOf: Map<Long, ShopSection>, lines: Map<Long, RecipeLines>): ShoppingNeeds =
+        shoppingNeeds(planned(meals), lines, sectionOf)
 
     /**
      * This row with what the meals still to cook need of it ([toComeGrams]), their pieces and the
@@ -166,10 +172,14 @@ class ShoppingListRepository(
     }
 
     /**
-     * What a tick in `shoppingCheck` remembers of its row of the meals' needs when it was ticked. All
-     * null when it remembers nothing: a tick of another kind of key, or one from before ticks did.
+     * What a tick in `shoppingCheck` remembers of its row of the meals' needs when it was ticked: what
+     * the row said, and what its offer saved. All null when it remembers nothing: a tick of another
+     * kind of key, or one from before ticks did; [saving] is null too for a tick from before version 16.
      */
-    private class Tick(val name: String?, val grams: Double?, val pieces: Double?)
+    private class Tick(val name: String?, val grams: Double?, val pieces: Double?, val saving: Saving?)
+
+    /** The euros a row's offer saved as it was ticked, and the store of that offer when it saved anything. */
+    private class Saving(val euros: Double, val store: Store?)
 
     /**
      * The week's ticks by key, dismissed groups among them. A stored key that is no key
@@ -177,12 +187,17 @@ class ShoppingListRepository(
      */
     private fun ticks(start: LocalDate): Map<ShoppingKey, Tick> =
         q.selectChecks(userId, start.toString()).executeAsList().mapNotNull { row ->
-            ShoppingKey.parseOrNull(row.itemKey)?.let { it to Tick(row.name, row.grams, row.pieces) }
+            // A store this server does not know (written by a later one) is as good as none.
+            val saving = row.saving?.let { Saving(it, Store.entries.firstOrNull { store -> store.name == row.savingStore }) }
+            ShoppingKey.parseOrNull(row.itemKey)?.let { it to Tick(row.name, row.grams, row.pieces, saving) }
         }.toMap()
 
-    /** This row with what [tick] remembers was bought of it; as it is when not ticked. */
-    private fun ShoppingItem.withBought(tick: Tick?): ShoppingItem =
-        if (tick == null) this else copy(boughtGrams = tick.grams, boughtPieces = tick.pieces)
+    /** This row with what [tick] remembers was bought of it and saved; as it is when not ticked. */
+    private fun ShoppingItem.withBought(tick: Tick?): ShoppingItem = if (tick == null) {
+        this
+    } else {
+        copy(boughtGrams = tick.grams, boughtPieces = tick.pieces, boughtSaving = tick.saving?.euros, boughtOfferStore = tick.saving?.store)
+    }
 
     /** This row of ingredient [id] with the grams left of it in [stock] (by id), where that is known. */
     private fun ShoppingItem.withStock(id: Long?, stock: Map<Long, Double?>): ShoppingItem =
@@ -280,10 +295,12 @@ class ShoppingListRepository(
      * item from this week, in the amount the list advises buying ([boughtGrams]); un-ticking takes
      * that back (see [StockRepository.putOnHandFrom]). An own item ticked off is bought in this
      * week ([setBought]).
-     * A row of what the meals need remembers what it says as it is ticked ([neededRow]); ticking a
-     * ticked one again keeps what it said first. A key no list has is refused; one that names no row
-     * of this week's list (an app's list from before the plan changed) is ticked all the same, as it
-     * always was, and remembers nothing.
+     * A row of what the meals need remembers what it says as it is ticked ([neededRow]), and what its
+     * offer saves then ([savingNow]): at the moment the server stores the tick, also for one the app
+     * sent late, as a tick does not say when it was made. Ticking a ticked one again keeps what it said
+     * and saved first. A key no list has is refused; one that names no row of this week's list (an
+     * app's list from before the plan changed) is ticked all the same, as it always was, and remembers
+     * nothing.
      */
     fun setChecked(weekStart: String, check: ShoppingCheck): ShoppingList {
         val start = parseWeekStart(weekStart)
@@ -303,14 +320,32 @@ class ShoppingListRepository(
         return get(weekStart)
     }
 
-    /** Stores the tick of [key] with what [row] says, the weight the known part when not all could be weighed; a tick there already stays as it is. */
-    private fun insertTick(start: LocalDate, key: ShoppingKey, row: ShoppingItem?) =
-        q.insertCheck(userId, start.toString(), key.toString(), row?.name, row?.let { it.grams ?: it.knownGrams }, row?.pieces)
+    /**
+     * Stores the tick of [key] with what [row] says, the weight the known part when not all could be
+     * weighed, and what it saves now ([savingNow]); a tick there already stays as it is.
+     */
+    private fun insertTick(start: LocalDate, key: ShoppingKey, row: ShoppingItem?) {
+        val saving = row?.savingNow()
+        q.insertCheck(userId, start.toString(), key.toString(), row?.name, row?.let { it.grams ?: it.knownGrams }, row?.pieces, saving?.euros, saving?.store?.name)
+    }
+
+    /**
+     * What this row's offer saves as it is ticked now, as the app's store header counts it
+     * ([savingToday]) at the account's stores ([shops]): 0 when nothing is known to be saved, which the
+     * app keeps like any other saving. The store is that of the offer it was saved with, which the app
+     * lists the row under ([savingOffer]); none when it saved nothing.
+     */
+    private fun ShoppingItem.savingNow(): Saving {
+        val inUse = shops()
+        val day = today().toString()
+        val euros = savingToday(inUse, day) ?: 0.0
+        return Saving(euros, savingOffer(inUse, day)?.store?.takeIf { euros > 0 })
+    }
 
     /**
      * Ticks a ticked row of what the meals need (keys `i<id>` and `t:<text>`) again, so that it
-     * remembers what the row says now: the plan came to need more since it was bought, and the rest
-     * was bought. In one step, so that no failed request can leave the row un-ticked with what was
+     * remembers what the row says and saves now: the plan came to need more since it was bought, and
+     * the rest was bought. In one step, so that no failed request can leave the row un-ticked with what was
      * bought forgotten, as un-ticking and ticking it could. Advice and own items are refused (400):
      * their ticks remember no row. One the account has no tick of in that week is a 404, which
      * keeps another account's ticks out of reach; one no meal needs any more a 409, as ticking it
@@ -359,15 +394,13 @@ class ShoppingListRepository(
     }
 
     /**
-     * The row of what the week's meals need under [key], as the list shows it now; null for a key of
-     * another kind, or one the meals don't need. Only the needs are worked out, not the whole list:
-     * the advice is the costly part, and an own item's tick is kept elsewhere.
+     * The row of what the week's meals need under [key], as the list shows it now, with the offers and
+     * stock its saving goes by; null for a key of another kind, or one the meals don't need. The list
+     * without its advice ([list]): that is the costly part, and an own item's tick is kept elsewhere.
      */
     private fun neededRow(start: LocalDate, key: ShoppingKey): ShoppingItem? {
         if (key !is ShoppingKey.Ingredient && key !is ShoppingKey.Text) return null
-        // Sections only order the rows; what a row says doesn't depend on them.
-        val need = needsOf(plans.meals(start), emptyMap()).needs.firstOrNull { it.key == key } ?: return null
-        return need.toItem(key, checked = true, onHand = false, offers = emptyList(), productImage = null, perKg = null)
+        return list(start, advised = false).items.firstOrNull { it.key == key.toString() }
     }
 
     /**
@@ -452,7 +485,7 @@ class ShoppingListRepository(
     fun setDismissed(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): ShoppingList {
         val start = parseWeekStart(weekStart)
         val key = ShoppingKey.Dismissed(group).toString()
-        if (dismissed) q.insertCheck(userId, start.toString(), key, null, null, null) else q.deleteCheck(userId, start.toString(), key)
+        if (dismissed) q.insertCheck(userId, start.toString(), key, null, null, null, null, null) else q.deleteCheck(userId, start.toString(), key)
         return get(weekStart)
     }
 }

@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.generation.RecipeGenerator
 import java.io.File
+import java.time.LocalDate
 
 /**
  * The repositories of one account. Built per request; they hold no state of their own,
@@ -18,6 +19,8 @@ class UserScope(
     generator: RecipeGenerator?,
     /** Where recipe pictures are kept, for every account (see [RecipePictures]). */
     imageDir: File,
+    /** Today as the household sees it; a test may set the day. */
+    today: () -> LocalDate = ::serverToday,
 ) {
     val ingredients = IngredientRepository(db, foods, accountId)
     val stock = StockRepository(db, foods, accountId)
@@ -45,6 +48,7 @@ class UserScope(
             keeps = sections::keepsByIngredient,
             advice = shoppingAdvice::setting,
             productImages = { prices.productImages(ingredients) },
+            today = today,
         )
     }
     val tracking by lazy { TrackingRepository(db, accountId, plans, profiles) }
