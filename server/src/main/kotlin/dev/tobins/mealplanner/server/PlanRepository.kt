@@ -44,18 +44,36 @@ class PlanRepository(
      * Replaces every meal of the week with a newly planned one, except those it keeps: locked ones, those
      * already eaten or skipped (history), and any other meal the stock went down for ([whyKeepsItsRecipe]:
      * the leftover lunch of an eaten dinner). The planner plans around the kept meals as it does around
-     * locked ones, so a kept leftover lunch is not planned twice.
+     * locked ones, so a kept leftover lunch is not planned twice, and no new one of an eaten dinner ([plan]).
      */
     fun generate(weekStart: String, seed: Long = Random.nextLong()): WeekPlan {
         val start = parseWeekStart(weekStart)
         db.writing {
             val week = meals(start)
             val kept = week.filter { it.locked || it.status != MealStatus.PLANNED || whyKeepsItsRecipe(start, it, week) != null }
-            val planned = WeekPlanner.plan(request(start, locked = kept, seed = seed))
+            val planned = plan(request(start, locked = kept, seed = seed))
             for (old in week.filterNot { it in kept }) q.deleteMeal(userId, start.toString(), old.day.toLong(), old.slot.name)
             planned.filter { new -> kept.none { it.day == new.day && it.slot == new.slot } }.forEach { save(start, it.copy(locked = false)) }
         }
         return view(start)
+    }
+
+    /**
+     * [WeekPlanner.plan], but with no new leftover lunch of an eaten dinner (issue 169). The planner fills
+     * the lunch after a locked dinner with its leftovers, and an eaten dinner is kept as locked. When it
+     * still has its leftover lunch, that lunch is kept too and the slot is not free; when the lunch was
+     * swapped for another recipe before the dinner was eaten, the dinner was cooked for itself only and
+     * took only its own share of the stock. A leftover lunch of it then would be cooked by nobody: it
+     * cooks nothing itself ([cookPortions] 0) and the shopping list would not buy for it ([toCook]). Such a
+     * lunch is planned again like any other meal, around everything else, without the dinner's recipe.
+     */
+    private fun plan(request: PlanRequest): List<PlannedMeal> {
+        val planned = WeekPlanner.plan(request)
+        val uncooked = planned.filter { meal ->
+            request.locked.none { it.day == meal.day && it.slot == meal.slot } && dinnerOf(meal, planned)?.status == MealStatus.EATEN
+        }
+        if (uncooked.isEmpty()) return planned
+        return WeekPlanner.plan(request.copy(locked = planned - uncooked.toSet(), excluded = request.excluded + uncooked.map { it.recipeId }))
     }
 
     /**
@@ -73,9 +91,7 @@ class PlanRepository(
                 ?: throw NotFoundException("No meal planned for day $day $slot")
             requireNotCooked(start, target, current)
             val replaced = listOfNotNull(target, leftoversToReplace(start, current, day, slot))
-            val planned = WeekPlanner.plan(
-                request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = setOf(target.recipeId)),
-            )
+            val planned = plan(request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = setOf(target.recipeId)))
             val replacement = planned.firstOrNull { it.day == day && it.slot == slot }
             if (replacement == null || replacement.recipeId == target.recipeId) throw ConflictException("No other recipe fits this meal")
             for (old in replaced) {

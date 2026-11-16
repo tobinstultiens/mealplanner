@@ -424,6 +424,41 @@ class PlanTest {
         assertEquals(20_000.0, stock(), 1e-6)
     }
 
+    /**
+     * Issue 169: a dinner whose leftover lunch was swapped for another recipe is cooked for itself only, and
+     * eating it takes only its own share. Planning around it must not put a leftover lunch of it back: nothing
+     * was cooked or taken for that lunch, so the shopping list would not buy for it either.
+     */
+    @Test
+    fun aDinnerEatenWithoutLeftoversGetsNoLeftoverLunchWhenTheWeekIsReplanned() = testApplication {
+        val http = start().ready()
+        http.post("/api/plans/$week/generate")
+        val stock = http.stockUpBeef()
+        assertFalse(http.post("/api/plans/$week/meals/5/lunch/reroll").body<WeekPlan>().meal(5, MealSlot.LUNCH)!!.leftover)
+        val eaten = http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.EATEN) }.body<WeekPlan>()
+        val dinner = eaten.meal(4, MealSlot.DINNER)!!
+        assertEquals(20_000.0 - share(dinner), stock(), 1e-6, "the dinner was cooked for itself only")
+
+        for ((change, run) in listOf<Pair<String, suspend () -> HttpResponse>>(
+            "a replan" to { http.post("/api/plans/$week/generate") },
+            "another recipe for the lunch" to { http.post("/api/plans/$week/meals/5/lunch/reroll") },
+        )) {
+            val plan = run().body<WeekPlan>()
+            val lunch = plan.meal(5, MealSlot.LUNCH)!!
+            assertFalse(lunch.leftover && lunch.recipeId == dinner.recipeId, "$change planned leftovers of a dinner eaten without them: $lunch")
+            // Planned like any other meal: cooked for itself, and bought for.
+            assertEquals(lunch.portions, lunch.cookPortions, change)
+            val toCook = PlanRepository.toCook(plan.days.flatMap { it.meals })
+            assertTrue(lunch in toCook, change)
+            val beef = http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef raw" }
+            assertEquals(toCook.sumOf(::share), beef.toComeGrams!!, 1e-6, change)
+            assertEquals(20_000.0 - share(dinner), stock(), 1e-6, change)
+        }
+
+        http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.PLANNED) }
+        assertEquals(20_000.0, stock(), 1e-6)
+    }
+
     @Test
     fun aMealTheStockWentDownForIsNotRemovedAndTheStockStaysWhole() = testApplication {
         val http = start().ready()
@@ -1058,6 +1093,11 @@ class PlanTest {
         }
         check("a skipped dinner rerolled") { at, _ -> mark(at, 1, "dinner", MealStatus.SKIPPED); http.post("/api/plans/$at/meals/1/dinner/reroll").ok() }
         check("dinner eaten, then the week replanned (its leftover lunch is kept)") { at, _ ->
+            mark(at, 1, "dinner", MealStatus.EATEN)
+            http.post("/api/plans/$at/generate").ok()
+        }
+        check("lunch swapped, dinner eaten, then the week replanned (no leftovers of it come back)") { at, _ ->
+            http.post("/api/plans/$at/meals/2/lunch/reroll").ok()
             mark(at, 1, "dinner", MealStatus.EATEN)
             http.post("/api/plans/$at/generate").ok()
         }

@@ -467,6 +467,11 @@ it is not eaten, as for any meal. A replan counts a kept leftover lunch in its d
 protein, as it is still to eat, but not in what the shopping list still has to buy for (its share was
 taken when its dinner was eaten); the planner puts no other lunch in its slot.
 
+A dinner whose leftover lunch was swapped for another recipe before it was eaten was cooked for itself
+only, and eating it took only its own share. Neither a replan nor "Another recipe" for that lunch plans
+leftovers of it there afterwards (issue 169): nothing was cooked or taken for them, and the shopping list
+would not buy for them either. The lunch is planned like any other meal, cooked for itself and bought for.
+
 Each change of the plan reads it and writes it in one transaction that takes the database's write lock
 first, so a meal eaten meanwhile on another device is not replaced after all, and a write of the offer
 refresh or the price lookup in between makes the request wait for it instead of failing with
