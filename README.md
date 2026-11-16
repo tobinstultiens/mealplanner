@@ -181,6 +181,7 @@ runs that for the given issues; the session you type it in directs the work and 
 | `reviewer` | Sonnet, high (Opus for `coder-deep`'s work) | Checks a pull request against its issue; merges when all is met and CI is green |
 | `merger` | Sonnet, medium | Works out the order for pull requests that wait for you, and on your approval merges them, rebases the rest in between and, when you ask for it, starts the app release afterwards |
 | `emulator-tester` | Sonnet, medium | Looks at a UI change on the Android emulator |
+| `qa` | Sonnet, high | Tests the whole app on the emulator and files what it finds as issues labelled `qa`, with a report |
 | `ci-triage` | Haiku, low | Finds the first real error of a failed build |
 | `price-auditor` | Sonnet, medium | Flags wrongly matched AH prices |
 
