@@ -173,32 +173,31 @@ object Discounts {
 
     /**
      * The share of the regular price paid with [offer]: 0.75 for "25% korting", 0.5 for
-     * "1+1 gratis". Deals stated as a price ("2 voor 3,99") are compared with
-     * [regularPackPrice], the regular price of a pack of the offer's size. Null when the
-     * deal cannot be worked out or saves nothing.
+     * "1+1 gratis". The deal text is read by [kind], the same reading the price history uses, so a
+     * text that is not one known form as a whole gives no share of its own. Deals stated as a price
+     * ("2 voor 3,99") are compared with [regularPackPrice], the regular price of a pack of the offer's
+     * size. Null when the deal cannot be worked out or saves nothing.
+     *
+     * Three rules are the shop list's own: an online-only deal gives no saving in the shop; the store's
+     * price against its price before wins when it gives both; the result must lie between 0.2 and 0.97.
      */
     fun factor(offer: Offer, regularPackPrice: Double?): Double? {
-        val deal = offer.deal?.lowercase()?.replace(',', '.')?.trim()
-        // Online-only deals don't apply in the shop.
-        if (deal != null && "alleen online" in deal) return null
-        val factor = when {
-            offer.price != null && offer.originalPrice != null && offer.originalPrice > 0 -> offer.price / offer.originalPrice
-            deal == null -> offer.price?.let { price -> regularPackPrice?.let { price / it } }
-            else -> percent.find(deal)?.let { 1 - it.groupValues[1].toDouble() / 100 }
-                ?: free.find(deal)?.let { m ->
-                    val paid = m.groupValues[1].toDouble()
-                    paid / (paid + m.groupValues[2].toDouble())
-                }
-                ?: (if ("halve prijs" in deal) 0.75 else null)
-                ?: regularPackPrice?.let { regular ->
-                    multiPrice.find(deal)?.let { m -> m.groupValues[2].toDouble() / m.groupValues[1].toDouble() / regular }
-                        ?: fixedPrice.find(deal)?.let { it.groupValues[1].toDouble() / regular }
-                        ?: amountOff.find(deal)?.let { (regular - it.groupValues[1].toDouble()) / regular }
-                }
-                ?: offer.price?.let { price -> regularPackPrice?.let { price / it } }
-        } ?: return null
+        if (offer.deal?.contains("alleen online", ignoreCase = true) == true) return null
+        val own = if (offer.price != null && offer.originalPrice != null && offer.originalPrice > 0) offer.price / offer.originalPrice else null
+        val factor = own ?: dealFactor(kind(offer.deal, offer.price), regularPackPrice)
+            ?: offer.price?.let { price -> regularPackPrice?.let { price / it } }
         // Above 1 the offer is for a dearer product than the baseline; below 0.2 something was misread.
-        return factor.takeIf { it in 0.2..0.97 }
+        return factor?.takeIf { it in 0.2..0.97 }
+    }
+
+    /** The share [kind] pays by itself, or by its price against [regular]; null for a price per weight or no known form. */
+    private fun dealFactor(kind: DealKind, regular: Double?): Double? = kind.share ?: regular?.let {
+        when (kind) {
+            is DealKind.MultiPrice -> kind.euros / kind.packs / it
+            is DealKind.LowerPrice -> kind.euros / it
+            is DealKind.AmountOff -> (it - kind.euros) / it
+            else -> null
+        }
     }
 }
 
