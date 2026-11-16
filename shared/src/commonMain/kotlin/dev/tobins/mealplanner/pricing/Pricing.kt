@@ -143,6 +143,11 @@ object Discounts {
      */
     fun kind(deal: String?, price: Double? = null): DealKind {
         if (deal.isNullOrBlank()) return price?.let(DealKind::LowerPrice) ?: DealKind.Unknown(deal)
+        return known(deal) ?: DealKind.Unknown(deal)
+    }
+
+    /** The kind [deal] is as a whole, or null when it is none of the known forms. */
+    private fun known(deal: String): DealKind? {
         val t = deal.lowercase().replace(',', '.').substringBefore('·').trim().replace(Regex("""\s+"""), " ")
         fun Regex.whole() = matchEntire(t)?.groupValues
         fun List<String>.number(i: Int) = get(i).toDouble()
@@ -154,20 +159,23 @@ object Discounts {
         multiPrice.whole()?.let { return DealKind.MultiPrice(it[1].toInt(), it.number(2)) }
         fixedPrice.whole()?.let { return DealKind.LowerPrice(it.number(1)) }
         barePrice.whole()?.let { return DealKind.LowerPrice(it.number(0)) }
-        (amountOff.whole() ?: amountOffInEuros.whole())?.let { return DealKind.AmountOff(it.number(1)) }
-        return DealKind.Unknown(deal)
+        return (amountOff.whole() ?: amountOffInEuros.whole())?.let { DealKind.AmountOff(it.number(1)) }
     }
 
     /**
-     * How many packs the deal wants bought together: 2 for "2 voor 3,99", "1+1 gratis" and "2e halve
-     * prijs", "2 stapelen tot 35%" (AH: stack two packs) and "2 stapelen voor 3,99", 4 for "3+1 gratis"; 1 for a percentage, a price or a deal that says nothing of the kind.
+     * How many packs the deal wants bought together, from the kind [kind] reads it as: 2 for "2 voor
+     * 3,99", "1+1 gratis" and "2e halve prijs", 4 for "3+1 gratis"; 1 for a percentage, a price or a deal
+     * that says nothing of the kind. The one exception is a deal of unknown kind that says "N stapelen"
+     * (AH: stack N packs, "2 stapelen tot 35%"): it says how many packs, though not what they save.
      */
     fun packsNeeded(deal: String?): Int {
-        val text = deal?.lowercase()?.replace(',', '.')?.trim() ?: return 1
-        val count = free.find(text)?.let { it.groupValues[1].toInt() + it.groupValues[2].toInt() }
-            ?: multiPrice.find(text)?.groupValues?.get(1)?.toInt()
-            ?: halfPriceNth.find(text)?.groupValues?.get(1)?.toInt()
-            ?: stacked.find(text)?.groupValues?.get(1)?.toInt()
+        val count = when (val kind = kind(deal)) {
+            is DealKind.FreeItems -> kind.paid + kind.free
+            is DealKind.MultiPrice -> kind.packs
+            is DealKind.NthHalfPrice -> kind.nth
+            is DealKind.Unknown -> stacked.find(deal?.lowercase().orEmpty())?.groupValues?.get(1)?.toInt()
+            else -> null
+        }
         return (count ?: 1).coerceAtLeast(1)
     }
 
