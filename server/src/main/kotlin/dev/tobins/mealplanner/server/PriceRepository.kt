@@ -152,7 +152,8 @@ class PriceRepository(
      * Looks up every ingredient name of every account, or nothing when the last lookup is
      * younger than [olderThan].
      * One lookup at a time; a second call while one runs returns at once. An ingredient
-     * whose search fails keeps its previous price. Each price found is also kept in the price
+     * whose search fails keeps its previous price; so do all of them when the lookup found a price
+     * again for under half of the names priced before (the next round tries again). Each price found is also kept in the price
      * history ([PriceHistoryRepository.recordRegularPrice]), in the transaction that stores it.
      */
     suspend fun refresh(olderThan: Duration? = null, now: Instant = Instant.now(), pause: Duration = Duration.ofMillis(300)) {
@@ -167,6 +168,7 @@ class PriceRepository(
             val lastFound = q.selectPrices().executeAsList().associate { it.name.lowercase() to it.fetchedAt }
             var found = 0
             var failures = 0
+            val notFound = mutableListOf<String>()
             for ((ingredient, names) in catalogue) {
                 val price = try {
                     lookUp(source, ingredient, names, matcher, pause)
@@ -182,7 +184,7 @@ class PriceRepository(
                     continue
                 }
                 if (price == null) {
-                    q.deletePrice(ingredient.name)
+                    notFound += ingredient.name
                 } else {
                     val (product, perKg) = price
                     db.transaction {
@@ -199,6 +201,14 @@ class PriceRepository(
                     found++
                 }
             }
+            val hadPrice = catalogue.count { (ingredient, _) -> ingredient.name.lowercase() in lastFound }
+            val stillFound = hadPrice - notFound.count { it.lowercase() in lastFound }
+            if (hadPrice >= MIN_PRICES_TO_JUDGE && notFound.isNotEmpty() && stillFound * MIN_STILL_FOUND_DENOMINATOR < hadPrice) {
+                // Most of the prices vanishing at once is the store's answer having changed, not the groceries.
+                log.warn("Found no ${source.store.label} price for ${notFound.size} names and kept every stored price: only $stillFound of the $hadPrice names priced before still found one. The next round tries again")
+                return
+            }
+            notFound.forEach(q::deletePrice)
             history.pruneRegularPrices(now)
             db.foodQueries.upsertMeta(FETCHED_KEY, now.toString())
             log.info("Found ${source.store.label} prices for $found ingredients")
@@ -256,6 +266,16 @@ class PriceRepository(
         const val FETCHED_KEY = "pricesFetchedAt"
         const val BY_HAND = "Set by hand"
         const val MAX_SEARCHES = 4
+
+        /**
+         * Prices of names that found nothing are deleted only when at least 1 in this many of the names priced
+         * before found one again (half). A few products leaving the shelves is normal; AH answering in a
+         * changed shape finds nothing for every name and must not wipe the prices, aisles and pictures.
+         */
+        const val MIN_STILL_FOUND_DENOMINATOR = 2
+
+        /** With fewer stored prices than this a lookup cannot tell a changed answer from a few products gone, so the rule is not applied. */
+        const val MIN_PRICES_TO_JUDGE = 5
         val FREE = setOf("Water", "Salt")
         val unitPrice = Regex("""per\s*(kg|kilo|liter|l)\s*€\s*(\d+(?:[.,]\d+)?)""")
     }

@@ -184,6 +184,42 @@ class PricesTest {
         assertNull(state.fetchedAt, "an aborted lookup is not recorded as done")
     }
 
+    private fun tenNames(db: dev.tobins.mealplanner.server.db.Database): Pair<IngredientRepository, Map<String, List<StoreProduct>>> {
+        val ingredients = IngredientRepository(db, FoodRepository(db), UserRepository(db).resolve(Identity("a")).id)
+        val names = listOf("Kipfilet", "Uien", "Wortel", "Prei", "Courgette", "Paprika", "Tomaat", "Komkommer", "Spinazie", "Champignons")
+        names.forEach { ingredients.create(IngredientInput(it)) }
+        return ingredients to names.associate { it.lowercase() to listOf(StoreProduct("AH $it", "1 kg", 2.0, null, null, imageUrl = "https://static.ah.nl/dam/product/$it.png")) }
+    }
+
+    @Test
+    fun aSearchThatFindsNothingForAnyNameKeepsEveryPriceAndDoesNotMoveFetchedAt() = runBlocking {
+        val db = openDatabase("jdbc:sqlite::memory:").second
+        val foods = FoodRepository(db)
+        val (ingredients, products) = tenNames(db)
+        PriceRepository(db, FakeStore(products), foods, OfferRepository(db, emptyList())).refresh(now = Instant.parse("2026-11-13T10:00:00Z"), pause = Duration.ZERO)
+        val before = db.priceQueries.selectPrices().executeAsList()
+        assertEquals(10, before.size)
+
+        val prices = PriceRepository(db, FakeStore(emptyMap()), foods, OfferRepository(db, emptyList()))
+        prices.refresh(now = Instant.parse("2026-11-14T10:00:00Z"), pause = Duration.ZERO)
+
+        assertEquals(before, db.priceQueries.selectPrices().executeAsList(), "prices, aisles and pictures as they were")
+        assertEquals("2026-11-13T10:00:00Z", prices.state(ingredients).fetchedAt, "the next round tries again")
+    }
+
+    @Test
+    fun aNameThatFindsNothingWhileMostDoLosesItsPrice() = runBlocking {
+        val db = openDatabase("jdbc:sqlite::memory:").second
+        val foods = FoodRepository(db)
+        val (_, products) = tenNames(db)
+        PriceRepository(db, FakeStore(products), foods, OfferRepository(db, emptyList())).refresh(now = Instant.parse("2026-11-13T10:00:00Z"), pause = Duration.ZERO)
+
+        PriceRepository(db, FakeStore(products - "uien"), foods, OfferRepository(db, emptyList())).refresh(now = Instant.parse("2026-11-14T10:00:00Z"), pause = Duration.ZERO)
+
+        assertEquals(9, db.priceQueries.selectPrices().executeAsList().size)
+        assertTrue(db.priceQueries.selectPrices().executeAsList().none { it.name == "Uien" })
+    }
+
     private fun assertEquals(expected: Double, actual: Double?, message: String? = null) =
         assertTrue(actual != null && abs(expected - actual) < 1e-9, "${message ?: ""} expected $expected, got $actual")
 }
