@@ -23,7 +23,7 @@ object PackSize {
     fun grams(text: String?, gramsPerPiece: Double? = null, gramsPerMl: Double? = null): Double? {
         val t = text?.lowercase() ?: return null
         multi.find(t)?.let { m ->
-            return finite(m.groupValues[1].toDoubleOrNull(), number(m.groupValues[2])) { count, amount -> count * toGrams(amount, m.groupValues[3], gramsPerMl) }
+            return finite(count(m.groupValues[1]), number(m.groupValues[2])) { count, amount -> count * toGrams(amount, m.groupValues[3], gramsPerMl) }
         }
         single.find(t)?.let { m -> return number(m.groupValues[1])?.let { finite(toGrams(it, m.groupValues[2], gramsPerMl)) } }
         val found = pieces.find(t)
@@ -47,7 +47,7 @@ object PackSize {
     fun millilitres(text: String?): Double? {
         val t = text?.lowercase() ?: return null
         multi.findAll(t).firstOrNull { it.groupValues[3] in volumeUnits }?.let { m ->
-            return finite(m.groupValues[1].toDoubleOrNull(), number(m.groupValues[2])) { count, amount -> count * toMillilitres(amount, m.groupValues[3]) }
+            return finite(count(m.groupValues[1]), number(m.groupValues[2])) { count, amount -> count * toMillilitres(amount, m.groupValues[3]) }
         }
         return single.findAll(t).firstOrNull { it.groupValues[2] in volumeUnits }?.let { m -> number(m.groupValues[1])?.let { finite(toMillilitres(it, m.groupValues[2])) } }
     }
@@ -72,9 +72,9 @@ object PackSize {
         for (text in listOfNotNull(offer.packSize, offer.title)) {
             if (volume.containsMatchIn(text.lowercase())) continue
             val packGrams = grams(text)?.takeIf { it > 0 }
-            if (packGrams != null) return gramsNeeded?.takeIf { it > 0 }?.let { PacksToBuy(packsFor(it / packGrams), packGrams, null, deal) }
+            if (packGrams != null) return gramsNeeded?.takeIf { it > 0 }?.let { packsFor(it / packGrams)?.let { packs -> PacksToBuy(packs, packGrams, null, deal) } }
             val packPieces = pieces(text)?.takeIf { it > 0 }
-            if (packPieces != null) return piecesNeeded?.takeIf { it > 0 }?.let { PacksToBuy(packsFor(it / packPieces), null, packPieces, deal) }
+            if (packPieces != null) return piecesNeeded?.takeIf { it > 0 }?.let { packsFor(it / packPieces)?.let { packs -> PacksToBuy(packs, null, packPieces, deal) } }
         }
         return null
     }
@@ -96,10 +96,21 @@ object PackSize {
     }
 
     /** Whole packs; a hair over a whole number (rounding in the sums) does not call for one more. */
-    private fun packsFor(ratio: Double) = ceil(ratio - 1e-9).toInt().coerceAtLeast(1)
+    private fun packsFor(ratio: Double): Int? = ceil(ratio - 1e-9).takeIf { it.isFinite() && it <= MAX_PACKS }?.toInt()?.coerceAtLeast(1)
+
+    /** More packs than this to cover one item means the size was misread, not that they are needed. */
+    private const val MAX_PACKS = 100_000.0
 
     /** A number as written, or null when it is too long to be one: a store's text must never make the reader throw. */
-    private fun number(text: String): Double? = finite(text.replace(',', '.').toDouble())
+    private fun number(text: String): Double? = sane(text.replace(',', '.').toDouble())
+
+    /** A size or count a pack can have: 0, or between a milligram and a million tonnes; a denormal or a huge number is a misprint. */
+    private fun sane(value: Double): Double? = value.takeIf { it == 0.0 || it in MIN_SIZE..MAX_SIZE }
+
+    private const val MIN_SIZE = 0.001
+    private const val MAX_SIZE = 1e9
+
+    private fun count(text: String): Double? = text.toDouble().let(::sane)
 
     private fun finite(value: Double?): Double? = value?.takeIf { it.isFinite() }
 
@@ -127,11 +138,11 @@ data class PacksToBuy(val packs: Int, val packGrams: Double?, val packPieces: In
 /** How much of the regular price an offer leaves to pay. */
 object Discounts {
     private val percent = Regex("""(\d+(?:\.\d+)?)\s*%\s*korting""")
-    private val free = Regex("""(\d+)\s*\+\s*(\d+)\s*gratis""")
-    // AH writes "2 stapelen voor 3.99" for "2 voor 3.99": stack that many packs for the price.
     /** More packs than this in a deal text is no deal: the digits are a misprint or a code. */
     private const val MAX_COUNT = 1000
 
+    private val free = Regex("""(\d+)\s*\+\s*(\d+)\s*gratis""")
+    // AH writes "2 stapelen voor 3.99" for "2 voor 3.99": stack that many packs for the price.
     private val multiPrice = Regex("""(\d+)\s*(?:stapelen\s*)?voor\s*(\d+(?:\.\d+)?)""")
     private val stacked = Regex("""(\d+)\s*stapelen""")
     private val fixedPrice = Regex("""^voor\s*(\d+(?:\.\d+)?)""")

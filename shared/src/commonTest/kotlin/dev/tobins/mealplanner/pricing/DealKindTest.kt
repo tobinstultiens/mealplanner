@@ -229,4 +229,26 @@ class DealKindTest {
             PackSize.toBuy(offer("2 voor 3,99", packSize = text, title = text), 500.0, 3.0)
         }
     }
+
+    /** A size that is finite but absurd (a denormal) gave an infinite price per kg and 2147483647 packs. */
+    @Test
+    fun aPackSizeNoPackCanHaveGivesNoSizeAndNoInfinitePrice() {
+        val tiny = "0." + "0".repeat(310) + "1"
+        for (text in listOf("$tiny g", "$tiny kg", "$tiny l", "$tiny ml", "2 x $tiny g", "2 x $tiny l", "0,0001 g", "2000000000 kg")) {
+            assertNull(PackSize.grams(text), text)
+            assertNull(PackSize.millilitres(text), text)
+            assertNull(PackSize.toBuy(offer("2 voor 3,99", packSize = text, title = "Product"), 500.0, 3.0), text)
+            val terms = DealTerms.of(offer("2 voor 3,99", packSize = text, originalPrice = 2.0))
+            for (value in listOf(terms.eurosPerKg, terms.eurosPerPiece, terms.eurosPerLitre)) assertNull(value, text)
+        }
+        // A real small pack is still read.
+        assertEquals(0.5, PackSize.grams("0,5 g"))
+        assertEquals(1, PackSize.toBuy(offer(null, packSize = "500 g"), 500.0, null)?.packs)
+    }
+
+    @Test
+    fun aLargeButPossibleCountIsStillRead() {
+        assertEquals(DealKind.MultiPrice(1000, 3.99), Discounts.kind("1000 voor 3,99"))
+        assertEquals(1000, Discounts.packsNeeded("25% korting bij 1000 stuks"))
+    }
 }
