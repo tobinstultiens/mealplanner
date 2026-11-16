@@ -4,6 +4,8 @@ import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.OfferSourceStatus
 import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.pricing.DealKind
+import dev.tobins.mealplanner.pricing.Discounts
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.LidlGuard
 import dev.tobins.mealplanner.server.offers.OfferMatcher
@@ -119,6 +121,7 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                     q.recordSuccess(now.toString(), source.store.name)
                 }
                 log.info("Fetched ${offers.size} offers from ${source.store.label}")
+                unreadDeals(source.store, offers)?.let { log.warn(it) }
                 // Looked up inside, so that a failure to read the catalogues is the history's too.
                 recordHistory(source.store, offers, { ingredientOf(it) }, now)
             } catch (e: CancellationException) {
@@ -174,6 +177,20 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
     }
 
     companion object {
+        /**
+         * What to log when some of [offers] have a deal text that [Discounts.kind] does not read (they give no
+         * saving anywhere), so that a new wording of a store is noticed; null when all are read.
+         */
+        internal fun unreadDeals(store: Store, offers: List<Offer>): String? {
+            val unread = offers.filter { Discounts.kind(it.deal, it.price) is DealKind.Unknown }
+            if (unread.isEmpty()) return null
+            val texts = unread.map { it.deal?.let { deal -> "\"$deal\"" } ?: "(no deal, no price)" }.groupingBy { it }.eachCount()
+            val listed = texts.entries.sortedByDescending { it.value }.take(MAX_LOGGED_TEXTS).joinToString { "${it.key} x${it.value}" }
+            return "${unread.size} of ${offers.size} offers from ${store.label} have a deal text that is not read: $listed"
+        }
+
+        private const val MAX_LOGGED_TEXTS = 5
+
         /** How long a store's offers may go without a successful fetch before the health check says so (the job runs every six hours). */
         val STALE_AFTER: Duration = Duration.ofHours(48)
 

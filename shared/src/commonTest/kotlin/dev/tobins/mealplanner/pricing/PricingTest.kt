@@ -72,6 +72,10 @@ class PricingTest {
         assertEquals(1, Discounts.packsNeeded("25% korting"))
         assertEquals(1, Discounts.packsNeeded("voor 3,49"))
         assertEquals(1, Discounts.packsNeeded(null))
+        // The packs come from the same reading as the kind: a text that is no known form as a whole wants one.
+        assertEquals(1, Discounts.packsNeeded("2 voor 3,00 per stuk"))
+        assertEquals(1, Discounts.packsNeeded("Gratis beanie bij 2 stuks"))
+        assertEquals(2, Discounts.packsNeeded("2 voor 3,00 · Alleen online"))
     }
 
     @Test
