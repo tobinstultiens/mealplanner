@@ -31,7 +31,7 @@ const val REFERENCE_DAYS = 30L
  * where the offer gives one, else the last one seen.
  */
 fun regularRaise(offer: CurrentOffer, regular: List<RegularPrice>): RegularRaise? {
-    if (isGroupOffer(offer.offer.title, offer.offer.packSize)) return null
+    if (isGroupOffer(offer.offer.title)) return null
     val start = offer.validFrom.atStartOfDay(SERVER_ZONE).toInstant()
     val windowStart = offer.validFrom.minusDays(REFERENCE_DAYS).atStartOfDay(SERVER_ZONE).toInstant()
     val before = regular.filter { it.firstSeen < start && it.lastSeen >= windowStart }.minByOrNull { it.packPrice } ?: return null
@@ -62,13 +62,13 @@ fun isSameProduct(product: String, packSize: String?, offerTitle: String, offerP
 }
 
 /**
- * Whether an offer is for a group of products under one title: "Alle AH Gerookte zalm", "Alle Santa Maria, La
- * Morena en Knorr wraps", or a title and pack size that name no size at all. AH gives such an offer the price
- * before of whichever product of the group it shows, so two of them a few weeks apart can differ without any
- * price having been raised: their prices before tell nothing about a raise.
+ * Whether an offer is for a group of products under one title, as AH and Jumbo write it: "Alle AH Gerookte zalm",
+ * "Alle Santa Maria, La Morena en Knorr wraps". AH gives such an offer the price before of whichever product of
+ * the group it shows, so two of them a few weeks apart can differ without any price having been raised: their
+ * prices before tell nothing about a raise. A title without a size is no group: AH writes most single products
+ * so ("AH Ananas zonder kroon"), and their price before is the only sign of a raise they have.
  */
-fun isGroupOffer(title: String, packSize: String?): Boolean =
-    normalised(title).startsWith("alle ") || (sizeOf(packSize) ?: sizeOf(title)) == null
+fun isGroupOffer(title: String): Boolean = normalised(title).startsWith("alle ")
 
 /** Words that only state a size: numbers, units, "x" between them, "ca." for about. */
 private val sizeWord = Regex("""\d+(\.\d+)?|x|ca\.?|g|gr|gram|kg|kilo|kilogram|ml|cl|l|lt|liter|st|stuk|stuks""")

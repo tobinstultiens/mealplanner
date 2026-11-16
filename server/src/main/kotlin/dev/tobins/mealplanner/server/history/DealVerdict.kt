@@ -102,16 +102,15 @@ const val NO_SAVING_SHARE = 0.97
  * 5. Against those earlier offers, [TOLERANCE] apart being the same: [Verdict.REAL_DEAL],
  *    [Verdict.WORSE_THAN_USUAL] or else [Verdict.USUAL_DEAL].
  *
- * Earlier offers are the [joinGaps] offers that ended before the store's last recording, other than today's
- * offer itself ([CurrentOffer.isItself]: rows of it that a gap split stay today's). Another offer of the
- * product running at the same time (Jumbo lists next week's) is not an earlier one either. Today's offer is
- * measured against the lowest price before seen while it ran, as an earlier one is.
+ * Earlier offers are the [joinOffers] offers whose store dates ended before [day], the day judged on, other than
+ * today's offer itself ([CurrentOffer.isItself]). Another offer of the product still dated to run (Jumbo lists
+ * next week's) is not an earlier one. Both go by the store's dates alone, never by the nights a product was
+ * seen. Today's offer is measured at what is paid today, against the lowest price before seen while it ran.
  */
-fun judge(today: CurrentOffer, periods: List<OfferPeriod>, recordings: List<Instant>, regular: List<RegularPrice>): DealVerdict {
-    val runs = joinGaps(periods, recordings)
-    val latest = recordings.maxOrNull()
+fun judge(today: CurrentOffer, periods: List<OfferPeriod>, recordings: List<Instant>, regular: List<RegularPrice>, day: LocalDate): DealVerdict {
+    val runs = joinOffers(periods)
     val itself = runs.filter(today::isItself)
-    val earlier = runs.filter { it !in itself && (latest == null || it.lastSeen < latest) }
+    val earlier = runs.filter { it !in itself && it.validUntil < day }
     val lowestBefore = (itself.mapNotNull { it.identity.originalPrice } + listOfNotNull(today.originalPrice)).minOrNull()
     val offer = if (lowestBefore != null && lowestBefore != today.originalPrice) today.withPriceBefore(lowestBefore) else today
     val days = recordings.groupBy(::serverDay)

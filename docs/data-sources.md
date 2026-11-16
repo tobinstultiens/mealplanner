@@ -305,20 +305,44 @@ ingredient names.
 **This product.** The rows of the same store and the same normalised title, over the last year (52 weeks: a seasonal
 product's offers of last season count, older prices say little about today's), every pack size and every deal.
 
-**Earlier offers.** Rows of one product with the same pack, deal and price are one offer when
-- the store's dates of them share a day: the store says it is one offer, however many nights it was missing from the
-  page in between (a parser skipping an item for a few nights), or
-- the store dated them as two that run on (the later one starts the day after the earlier one ends) and at most one
-  day on which the store was read lacks the product between them. Nights the store was not read at all
-  (`offerRecording` has no row) are not nights without the offer, so they never count.
+**Which rows are one offer, and which offers are earlier** (`joinOffers`, `judge`). Rows of one product (store and
+title) are one offer when they have the same pack and the same deal as the customer sees it (the deal text, or for an
+offer without one, as at Lidl, its price) on store dates that share a day or run on (the later one starts by the day
+after the earlier one ends). Nothing else decides it. In particular, the nights the product was missing from the page
+never do: the store parsers skip an item with a missing field without a word. Nights the store was not read do not
+decide it either. The same deal again the next week is the offer going on, not a second one: an offer that continues
+says nothing about how often the product is on offer, and a product that is always on offer has its own rule (rule 3).
+An offer is earlier when its store dates ended before today and it is not today's offer itself. Each row of this table is
+a test in `history/OfferPeriodsTest.kt`.
 
-A price before that changed while the offer ran (AH showing another price before mid-week) does not make another
-offer: the deal and what is paid stay the same. The offer is then measured against the lowest price before seen while
-it ran, as a reduction is measured against the lowest price before it (rule 1); today's offer too. An offer is earlier
-when it ended before the store's last recording and is not today's offer itself: rows with today's pack, deal and price
-on dates that share a day with today's offer are today's, however they were split. Another offer of the product
-running now (Jumbo lists next week's) is not an earlier one either. A deal that changes counts again: 1+1 for a week and
-25 % the next are two.
+| | Pack | Deal | Price | Store dates | Nights missed between | Answer |
+|---|---|---|---|---|---|---|
+| 1 | same | same | same | share a day | none | one offer |
+| 2 | same | same | same | share a day | any number | one offer |
+| 3 | same | same text | moved with the price before ("25% korting" for 2,24, then 2,39) | share a day | any | one offer, at its lowest price |
+| 4 | same | same | same | run on | none | one offer |
+| 5 | same | same | same | run on | any number | one offer |
+| 6 | same | same | same | apart (a day or more between) | none or any | two offers |
+| 7 | same | another text | any | share a day | any | two offers |
+| 8 | another | same | any | share a day | any | two offers |
+| 9 | same | no text (Lidl) | another | share a day | any | two offers: the price is the deal |
+| 10 | same | no text | same | run on | any | one offer |
+| 11 | today's | today's | any | share a day with today's offer or run on into it | any; or today's own rows missing | today's offer, never an earlier one |
+| 12 | today's | today's | any | ended a day or more before today's began | any | an earlier offer |
+| 13 | any | another | any | ended before today | any | an earlier offer |
+| 14 | any | another | any | still dated to run today (Jumbo lists next week's) | any, also the last night | not an earlier offer |
+
+**At which price.** An offer whose price moved while its deal stayed (row 3: AH showing another price before mid-week,
+and a stated "25% korting" price with it) is measured at its lowest price. That is the row with the lowest price before,
+since for one deal text the price follows the price before: a share of it, or the price the text names. It is the
+price a customer could have had while the offer ran, against the lowest price before it, as a reduction is measured
+(rule 1). Today's offer is measured at what is paid today, against the lowest price before seen while it ran.
+
+**Long-dated offers.** Jumbo dates some offers over many weeks (38 of the 428 stored offers of 2026-11-16 span more
+than 14 days, up to 356, such as "Jumbo Oosterse maaltijden, 2 voor 5,50" dated 2026-01-07 to 2026-12-08). By rows 2
+and 11, every row of such an offer with the same pack and deal is one offer, and today's. So it errs towards "not
+enough history yet": the product's earlier offers of that deal are not counted as separate ones. Rule 3 still says
+"always on offer" by the days it was seen.
 
 **What is compared.** What is paid, never the deal's wording, so a "2+1 gratis" is compared with the "1+1 gratis" the
 product had before. Each offer, today's and every earlier one, is read by today's deal reader (`DealTerms.of` on the
@@ -339,9 +363,10 @@ the share, as a price does not depend on what the store says the price was befor
    and the same size ("AH Snoepgroente tomaat", 500 g, is "AH Snoepgroente tomaat 500 gram"). A price raised less than
    3 % is no raise. A raise that leaves a saving is reported with the verdict, and the deal's share is then measured
    against the price before the raise ("25 % off" a price raised from 2,49 to 2,99 pays 90 %). This rule needs no
-   offer history: two regular prices seen are enough to tell. It is not applied to group offers: a title beginning
-   with "Alle" ("Alle AH Gerookte zalm"), or a title and pack size that name no size at all. AH gives such an offer the
-   price before of whichever product of the group it shows, so two of them can differ without any price raised.
+   offer history: two regular prices seen are enough to tell. It is not applied to group offers, a title beginning
+   with "Alle" ("Alle AH Gerookte zalm"): AH gives such an offer the price before of whichever product of the group it
+   shows, so two of them can differ without any price raised. A title without a size is no group: AH writes most single
+   products so ("AH Ananas zonder kroon"), and the rule holds for them.
 2. *Not enough history yet* (`NOT_ENOUGH_HISTORY`) when the store was read on fewer than 56 days (`MIN_DAYS_READ`, 8
    weeks of nightly refreshes). Stores run offers by the week and bring a product back every few weeks, so 8 weeks see
    a usual deal come back at least once. Days read, not calendar time: a store that could not be read was not watched.

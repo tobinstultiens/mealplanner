@@ -58,7 +58,7 @@ class DealVerdictRepository(
             val own = periods[offer.store.name to normalised(offer.title)].orEmpty()
                 .filter { row -> matched.getOrPut(row.title to row.category) { matcher.match(row.title, row.category) } == offer.ingredientId }
             val regular = read.regular.filter { it.isFor(offer) }.mapNotNull { row -> row.packPrice?.let { RegularPrice(it, Instant.parse(row.firstSeen), Instant.parse(row.lastSeen)) } }
-            view(offer, judge(CurrentOffer(offer), own.map { it.period() }, read.recordings[offer.store].orEmpty(), regular))
+            view(offer, judge(CurrentOffer(offer), own.map { it.period() }, read.recordings[offer.store].orEmpty(), regular, serverDay(now)))
         }
         return DealVerdicts(verdicts.sortedWith(compareBy({ it.store }, { it.verdict }, { it.title })))
     }

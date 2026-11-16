@@ -36,7 +36,7 @@ class DealVerdictTest {
         vararg earlier: OfferPeriod,
         read: List<Int> = (0..TODAY).toList(),
         regular: List<RegularPrice> = emptyList(),
-    ) = judge(now.first, earlier.toList() + now.second, read.map(::night), regular)
+    ) = judge(now.first, earlier.toList() + now.second, read.map(::night), regular, serverDay(night(TODAY)))
 
     private val onePlusOne = offer("1+1 gratis")
     private val twoPlusOne = offer("2+1 gratis")
@@ -169,67 +169,6 @@ class DealVerdictTest {
     }
 
     @Test
-    fun oneNightWithoutTheProductDoesNotEndItsOffer() {
-        // Night 10 was read and missed the product (a parser skipped it): one offer, not two.
-        val earlier = listOf(run(onePlusOne, 7, 9, validUntil = 13), run(onePlusOne, 11, 13, validFrom = 7), run(onePlusOne, 28, 34))
-        assertEquals(listOf(7 to 13, 28 to 34), joinGaps(earlier, (0..TODAY).map(::night)).map { nightOf(it.firstSeen) to nightOf(it.lastSeen) })
-        assertEquals(2, verdict(today(twoPlusOne), *earlier.toTypedArray()).earlier.size)
-    }
-
-    @Test
-    fun twoDaysWithoutTheProductEndItsOfferBetweenTwoWeeksOfTheStore() {
-        // Two offers dated as two weeks that run on: one missed day joins them, two do not.
-        val read = (0..TODAY).map(::night)
-        assertEquals(1, joinGaps(listOf(run(onePlusOne, 7, 12, validUntil = 13), run(onePlusOne, 14, 20)), read).size)
-        assertEquals(2, joinGaps(listOf(run(onePlusOne, 7, 11, validUntil = 13), run(onePlusOne, 14, 20)), read).size)
-    }
-
-    @Test
-    fun rowsOfOneOfferAreOneOfferHoweverManyNightsTheyMissed() {
-        // Dated 7 to 13 by the store both times: one offer, though nights 9 to 11 were read without it.
-        assertEquals(1, joinGaps(listOf(run(onePlusOne, 7, 8, validUntil = 13), run(onePlusOne, 12, 13, validFrom = 7)), (0..TODAY).map(::night)).size)
-    }
-
-    /** The review's case: today's offer, split by two read nights without it, must not be its own history. */
-    @Test
-    fun todaysOfferSplitByMissedNightsIsNoEarlierOffer() {
-        val thisWeek = onePlusOne.copy(validFrom = day(TODAY - 6), validUntil = day(TODAY))
-        val split = listOf(run(thisWeek, TODAY - 6, TODAY - 5, validUntil = TODAY), run(thisWeek, TODAY - 2, TODAY, validFrom = TODAY - 6))
-        val verdict = judge(CurrentOffer(thisWeek), split + run(quarterOff, 28, 34), (0..TODAY).map(::night), emptyList())
-
-        assertEquals(Verdict.NOT_ENOUGH_HISTORY to 1, verdict.verdict to verdict.earlier.size, "one real earlier offer, not two")
-    }
-
-    @Test
-    fun anEarlierOfferSplitByMissedNightsCountsOnce() {
-        val split = listOf(run(onePlusOne, 7, 8, validUntil = 13), run(onePlusOne, 11, 13, validFrom = 7))
-        val verdict = verdict(today(twoPlusOne), *split.toTypedArray())
-        assertEquals(Verdict.NOT_ENOUGH_HISTORY to 1, verdict.verdict to verdict.compared)
-    }
-
-    /**
-     * A price before that changes while the offer runs (AH shows 2,49 on Monday, 2,99 from Wednesday) leaves one
-     * offer, measured against the lower price: 1+1 of 2,49 is 1,245 for 500 g, as the earlier 1+1 offers were.
-     */
-    @Test
-    fun aPriceBeforeChangedMidOfferIsTheSameOfferMeasuredAgainstTheLowerPrice() {
-        fun onePlusOneOf(priceBefore: Double, from: Int, until: Int) =
-            onePlusOne.copy(originalPrice = priceBefore, validFrom = day(from), validUntil = day(until))
-        val thisWeek = onePlusOneOf(2.99, TODAY - 6, TODAY)
-        val today = listOf(run(onePlusOneOf(2.49, TODAY - 6, TODAY), TODAY - 6, TODAY - 4, validUntil = TODAY), run(thisWeek, TODAY - 3, TODAY, validFrom = TODAY - 6))
-        val earlier = listOf(
-            run(onePlusOneOf(2.49, 7, 13), 7, 9), run(onePlusOneOf(2.79, 7, 13), 10, 13, validFrom = 7),
-            run(onePlusOneOf(2.49, 28, 34), 28, 34),
-        )
-        val verdict = judge(CurrentOffer(thisWeek), today + earlier, (0..TODAY).map(::night), emptyList())
-
-        assertEquals(2, verdict.earlier.size, "the week with two prices before is one offer, and today's is none")
-        assertEquals(listOf(2.49, 2.49), verdict.earlier.map { it.identity.originalPrice })
-        assertEquals(Measure.PER_KG to Verdict.USUAL_DEAL, verdict.measure to verdict.verdict)
-        assertEquals(2.49, verdict.value!!, 1e-9)
-    }
-
-    @Test
     fun aGroupOffersPriceBeforeIsNoRegularPrice() {
         // AH's price before of "Alle …" is that of whichever product of the group it shows.
         fun group(deal: String, price: Double, priceBefore: Double) = offer(deal, price = price, originalPrice = priceBefore, title = "Alle AH Gerookte zalm")
@@ -237,28 +176,17 @@ class DealVerdictTest {
         val verdict = verdict(today(group("VOOR 3.99", 3.99, 5.49)), earlier)
         assertNull(verdict.raise)
         assertEquals(Verdict.NOT_ENOUGH_HISTORY, verdict.verdict)
-        // Nor a title that names no size at all; one that does is a product of its own.
-        assertTrue(isGroupOffer("AH Goudse plakken", null))
-        assertTrue(!isGroupOffer("AH Mager rundergehakt 300 gram", null) && !isGroupOffer("Half-om-half gehakt", "500 g"))
+        assertTrue(isGroupOffer("Alle Santa Maria, La Morena en Knorr wraps"))
+        assertTrue(!isGroupOffer("Allerhande kookboek") && !isGroupOffer("AH Ananas zonder kroon"), "the whole word, at the start")
     }
 
     @Test
-    fun nightsTheStoreWasNotReadDoNotEndAnOffer() {
-        // Nights 10 to 14 not read at all; the store's dates run on: one offer.
-        val read = (0..TODAY).filter { it !in 10..14 }.map(::night)
-        val split = listOf(run(onePlusOne, 7, 9, validUntil = 20), run(onePlusOne, 15, 20, validFrom = 7))
-        assertEquals(1, joinGaps(split, read).size)
-        // The same, but the store ended the offer on day 9 and began it again on day 15: two offers.
-        val again = listOf(run(onePlusOne, 7, 9), run(onePlusOne, 15, 20))
-        assertEquals(2, joinGaps(again, read).size)
-    }
-
-    @Test
-    fun anotherOfferOfTheProductRunningNowIsNoEarlierOne() {
-        val nextWeek = run(offer("voor 1,29"), 66, TODAY)
-        val verdict = verdict(today(twoPlusOne), run(onePlusOne, 7, 13), run(onePlusOne, 28, 34), nextWeek)
-        assertEquals(2, verdict.earlier.size)
-        assertEquals(7 + 7 + 5, verdict.daysOnOffer, "but its days count as on offer")
+    fun aSingleProductWithoutASizeStillShowsARaise() {
+        // AH writes most products without a pack size; this one has no size in its title either (dev database).
+        fun pineapple(deal: String, price: Double, priceBefore: Double) = offer(deal, price = price, originalPrice = priceBefore, title = "AH Ananas zonder kroon")
+        val verdict = verdict(today(pineapple("VOOR 1.99", 1.99, 2.49)), run(pineapple("VOOR 1.79", 1.79, 1.99), TODAY - 20, TODAY - 14))
+        assertEquals(Verdict.NOT_A_DEAL, verdict.verdict)
+        assertEquals(RegularRaise(1.99, serverDay(night(TODAY - 14)), 2.49), verdict.raise)
     }
 
     @Test
@@ -366,8 +294,6 @@ class DealVerdictTest {
         val otherPack = verdict(today(lidl(1.49)), run(lidl(1.99, "2 stuks"), 7, 13), run(lidl(1.99, "2 stuks"), 28, 34))
         assertEquals(Verdict.NOT_ENOUGH_HISTORY to 0, otherPack.verdict to otherPack.compared)
     }
-
-    private fun nightOf(instant: Instant) = Duration.between(night(0), instant).toDays().toInt()
 
     private companion object {
         const val TODAY = 70
