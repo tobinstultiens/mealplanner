@@ -143,6 +143,27 @@ class ApplicationTest {
     }
 
     @Test
+    fun dataShowsOnlyTheFirstLineOfAStoresErrorCutShort() = testApplication {
+        val http = startFetching(fetchOffers = true) {
+            it.fetchedHoursAgo(Store.AH, hoursAgo = 72, error = "Unexpected token " + "x".repeat(500) + "\nat SELECT secret FROM offer")
+        }
+        val text = http.get("/health/data").body<DataHealth>().problems.single()
+        assertFalse("SELECT" in text, text)
+        assertTrue(text.length < 400, text)
+    }
+
+    @Test
+    fun dataIsStaleWhenTheLidlGuardWarns() = testApplication {
+        val http = startFetching(fetchOffers = true) {
+            it.fetchedHoursAgo(Store.LIDL, hoursAgo = 3)
+            it.planQueries.insertOffer(Store.LIDL.name, "Old", null, 1.0, null, null, null, "2020-01-01", "2020-01-07", null, null)
+        }
+        val response = http.get("/health/data")
+        assertEquals(HttpStatusCode.ServiceUnavailable, response.status)
+        assertTrue("Lidl offers have ended" in response.body<DataHealth>().problems.single())
+    }
+
+    @Test
     fun dataIsFreshWhenOfferFetchingIsOff() = testApplication {
         val http = startFetching(fetchOffers = false) { it.fetchedHoursAgo(Store.AH, hoursAgo = 72) }
         assertEquals(HttpStatusCode.OK, http.get("/health/data").status)

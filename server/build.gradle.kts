@@ -52,13 +52,15 @@ tasks.test {
 }
 
 // What the server says it runs (BuildInfo, GET /health): the commit (GITHUB_SHA in CI, else "dev") and the
-// latest v* tag reachable from it without its "v" (else "dev"; CI must fetch the tags for it).
+// latest v* tag reachable from it without its "v" (else the mealplanner.version of gradle.properties, which
+// is what a build without tags, such as a shallow CI checkout, reports).
 val buildInfo = tasks.register<WriteProperties>("buildInfo") {
     val commit = providers.environmentVariable("GITHUB_SHA").orElse("dev")
+    val fallback = providers.gradleProperty("mealplanner.version").orElse("dev")
     val version = providers.exec {
         commandLine("git", "describe", "--tags", "--match", "v*", "--abbrev=0")
         isIgnoreExitValue = true
-    }.standardOutput.asText.map { it.trim().removePrefix("v").ifEmpty { "dev" } }
+    }.standardOutput.asText.zip(fallback) { tag, other -> tag.trim().removePrefix("v").ifEmpty { other } }
     destinationFile = layout.buildDirectory.file("generated/buildinfo/build-info.properties")
     property("commit", commit)
     property("version", version)

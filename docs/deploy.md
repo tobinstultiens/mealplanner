@@ -44,15 +44,16 @@ the new container starts. To update right away, run the playbook again or `docke
 Both answers are public and say nothing about any account.
 
 - **What runs.** `curl -s https://mealplanner.<DOMAIN>/health` answers
-  `{"status":"ok","version":"0.1.3","commit":"<sha>"}`: the latest `v*` tag the build can see and the
-  commit it was built from (`GITHUB_SHA` in CI). After Watchtower's nightly update, compare `commit` with
+  `{"status":"ok","version":"0.1.3","commit":"<sha>"}`: the latest `v*` tag the build can see (without
+  tags, such as a shallow checkout, `mealplanner.version` in `gradle.properties`, which may lag the
+  latest tag) and the commit it was built from (`GITHUB_SHA` in CI). After Watchtower's nightly update, compare `commit` with
   `main`'s head. A local build says `dev` for what it cannot know.
 - **Whether the store data is fresh.** `curl -s -o /dev/null -w '%{http_code}\n' https://mealplanner.<DOMAIN>/health/data`
   prints 200 when it is, and 503 with the reasons when it is not (`curl -s .../health/data` shows
   `{"status":"stale","problems":["..."]}`). It is 503 when offer fetching is on and a store's last
   successful fetch is more than 48 hours ago (or it never succeeded and keeps failing), when the Lidl
   check warns that its page looks stale, or when the last complete regular-price lookup is more than 14
-  days ago. The texts are the ones the apps show and the server logs. With `MEALPLANNER_FETCH_OFFERS=off`
+  days ago. The texts are the ones the apps show and the server logs, except that a store's error is cut to its first line and about 200 characters here (the Offers screen has all of it). With `MEALPLANNER_FETCH_OFFERS=off`
   it is always 200. Nothing recorded yet (a new server) is not a problem.
 
 To be told about a broken scraper, add a Gatus check on `/health/data` next to the one on `/health`

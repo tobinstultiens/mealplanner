@@ -64,7 +64,7 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
         val stale = q.selectSources().executeAsList().mapNotNull { row ->
             val store = Store.valueOf(row.store)
             val last = row.fetchedAt?.let(Instant::parse)
-            val because = row.error?.let { " ($it)" }.orEmpty()
+            val because = row.error?.let { " (${publicText(it)})" }.orEmpty()
             when {
                 last == null && row.error != null -> "No offers from ${store.label} were ever fetched$because"
                 last != null && Duration.between(last, now) > STALE_AFTER ->
@@ -74,6 +74,9 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
         }
         return stale + warnings(LocalDate.ofInstant(now, AMSTERDAM))
     }
+
+    /** A stored error for the public health check: its first line only, cut short, as it may quote a store's page. */
+    private fun publicText(error: String): String = error.lineSequence().first().trim().take(MAX_PUBLIC_ERROR)
 
     private fun lidlWarning(date: LocalDate): String? {
         // The widest range: the guard needs the ended offers too.
@@ -173,6 +176,8 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
     companion object {
         /** How long a store's offers may go without a successful fetch before the health check says so (the job runs every six hours). */
         val STALE_AFTER: Duration = Duration.ofHours(48)
+
+        private const val MAX_PUBLIC_ERROR = 200
 
         private val AMSTERDAM: java.time.ZoneId = java.time.ZoneId.of("Europe/Amsterdam")
 
