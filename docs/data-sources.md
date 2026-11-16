@@ -415,8 +415,9 @@ pantry gives the grams left of each ingredient, all its entries added up (`Pantr
 week's stock included, as it is at home) and the app shows `300 g left` under its name, with the week
 the stock was bought for (`Pantry.onHandFrom`, the week its tick counts from, for stock a tick put
 there): `300 g left · for the week of 23 Nov`. An ingredient with stock of several weeks (bought ahead
-and stocked up again, say) gives the earliest of them, the week meals start eating it from, oldest
-first; one set by hand only gives none. An entry set by hand, or ticked without an amount, has no
+and stocked up again, say) lists each of them (`Pantry.onHandWeeks`: `for the weeks of 16 Nov, 23 Nov`);
+`onHandFrom` keeps the earliest, the week meals start eating it from, for apps that predate the list;
+one set by hand only gives none. An entry set by hand, or ticked without an amount, has no
 amount: the row says `(on hand?)` as before and the pantry no number, never zero.
 Ticking the row stays the user's choice: the app does not tick a row off for them, as a tick says
 what was bought.

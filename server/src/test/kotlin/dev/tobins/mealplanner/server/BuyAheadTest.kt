@@ -660,19 +660,23 @@ class BuyAheadTest {
         // One entry: bought ahead on this week's list, for next week.
         http.tick(http.list().buyAhead.single().key)
         assertEquals(mapOf(chicken.id to nextWeek), pantry().onHandFrom)
+        assertEquals(mapOf(chicken.id to listOf(nextWeek)), pantry().onHandWeeks)
 
         // Two entries in neighbouring weeks (stocked up this week as well): one week per ingredient, as apps
         // read it, the earliest, from which meals eat it; the grams are both added up.
         http.tick("stock:i${chicken.id}", grams = 300.0)
         assertEquals(mapOf(chicken.id to week), pantry().onHandFrom)
         assertEquals(mapOf(chicken.id to 3900.0), pantry().onHandGrams)
+        assertEquals(mapOf(chicken.id to listOf(week, nextWeek)), pantry().onHandWeeks, "the pantry says both weeks, earliest first")
         http.tick("stock:i${chicken.id}", checked = false)
         assertEquals(mapOf(chicken.id to nextWeek), pantry().onHandFrom, "that entry gone, the other's week")
+        assertEquals(mapOf(chicken.id to listOf(nextWeek)), pantry().onHandWeeks)
 
         // On hand by hand only: it counts at once, and has no week.
         http.put("/api/pantry/on-hand/${lettuce.id}")
         assertTrue("Lettuce" in http.onHand())
         assertEquals(setOf(chicken.id), pantry().onHandFrom.keys)
+        assertEquals(setOf(chicken.id), pantry().onHandWeeks.keys)
     }
 
     @Test

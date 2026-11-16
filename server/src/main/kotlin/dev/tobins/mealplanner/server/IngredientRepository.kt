@@ -103,19 +103,21 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      * next week, as that is at home already.
      *
      * The stock is kept per tick (issue 116), so an ingredient can have entries of several weeks, while
-     * [Pantry.onHandFrom] has one week per ingredient, as apps read it: the earliest of them. That is the
+     * [Pantry.onHandFrom] has one week per ingredient, as apps before it read it: the earliest of them. That is the
      * week from which meals eat it, the oldest entry first, and an entry stays only while something is
-     * left of it. An ingredient on hand by hand only counts at once and has none.
+     * left of it. [Pantry.onHandWeeks] has all of them. An ingredient on hand by hand only counts at once and has none.
      */
     fun pantry(): Pantry {
         val all = list()
         val byId = all.associateBy { it.id }
         val stock = pantry.selectStockOfAccount(userId).executeAsList()
+        val weeks = stock.groupBy({ it.ingredientId }, { it.fromWeek }).mapValues { (_, weeks) -> weeks.distinct().sorted() }
         return Pantry(
             staples = all.filter { it.isStaple },
             onHand = pantry.selectOnHand(userId).executeAsList().mapNotNull(byId::get),
             onHandGrams = gramsIn(stock).mapNotNull { (id, grams) -> grams?.let { id to it } }.toMap(),
-            onHandFrom = stock.groupBy { it.ingredientId }.mapValues { (_, entries) -> entries.minOf { it.fromWeek } },
+            onHandFrom = weeks.mapValues { (_, weeks) -> weeks.first() },
+            onHandWeeks = weeks,
         )
     }
 
