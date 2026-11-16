@@ -25,6 +25,8 @@ import dev.tobins.mealplanner.server.db.Recipe
 import dev.tobins.mealplanner.units.Dimension
 import kotlinx.serialization.json.Json
 import java.time.Instant
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private const val ROUTINES_KEY = "routines"
 
@@ -194,8 +196,24 @@ class RecipeRepository(
     fun delete(id: Long) {
         val row = q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
         if (row.source == RecipeSource.COOKING_SITE.name) throw ConflictException("Recipes from the cooking site are removed there")
+        val days = plannedDays(id)
+        if (days.isNotEmpty()) {
+            throw ConflictException("Planned on ${days.joinToString(", ", transform = ::dayName)}: choose another recipe there first")
+        }
         q.deleteManual(userId, id)
     }
+
+    /**
+     * The days the recipe is planned in the current week or a later one. The plan keeps a meal
+     * by its stored title, so deleting the recipe would leave it in the plan while the shopping
+     * list stopped buying for it; weeks that are over are history and do not count.
+     */
+    private fun plannedDays(id: Long): List<LocalDate> =
+        db.planQueries.selectPlannedFrom(userId, id, serverToday().minusDays(7).toString()).executeAsList()
+            .map { LocalDate.parse(it.weekStart).plusDays(it.day) }
+            .distinct()
+
+    private fun dayName(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.ENGLISH))
 
     fun setRating(id: Long, rating: Int?): RecipeDetail {
         require(rating == null || rating in 1..5) { "rating must be 1 to 5, or null" }

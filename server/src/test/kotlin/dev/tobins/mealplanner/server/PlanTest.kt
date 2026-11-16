@@ -47,6 +47,11 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import java.io.File
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
+import java.util.Locale
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
@@ -211,6 +216,34 @@ class PlanTest {
     }
 
     @Test
+    fun aRecipeStillPlannedIsNotDeletedButOneOnlyInPastWeeksIs() = testApplication {
+        val http = start().ready()
+        val thisWeek = serverToday().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val bowl = http.post("/api/recipes") {
+            setBody(RecipeInput("Beef bowl", 1, "300 | g | beef", mealSlots = listOf(MealSlot.BREAKFAST)))
+        }.body<RecipeDetail>().summary.id
+
+        // Planned in the current week: refused, naming the days, and nothing is lost.
+        val plan = http.post("/api/plans/$thisWeek/generate").body<WeekPlan>()
+        val planned = plan.days.filter { day -> day.meals.any { it.recipeId == bowl } }
+        assertTrue(planned.isNotEmpty())
+        val refused = http.delete("/api/recipes/$bowl")
+        assertEquals(HttpStatusCode.Conflict, refused.status)
+        val message = refused.bodyAsText()
+        val names = planned.map { LocalDate.parse(it.date).format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.ENGLISH)) }
+        assertTrue(names.all { it in message }, message)
+        assertTrue("choose another recipe there first" in message, message)
+        assertEquals(HttpStatusCode.OK, http.get("/api/recipes/$bowl").status)
+
+        // Once the days are cleared, or when only a past week uses it, the recipe can go.
+        for (day in plan.days.indices) http.delete("/api/plans/$thisWeek/meals/$day/breakfast")
+        val past = thisWeek.minusWeeks(3)
+        http.post("/api/plans/$past/generate")
+        assertEquals(HttpStatusCode.NoContent, http.delete("/api/recipes/$bowl").status)
+        assertEquals(HttpStatusCode.NotFound, http.get("/api/recipes/$bowl").status)
+    }
+
+    @Test
     fun mealsCanBeRemovedAndBadCoordinatesAreRejected() = testApplication {
         val http = start().ready()
         http.post("/api/plans/$week/generate")
@@ -258,6 +291,8 @@ class PlanTest {
         assertEquals(HttpStatusCode.Conflict, http.delete("/api/recipes/${dinner0.id}").status)
         assertEquals(HttpStatusCode.BadRequest, http.post("/api/recipes") { setBody(RecipeInput("X", 1, "some | broken line")) }.status)
         assertEquals(HttpStatusCode.BadRequest, http.post("/api/recipes") { setBody(RecipeInput(" ", 1, "1 | g | beef")) }.status)
+        // A recipe that is still planned is kept (see aRecipeStillPlanned...), so clear the plan first.
+        for (day in 0..6) http.delete("/api/plans/$week/meals/$day/breakfast")
         assertEquals(HttpStatusCode.NoContent, http.delete("/api/recipes/${bowl.summary.id}").status)
         assertEquals(HttpStatusCode.NotFound, http.get("/api/recipes/${bowl.summary.id}").status)
     }
