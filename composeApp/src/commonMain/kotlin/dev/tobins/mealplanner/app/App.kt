@@ -19,6 +19,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import coil3.compose.LocalPlatformContext
 import dev.tobins.mealplanner.api.Me
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,14 +51,19 @@ fun App(
     defaults: ServerSettings,
     storage: SettingsStorage,
     launcher: LoginLauncher,
-    /** Redirects back from the login page (URLs), as the platform receives them. */
-    loginCallbacks: Flow<String>,
+    /** The login under way, kept by the platform longer than this screen; it hands it the redirects back from the login page. */
+    logins: LoginExchange,
     updater: UpdateInstaller? = null,
     /** Where the open screen is kept between reloads (the browser's address); none on Android. */
     routes: RouteStore = NoRoutes,
+    /**
+     * Whether [defaults] is the server this build is made for (the web client's own address, a release
+     * built with one), which the login may use without asking; false where it is only a suggestion.
+     */
+    defaultsBuiltIn: Boolean = true,
 ) {
     var settings by remember { mutableStateOf(storage.serverSettings(defaults)) }
-    val login = remember(storage) { Login(storage) }
+    val serverKnown = remember(settings) { (defaultsBuiltIn || storage.hasSavedServer()) && settings.isAddress() }
     var session by remember { mutableStateOf(storage.session()) }
     var account by remember { mutableStateOf<Me?>(null) }
     var loginError by remember { mutableStateOf<String?>(null) }
@@ -85,8 +90,7 @@ fun App(
     // When renewing fails the session is over, and the app asks to log in again.
     val api = remember(settings, session) {
         ApiClient(settings, session) {
-            val current = storage.session() ?: return@ApiClient null
-            login.refresh(settings.url, current) ?: run {
+            logins.renew(settings.url) ?: run {
                 // Whoever logs in next may be someone else: what was the account's goes, as on logging out.
                 // The shopping session of this client is closed when the client is replaced; until then
                 // its requests fail for want of a login, and one answered anyway stores nothing, as its
@@ -118,7 +122,7 @@ fun App(
     /** Logs out; the shopping requests still going stop first, so nothing of the account is written back afterwards. */
     fun endSession() {
         shopping.close()
-        storage.logOut()
+        logins.logOut()
         session = null
     }
     val accountShops = remember(api, storage) { AccountShops(storage, api::shops, api::saveShops) }
@@ -140,8 +144,8 @@ fun App(
     var pantryOpen by rememberSaveable { mutableStateOf(start.pantry) }
     var offersOpen by rememberSaveable { mutableStateOf(start.offers) }
     var pricesOpen by rememberSaveable { mutableStateOf(start.prices) }
-    // Not logged in, nothing works yet: start on the settings, where the login is.
-    var serverOpen by rememberSaveable { mutableStateOf(session == null || start.settings) }
+    // Without a login the login screen is in front instead; a link on it opens the settings.
+    var serverOpen by rememberSaveable { mutableStateOf(start.settings && session != null) }
     // What each screen keeps in its remembered state (scroll, search, the week or day looked at) outlives the
     // screen being drawn: a screen covered by another (a tab by a recipe, a recipe by its editor) is saved
     // under its key and restored when it is drawn again, also after Android re-created the activity.
@@ -173,21 +177,38 @@ fun App(
         previousTab = tab
     }
 
-    LaunchedEffect(Unit) {
-        loginCallbacks.collect { url ->
-            if (!login.isAwaitedAnswer(url)) return@collect
-            runCatching { login.finish(url) }
-                .onSuccess {
-                    loginError = null
-                    session = it
-                    serverOpen = false
-                }
-                .onFailure {
-                    loginError = it.message ?: Strings.current(Msg.LOGIN_FAILED)
-                    serverOpen = true
-                }
+    // What came of the login page's answer, whether it came while this screen or an earlier one was there.
+    val progress by logins.progress.collectAsState()
+    LaunchedEffect(progress) {
+        val done = progress as? LoginProgress.Done ?: return@LaunchedEffect
+        loginError = null
+        session = storage.session()
+        serverOpen = false
+        logins.acknowledge(done)
+    }
+    var startingLogin by remember { mutableStateOf(false) }
+
+    fun startLogin(server: ServerSettings) {
+        loginError = null
+        scope.launch {
+            startingLogin = true
+            runCatching { launcher.open(logins.start(server.url, launcher.redirectUri(server.url))) }
+                .onFailure { loginError = strings(Msg.LOGIN_START_FAILED, it.message) }
+            startingLogin = false
         }
     }
+
+    /** A login at a server the user typed or saved: kept as their choice, as the settings do. */
+    fun logInAt(server: ServerSettings) {
+        storage.saveServerSettings(server)
+        settings = server
+        startLogin(server)
+    }
+    // Logged out: straight to the login page, once per logged-out state (see LoginExchange.claimAutoOpen).
+    LaunchedEffect(session == null) {
+        if (session == null && logins.claimAutoOpen(serverKnown)) startLogin(settings)
+    }
+    val shownLoginError = loginError ?: (progress as? LoginProgress.Failed)?.message
     LaunchedEffect(api) { account = if (session == null) null else runCatching { api.me() }.getOrNull() }
 
     // NEVO must be credited wherever its values are shown.
@@ -236,18 +257,12 @@ fun App(
                     current = settings,
                     account = account?.let { it.displayName ?: it.username ?: strings(Msg.YOUR_ACCOUNT) }?.takeIf { session != null },
                     loggedIn = session != null,
-                    loginError = loginError,
-                    onLogin = { draft ->
-                        storage.saveServerSettings(draft)
-                        settings = draft
-                        loginError = null
-                        scope.launch {
-                            runCatching { login.start(draft.url, launcher.redirectUri(draft.url)) }
-                                .onSuccess(launcher::open)
-                                .onFailure { loginError = strings(Msg.LOGIN_START_FAILED, it.message) }
-                        }
+                    loginError = shownLoginError,
+                    onLogin = ::logInAt,
+                    onLogout = {
+                        endSession()
+                        serverOpen = false
                     },
-                    onLogout = ::endSession,
                     updater = updater,
                     theme = theme,
                     onTheme = {
@@ -277,9 +292,22 @@ fun App(
                         if (it.url != settings.url) endSession()
                         storage.saveServerSettings(it)
                         settings = it
-                        if (session != null) serverOpen = false
+                        serverOpen = false
                     },
                     onBack = { serverOpen = false },
+                )
+                return@CompositionLocalProvider
+            }
+            if (session == null) {
+                LoginScreen(
+                    server = settings,
+                    serverKnown = serverKnown,
+                    reason = storage.loggedOut(),
+                    error = shownLoginError,
+                    busy = startingLogin || progress == LoginProgress.Exchanging,
+                    // A known server is not saved: that would pin a built-in address a later release may change.
+                    onLogin = { if (serverKnown) startLogin(it) else logInAt(it) },
+                    onChangeServer = { serverOpen = true },
                 )
                 return@CompositionLocalProvider
             }

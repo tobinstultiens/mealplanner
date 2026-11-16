@@ -11,6 +11,13 @@ import io.ktor.http.Url
 import io.ktor.http.isSuccess
 import io.ktor.http.parameters
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -20,8 +27,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Opens the login page and brings the result back: the system browser on Android (back
- * through an App Link on the server's `/app/login`), the same tab on the web.
+ * Opens the login page; the answer comes back through the platform to [LoginExchange.deliver]. On
+ * Android a Custom Tab over the app (back through an App Link on the server's `/app/login`), on the
+ * web the same tab.
  */
 interface LoginLauncher {
     /**
@@ -55,11 +63,32 @@ private data class TokenResponse(
 
 private const val SESSION_KEY = "auth.session"
 private const val PENDING_KEY = "auth.pending"
+private const val LOGGED_OUT_KEY = "auth.loggedOut"
 private val json = Json { ignoreUnknownKeys = true }
 
 fun SettingsStorage.session(): Session? = get(SESSION_KEY)?.takeIf { it.isNotBlank() }?.let { runCatching { json.decodeFromString<Session>(it) }.getOrNull() }
 
 fun SettingsStorage.saveSession(session: Session?) = set(SESSION_KEY, session?.let { json.encodeToString(it) } ?: "")
+
+/**
+ * What the app knows about why there is no session. It decides what the login screen says and whether
+ * the app may open the login page by itself, which it does once per logged-out state (see
+ * [LoginExchange.claimAutoOpen]). None on a fresh install, and again after each login.
+ */
+enum class LoggedOut {
+    /** A login page was opened, by the app or by the user; from now on only the user opens one. */
+    LOGIN_OPENED,
+
+    /** The user logged out (or chose another server, which has its own accounts). */
+    BY_USER,
+
+    /** The provider refused to renew the session: it ran out, or was ended there. */
+    EXPIRED,
+}
+
+fun SettingsStorage.loggedOut(): LoggedOut? = get(LOGGED_OUT_KEY)?.let { stored -> LoggedOut.entries.firstOrNull { it.name == stored } }
+
+private fun SettingsStorage.saveLoggedOut(reason: LoggedOut?) = set(LOGGED_OUT_KEY, reason?.name ?: "")
 
 /**
  * Logging in with the server's OpenID Connect provider (Authelia): the authorization code
@@ -132,10 +161,15 @@ class Login(
 
     /**
      * A new access token from the refresh token, saved; null (and logged out) when the
-     * refresh token no longer works, e.g. after a long time unused.
+     * refresh token no longer works, e.g. after a long time unused. Asked for when the server
+     * refused the access token, so a session without a refresh token is over too.
      */
     suspend fun refresh(serverUrl: String, session: Session): Session? {
-        val refreshToken = session.refreshToken ?: return null
+        val refreshToken = session.refreshToken
+        if (refreshToken == null) {
+            storage.saveSession(null)
+            return null
+        }
         val config = runCatching { authConfig(serverUrl) }.getOrNull() ?: return null
         val response = http.submitForm(
             config.tokenEndpoint,
@@ -146,8 +180,9 @@ class Login(
             },
         )
         if (!response.status.isSuccess()) {
-            // A network problem says nothing about the session; only a refusal ends it.
-            if (response.status.value in 400..499) storage.saveSession(null)
+            // A network problem or a provider in trouble (5xx, 429 "too many", a 404 from a proxy) says
+            // nothing about the session; only a refusal of the token or the client ends it (RFC 6749, 5.2).
+            if (response.status.value == 400 || response.status.value == 401) storage.saveSession(null)
             return null
         }
         return toSession(json.decodeFromString(response.bodyAsText()), refreshToken).also { storage.saveSession(it) }
@@ -179,6 +214,118 @@ class Login(
     fun close() = http.close()
 
     private fun randomToken(bytes: Int) = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(secureRandomBytes(bytes))
+}
+
+/** What has come of the answers handed to [LoginExchange], for the screen that is there to show. */
+sealed interface LoginProgress {
+    /** Nothing under way, or what came of it has been taken by the screen. */
+    data object Idle : LoginProgress
+
+    /** An answer came back and its code is being swapped for tokens. */
+    data object Exchanging : LoginProgress
+
+    data class Failed(val message: String) : LoginProgress
+
+    /** Logged in and saved; the screen takes it with [LoginExchange.acknowledge]. */
+    data class Done(val session: Session) : LoginProgress
+}
+
+/**
+ * The login as the app goes through it, kept outside the screen. Android re-creates the screen for a
+ * rotation, a dark mode or a language change; the token exchange (about a second) must neither be
+ * cancelled with the old screen, which would lose the login since its answer works only once (#176),
+ * nor be made twice. So the platform keeps one of these as long as its process (Android) or page (web)
+ * lives, hands it every redirect, and whichever screen is there reads [progress]. [scope] must outlive
+ * the screens.
+ */
+class LoginExchange(
+    private val storage: SettingsStorage,
+    scope: CoroutineScope,
+    val login: Login = Login(storage),
+) {
+    private val answers = Channel<String>(Channel.UNLIMITED)
+    private val state = MutableStateFlow<LoginProgress>(LoginProgress.Idle)
+    val progress: StateFlow<LoginProgress> = state.asStateFlow()
+
+    init {
+        // One answer at a time, in the order they came: a second delivery of the same answer finds its
+        // login used up and passes unseen, as the screen's own collector did before.
+        scope.launch { for (url in answers) exchange(url) }
+    }
+
+    /**
+     * Hands over a redirect the platform received. Any answer means a login page was open, so the app
+     * opens none by itself after it: not on the web page loaded by a cancelled or failed login either.
+     */
+    fun deliver(url: String) {
+        if (!login.isCallback(url)) return
+        noteLoginOpened()
+        answers.trySend(url)
+    }
+
+    private suspend fun exchange(url: String) {
+        if (!login.isAwaitedAnswer(url)) return
+        state.value = LoginProgress.Exchanging
+        state.value = runCatching { login.finish(url) }.fold(
+            onSuccess = {
+                storage.saveLoggedOut(null)
+                LoginProgress.Done(it)
+            },
+            onFailure = { LoginProgress.Failed(it.message ?: Strings.current(Msg.LOGIN_FAILED)) },
+        )
+    }
+
+    /** Takes [done] off [progress], so that a later screen does not take the same login again. */
+    fun acknowledge(done: LoginProgress.Done) {
+        state.compareAndSet(done, LoginProgress.Idle)
+    }
+
+    /**
+     * Starts a login at [serverUrl] and returns the page to open. A failure shown before belongs to the
+     * last attempt and goes; from now on the app opens no login page by itself.
+     */
+    suspend fun start(serverUrl: String, redirectUri: String): String {
+        noteLoginOpened()
+        state.update { if (it is LoginProgress.Failed) LoginProgress.Idle else it }
+        return login.start(serverUrl, redirectUri)
+    }
+
+    /**
+     * Whether the app should open the login page by itself now: logged out, with a server it knows, and
+     * only once per logged-out state. True at most once; the claim is kept in storage, so neither Back,
+     * a rotation, a return to the front, a re-created screen nor a restarted app opens it again after the
+     * user closed it, and after logging out or an expired session the login screen says why instead.
+     */
+    fun claimAutoOpen(serverKnown: Boolean): Boolean {
+        if (!serverKnown || storage.session() != null || storage.loggedOut() != null) return false
+        storage.saveLoggedOut(LoggedOut.LOGIN_OPENED)
+        return true
+    }
+
+    /**
+     * A new access token for the stored session, or null. When the provider refused to renew it the
+     * session is over: gone from storage, with [LoggedOut.EXPIRED] for the login screen to say. A network
+     * error or a server in trouble ends nothing (the session stays and the next request tries again).
+     */
+    suspend fun renew(serverUrl: String): Session? {
+        val current = storage.session() ?: return null
+        val renewed = login.refresh(serverUrl, current)
+        // Unless the user logged out meanwhile, which says why already.
+        if (renewed == null && storage.session() == null && storage.loggedOut() != LoggedOut.BY_USER) storage.saveLoggedOut(LoggedOut.EXPIRED)
+        return renewed
+    }
+
+    /** Ends the session on the user's word: the login screen says so and opens nothing by itself. */
+    fun logOut() {
+        storage.logOut()
+        storage.saveLoggedOut(LoggedOut.BY_USER)
+        state.value = LoginProgress.Idle
+    }
+
+    /** Keeps a reason already known: the login screen goes on saying why the last session ended. */
+    private fun noteLoginOpened() {
+        if (storage.session() == null && storage.loggedOut() == null) storage.saveLoggedOut(LoggedOut.LOGIN_OPENED)
+    }
 }
 
 /** SHA-256 (FIPS 180-4), for the PKCE code challenge; the web has no synchronous digest. */

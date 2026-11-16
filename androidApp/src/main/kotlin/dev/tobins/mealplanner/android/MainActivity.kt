@@ -1,11 +1,11 @@
 package dev.tobins.mealplanner.android
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import dev.tobins.mealplanner.app.LoginLauncher
-import kotlinx.coroutines.flow.MutableSharedFlow
 import android.content.pm.PackageManager
 import android.os.Build
 import android.content.SharedPreferences
@@ -13,9 +13,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.browser.customtabs.CustomTabsClient
+import androidx.browser.customtabs.CustomTabsIntent
 import dev.tobins.mealplanner.app.App
+import dev.tobins.mealplanner.app.LoginExchange
 import dev.tobins.mealplanner.app.ServerSettings
 import dev.tobins.mealplanner.app.SettingsStorage
+import kotlinx.coroutines.MainScope
 
 /** Settings in the app's private SharedPreferences. */
 private class PreferencesStorage(private val prefs: SharedPreferences) : SettingsStorage {
@@ -30,42 +34,67 @@ private class PreferencesStorage(private val prefs: SharedPreferences) : Setting
     }
 }
 
+/** One storage for the screen and the login: Android keeps one SharedPreferences per name, so both see every change at once. */
+private fun settingsStorage(context: Context): SettingsStorage =
+    PreferencesStorage(context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE))
+
 /**
- * Opens Authelia's login page in the browser. It sends the browser to the server's
- * `/app/login`, which Android hands to this app (App Link) or which bounces back into it,
- * and the answer arrives in [MainActivity.onNewIntent].
+ * Opens Authelia's login page in a Custom Tab over the app: it shares the browser's cookies (an existing
+ * Authelia session logs in with one tap), passkeys, password managers and two-factor keep working, and the
+ * app never sees the password (RFC 8252: no WebView). The page ends on the server's `/app/login`, which
+ * Android hands to this app (App Link) or which forwards to the app's own scheme; the answer arrives in
+ * [MainActivity.onNewIntent], and as that activity is singleTask the tab above it in the task closes.
+ * Without a browser that offers Custom Tabs the page opens in the browser, as it did before.
  */
-private class BrowserLogin(private val context: Context) : LoginLauncher {
+private class CustomTabLogin(private val activity: Activity) : LoginLauncher {
     override fun redirectUri(serverUrl: String) = serverUrl.trimEnd('/') + "/app/login"
 
     override fun open(url: String) {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val page = Uri.parse(url)
+        val browser = customTabsBrowser()
+        if (browser != null) {
+            CustomTabsIntent.Builder().build().apply { intent.setPackage(browser) }.launchUrl(activity, page)
+        } else {
+            activity.startActivity(Intent(Intent.ACTION_VIEW, page).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
+    /**
+     * A browser that offers Custom Tabs: the default one if it does, else any installed. Asked with every
+     * browser listed, since the default alone is unknown until the user picked one.
+     */
+    private fun customTabsBrowser(): String? {
+        val view = Intent(Intent.ACTION_VIEW, Uri.parse("https://")).addCategory(Intent.CATEGORY_BROWSABLE)
+        val browsers = activity.packageManager.queryIntentActivities(view, PackageManager.MATCH_ALL).map { it.activityInfo.packageName }
+        return CustomTabsClient.getPackageName(activity, browsers)
     }
 }
 
 class MainActivity : ComponentActivity() {
-    private val loginCallbacks = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val storage = PreferencesStorage(getSharedPreferences("settings", Context.MODE_PRIVATE))
+        val storage = settingsStorage(this)
+        val logins = logins(this)
         // Debug builds are signed with another key, so a release could not install over them.
         val updater = if (BuildConfig.DEBUG) null else AndroidUpdateInstaller(this)
         if (updater != null) {
             UpdateCheckWorker.schedule(this)
             askForNotifications()
         }
-        intent?.newLoginAnswer(savedInstanceState)?.let { loginCallbacks.tryEmit(it) }
+        intent?.newLoginAnswer(savedInstanceState)?.let(logins::deliver)
         setContent {
-            App(ServerSettings(BuildConfig.SERVER_URL), storage, BrowserLogin(this), loginCallbacks, updater)
+            App(
+                ServerSettings(BuildConfig.SERVER_URL), storage, CustomTabLogin(this), logins, updater,
+                defaultsBuiltIn = BuildConfig.SERVER_URL_BUILT_IN,
+            )
         }
     }
 
     /** The login comes back here: an App Link to `<server>/app/login?code=…`, or its bounce `dev.tobins.mealplanner://login?code=…`. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.data?.let { loginCallbacks.tryEmit(it.toString()) }
+        intent.data?.let { logins(this).deliver(it.toString()) }
     }
 
     /**
@@ -87,5 +116,17 @@ class MainActivity : ComponentActivity() {
         if (prefs.getBoolean("askedForNotifications", false)) return
         prefs.edit().putBoolean("askedForNotifications", true).apply()
         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+    }
+
+    companion object {
+        /**
+         * The login for as long as the process lives rather than the screen: a token exchange under way
+         * when Android re-creates the screen finishes, once, and reaches the new one (#176). Only used on
+         * the main thread.
+         */
+        private var logins: LoginExchange? = null
+
+        private fun logins(context: Context): LoginExchange =
+            logins ?: LoginExchange(settingsStorage(context), MainScope()).also { logins = it }
     }
 }

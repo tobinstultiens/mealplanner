@@ -54,7 +54,6 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.TimeZone
-import kotlinx.coroutines.flow.emptyFlow
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
@@ -124,7 +123,8 @@ private fun shell(settings: ServerSettings) {
             override fun open(url: String) = Unit
         }
     }
-    App(settings, storage, launcher, emptyFlow())
+    val scope = rememberCoroutineScope()
+    App(settings, storage, launcher, remember { LoginExchange(storage, scope) })
 }
 
 /**
@@ -197,6 +197,17 @@ enum class Shot(
             Text(LocalStrings.current(Msg.SECTION_FOR, entry.name), style = MaterialTheme.typography.headlineSmall)
             SectionChoices(entry, choice = null, onChoice = {}, keeps = true, onKeeps = {})
         }
+    }),
+    // Logged out after the provider would not renew the session, with the server built in.
+    LOGIN(heightDp = 760, content = { _, _ ->
+        LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.EXPIRED, error = null, busy = false, {}, {})
+    }),
+    // No server known yet (a debug build): the address is asked for; the last attempt could not reach it.
+    LOGIN_ASKS_SERVER(heightDp = 860, content = { _, _ ->
+        LoginScreen(
+            ServerSettings("http://10.0.2.2:8080"), serverKnown = false, reason = null,
+            error = "Could not start the login: Connection refused", busy = false, onLogin = {}, onChangeServer = {},
+        )
     }),
     SETTINGS(heightDp = 1350, content = { _, _ ->
         ServerSettingsScreen(

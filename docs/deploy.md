@@ -14,6 +14,9 @@ Gatus checks `/health`.
    `mealplanner`: public, PKCE, two-factor, JWT access tokens, refresh tokens, redirects to
    `https://mealplanner.<DOMAIN>/app/login` (Android) and `https://mealplanner.<DOMAIN>/` (web), and
    CORS for the web client's token requests. Deploy it with `ansible-playbook -Kk docker/authelia.yml`.
+   The app's login in a Custom Tab (since #184) uses the same redirects, so the client needs no change.
+   How long a login lasts is the refresh token's lifespan there: when Authelia refuses to renew it, the
+   app ends on its login screen saying the login ran out.
 3. **Vault keys** in the Ansible repo's `vars/vault.yml`:
    - `mealplanner_owner`: your LLDAP username, so your existing data goes to your account. Empty:
      whoever logs in first gets it.
@@ -105,8 +108,9 @@ to the container's `env` in `docker/mealplanner.yml`.
 
 ## Connecting the app
 
-In the app, Progress → Settings → Log in, with `https://mealplanner.<DOMAIN>` as the server. The web
-client is served on the same address and logs in the same way. Each account sets its own cooking
+A release built with the server's address (README, "Releases") opens Authelia's login page at once.
+Otherwise the app's login screen asks for the server: `https://mealplanner.<DOMAIN>`. The web client
+is served on the same address and goes to the same login page. Each account sets its own cooking
 site on the Recipes tab.
 
 ## Kubernetes

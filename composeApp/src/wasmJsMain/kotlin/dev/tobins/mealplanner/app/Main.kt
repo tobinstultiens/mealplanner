@@ -5,7 +5,7 @@ import androidx.compose.ui.window.ComposeViewport
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
-import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.MainScope
 
 /** Settings in the browser's localStorage, per site. */
 private object LocalStorageSettings : SettingsStorage {
@@ -40,14 +40,18 @@ private object SameTabLogin : LoginLauncher {
 fun main() {
     // The web client is served by the server itself, so the API lives at the same address.
     val defaults = ServerSettings(url = window.location.origin)
-    // Coming back from the login page: hand the answer to the app and tidy the address bar.
+    // Lives as long as the page, which a login leaves and comes back to.
+    val logins = LoginExchange(LocalStorageSettings, MainScope())
+    // Coming back from the login page: hand the answer over, before the app could open the login page
+    // by itself (a cancelled or failed login must show the login screen, not go round again), and tidy the address bar.
     val callback = window.location.href.takeIf { "code=" in it || "error=" in it }
     if (callback != null) {
+        logins.deliver(callback)
         val route = window.sessionStorage.getItem(ROUTE_AFTER_LOGIN).orEmpty()
         window.sessionStorage.removeItem(ROUTE_AFTER_LOGIN)
         window.history.replaceState(null, "", window.location.pathname + route)
     }
     ComposeViewport(document.body!!) {
-        App(defaults, LocalStorageSettings, SameTabLogin, listOfNotNull(callback).asFlow(), routes = AddressRoutes)
+        App(defaults, LocalStorageSettings, SameTabLogin, logins, routes = AddressRoutes)
     }
 }

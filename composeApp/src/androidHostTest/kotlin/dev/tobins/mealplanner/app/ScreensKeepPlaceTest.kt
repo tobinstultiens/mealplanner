@@ -14,7 +14,7 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.MainScope
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -65,7 +65,8 @@ class ScreensKeepPlaceTest {
             override fun redirectUri(serverUrl: String) = "$serverUrl/app/login"
             override fun open(url: String) = Unit
         }
-        restoration.setContent { App(backend.settings, storage, launcher, emptyFlow()) }
+        val logins = LoginExchange(storage, MainScope())
+        restoration.setContent { App(backend.settings, storage, launcher, logins) }
     }
 
     private fun waitFor(text: String) =

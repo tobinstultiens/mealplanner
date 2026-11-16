@@ -49,6 +49,22 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
   tells them where to log in (`GET /api/auth/config`). The web client returns to `/`, the Android app
   to `/app/login`: an App Link (`/.well-known/assetlinks.json`, from `MEALPLANNER_ANDROID_CERTS`), and
   when Android does not open the app for it, that page sends the browser on to the app's own scheme.
+  Both stay: a Custom Tab hands nothing back to the app by itself, and installed apps up to v0.1.4 use them.
+- Logged out, the apps show a login screen of their own: the app's name, Log in, the server it logs in
+  to (with "Change server", which opens the settings) and why the last session ended (logged out, or the
+  login ran out or was ended). They open the login page by themselves once per logged-out state: on a
+  fresh install (or the first start logged out after an update) with a known server. Once that page
+  was opened, closed, or answered, after logging out and after an expired session, only the Log in
+  button opens it (kept in storage, so neither Back, a rotation, the app returning to the front, a
+  re-created screen nor a restart opens it again). Android opens the page in a Custom Tab over the app
+  (`androidx.browser`), or in the browser when no browser offers Custom Tabs; never in a WebView, and the
+  app never sees the password. The tab closes when the answer reaches the app.
+- The answer goes to `LoginExchange` (`Login.kt`), which lives as long as the process (Android) or the
+  page (web), not the screen: the token exchange finishes when Android re-creates the screen during it,
+  and the screen that is there then takes the result. One answer is exchanged at most once.
+- An access token the server refuses is renewed with the refresh token. When the provider refuses that
+  (400 or 401, or there is no refresh token) the session ends on the login screen, saying why; a network
+  error or a provider in trouble (5xx, 429, 404) ends nothing, and the next request tries again.
 - The server accepts JWT access tokens (RS256) from that issuer issued to that client, checked against
   the provider's keys. The token's subject is the account; new accounts start with the default
   ingredient catalogue. `GET /api/me` names the caller.
@@ -62,8 +78,9 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
 ## Web client
 
 `composeApp` also builds for the browser (`./gradlew :composeApp:wasmJsBrowserDistribution`), and the
-server jar includes that build: the server serves it at `/`. On the first visit it logs in through the
-login page in the same tab; the tokens are kept in the browser's `localStorage`. `kotlin-js-store/` pins the JavaScript toolchain's
+server jar includes that build: the server serves it at `/`. On the first visit it goes to the login
+page by itself, in the same tab (a normal page navigation); coming back from a cancelled or failed login
+shows the login screen instead of going round again. The tokens are kept in the browser's `localStorage`. `kotlin-js-store/` pins the JavaScript toolchain's
 dependencies; commit changes to it. The web tests run in a headless Chrome.
 
 Checked by hand (login, all five tabs, light and dark, 360 px and 1280 px wide, Dutch locale, back
@@ -79,9 +96,11 @@ new fragment into the address of an open page does not move the app (a reload do
 
 ## Android app
 
-The server address and the login are under Progress → Settings. Until another address is saved the
-build's default applies: `http://10.0.2.2:8080` (the host machine, seen from an emulator), which
-`-PserverUrl=…` changes at build time. The tokens are kept in the app's private storage.
+Logged out, the app shows its login screen (see "Accounts and login"). A release built with the server's
+address opens that server's login page at once; a debug build asks for the address on the login screen
+first, suggesting `http://10.0.2.2:8080` (the host machine, seen from an emulator), which `-PserverUrl=…`
+changes at build time. The address can be changed under Progress → Settings, or with "Change server" on
+the login screen. The tokens are kept in the app's private storage.
 
 The app is in English and Dutch. Progress → Settings → Appearance → Language picks System (Dutch when the
 device, or the browser for the web app, is set to a `nl` language, English otherwise), English or Nederlands;
@@ -132,8 +151,8 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today, Plan, Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes, recipe detail, Offers, Prices, Progress and
-Settings screens, the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
+Today, Plan, Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes, recipe detail, Offers, Prices, Progress,
+Settings and login screens (the login with a known server and with the address asked for), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
 sample data, with the date, time zone and locale (English, UK) fixed, so a picture only changes when the
@@ -259,9 +278,11 @@ is newer, **Update** downloads the APK and Android installs it over the current 
 once to allow installs from the app. Debug builds don't check, since a release can't replace them.
 
 With those properties set, `./gradlew :androidApp:assembleRelease` also builds a signed
-`androidApp/build/outputs/apk/release/androidApp-release.apk` locally. The release opens on the
-login, with `https://mealplanner.tstultiens.com` filled in
-(`-PreleaseServerUrl=` changes that). It only talks HTTPS. A release and a debug build cannot be
+`androidApp/build/outputs/apk/release/androidApp-release.apk` locally. `-PreleaseServerUrl=https://mealplanner.example.nl`
+builds a server's address into it: a fresh install opens that server's login page at once, and the App
+Link (`/app/login`) is for that host. The address is not kept in this public repository. Without it a
+release asks for the address on its login screen, as a debug build does, and the login comes back
+through `/app/login`'s forward to the app's own scheme. It only talks HTTPS. A release and a debug build cannot be
 installed side by side: they share the application id but not the signing key.
 
 ## Server configuration
