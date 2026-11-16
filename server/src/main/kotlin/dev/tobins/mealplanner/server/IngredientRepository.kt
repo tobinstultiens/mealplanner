@@ -42,11 +42,11 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      * remembers. Only ticks of texts that [change] linked move, and never onto a tick of the ingredient
      * that is there already: then both stay as they were, as before.
      */
-    private fun <T> linking(change: () -> T): T = db.transactionWithResult {
+    private fun <T> linking(change: () -> T): T = db.writing {
         val ticks = shopping.selectTextChecks(userId).executeAsList()
             .mapNotNull { row -> (ShoppingKey.parseOrNull(row.itemKey) as? ShoppingKey.Text)?.let { row.weekStart to it } }
         // The resolver reads the whole catalogue: only when there is a tick to move.
-        if (ticks.isEmpty()) return@transactionWithResult change()
+        if (ticks.isEmpty()) return@writing change()
         val before = resolver()
         val result = change()
         val after = resolver()

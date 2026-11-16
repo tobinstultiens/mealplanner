@@ -183,7 +183,7 @@ class RecipeRepository(
     }
 
     /** Replaces a recipe of the user's own; imported recipes are edited on the cooking site. */
-    fun update(id: Long, input: RecipeInput): RecipeDetail = db.transactionWithResult {
+    fun update(id: Long, input: RecipeInput): RecipeDetail = db.writing {
         val row = q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
         if (row.source == RecipeSource.COOKING_SITE.name) throw ConflictException("Recipes from the cooking site are edited there")
         val parsed = parse(input)
@@ -306,7 +306,7 @@ class RecipeRepository(
         var updated = 0
         var unchanged = 0
         var removed = 0
-        db.transaction {
+        db.writing {
             val existing = q.selectSynced(userId).executeAsList().associateBy { it.sourcePath }
             for ((recipe, hash) in pages) {
                 val row = existing[recipe.path]

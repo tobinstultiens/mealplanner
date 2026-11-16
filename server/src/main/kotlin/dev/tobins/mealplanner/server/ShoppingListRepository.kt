@@ -68,7 +68,7 @@ class ShoppingListRepository(
         val lines = recipes.linesWithIngredients(meals.map { it.recipeId })
         val week = needsOf(meals, sectionOf, lines)
         // The stock went down for the meals eaten, so what is still needed goes by the meals still to cook.
-        val toCook = needsOf(PlanRepository.toCook(meals), sectionOf, lines).needs.associateBy { it.key }
+        val toCook = needsOf(plans.stillToCook(start, meals), sectionOf, lines).needs.associateBy { it.key }
         val ownRows = q.selectExtrasForWeek(userId, start.toString()).executeAsList()
         val own = ownNeeds(ownRows, sectionOf)
         val ticks = ticks(start)
@@ -296,7 +296,7 @@ class ShoppingListRepository(
         // Worked out before anything is stored, so that refused grams store nothing.
         val bought = if (check.checked) boughtGrams(weekStart, key, check.grams) else null
         val row = if (check.checked) neededRow(start, key) else null
-        db.transaction {
+        db.writing {
             onHandFromTick(start, key, check.checked, bought)
             if (check.checked) insertTick(start, key, row) else q.deleteCheck(userId, start.toString(), key.toString())
         }
@@ -347,7 +347,7 @@ class ShoppingListRepository(
             if (neededRow(start, key) != null) throw ConflictException("The meals of the week of $start need ${input.key} again")
             throw NotFoundException("Nothing bought of ${input.key} in the week of $start that no meal needs")
         }
-        db.transaction {
+        db.writing {
             // Un-ticked by another request in the meantime.
             val tick = ticks(start)[key] ?: throw NotFoundException("Nothing bought of ${input.key} in the week of $start")
             val grams = tick.grams?.takeIf { it >= IngredientRepository.USED_UP_GRAMS }

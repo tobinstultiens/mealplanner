@@ -58,6 +58,7 @@ import java.util.Locale
 import kotlin.concurrent.thread
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -424,6 +425,41 @@ class PlanTest {
         assertEquals(20_000.0, stock(), 1e-6)
     }
 
+    /**
+     * Issue 169: a dinner whose leftover lunch was swapped for another recipe is cooked for itself only, and
+     * eating it takes only its own share. Planning around it must not put a leftover lunch of it back: nothing
+     * was cooked or taken for that lunch, so the shopping list would not buy for it either.
+     */
+    @Test
+    fun aDinnerEatenWithoutLeftoversGetsNoLeftoverLunchWhenTheWeekIsReplanned() = testApplication {
+        val http = start().ready()
+        http.post("/api/plans/$week/generate")
+        val stock = http.stockUpBeef()
+        assertFalse(http.post("/api/plans/$week/meals/5/lunch/reroll").body<WeekPlan>().meal(5, MealSlot.LUNCH)!!.leftover)
+        val eaten = http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.EATEN) }.body<WeekPlan>()
+        val dinner = eaten.meal(4, MealSlot.DINNER)!!
+        assertEquals(20_000.0 - share(dinner), stock(), 1e-6, "the dinner was cooked for itself only")
+
+        for ((change, run) in listOf<Pair<String, suspend () -> HttpResponse>>(
+            "a replan" to { http.post("/api/plans/$week/generate") },
+            "another recipe for the lunch" to { http.post("/api/plans/$week/meals/5/lunch/reroll") },
+        )) {
+            val plan = run().body<WeekPlan>()
+            val lunch = plan.meal(5, MealSlot.LUNCH)!!
+            assertFalse(lunch.leftover && lunch.recipeId == dinner.recipeId, "$change planned leftovers of a dinner eaten without them: $lunch")
+            // Planned like any other meal: cooked for itself, and bought for.
+            assertEquals(lunch.portions, lunch.cookPortions, change)
+            val toCook = PlanRepository.toCook(plan.days.flatMap { it.meals })
+            assertTrue(lunch in toCook, change)
+            val beef = http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef raw" }
+            assertEquals(toCook.sumOf(::share), beef.toComeGrams!!, 1e-6, change)
+            assertEquals(20_000.0 - share(dinner), stock(), 1e-6, change)
+        }
+
+        http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.PLANNED) }
+        assertEquals(20_000.0, stock(), 1e-6)
+    }
+
     @Test
     fun aMealTheStockWentDownForIsNotRemovedAndTheStockStaysWhole() = testApplication {
         val http = start().ready()
@@ -473,18 +509,36 @@ class PlanTest {
         // Removed as servers before issue 165 did: the dinner's own share stays taken, and its lunch keeps its share.
         db.planQueries.deleteMeal(userId(), week, 4, MealSlot.DINNER.name)
 
+        // Its share was taken, so it was cooked (issue 169): it cooks nothing, and the shopping list does not buy for it again.
+        suspend fun countedAsCooked(case: String) {
+            val plan = http.get("/api/plans/$week").body<WeekPlan>()
+            assertEquals(0.0, plan.meal(5, MealSlot.LUNCH)!!.cookPortions, case)
+            assertEquals(0.0, http.get("/api/days/2026-11-21").body<DayView>().meals.single { it.slot == MealSlot.LUNCH }.cookPortions, case)
+            val toCook = plan.days.flatMap { it.meals }.filter { it.status != MealStatus.EATEN }.sumOf { it.cookPortions!! * gramsPerServing(it.title) }
+            val beef = http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef raw" }
+            assertEquals(toCook, beef.toComeGrams!!, 1e-6, case)
+        }
+        countedAsCooked("its dinner removed")
+
         // A recipe for the empty dinner, a replan, "Another recipe" and removing all leave that lunch as it is.
         val other = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title.startsWith("Dinner") && it.id != lunch.recipeId }
         val chosen = http.put("/api/plans/$week/meals/4/dinner") { setBody(MealChoice(other.id)) }.body<WeekPlan>()
         assertEquals(other.id, chosen.meal(4, MealSlot.DINNER)!!.recipeId)
         assertEquals(lunch, chosen.meal(5, MealSlot.LUNCH).stored())
+        countedAsCooked("another dinner chosen")
         assertEquals(lunch, http.post("/api/plans/$week/generate").body<WeekPlan>().meal(5, MealSlot.LUNCH).stored())
+        countedAsCooked("replanned")
         val refused = http.post("/api/plans/$week/meals/5/lunch/reroll")
         assertEquals(HttpStatusCode.Conflict, refused.status)
         assertTrue("These leftovers were cooked with a dinner that was eaten" in refused.bodyAsText(), refused.bodyAsText())
         assertEquals(HttpStatusCode.Conflict, http.delete("/api/plans/$week/meals/5/lunch").status)
         assertEquals(lunch, http.get("/api/plans/$week").body<WeekPlan>().meal(5, MealSlot.LUNCH).stored())
         assertEquals(afterEating, stock(), 1e-6)
+
+        // Its own recipe chosen for the dinner again: the lunch is that dinner's leftovers once more, but cooked already.
+        val again = http.put("/api/plans/$week/meals/4/dinner") { setBody(MealChoice(lunch.recipeId)) }.body<WeekPlan>().meal(4, MealSlot.DINNER)!!
+        assertEquals(again.portions, again.cookPortions, "the dinner cooks only its own")
+        countedAsCooked("its recipe chosen for the dinner again")
 
         // Eaten, it takes nothing more; un-eaten, it gives its share back.
         http.put("/api/plans/$week/meals/5/lunch/status") { setBody(MealStatus.EATEN) }
@@ -1061,6 +1115,11 @@ class PlanTest {
             mark(at, 1, "dinner", MealStatus.EATEN)
             http.post("/api/plans/$at/generate").ok()
         }
+        check("lunch swapped, dinner eaten, then the week replanned (no leftovers of it come back)") { at, _ ->
+            http.post("/api/plans/$at/meals/2/lunch/reroll").ok()
+            mark(at, 1, "dinner", MealStatus.EATEN)
+            http.post("/api/plans/$at/generate").ok()
+        }
     }
 
     @Test
@@ -1080,6 +1139,90 @@ class PlanTest {
 
     @Test
     fun aRerolledDinnerCooksOnlyItsOwnWhenTheOldLeftoverLunchWasSkipped() = testApplication { rerollKeepingLunch(MealStatus.SKIPPED) }
+
+    /**
+     * The random check from the review of PR #167, kept (issue 169). Two weeks eat from one stock entry, which
+     * counts from the first; fixed seeds give sequences of what the app can do to the lunches and dinners of
+     * their first three days (few enough meals that the steps meet: two dinners with the next day's lunch):
+     * mark eaten, skipped or planned, "Another recipe", choose one, remove, plan the week, lock or unlock, write
+     * one. After every step the stock left plus what the meals recorded taking is what was stocked up, and no
+     * leftover lunch of an eaten dinner goes without the share it was cooked with (issue 169). After each
+     * sequence the shopping lists count what the meals still to cook need, and un-eating every meal in random
+     * order makes the stock whole again with nothing recorded. A failure names the seed and the step.
+     */
+    @Test
+    fun randomChangesToTwoWeeksNeverLoseOrMakeStock() = testApplication {
+        val http = start().ready()
+        val weeks = listOf(week, LocalDate.parse(week).plusWeeks(1).toString())
+        val beef = http.get("/api/ingredients").body<List<Ingredient>>().first { it.name == "Beef raw" }.id
+        val userId = userId()
+        val stocked = 100_000.0 // more than both weeks can eat, so every eaten meal records what it took
+        StockRepository(db, FoodRepository(db), userId).putOnHandFrom(beef, LocalDate.parse(week), stocked, StockSource.STOCK_UP)
+        val dinners = http.get("/api/recipes").body<List<RecipeSummary>>().filter { it.title.startsWith("Dinner") }
+        val slots = listOf(MealSlot.LUNCH, MealSlot.DINNER)
+        val recipes = HashMap<Long, RecipeDetail>()
+        suspend fun recipe(id: Long) = recipes.getOrPut(id) { http.get("/api/recipes/$id").body() }
+
+        fun left() = db.pantryQueries.selectStock(userId, weeks.last(), listOf(beef)).executeAsList().sumOf { it.grams!! }
+        fun takenFor(week: String, meal: PlannedMeal) = db.pantryQueries.selectStockUses(userId, week, meal.day.toLong(), meal.slot.name).executeAsList()
+        suspend fun plans() = weeks.associateWith { http.get("/api/plans/$it").body<WeekPlan>().days.flatMap { day -> day.meals } }
+
+        /** Stock plus recorded use is what was stocked up, and every leftover lunch of an eaten dinner holds its share. */
+        suspend fun check(where: String) {
+            val plans = plans()
+            val used = plans.entries.sumOf { (week, meals) -> meals.sumOf { meal -> takenFor(week, meal).sumOf { it.grams!! } } }
+            assertEquals(stocked, left() + used, 1e-6, "$where: stock ${left()} + recorded use $used")
+            for ((week, meals) in plans) for (lunch in meals.filter { it.slot == MealSlot.LUNCH && it.leftover }) {
+                val dinner = meals.firstOrNull { it.day == lunch.day - 1 && it.slot == MealSlot.DINNER && !it.leftover && it.recipeId == lunch.recipeId }
+                if (dinner?.status == MealStatus.EATEN) {
+                    assertTrue(takenFor(week, lunch).isNotEmpty(), "$where: in the week of $week, $lunch is the leftovers of an eaten dinner that took nothing for it")
+                }
+            }
+        }
+
+        val seeds = 1L..8L
+        for (seed in seeds) {
+            val random = Random(seed)
+            weeks.forEach { http.post("/api/plans/$it/generate") }
+            repeat(60) { step ->
+                val at = weeks.random(random)
+                val day = random.nextInt(3)
+                val slot = slots.random(random).name.lowercase()
+                val meal = "/api/plans/$at/meals/$day/$slot"
+                val (action, response) = when (random.nextInt(8)) {
+                    0, 1 -> MealStatus.entries.random(random).let { status -> "mark $status" to http.put("$meal/status") { setBody(status) } }
+                    2 -> "another recipe" to http.post("$meal/reroll")
+                    3 -> dinners.random(random).let { "choose ${it.title}" to http.put(meal) { setBody(MealChoice(it.id)) } }
+                    4 -> "remove" to http.delete(meal)
+                    5 -> "plan the week" to http.post("/api/plans/$at/generate")
+                    6 -> random.nextBoolean().let { lock -> (if (lock) "lock" to http.put("$meal/lock") else "unlock" to http.delete("$meal/lock")) }
+                    else -> "write a recipe" to http.post("$meal/generate") { setBody(GenerateRequest(wish = "beef")) }
+                }
+                val where = "seed $seed, step $step: $action at $at day $day $slot"
+                assertTrue(response.status.value in setOf(200, 404, 409, 422), "$where: ${response.status} ${response.bodyAsText()}")
+                check(where)
+            }
+
+            // What the shopping list still counts is the recipes' grams for the servings still to cook.
+            for ((at, meals) in plans()) {
+                var expected = 0.0
+                for (meal in meals.filter { it.status != MealStatus.EATEN }) {
+                    val detail = recipe(meal.recipeId)
+                    expected += detail.ingredients.sumOf { it.grams ?: 0.0 } * meal.cookPortions!! / detail.summary.servings!!
+                }
+                val listed = http.get("/api/plans/$at/shopping").body<ShoppingList>().items.singleOrNull { it.name == "Beef raw" }?.toComeGrams ?: 0.0
+                assertEquals(expected, listed, 1e-6, "seed $seed: the shopping list of the week of $at")
+            }
+
+            // Un-eaten in any order, every meal gives back exactly what it took.
+            val eaten = plans().flatMap { (at, meals) -> meals.filter { it.status == MealStatus.EATEN }.map { at to it } }.shuffled(random)
+            for ((at, meal) in eaten) {
+                http.put("/api/plans/$at/meals/${meal.day}/${meal.slot.name.lowercase()}/status") { setBody(MealStatus.PLANNED) }
+                check("seed $seed, un-eating ${meal.slot} of day ${meal.day} in the week of $at")
+            }
+            assertEquals(stocked, left(), 1e-6, "seed $seed: the stock after un-eating every meal")
+        }
+    }
 
     /** The lunch is history and stays: it is the old dinner's leftovers, so nothing of the new dinner's is cooked for it, and it cooks nothing itself. */
     private suspend fun ApplicationTestBuilder.rerollKeepingLunch(status: MealStatus) {

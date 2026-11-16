@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.server.db.AppUser
 import dev.tobins.mealplanner.server.db.Database
 import java.time.Instant
 
@@ -25,12 +26,27 @@ class UserRepository(private val db: Database) {
      */
     // One at a time: an app's first requests arrive together, and must not claim or create twice.
     @Synchronized
-    fun resolve(identity: Identity, owner: String? = null, onCreated: (Long) -> Unit = {}): Account = db.transactionWithResult {
+    fun resolve(identity: Identity, owner: String? = null, onCreated: (Long) -> Unit = {}): Account {
+        // Every call asks this. A known account whose names are as they were writes nothing, so it does not
+        // wait for the write lock, which another account's plan change or the price lookup may hold.
+        q.selectBySubject(identity.subject).executeAsOneOrNull()?.takeUnless { renamed(it, identity) }?.let { row ->
+            return accountOf(row, identity)
+        }
+        return db.writing { resolveForWriting(identity, owner, onCreated) }
+    }
+
+    /** Whether [identity] names the account [row] otherwise than it is stored. */
+    private fun renamed(row: AppUser, identity: Identity) =
+        identity.username != null && (row.username != identity.username || row.displayName != identity.displayName)
+
+    private fun accountOf(row: AppUser, identity: Identity) =
+        Account(row.id, identity.subject, identity.username ?: row.username, identity.displayName ?: row.displayName)
+
+    /** [resolve] for an account that is new or renamed: read again under the write lock, so that what is read is what gets written over. */
+    private fun resolveForWriting(identity: Identity, owner: String?, onCreated: (Long) -> Unit): Account {
         q.selectBySubject(identity.subject).executeAsOneOrNull()?.let { row ->
-            if (identity.username != null && (row.username != identity.username || row.displayName != identity.displayName)) {
-                q.updateNames(identity.username, identity.displayName, row.id)
-            }
-            return@transactionWithResult Account(row.id, identity.subject, identity.username ?: row.username, identity.displayName ?: row.displayName)
+            if (renamed(row, identity)) q.updateNames(identity.username, identity.displayName, row.id)
+            return accountOf(row, identity)
         }
         val unclaimed = q.selectUnclaimed().executeAsOneOrNull()
         val id = if (unclaimed != null && (owner.isNullOrBlank() || owner.equals(identity.username, ignoreCase = true))) {
@@ -40,7 +56,7 @@ class UserRepository(private val db: Database) {
             q.insertUser(identity.subject, identity.username, identity.displayName, Instant.now().toString())
             q.lastUserId().executeAsOne()
         }
-        Account(id, identity.subject, identity.username, identity.displayName).also { onCreated(id) }
+        return Account(id, identity.subject, identity.username, identity.displayName).also { onCreated(id) }
     }
 
     fun all(): List<Long> = q.selectAllUsers().executeAsList().map { it.id }

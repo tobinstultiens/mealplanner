@@ -71,7 +71,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      * Either way the owner says what is at home, so un-eating a meal no longer puts back what it
      * took from the stock ([giveBack]): taken off, it would come back; on hand, it is there already.
      */
-    fun setOnHand(id: Long, onHand: Boolean) = db.transaction {
+    fun setOnHand(id: Long, onHand: Boolean): Unit = db.writing {
         requireIngredient(id)
         // Before the stock goes: an ingredient in stock keeps its place in the pantry's list.
         if (onHand) pantry.insertOnHand(id, java.time.Instant.now().toString(), userId) else pantry.deleteOnHand(id, userId)
@@ -119,7 +119,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      * leaves it; used up twice in one week, the second adds to the first. An ingredient on hand by
      * hand stays as it is, as for [putOnHandFrom].
      */
-    fun addToStock(id: Long, week: LocalDate, grams: Double) = db.transaction {
+    fun addToStock(id: Long, week: LocalDate, grams: Double): Unit = db.writing {
         requireIngredient(id)
         if (pantry.addToStock(grams, id, week.toString(), StockSource.USE_UP.name, userId).value == 0L) {
             putOnHandFrom(id, week, grams, StockSource.USE_UP)
@@ -131,7 +131,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      * its own entry ([source]) and nothing else. What was not bought was not eaten either, so
      * un-eating a meal that took from it puts nothing back.
      */
-    fun takeBackOnHand(id: Long, week: LocalDate, source: StockSource) = db.transaction {
+    fun takeBackOnHand(id: Long, week: LocalDate, source: StockSource): Unit = db.writing {
         requireIngredient(id)
         pantry.deleteStock(id, week.toString(), source.name, userId)
         pantry.deleteStockUsesFrom(userId, id, week.toString(), source.name)
@@ -145,8 +145,8 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      */
     fun useUp(meal: MealRef, grams: Map<Long, Double>) {
         if (grams.isEmpty()) return
-        db.transaction {
-            if (uses(meal).isNotEmpty()) return@transaction
+        db.writing {
+            if (uses(meal).isNotEmpty()) return@writing
             val stock = pantry.selectStock(userId, meal.week.toString(), grams.keys).executeAsList().groupBy { it.ingredientId }
             for ((id, entries) in stock) {
                 var wanted = grams.getValue(id)
@@ -185,7 +185,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      * added; one the meal used up comes back as it was. An ingredient put on hand by hand in the
      * meantime stays as it is.
      */
-    fun giveBack(meal: MealRef) = db.transaction {
+    fun giveBack(meal: MealRef): Unit = db.writing {
         for (use in uses(meal)) {
             if (pantry.addToStock(use.grams, use.ingredientId, use.fromWeek, use.source, userId).value == 0L) {
                 pantry.insertStock(use.fromWeek, use.source, use.addedAt, use.grams, use.ingredientId, userId)

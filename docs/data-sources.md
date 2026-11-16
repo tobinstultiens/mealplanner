@@ -465,12 +465,27 @@ Removing the leftover lunch of an eaten dinner is refused rather than giving its
 dinner was cooked with it, so that share is used whether the lunch is eaten or not. Skipping it says
 it is not eaten, as for any meal. A replan counts a kept leftover lunch in its day's calories and
 protein, as it is still to eat, but not in what the shopping list still has to buy for (its share was
-taken when its dinner was eaten); the planner puts no other lunch in its slot.
+taken when its dinner was eaten); the planner puts no other lunch in its slot. So it is for a leftover
+lunch whose eaten dinner a server before issue 165 removed (issue 169): what is kept under its slot says
+its share was taken, so it counts as cooked (it cooks nothing itself, and the list does not buy for it),
+also when its recipe is chosen for that dinner again, which then cooks only its own portions.
+
+A dinner whose leftover lunch was swapped for another recipe before it was eaten was cooked for itself
+only, and eating it took only its own share. Neither a replan nor "Another recipe" for that lunch plans
+leftovers of it there afterwards (issue 169): nothing was cooked or taken for them, and the shopping list
+would not buy for them either. The lunch is planned like any other meal, cooked for itself and bought for.
 
 Each change of the plan reads it and writes it in one transaction that takes the database's write lock
 first, so a meal eaten meanwhile on another device is not replaced after all, and a write of the offer
 refresh or the price lookup in between makes the request wait for it instead of failing with
-"database is locked".
+"database is locked". So does every other change that reads before it writes (issue 169): the stock
+(ticks of the shopping list, using up, on hand by hand, eating and un-eating), the catalogue's links,
+editing a recipe and the cooking-site sync, and a login under new names. They share one helper
+(`Database.writing` in `Database.kt`), whose first statement changes nothing on `appUser` (a table of no
+account, so a login without an account yet takes it the same way). A login of a known account under
+the same names writes nothing and does not wait for the lock. None of them holds the lock across a
+network call: the cooking-site fetch, the store and price lookups and Claude's recipe writing all happen
+before or outside them.
 
 Marking an item on hand in the pantry makes it one set by hand, even if ticks put it there (its stock
 goes, and it keeps its place in the pantry's list): those stay until removed by hand, whatever is
