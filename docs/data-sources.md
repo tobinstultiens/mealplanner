@@ -102,6 +102,8 @@ stuks" wants 2); after a deal that already wants N packs ("1+1 gratis bij 2 stuk
 a price or an amount off ("voor 1,99 bij 2 stuks") it may mean each pack or all of them, so the text stays
 `UNKNOWN`, as does every "Tot 25% korting" (not a firm percentage). The packs a deal wants (`packsNeeded`) come
 from the same reading; only an unknown deal that says "N stapelen" still wants N.
+A number the reader cannot use makes the text `UNKNOWN` rather than an error: a count of 0 packs or above 1000, or a
+price or weight too long to be a number. Pack sizes with such a number give no size.
 
 Each refresh logs a warning per store when some of its deal texts are not read: how many of its offers, and the
 most common texts, so that a new wording of a store is noticed.
