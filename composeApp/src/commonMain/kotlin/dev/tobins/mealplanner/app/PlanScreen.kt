@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -36,9 +36,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.DailyTargets
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.WeekPlan
@@ -58,6 +61,8 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
     val pictures by rememberRecipePictureUrls(api)
     // The meal a new recipe is being written for.
     var generatingFor by remember { mutableStateOf<PlannedMeal?>(null) }
+    // The slot a recipe is being chosen for: a planned meal's or an empty one's.
+    var choosingFor by remember { mutableStateOf<Pair<Int, MealSlot>?>(null) }
 
     LaunchedEffect(weekStart) {
         state = Load.Loading
@@ -86,6 +91,18 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
         ) { request ->
             state = Load.Ready(api.generateIntoPlan(weekStart, meal.day, meal.slot, request))
             generatingFor = null
+        }
+    }
+
+    choosingFor?.let { (day, slot) ->
+        RecipePicker(
+            api, slot,
+            title = t(Msg.PLAN_CHOOSE_FOR, t.slot(slot), dayLabel(plusDays(weekStart, day), t.locale)),
+            onDismiss = { choosingFor = null },
+        ) { recipe ->
+            // A server from before the route says nothing: the picker shows that and stays open.
+            state = Load.Ready(api.chooseRecipe(weekStart, day, slot, recipe.id) ?: throw IllegalStateException(t(Msg.PLAN_CHOOSE_UNSUPPORTED)))
+            choosingFor = null
         }
     }
 
@@ -157,15 +174,26 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
                         item { EmptyState(Spot.NothingPlanned, t(Msg.NOTHING_PLANNED_WEEK), Modifier.height(240.dp)) }
                     }
                     if (hasMeals) {
-                        items(plan.days, key = { it.date }) { day ->
+                        itemsIndexed(plan.days, key = { _, day -> day.date }) { index, day ->
                             DayCard(
                                 day = day,
+                                dayIndex = index,
                                 targets = plan.targets,
+                                // A slot is offered on every day that has no meal in it.
+                                missingSlots = MealSlot.entries.filter { slot -> day.meals.none { it.slot == slot } },
                                 enabled = !busy,
                                 pictures = pictures,
                                 onOpenRecipe = onOpenRecipe,
                                 onReroll = { meal -> change { api.rerollMeal(weekStart, meal.day, meal.slot) } },
                                 onGenerate = { meal -> generatingFor = meal },
+                                onChoose = { day, slot -> choosingFor = day to slot },
+                                onToggleSkipped = { meal ->
+                                    val status = if (meal.status == MealStatus.SKIPPED) MealStatus.PLANNED else MealStatus.SKIPPED
+                                    change {
+                                        api.setMealStatus(weekStart, meal.day, meal.slot, status)
+                                        api.plan(weekStart)
+                                    }
+                                },
                                 onToggleLock = { meal -> change { api.setMealLocked(weekStart, meal.day, meal.slot, !meal.locked) } },
                             )
                         }
@@ -179,12 +207,16 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
 @Composable
 private fun DayCard(
     day: PlanDay,
+    dayIndex: Int,
     targets: DailyTargets,
+    missingSlots: List<MealSlot>,
     enabled: Boolean,
     pictures: Map<Long, String>,
     onOpenRecipe: (Long) -> Unit,
     onReroll: (PlannedMeal) -> Unit,
     onGenerate: (PlannedMeal) -> Unit,
+    onChoose: (Int, MealSlot) -> Unit,
+    onToggleSkipped: (PlannedMeal) -> Unit,
     onToggleLock: (PlannedMeal) -> Unit,
 ) {
     val t = LocalStrings.current
@@ -213,7 +245,12 @@ private fun DayCard(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            Text(meal.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                meal.title,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                textDecoration = if (meal.status == MealStatus.SKIPPED) TextDecoration.LineThrough else null,
+                            )
                         }
                         // A meal with a photo shows it before the buttons; one without has nothing there.
                         recipePicture(pictures[meal.recipeId])?.let { RecipePhoto(it, Modifier.padding(top = 4.dp, end = Spacing.Related).size(48.dp)) }
@@ -229,15 +266,32 @@ private fun DayCard(
                                 AppIcons.Swap,
                                 t(Msg.SWAP_SLOT, t.slot(meal.slot)),
                                 onClick = { menu = true },
-                                enabled = enabled && !meal.locked,
+                                enabled = enabled,
                             )
+                            // A locked meal (one the user chose, or locked) keeps its recipe: only choosing or leaving it out is left.
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(text = { Text(t(Msg.ANOTHER_RECIPE)) }, onClick = { menu = false; onReroll(meal) })
-                                DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, onClick = { menu = false; onGenerate(meal) })
+                                DropdownMenuItem(text = { Text(t(Msg.ANOTHER_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onReroll(meal) })
+                                DropdownMenuItem(text = { Text(t(Msg.CHOOSE_RECIPE)) }, onClick = { menu = false; onChoose(meal.day, meal.slot) })
+                                DropdownMenuItem(
+                                    text = { Text(if (meal.status == MealStatus.SKIPPED) t(Msg.EAT_AFTER_ALL) else t(Msg.NOT_EATING_THIS)) },
+                                    onClick = { menu = false; onToggleSkipped(meal) },
+                                )
+                                DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onGenerate(meal) })
                             }
                         }
                     }
                     MealNumbers(meal.macrosText(t), meal.cost?.let { "≈ ${formatEuro(it, t.locale)}" }, Modifier.padding(bottom = 4.dp))
+                }
+            }
+            if (missingSlots.isNotEmpty()) {
+                Box {
+                    var menu by remember { mutableStateOf(false) }
+                    TextButton(enabled = enabled, onClick = { menu = true }) { Text(t(Msg.PLAN_ADD_MEAL)) }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        for (slot in missingSlots) {
+                            DropdownMenuItem(text = { Text(t.slot(slot, capitalised = true)) }, onClick = { menu = false; onChoose(dayIndex, slot) })
+                        }
+                    }
                 }
             }
         }

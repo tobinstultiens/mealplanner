@@ -82,14 +82,28 @@ class PlanRepository(
     }
 
     /**
-     * Puts [candidate] in a slot, sized to the slot's share of the targets. A dinner's
+     * Puts the account's recipe [recipeId] in a slot because the user chose it: [place]d and locked,
+     * so that replanning keeps it. The recipe need not be marked for the slot, and an empty slot can be
+     * filled. A [NotFoundException] when the recipe is not the account's, a [ConflictException] when it
+     * has no amounts to plan with or when the slot's meal was eaten (the stock went down for it).
+     */
+    fun choose(weekStart: String, day: Int, slot: MealSlot, recipeId: Long): WeekPlan {
+        recipes.find(recipeId) ?: throw NotFoundException("No recipe $recipeId")
+        val candidate = recipes.candidate(recipeId) ?: throw ConflictException("This recipe has no amounts to plan with")
+        val current = meals(parseWeekStart(weekStart)).firstOrNull { it.day == day && it.slot == slot }
+        if (current?.status == MealStatus.EATEN) throw ConflictException("This meal was eaten already")
+        return place(weekStart, day, slot, candidate, locked = true)
+    }
+
+    /**
+     * Puts [candidate] in a slot, sized to the slot's share of the targets, [locked] or not. A dinner's
      * leftovers replace the next day's leftover lunch, unless that lunch is locked or done.
      */
-    fun place(weekStart: String, day: Int, slot: MealSlot, candidate: PlanCandidate): WeekPlan {
+    fun place(weekStart: String, day: Int, slot: MealSlot, candidate: PlanCandidate, locked: Boolean = false): WeekPlan {
         val start = parseWeekStart(weekStart)
         val targets = targets()
         val portions = WeekPlanner.portionsFor(candidate, targets.kcal * slot.share)
-        val meal = PlannedMeal(day, slot, candidate.recipeId, candidate.title, portions, candidate.kcal * portions, candidate.proteinG * portions)
+        val meal = PlannedMeal(day, slot, candidate.recipeId, candidate.title, portions, candidate.kcal * portions, candidate.proteinG * portions, locked = locked)
         val nextLunch = meals(start).firstOrNull {
             slot == MealSlot.DINNER && it.day == day + 1 && it.slot == MealSlot.LUNCH && it.leftover && !it.locked && it.status == MealStatus.PLANNED
         }
@@ -222,13 +236,15 @@ class PlanRepository(
             val cost = costs.getOrPut(meal.recipeId) { recipes.cost(meal.recipeId, prices) }
             meal.copy(cost = cost?.let { it.perServingWithOffers * meal.portions })
         }
-        val priced = meals.filter { it.cost != null }
+        // A skipped meal is not eaten: it counts towards neither the day nor the week.
+        val priced = meals.filter { it.cost != null && it.status != MealStatus.SKIPPED }
         return WeekPlan(
             weekStart = start.toString(),
             targets = targets(),
             days = (0 until DAYS).map { day ->
                 val ofDay = meals.filter { it.day == day }.sortedBy { it.slot.ordinal }
-                PlanDay(start.plusDays(day.toLong()).toString(), ofDay, ofDay.sumOf { it.kcal }, ofDay.sumOf { it.proteinG })
+                val eaten = ofDay.filter { it.status != MealStatus.SKIPPED }
+                PlanDay(start.plusDays(day.toLong()).toString(), ofDay, eaten.sumOf { it.kcal }, eaten.sumOf { it.proteinG })
             },
             emptySlots = MealSlot.entries.filter { slot -> meals.none { it.slot == slot } },
             cost = priced.takeIf { it.isNotEmpty() }?.sumOf { it.cost!! },

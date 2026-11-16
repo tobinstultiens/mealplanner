@@ -33,6 +33,14 @@ data class PlannedMeal(
     val cost: Double? = null,
 )
 
+/**
+ * The recipe the user puts in a meal's slot themselves (`PUT /api/plans/{weekStart}/meals/{day}/{slot}`).
+ * A request type only: the answer is the week's [WeekPlan], unchanged. Leaving a meal out is the
+ * existing status route with [MealStatus.SKIPPED].
+ */
+@Serializable
+data class MealChoice(val recipeId: Long)
+
 @Serializable
 data class PlanDay(
     /** ISO date, e.g. `2026-11-16`. */

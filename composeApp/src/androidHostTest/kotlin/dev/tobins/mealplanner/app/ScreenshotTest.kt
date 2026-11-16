@@ -22,6 +22,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -36,6 +38,8 @@ import androidx.test.core.app.ActivityScenario
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.tobins.mealplanner.api.IngredientSection
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
@@ -75,6 +79,16 @@ private fun shopping(api: ApiClient, shoppingMode: Boolean, view: ShoppingView =
 }
 
 /** Controls of three kinds; the test gives the one tagged [FOCUSED] keyboard focus, to see the ring on each. */
+/** The recipe picker's body for a dinner, over the fake backend's recipes: a dialog is a window the picture does not include. */
+@Composable
+private fun recipePicker(api: ApiClient) {
+    val recipes by produceState<List<RecipeSummary>?>(null) { value = api.recipes() }
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(LocalStrings.current(Msg.PLAN_CHOOSE_FOR, "dinner", "Friday"), style = MaterialTheme.typography.headlineSmall)
+        recipes?.let { RecipePickerBody(it, MealSlot.DINNER, onPick = {}) }
+    }
+}
+
 @Composable
 private fun focusRing(focused: Int) {
     // Controls only take focus when the last input was the keyboard, as when someone tabs through the screen.
@@ -124,6 +138,7 @@ enum class Shot(
 ) {
     TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, {}, {}) }),
     PLAN(heightDp = 4400, content = { api, _ -> PlanScreen(api, {}, {}) }),
+    RECIPE_PICKER(heightDp = 1300, content = { api, _ -> recipePicker(api) }),
     SHOPPING(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false) }),
     SHOPPING_MODE(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = true) }),
     SHOPPING_WITHOUT_JUMBO(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false, shops = setOf(Store.AH, Store.LIDL)) }),

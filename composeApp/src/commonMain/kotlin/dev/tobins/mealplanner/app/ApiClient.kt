@@ -9,6 +9,7 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.PricesState
@@ -342,6 +343,17 @@ class ApiClient(
 
     suspend fun rerollMeal(weekStart: String, day: Int, slot: MealSlot): WeekPlan =
         http.post("api/plans/$weekStart/meals/$day/${slot.name}/reroll").body()
+
+    /**
+     * Puts the recipe [recipeId] in a meal's slot, locked, and returns the week's plan; null from a
+     * server from before the route, which the caller says to the user.
+     */
+    suspend fun chooseRecipe(weekStart: String, day: Int, slot: MealSlot, recipeId: Long): WeekPlan? = unlessUnknown {
+        http.put("api/plans/$weekStart/meals/$day/${slot.name}") {
+            contentType(ContentType.Application.Json)
+            setBody(MealChoice(recipeId))
+        }.body()
+    }
 
     suspend fun setMealLocked(weekStart: String, day: Int, slot: MealSlot, locked: Boolean): WeekPlan {
         val path = "api/plans/$weekStart/meals/$day/${slot.name}/lock"

@@ -96,6 +96,8 @@ class FakeBackend(
             path == "/api/sync/cooking" -> json.encodeToString(CookingSyncStatus("2026-11-17T20:00:00Z", "a1b2c3d", null, 6))
             parts.size == 3 && parts[1] == "days" -> json.encodeToString(day(parts[2]))
             parts.size == 3 && parts[1] == "plans" -> json.encodeToString(plan(parts[2]))
+            // Choosing a recipe for a meal: the plan, which already has such a choice.
+            parts.size == 6 && parts[1] == "plans" && parts[3] == "meals" -> json.encodeToString(plan(parts[2]))
             parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(shopping(parts[2]))
             path == "/api/offers" -> json.encodeToString(if (emptyOffers) OffersState(emptyList(), emptyList()) else offers)
             path == "/api/prices" -> json.encodeToString(if (emptyPrices) PricesState(emptyList(), emptyList(), null) else prices)
@@ -140,8 +142,17 @@ class FakeBackend(
                 .let { if (index == 2) it.copy(status = MealStatus.EATEN) else it },
             meal(index, MealSlot.LUNCH, 2L + index % 2, if (index % 2 == 0) "Chickpea salad with feta and roasted peppers" else "Tuna pasta salad", 640.0, 42.0),
             meal(index, MealSlot.DINNER, 4, "Slow-cooked chicken thighs with coconut, lemon and spinach", 810.0, 55.0, cost = 3.9),
-        )
-        return PlanDay(plusDays(WEEK_START, index), meals, meals.sumOf { it.kcal }, meals.sumOf { it.proteinG })
+        ).map { meal ->
+            when {
+                // Thursday's dinner is left out; Friday's was chosen by the user, with Saturday's lunch its leftovers.
+                index == 3 && meal.slot == MealSlot.DINNER -> meal.copy(status = MealStatus.SKIPPED)
+                index == 4 && meal.slot == MealSlot.DINNER -> meal.copy(recipeId = 5, title = "Lentil soup", locked = true)
+                index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true)
+                else -> meal
+            }
+        }
+        val counted = meals.filter { it.status != MealStatus.SKIPPED }
+        return PlanDay(plusDays(WEEK_START, index), meals, counted.sumOf { it.kcal }, counted.sumOf { it.proteinG })
     }
 
     private fun plan(weekStart: String) = WeekPlan(

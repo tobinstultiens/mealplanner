@@ -1,8 +1,10 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.ShoppingList
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -100,5 +102,30 @@ class ApiClientTest {
         assertEquals(Load.Failed("The meals of the week of 2026-11-16 need i7 again", 409), conflict.useUp("2026-11-16", "i7"))
         val list = answering(HttpStatusCode.OK, """{"weekStart":"2026-11-16","items":[],"staples":[]}""")
         assertEquals("2026-11-16", assertIs<Load.Ready<ShoppingList>>(list.tickAgain("2026-11-16", "i1")).value.weekStart)
+    }
+
+    @Test
+    fun choosingARecipeSendsItsIdAndTellsAServerFromBeforeTheRouteByItsBare404() = runTest {
+        val sent = mutableListOf<String>()
+        val plan = """{"weekStart":"2026-11-16","targets":{"kcal":2100,"proteinG":130},"days":[],"emptySlots":[]}"""
+        val current = ApiClient(
+            ServerSettings("http://localhost"),
+            engine = MockEngine { request ->
+                sent += "${request.method.value} ${request.url.encodedPath} ${(request.body as TextContent).text}"
+                respond(plan, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            },
+        )
+        assertEquals("2026-11-16", current.chooseRecipe("2026-11-16", 4, MealSlot.DINNER, 12)?.weekStart)
+        assertEquals(listOf("""PUT /api/plans/2026-11-16/meals/4/DINNER {"recipeId":12}"""), sent)
+
+        // Ktor's answer to a route it does not have: 404 and nothing else.
+        val old = ApiClient(ServerSettings("http://localhost"), engine = MockEngine { respond("", HttpStatusCode.NotFound) })
+        assertNull(old.chooseRecipe("2026-11-16", 4, MealSlot.DINNER, 12))
+        // The route's own 404 says what was not found: that is a failure, not an old server.
+        val refused = ApiClient(
+            ServerSettings("http://localhost"),
+            engine = MockEngine { respond("""{"error":"No recipe 12"}""", HttpStatusCode.NotFound, headersOf(HttpHeaders.ContentType, "application/json")) },
+        )
+        assertFailsWith<ClientRequestException> { refused.chooseRecipe("2026-11-16", 4, MealSlot.DINNER, 12) }
     }
 }

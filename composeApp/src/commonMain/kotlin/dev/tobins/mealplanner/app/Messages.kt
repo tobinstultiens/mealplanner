@@ -206,6 +206,16 @@ enum class Msg(private val english: String, private val dutch: String) {
     SWAP_SLOT("Swap {0}", "Wissel {0}"),
     ANOTHER_RECIPE("Another recipe", "Ander recept"),
     WRITE_NEW_RECIPE("Write a new recipe…", "Nieuw recept laten schrijven…"),
+    CHOOSE_RECIPE("Choose a recipe…", "Kies een recept…"),
+    NOT_EATING_THIS("Not eating this", "Eet ik niet"),
+    EAT_AFTER_ALL("Eat it after all", "Toch eten"),
+    PLAN_ADD_MEAL("Add a meal…", "Maaltijd toevoegen…"),
+    PLAN_CHOOSE_FOR("Recipe for {0} on {1}", "Recept voor {0} op {1}"),
+    PLAN_CHOOSE_FAILED("The recipe could not be put in the plan.", "Het recept kon niet in het plan worden gezet."),
+    PLAN_CHOOSE_UNSUPPORTED(
+        "The server cannot put a chosen recipe in the plan yet. It is updated overnight; try again tomorrow.",
+        "De server kan nog geen gekozen recept in het plan zetten. Hij wordt 's nachts bijgewerkt; probeer het morgen opnieuw.",
+    ),
 
     // --- Generate a recipe
     GENERATE_RECIPE("Generate a recipe", "Recept laten maken"),

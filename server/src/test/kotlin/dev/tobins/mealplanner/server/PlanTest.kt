@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.GenerationMode
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
@@ -95,6 +96,7 @@ class PlanTest {
             write("recipes/dinner$i.md", "---\ntitle: Dinner $i\n---\n```ingredients\nservings: 4\n${1200 + i * 80} | g | beef\n```")
         }
         write("recipes/unlinked.md", "---\ntitle: Unlinked\n---\n```ingredients\nservings: 4\n500 | g | unobtainium\n```")
+        write("recipes/bare.md", "---\ntitle: Bare\n---\nJust a note, no amounts.")
         write("sauces/sauce.md", "---\ntitle: Sauce\n---\n```ingredients\nservings: 4\n1200 | g | beef\n```")
         val config = ServerConfig(
             port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
@@ -161,6 +163,133 @@ class PlanTest {
         }
         val unlocked = http.delete("/api/plans/$week/meals/2/dinner/lock").body<WeekPlan>()
         assertEquals(kept, unlocked.days[2].meals.first { it.slot == MealSlot.DINNER })
+    }
+
+    private fun WeekPlan.meal(day: Int, slot: MealSlot) = days[day].meals.firstOrNull { it.slot == slot }
+
+    /** Grams of beef per serving of the test's "Dinner n" recipes. */
+    private fun gramsPerServing(title: String) = (1200 + title.removePrefix("Dinner ").toInt() * 80) / 4.0
+
+    @Test
+    fun aChosenDinnerIsLockedSizedToItsSlotAndCooksTomorrowsLunch() = testApplication {
+        val http = start().ready()
+        val before = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        val chosen = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 9" }
+
+        val plan = http.put("/api/plans/$week/meals/4/dinner") { setBody(MealChoice(chosen.id)) }.body<WeekPlan>()
+        val dinner = plan.meal(4, MealSlot.DINNER)!!
+        assertEquals(chosen.id, dinner.recipeId)
+        assertTrue(dinner.locked)
+        assertEquals(MealStatus.PLANNED, dinner.status)
+        val perServing = chosen.nutrition!!.perServing.kcal!!
+        assertEquals(2000 * MealSlot.DINNER.share, dinner.kcal, absoluteTolerance = perServing / 2, message = "sized to the dinner's share")
+        val lunch = plan.meal(5, MealSlot.LUNCH)!!
+        assertTrue(lunch.leftover)
+        assertEquals(chosen.id, lunch.recipeId)
+        assertTrue(lunch.portions + dinner.portions <= 4.0, "no more than the recipe makes")
+
+        // Nothing else changed, and replanning keeps the choice and its leftovers.
+        val others = { p: WeekPlan -> p.days.flatMap { it.meals }.filterNot { (it.day == 4 && it.slot == MealSlot.DINNER) || (it.day == 5 && it.slot == MealSlot.LUNCH) } }
+        assertEquals(others(before), others(plan))
+        repeat(2) {
+            val again = http.post("/api/plans/$week/generate").body<WeekPlan>()
+            assertEquals(dinner, again.meal(4, MealSlot.DINNER))
+            assertEquals(lunch, again.meal(5, MealSlot.LUNCH))
+        }
+    }
+
+    @Test
+    fun aChosenRecipeNeedNotBeMarkedForTheSlotAndFillsAnEmptyOne() = testApplication {
+        val http = start().ready()
+        val breakfastOnly = http.post("/api/recipes") {
+            setBody(RecipeInput("Beef bowl", 1, "300 | g | beef", mealSlots = listOf(MealSlot.BREAKFAST)))
+        }.body<RecipeDetail>().summary
+        assertEquals(null, http.get("/api/plans/$week").body<WeekPlan>().meal(0, MealSlot.DINNER), "nothing planned yet")
+
+        val plan = http.put("/api/plans/$week/meals/0/dinner") { setBody(MealChoice(breakfastOnly.id)) }.body<WeekPlan>()
+        val dinner = plan.meal(0, MealSlot.DINNER)!!
+        assertEquals(breakfastOnly.id, dinner.recipeId)
+        assertTrue(dinner.locked)
+        // A recipe of one serving leaves nothing for the next day's lunch.
+        assertEquals(null, plan.meal(1, MealSlot.LUNCH))
+    }
+
+    @Test
+    fun choosingARecipeWithNothingLeftOverTakesTheOldDinnersLeftoversAway() = testApplication {
+        val http = start().ready()
+        val before = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        assertTrue(before.meal(2, MealSlot.LUNCH)!!.leftover)
+        val single = http.post("/api/recipes") { setBody(RecipeInput("Beef bowl", 1, "300 | g | beef")) }.body<RecipeDetail>().summary
+
+        val plan = http.put("/api/plans/$week/meals/1/dinner") { setBody(MealChoice(single.id)) }.body<WeekPlan>()
+        assertEquals(single.id, plan.meal(1, MealSlot.DINNER)!!.recipeId)
+        assertEquals(null, plan.meal(2, MealSlot.LUNCH), "the old dinner's leftovers are gone")
+    }
+
+    @Test
+    fun aChoiceNeedsARecipeWithAmountsAndAMealNotEatenYet() = testApplication {
+        val http = start().ready()
+        val recipes = http.get("/api/recipes").body<List<RecipeSummary>>()
+        http.post("/api/plans/$week/generate")
+        val bare = recipes.first { it.title == "Bare" }
+        assertEquals(HttpStatusCode.Conflict, http.put("/api/plans/$week/meals/0/dinner") { setBody(MealChoice(bare.id)) }.status)
+        assertEquals(HttpStatusCode.NotFound, http.put("/api/plans/$week/meals/0/dinner") { setBody(MealChoice(99_999)) }.status)
+        assertEquals(HttpStatusCode.BadRequest, http.put("/api/plans/$week/meals/9/dinner") { setBody(MealChoice(bare.id)) }.status)
+
+        http.put("/api/plans/$week/meals/0/dinner/status") { setBody(MealStatus.EATEN) }
+        val dinner = recipes.first { it.title == "Dinner 3" }
+        assertEquals(HttpStatusCode.Conflict, http.put("/api/plans/$week/meals/0/dinner") { setBody(MealChoice(dinner.id)) }.status)
+        // A skipped meal can be chosen for after all: it is planned again.
+        http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.SKIPPED) }
+        val plan = http.put("/api/plans/$week/meals/1/dinner") { setBody(MealChoice(dinner.id)) }.body<WeekPlan>()
+        assertEquals(MealStatus.PLANNED, plan.meal(1, MealSlot.DINNER)!!.status)
+    }
+
+    @Test
+    fun theShoppingListFollowsAChosenRecipeAndALeftOutMeal() = testApplication {
+        val http = start().ready()
+        val before = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        suspend fun beef() = http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef raw" }
+        val old = before.meal(4, MealSlot.DINNER)!!
+        val oldLunch = before.meal(5, MealSlot.LUNCH)!!
+        val start = beef()
+
+        // Choosing another dinner swaps what its portions need, and its leftover lunch's.
+        val chosen = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 9" }
+        val plan = http.put("/api/plans/$week/meals/4/dinner") { setBody(MealChoice(chosen.id)) }.body<WeekPlan>()
+        val dinner = plan.meal(4, MealSlot.DINNER)!!
+        val lunch = plan.meal(5, MealSlot.LUNCH)!!
+        fun grams(vararg meals: PlannedMeal) = meals.sumOf { it.portions * gramsPerServing(it.title) }
+        val chosenState = beef()
+        assertEquals(start.grams!! - grams(old, oldLunch) + grams(dinner, lunch), chosenState.grams!!, absoluteTolerance = 1e-6)
+
+        // A ticked row stays ticked, and keeps what was bought.
+        http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(chosenState.key, true)) }
+        val ticked = beef()
+        assertTrue(ticked.checked)
+        assertEquals(chosenState.grams, ticked.boughtGrams)
+
+        // Leaving the dinner out takes its portions off what is still to buy; the leftover lunch, still cooked with it, stays.
+        http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.SKIPPED) }
+        val skipped = beef()
+        assertEquals(chosenState.toComeGrams!! - grams(dinner), skipped.toComeGrams!!, absoluteTolerance = 1e-6)
+        assertTrue(skipped.checked)
+        http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.PLANNED) }
+        assertEquals(chosenState.toComeGrams, beef().toComeGrams, "eating it after all brings it back")
+    }
+
+    @Test
+    fun aSkippedMealLeavesTheDayTotals() = testApplication {
+        val http = start().ready()
+        val plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        val dinner = plan.meal(2, MealSlot.DINNER)!!
+
+        http.put("/api/plans/$week/meals/2/dinner/status") { setBody(MealStatus.SKIPPED) }
+        val after = http.get("/api/plans/$week").body<WeekPlan>()
+        assertEquals(plan.days[2].kcal - dinner.kcal, after.days[2].kcal, absoluteTolerance = 1e-6)
+        assertEquals(plan.days[2].proteinG - dinner.proteinG, after.days[2].proteinG, absoluteTolerance = 1e-6)
+        assertEquals(dinner.title, after.meal(2, MealSlot.DINNER)!!.title, "it stays in the plan, struck through")
+        assertEquals(plan.days[1], after.days[1])
     }
 
     @Test
