@@ -87,7 +87,7 @@ DELETE FROM stock WHERE ingredientId = :id AND ingredientId IN (SELECT id FROM i
 -- What eating a meal took from one entry of the stock (issue 84), kept under the meal whose portions it
 -- was for, so that un-eating the meal puts exactly that back, into the entry it came from. A dinner is
 -- cooked with its leftovers: what it took for the next day's leftover lunch is kept under that lunch.
--- The rows go with their meal: a meal replaced or removed leaves what was taken for it taken.
+-- The rows go with their meal, so a meal that has some is neither replaced nor removed (PlanRepository.whyKeepsItsRecipe).
 CREATE TABLE stockUse (
     userId INTEGER NOT NULL,
     weekStart TEXT NOT NULL,

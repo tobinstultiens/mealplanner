@@ -265,7 +265,8 @@ with `shopping/dismissed/{group}` and the account's own items, `POST shopping/ex
 no meal needs on hand, see "What the app shows of it" there,
 and per meal `reroll`, `lock`, `status` and delete; `PUT meals/{day}/{slot}` with `{"recipeId": 12}` puts the account's recipe there,
 locked, and a skipped meal leaves the day's and the week's totals; a meal that was eaten, or the leftover lunch of an eaten
-dinner, keeps its recipe: `reroll` and `PUT` answer 409, `POST meals/{day}/{slot}/generate` 422), `/api/days/{date}` and `/api/log` (what was eaten)
+dinner, keeps its recipe and its place: `reroll`, `PUT` and delete answer 409, `POST meals/{day}/{slot}/generate` 422, and
+`generate` keeps it; see `docs/data-sources.md`, "Un-eating"), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion), `/api/offers` (weekly store offers;
 `POST /api/offers/refresh` fetches them now) and `/api/prices` (regular AH prices per ingredient, the
 baseline for costing meals; `POST /api/prices/refresh` starts a lookup).

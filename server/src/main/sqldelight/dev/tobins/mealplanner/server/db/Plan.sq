@@ -22,9 +22,10 @@ upsertMeal:
 INSERT OR REPLACE INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- Replanning leaves alone what is locked or already eaten or skipped.
-deleteUnlocked:
-DELETE FROM planMeal WHERE userId = ? AND weekStart = ? AND locked = 0 AND status = 'PLANNED';
+-- Changes nothing, but takes SQLite's write lock: the first statement of a transaction that reads the
+-- plan before it writes it (PlanRepository.writing), so that it waits for another writer instead of failing.
+lockForWriting:
+UPDATE planMeal SET locked = locked WHERE userId = ? AND 0;
 
 -- Where a recipe is planned in weeks that started after the given date (an ISO date).
 selectPlannedFrom:
