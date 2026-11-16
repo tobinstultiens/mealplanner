@@ -25,6 +25,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     REMOVE("Remove", "Verwijderen"),
     UNDO("Undo", "Ongedaan maken"),
     RETRY("Retry", "Opnieuw"),
+    REFRESH_FAILED_KEPT("Could not refresh. Showing what was loaded before.", "Vernieuwen lukte niet. Dit is wat eerder is geladen."),
 
     // --- Meal slots (lower case, capitalised by the caller for titles) and shop sections
     SLOT_BREAKFAST("breakfast", "ontbijt"),

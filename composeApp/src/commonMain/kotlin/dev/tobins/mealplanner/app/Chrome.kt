@@ -198,6 +198,8 @@ fun SubScreen(
     onBack: () -> Unit,
     snackbar: SnackbarHostState? = null,
     actions: @Composable RowScope.() -> Unit = {},
+    /** Shown at the bottom, with room of its own, for a line that stays (see [RefreshNotice]). */
+    notice: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
@@ -208,6 +210,7 @@ fun SubScreen(
                 actions = actions,
             )
         },
+        bottomBar = notice,
         snackbarHost = { snackbar?.let { SnackbarHost(it) } },
         content = content,
     )

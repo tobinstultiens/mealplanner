@@ -52,18 +52,33 @@ import kotlin.math.roundToInt
 @Composable
 fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenPlan: () -> Unit) {
     val t = LocalStrings.current
-    val today = remember { todayIso() }
+    val now = rememberToday()
+    val frontReturns = rememberFrontReturns()
+    // The day that was today when this screen last looked; the date follows it when it moves on (see followedDate).
+    var today by rememberSaveable { mutableStateOf(now) }
     var date by rememberSaveable { mutableStateOf(today) }
-    var state by remember { mutableStateOf<Load<DayView>>(Load.Loading) }
+    val loaded = rememberLoad<DayView>("day:$date")
+    var state by loaded
+    val scroll = rememberScrollState()
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val pictures by rememberRecipePictureUrls(api)
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(date, reload) {
-        if (state !is Load.Ready) state = Load.Loading
-        state = load { api.day(date) }
+    LaunchedEffect(now) {
+        if (now != today) {
+            date = followedDate(today, date, now)
+            today = now
+            scroll.scrollTo(0)
+        }
+    }
+    LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.day(date) } }
+
+    /** Shows another day the user stepped to, from its top. */
+    fun show(other: String) {
+        date = other
+        scope.launch { scroll.scrollTo(0) }
     }
 
     /** Runs a change and then reloads the day, reporting a failure. */
@@ -82,15 +97,17 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenPlan:
                         label = if (date == today) t(Msg.TAB_TODAY) else dayLabel(date, t.locale),
                         previous = t(Msg.PREVIOUS_DAY),
                         next = t(Msg.NEXT_DAY),
-                        onPrevious = { date = plusDays(date, -1) },
-                        onNext = { date = plusDays(date, 1) },
+                        onPrevious = { show(plusDays(date, -1)) },
+                        onNext = { show(plusDays(date, 1)) },
                     )
                 },
                 actions = {
-                    if (date != today) BarAction(AppIcons.Today, t(Msg.BACK_TO_TODAY), onClick = { date = today })
+                    if (date != today) BarAction(AppIcons.Today, t(Msg.BACK_TO_TODAY), onClick = { show(today) })
                 },
             )
         },
+        // The line has a place of its own: the content ends above it, and snackbars show above it.
+        bottomBar = { RefreshNotice(loaded) { reload++ } },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         when (val current = state) {
@@ -101,7 +118,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenPlan:
             is Load.Ready -> {
                 val day = current.value
                 Column(
-                    Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
+                    Modifier.padding(padding).fillMaxSize().verticalScroll(scroll).padding(Spacing.ScreenEdge),
                     verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
                     TotalsCard(day)

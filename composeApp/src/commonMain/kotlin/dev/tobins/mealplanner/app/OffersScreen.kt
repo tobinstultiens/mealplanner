@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -44,21 +45,21 @@ import kotlinx.coroutines.launch
 @Composable
 fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
     val t = LocalStrings.current
-    val today = remember { todayIso() }
-    var state by remember { mutableStateOf<Load<OffersState>>(Load.Loading) }
+    val today = rememberToday()
+    val loaded = rememberLoad<OffersState>("offers")
+    var state by loaded
     var reload by remember { mutableIntStateOf(0) }
+    val frontReturns = rememberFrontReturns()
+    val listState = rememberLazyListState()
     var refreshing by remember { mutableStateOf(false) }
     var onlyMatched by rememberSaveable { mutableStateOf(true) }
     var store by rememberSaveable { mutableStateOf<Store?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(reload) {
-        if (state !is Load.Ready) state = Load.Loading
-        state = load { api.offers(today) }
-    }
+    LaunchedEffect(loaded, reload, frontReturns, today) { loaded.refresh { api.offers(today) } }
 
-    SubScreen(t(Msg.OFFERS), onBack, snackbar, actions = {
+    SubScreen(t(Msg.OFFERS), onBack, snackbar, notice = { RefreshNotice(loaded) { reload++ } }, actions = {
         BarAction(AppIcons.Refresh, if (refreshing) t(Msg.FETCHING_OFFERS) else t(Msg.REFRESH_OFFERS), busy = refreshing, onClick = {
             refreshing = true
             scope.launch {
@@ -80,7 +81,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
                     .filter { !onlyMatched || it.ingredientName != null }
                     .filter { store == null || it.store == store }
                     .sortedWith(compareBy({ it.ingredientName == null }, { it.ingredientName.orEmpty() }, { it.store }))
-                LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
+                LazyColumn(Modifier.padding(padding).fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                     item {
                         Column(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
                             current.value.sources.forEach { SourceLine(it) }

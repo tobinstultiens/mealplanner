@@ -94,6 +94,8 @@ Offers and shopping-list rows show the product's picture from the store (Coil 3;
 
 Recipe photos (from the cooking site) show on the Recipes list, the recipe screen, Today and the Plan, for the recipes that have one; a recipe without one keeps the plain layout, with no placeholder. They come from our own server, so the same loader fetches them with the login token, and the "Show product pictures" setting does not affect them.
 
+Screens keep their place. Opening a recipe (or the pantry, offers and so on) from a tab and going back leaves the tab as it was: the Plan's week and scroll, Today's day, the recipe list's scroll and search; so does Android re-creating the activity (rotation, dark mode, language). This is kept in memory and the saved instance state, not on disk: a cold start begins on Today, this week, at the top. A screen that comes back shows what it showed at once and fetches again behind it; a failed fetch keeps what is shown and says so in a line at the bottom with a Retry (a recipe the server says is gone shows the error instead). A new client (login, logout, another server) makes every open screen fetch again. When the app returns to the front (Android: started again; browser: the tab visible again) every screen in front fetches once, and Today and the Plan read the date again: they follow the new day or week when they were showing today or this week, and stay where the user stepped to otherwise. While the app is in front the clock is read every 30 seconds to notice midnight.
+
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):
 

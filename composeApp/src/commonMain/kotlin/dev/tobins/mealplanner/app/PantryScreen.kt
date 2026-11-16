@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -61,18 +62,18 @@ internal fun pantryNote(pantry: Pantry, id: Long, strings: Strings): String? {
 @Composable
 fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
     val t = LocalStrings.current
-    var state by remember { mutableStateOf<Load<Pair<List<Ingredient>, Pantry>>>(Load.Loading) }
+    val loaded = rememberLoad<Pair<List<Ingredient>, Pantry>>("pantry")
+    var state by loaded
     var reload by remember { mutableIntStateOf(0) }
+    val frontReturns = rememberFrontReturns()
+    val listState = rememberLazyListState()
     var query by rememberSaveable { mutableStateOf("") }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(reload) {
-        state = Load.Loading
-        state = load { api.ingredients() to api.pantry() }
-    }
+    LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.ingredients() to api.pantry() } }
 
-    SubScreen(t(Msg.PANTRY), onBack, snackbar) { padding ->
+    SubScreen(t(Msg.PANTRY), onBack, snackbar, notice = { RefreshNotice(loaded) { reload++ } }) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
@@ -110,7 +111,7 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                     )
-                    LazyColumn(contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
+                    LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                         items(shown, key = { it.id }) { ingredient ->
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 2.dp),

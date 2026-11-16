@@ -60,18 +60,18 @@ private fun kg(value: Double, locale: FormatLocale): String = "${formatAmount((v
 @Composable
 fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -> Unit) {
     val t = LocalStrings.current
-    val today = remember { todayIso() }
-    var state by remember { mutableStateOf<Load<WeightLog>>(Load.Loading) }
+    val today = rememberToday()
+    val loaded = rememberLoad<WeightLog>("weights")
+    var state by loaded
     var reload by remember { mutableIntStateOf(0) }
+    val frontReturns = rememberFrontReturns()
+    val scroll = rememberScrollState()
     var weightText by remember { mutableStateOf("") }
     var dismissed by remember { mutableStateOf<TargetSuggestion?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(reload) {
-        if (state !is Load.Ready) state = Load.Loading
-        state = load { api.weights() }
-    }
+    LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.weights() } }
 
     fun change(action: suspend () -> WeightLog) {
         scope.launch {
@@ -93,6 +93,8 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                 },
             )
         },
+        // The line has a place of its own: the content ends above it, and snackbars show above it.
+        bottomBar = { RefreshNotice(loaded) { reload++ } },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         when (val current = state) {
@@ -103,7 +105,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
             is Load.Ready -> {
                 val log = current.value
                 Column(
-                    Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
+                    Modifier.padding(padding).fillMaxSize().verticalScroll(scroll).padding(Spacing.ScreenEdge),
                     verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {

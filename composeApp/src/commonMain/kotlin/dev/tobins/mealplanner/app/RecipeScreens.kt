@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
@@ -72,53 +73,16 @@ import kotlinx.coroutines.launch
 import kotlinx.io.IOException
 import kotlinx.serialization.SerializationException
 
-/** Result of loading something from the server. */
-internal sealed interface Load<out T> {
-    data object Loading : Load<Nothing>
-    /**
-     * [status] is the HTTP status when the server answered with an error. [technical]: [message] is
-     * the text of an exception, such as "unexpected end of stream on http://...", not a sentence for
-     * the user. [unreadable]: the server answered, but the app could not read the answer.
-     * [lostConnection]: the request could not connect, timed out or was cut off.
-     */
-    data class Failed(
-        val message: String,
-        val status: Int? = null,
-        val technical: Boolean = false,
-        val unreadable: Boolean = false,
-        val lostConnection: Boolean = false,
-    ) : Load<Nothing>
-    data class Ready<T>(val value: T) : Load<T>
-}
-
-internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
-    Load.Ready(block())
-} catch (e: CancellationException) {
-    throw e
-} catch (e: ResponseException) {
-    // The server explains errors as {"error": "..."}; fall back to the status line.
-    val reason = runCatching {
-        kotlinx.serialization.json.Json.parseToJsonElement(e.response.bodyAsText())
-            .let { it as? kotlinx.serialization.json.JsonObject }?.get("error")
-            ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-    }.getOrNull()
-    Load.Failed(reason ?: Strings.current(Msg.SERVER_ANSWERED, e.response.status.value, e.response.status.description), e.response.status.value)
-} catch (e: Exception) {
-    Load.Failed(
-        e.message ?: Strings.current(Msg.UNKNOWN_ERROR),
-        technical = e.message != null,
-        unreadable = e is SerializationException || e is ContentConvertException,
-        lostConnection = e is IOException || e is HttpRequestTimeoutException,
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -> Unit, onNewRecipe: () -> Unit) {
     val t = LocalStrings.current
     var generating by remember { mutableStateOf(false) }
-    var state by remember { mutableStateOf<Load<List<RecipeSummary>>>(Load.Loading) }
+    val loaded = rememberLoad<List<RecipeSummary>>("recipes")
+    var state by loaded
     var reload by remember { mutableIntStateOf(0) }
+    val frontReturns = rememberFrontReturns()
+    val listState = rememberLazyListState()
     var syncing by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var mealsOnly by rememberSaveable { mutableStateOf(true) }
@@ -127,10 +91,10 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
 
     var syncStatus by remember { mutableStateOf<CookingSyncStatus?>(null) }
     var editingRepo by remember { mutableStateOf(false) }
-    LaunchedEffect(reload) {
-        state = Load.Loading
-        state = load { api.recipes() }
-        syncStatus = (load { api.cookingSyncStatus() } as? Load.Ready)?.value
+    LaunchedEffect(loaded, reload, frontReturns) {
+        loaded.refresh { api.recipes() }
+        // A failed fetch keeps the line that was shown.
+        (load { api.cookingSyncStatus() } as? Load.Ready)?.value?.let { syncStatus = it }
     }
 
     Scaffold(
@@ -164,6 +128,8 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                 },
             )
         },
+        // The line has a place of its own: the content ends above it, and snackbars show above it.
+        bottomBar = { RefreshNotice(loaded) { reload++ } },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (generating) {
@@ -228,7 +194,7 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                     } else if (shown.isEmpty()) {
                         EmptyState(AppIcons.Recipes, t(Msg.NO_RECIPES_MATCH))
                     } else {
-                        LazyColumn(contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
+                        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                             items(shown, key = { it.id }) { recipe ->
                                 RecipeRow(recipe, onClick = { onOpen(recipe.id) })
                                 HorizontalDivider()
@@ -355,16 +321,18 @@ fun PlannedMeal.toCook(): MealToCook? = cookPortions?.let { MealToCook(recipeId,
 fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?, onBack: () -> Unit, onEdit: () -> Unit, meal: MealToCook? = null) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
-    var state by remember(recipeId) { mutableStateOf<Load<RecipeDetail>>(Load.Loading) }
+    val loaded = rememberLoad<RecipeDetail>("recipe:$recipeId")
+    var state by loaded
     var routines by remember { mutableStateOf<Routines?>(null) }
     var reload by remember { mutableIntStateOf(0) }
-    LaunchedEffect(recipeId, reload) {
-        state = Load.Loading
-        state = load { api.recipe(recipeId) }
-        routines = (load { api.routines() } as? Load.Ready)?.value
+    val frontReturns = rememberFrontReturns()
+    val scroll = rememberScrollState()
+    LaunchedEffect(loaded, reload, frontReturns) {
+        loaded.refresh { api.recipe(recipeId) }
+        (load { api.routines() } as? Load.Ready)?.value?.let { routines = it }
     }
 
-    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: t(Msg.RECIPE), onBack, actions = {
+    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: t(Msg.RECIPE), onBack, notice = { RefreshNotice(loaded) { reload++ } }, actions = {
         if ((state as? Load.Ready)?.value?.summary?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }) {
             BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
         }
@@ -382,7 +350,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                 val servings = recipe.summary.servings?.takeIf { it > 0 }
                 val factor = if (cooking != null && servings != null && cooking.cookPortions > 0 && !asWritten) cooking.cookPortions / servings else null
                 Column(
-                    Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
+                    Modifier.padding(padding).fillMaxSize().verticalScroll(scroll).padding(Spacing.ScreenEdge),
                     verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
                     recipePicture(recipe.summary.imageUrl)?.let { RecipePhoto(it, Modifier.fillMaxWidth().aspectRatio(16f / 9f)) }
@@ -606,34 +574,3 @@ private fun CostCard(cost: RecipeCost) {
         }
     }
 }
-
-@Composable
-internal fun ErrorMessage(title: String, failed: Load.Failed, onRetry: () -> Unit) {
-    val t = LocalStrings.current
-    val detail = failed.message
-    val openServer = LocalOpenServerSettings.current
-    Column(
-        Modifier.fillMaxSize().padding(Spacing.Message),
-        verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        // An exception's own text ("unexpected end of stream on http://...") is no sentence for the user:
-        // a plain one says what happened and the text stays behind "Details".
-        if (failed.technical) {
-            val plain = plainReason(failed)
-            ErrorBanner(summary = plain.replaceFirstChar { it.uppercase() } + ".", details = detail, modifier = Modifier.fillMaxWidth())
-        } else if (detail.length <= 100 && '\n' !in detail) {
-            Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            ErrorBanner(summary = detail.lineSequence().first().take(100) + "…", details = detail, modifier = Modifier.fillMaxWidth())
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Button(onClick = onRetry) { Text(t(Msg.TRY_AGAIN)) }
-            if (openServer != null) TextButton(onClick = openServer) { Text(t(Msg.SERVER_SETTINGS)) }
-        }
-    }
-}
-
-/** Opens the server settings; provided by [App] so any error message can offer it. */
-val LocalOpenServerSettings = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
