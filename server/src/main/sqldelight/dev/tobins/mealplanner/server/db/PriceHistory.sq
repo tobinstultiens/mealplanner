@@ -119,6 +119,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 continueRegularPrice:
 UPDATE regularPriceHistory SET lastSeen = ? WHERE id = ?;
 
+-- The regular prices of these ingredient names last seen from :from on, at every store: what an offer's
+-- deal is measured against when its regular price was raised just before (docs/data-sources.md).
+selectRegularPrices:
+SELECT * FROM regularPriceHistory WHERE name IN :names AND lastSeen >= :from;
+
 selectRegularPriceHistory:
 SELECT * FROM regularPriceHistory ORDER BY name, store, firstSeen, id;
 

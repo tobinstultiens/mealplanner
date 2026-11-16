@@ -43,10 +43,10 @@ sealed interface DealKind {
 
 /**
  * What an offer comes to when its deal is used in full: its [kind], the [packs] it wants bought together
- * ([Discounts.packsNeeded]), the [paidShare] of the regular price and the price per kg, per piece or per
- * litre at that share. Worked out from the offer alone, without an ingredient's regular price, so it stays
- * the same for as long as the offer does: "2 voor 3,00" without the store's price before has no share, only
- * its price per kg.
+ * ([Discounts.packsNeeded]), the [paidShare] of the regular price and the price per kg, per piece, per
+ * litre or per pack at that share. Worked out from the offer alone, without an ingredient's regular price, so it
+ * stays the same for as long as the offer does: "2 voor 3,00" without the store's price before has no share, only
+ * its price per kg and per pack.
  */
 data class DealTerms(
     val kind: DealKind,
@@ -59,6 +59,11 @@ data class DealTerms(
      * oil, milk, passata and stock are what stocking up is about, so their deals must be comparable too.
      */
     val eurosPerLitre: Double?,
+    /**
+     * The price paid for one pack: what compares two offers of the same product and pack when its size can't
+     * be read ("2 voor 5,50" of "AH Goudse plakken"), whatever the deal or the store's price before.
+     */
+    val eurosPerPack: Double?,
 ) {
     companion object {
         fun of(offer: Offer): DealTerms {
@@ -75,6 +80,7 @@ data class DealTerms(
                 eurosPerKg = (kind as? DealKind.PricePerKg)?.euros?.let(::usable) ?: perPack?.let { paid -> grams?.let { usable(paid / it * 1000) } },
                 eurosPerPiece = perPack?.let { paid -> pieces?.let { usable(paid / it) } },
                 eurosPerLitre = perPack?.let { paid -> millilitresOf(offer)?.let { usable(paid / it * 1000) } },
+                eurosPerPack = perPack?.let(::usable),
             )
         }
 

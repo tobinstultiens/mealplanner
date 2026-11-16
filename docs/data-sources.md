@@ -194,7 +194,8 @@ app says so.
 So that a later step can tell a good deal from an ordinary one ("this 2+1 pays 67 %, and it is 1+1 about
 every four weeks"), the server keeps what the stores offered and what the regular prices were, over time
 (`PriceHistory.sq`, `PriceHistoryRepository`, `history/PriceChanges.kt`). It is shared by every account like
-the offers and prices, written only by the server's own refreshes, and not reachable through the API yet.
+the offers and prices, written only by the server's own refreshes, and read only for the verdicts on offers (below,
+"Is it a good deal?").
 History starts on the first refresh after version 13 of the database; nothing from before is kept.
 
 **Offers** (`offerHistory`). A product is its store, its title and its pack size, each normalised (lower
@@ -241,7 +242,8 @@ read as in "How a deal text is read" above; `Discounts.kind`, `DealTerms` in `sh
 `dealPacks` is always the packs to buy together for the deal (`Discounts.packsNeeded`). `paidShare` is the
 share of the regular price paid when the deal is used in full, from the offer alone: the price paid per pack
 against the store's price before where it gives one, otherwise the deal's own share (the "Share" column above). Deals stated as a price have no share without a price before; a later
-step can compare them with the regular price history. `eurosPerKg` and `eurosPerPiece` are the price at that
+step can compare them with the regular price history. `DealTerms` also gives what one pack costs (`eurosPerPack`), which
+is not stored: the verdicts read each row again (below). `eurosPerKg` and `eurosPerPiece` are the price at that
 share, where the pack size (or else the title) gives a weight or a count; volumes are no weight without a
 density, so a pack written as a volume ("1,5 l", "6 x 330 ml", "75 cl") gets `eurosPerLitre` instead, from
 the first of the pack size and the title that gives a size at all. A "2 voor 7,00" of 6 x 330 ml is 7,00 for
@@ -259,7 +261,7 @@ check against.
 Reading the history (the queries `selectOfferPeriods` and `selectOfferRecordings`,
 `PriceHistoryRepository.offerPeriods` and `recordings`): the rows of one or more stores seen between two
 instants (begun by the end, last seen from the start on), and the recordings of a store between two instants,
-both on an index. Nothing reads them through the API yet.
+both on an index. The verdicts below read them.
 
 In the offers of 2026-11-15 (426: 111 AH, 270 Jumbo, 45 Lidl) all but 7 were recognised. Unknown were
 "2 stapelen tot 35%", "2 stapelen voor 3.99" and "3 stapelen voor 7.99" (AH), "2 gratis blikjes bij 1
@@ -283,6 +285,77 @@ it copies the file again and migrates it, comparing row counts, the history's ro
 `integrity_check`/`foreign_key_check` around each migration of the history the copy is from before (to
 versions 13 and 15), then replays its stored offers through six refreshes and prints the history's rows, how
 many have a category, an address and a price per litre, the recordings and timings.
+
+### Is it a good deal?
+
+For each of an account's offers, the server says whether it is a good deal compared with the same product's own
+history at the same store (`history/DealVerdict.kt`, `history/OfferPeriods.kt`, `history/RegularPrices.kt`,
+`DealVerdictRepository`). For now only `GET /api/offers/verdicts` gives the verdicts, so that the owner can read what
+they say about real offers before the app shows them (issue 118, step c); no app calls it, and its response type is the
+server's own (`DealVerdicts`), not one of the shared API types, so it may still change. It answers for the calling
+account only, reads and writes nothing else, and needs a login like every `/api/` route.
+
+**Which offers, and whose.** The offers valid today at the stores the account shops at that match one of its own
+ingredients, as `/api/offers` matches them. The history is shared, but its rows are matched again with the account's
+own names and aliases and the row's store category (`OfferMatcher`), never by the `ingredient` stored with them,
+which was matched against every account's names: a row the account's matcher does not give the same ingredient (a
+week the store filed the product under cold cuts) is left out. Regular prices are read by the account's own
+ingredient names.
+
+**This product.** The rows of the same store and the same normalised title, over the last year (52 weeks: a seasonal
+product's offers of last season count, older prices say little about today's), every pack size and every deal.
+
+**Earlier offers.** Rows of one product with the same price, price before and deal are one offer when they are split by
+at most one day on which the store was read without the product (a parser skipping an item for a night), and the
+store's dates run on (the later one starts by the day after the earlier one ends). Nights the store was not read at
+all (`offerRecording` has no row) are not nights without the offer: they never split one. An offer is earlier when it
+ended before the store's last recording; today's own offer, and another offer of the product running now (Jumbo lists
+next week's), are not earlier offers. A deal that changes counts again: 1+1 for a week and 25 % the next are two.
+
+**What is compared.** What is paid, never the deal's wording, so a "2+1 gratis" is compared with the "1+1 gratis" the
+product had before. Each offer, today's and every earlier one, is read by today's deal reader (`DealTerms.of` on the
+title, pack size, deal and prices kept with the row, not the readings stored with it), so a change to how deals are read
+never compares an old reading with a new one. The measure is one of: the price per kg, per litre or per piece (across
+pack sizes), the price of one pack (only between offers of the same pack size, for products whose size can't be read,
+such as AH's "2 voor 5.50" of "AH Goudse plakken" or a Lidl price without a pack size), or the share of the regular
+price paid. Of those today's offer has, the one most earlier offers have too is used; on a tie the prices come before
+the share, as a price does not depend on what the store says the price was before.
+
+**The rules,** in this order (the constants are named in `history/DealVerdict.kt` and `history/RegularPrices.kt`):
+1. *Not a deal* (`NOT_A_DEAL`): the regular price of the same pack went up in the 30 days before the offer began, and
+   with the deal a pack costs at least 97 % of what it cost before. "Before" is the lowest regular price seen in those 30
+   days (`REFERENCE_DAYS`), as the EU asks of a shop announcing a reduction (Directive 98/6/EC, article 6a); 97 % is the
+   shopping list's own bound for a deal that saves something (`Discounts.factor`). Regular prices are the store's price
+   before in earlier offers of the same pack, and the looked-up prices (`regularPriceHistory`, AH) of the account's
+   ingredient where the looked-up product is the offer's own: the same name, the offer's title adding at most a size,
+   and the same size ("AH Snoepgroente tomaat", 500 g, is "AH Snoepgroente tomaat 500 gram"). A price raised less than
+   3 % is no raise. A raise that leaves a saving is reported with the verdict, and the deal's share is then measured
+   against the price before the raise ("25 % off" a price raised from 2,49 to 2,99 pays 90 %). This rule needs no
+   offer history: two regular prices seen are enough to tell.
+2. *Not enough history yet* (`NOT_ENOUGH_HISTORY`) when the store was read on fewer than 56 days (`MIN_DAYS_READ`, 8
+   weeks of nightly refreshes). Stores run offers by the week and bring a product back every few weeks, so 8 weeks see
+   a usual deal come back at least once. Days read, not calendar time: a store that could not be read was not watched.
+3. *Always on offer* (`ALWAYS_ON_OFFER`): on offer this same way (the same deal at the same price) on at least 90 % of
+   the days read (`ALWAYS_SHARE`, room for a missed night and a pause between two weeks): that is its usual price, not
+   a deal.
+4. *Can't be compared* (`NOT_COMPARABLE`) when today's offer has none of the measures (a deal of unknown kind, a Lidl
+   offer with neither deal nor price). *Not enough history yet* when fewer than 2 earlier offers have the measure
+   (`MIN_EARLIER_OFFERS`): one could be the odd one out.
+5. Against those earlier offers, prices within 3 % being the same (`TOLERANCE`: "2 voor 3,99" and "2 voor 4,00", packs
+   of "ca. 450 g"): a *real deal* (`REAL_DEAL`) at or below the lowest seen and clearly below at least half of them;
+   *worse than usual* (`WORSE_THAN_USUAL`) when more than half of them were clearly cheaper; else *the usual deal*
+   (`USUAL_DEAL`), which includes an offer between the lowest and the usual. The usual value said with it is the median.
+
+With each verdict come the facts it rests on: the measure and today's value in it, the usual (median) and the lowest
+earlier value with its deal and dates, the latest earlier offer at least as cheap as today's ("last this cheap"), the
+earlier offers themselves with their dates, deal and values, and on how many of the days read the product was on offer,
+and a summary in English, such as: "Worse than usual: 67% of the regular price, where it usually goes for 50% of the
+regular price; last this cheap 50% of the regular price with "1+1 gratis" from 2 Nov 2026 to 8 Nov 2026, …".
+
+A copy of a real database can be read with
+`PRICE_HISTORY_DB=/path/to/copy.db ./gradlew :server:test --tests '*DealVerdictRealDataTest*' --rerun -i`: it copies the
+file twice, replays the stored offers on one (as above) and prints the verdicts on the offers of the account with the
+most ingredients, and gives the other twelve weeks of made-up history to show each verdict's wording on real offers.
 
 ## Buying ahead and stocking up
 

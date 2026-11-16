@@ -167,6 +167,10 @@ class PriceHistoryRepository(private val db: Database) {
     fun recordings(store: Store, from: Instant, until: Instant): List<OfferRecording> =
         q.selectOfferRecordings(store.name, seen(from), seen(until)).executeAsList()
 
+    /** The regular prices of the ingredient [names] (any case) at every store, last seen from [from] on. */
+    fun regularPrices(names: Collection<String>, from: Instant): List<RegularPriceHistory> =
+        if (names.isEmpty()) emptyList() else q.selectRegularPrices(names.distinct(), seen(from)).executeAsList()
+
     /** Removes the offers, and the recordings, last seen more than [KEEP_YEARS] years before [now]. */
     fun pruneOffers(now: Instant) {
         q.pruneOffers(cutoff(now))

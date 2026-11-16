@@ -8,6 +8,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
@@ -19,6 +20,9 @@ fun Route.offerRoutes(offers: OfferRepository, prices: PriceRepository) {
         } ?: serverToday()
         call.respond(call.user.ingredients.let { offers.state(date, it.matchTerms(), it.list().associate { i -> i.id to i.name }) })
     }
+
+    // Whether each of the account's offers is a good deal, by its price history; for reading, no app uses it yet.
+    get("/api/offers/verdicts") { call.respond(call.user.dealVerdicts.current(Instant.now())) }
 
     // Fetches every store now, regardless of when it was last fetched.
     post("/api/offers/refresh") { call.respond(offers.refresh()) }

@@ -271,7 +271,7 @@ class PriceHistoryTest {
     private fun planOf(label: String, vararg values: String): String {
         val source = File("src/main/sqldelight/dev/tobins/mealplanner/server/db/PriceHistory.sq").readText()
         val sql = source.substringAfter("\n$label:\n").substringBefore(";")
-            .replace(":stores", "(?, ?)").replace(Regex(""":\w+"""), "?")
+            .replace(Regex(""":(stores|names)\b"""), "(?, ?)").replace(Regex(""":\w+"""), "?")
         return opened.first.executeQuery(null, "EXPLAIN QUERY PLAN $sql", { cursor ->
             val steps = mutableListOf<String>()
             while (cursor.next().value) steps += cursor.getString(3).orEmpty()
@@ -280,11 +280,13 @@ class PriceHistoryTest {
     }
 
     @Test
-    fun readingThePeriodsAndRecordingsUsesAnIndex() {
+    fun readingThePeriodsRecordingsAndRegularPricesUsesAnIndex() {
         val periods = planOf("selectOfferPeriods", "AH", "JUMBO", night(0).toString(), night(7).toString())
         assertTrue(periods.contains("USING INDEX offerHistory_seen (store=? AND lastSeen>?)"), periods)
         val recordings = planOf("selectOfferRecordings", "AH", night(0).toString(), night(7).toString())
         assertTrue(recordings.contains("USING INDEX sqlite_autoindex_offerRecording_1 (store=? AND seenAt>? AND seenAt<?)"), recordings)
+        val regular = planOf("selectRegularPrices", "Kipfilet", "Zeekraal", night(0).toString())
+        assertTrue(regular.contains("USING INDEX regularPriceHistory_name (name=?)"), regular)
     }
 
     @Test
