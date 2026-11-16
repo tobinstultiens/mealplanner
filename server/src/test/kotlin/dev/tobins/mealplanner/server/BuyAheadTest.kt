@@ -30,6 +30,7 @@ import dev.tobins.mealplanner.server.generation.GenerationContext
 import dev.tobins.mealplanner.server.generation.RecipeGenerator
 import dev.tobins.mealplanner.server.offers.OfferSource
 import dev.tobins.mealplanner.units.Dimension
+import dev.tobins.mealplanner.released.api.ShoppingList as ReleasedShoppingList
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -47,8 +48,6 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.time.LocalDate
 import kotlin.io.path.createTempDirectory
@@ -941,44 +940,22 @@ class BuyAheadTest {
     }
 
     @Test
-    fun theAppOfV012ReadsOnlyThisWeeksNeedsAsItsList() = testApplication {
+    fun theReleasedAppReadsOnlyThisWeeksNeedsAsItsList() = testApplication {
         val http = start().ready()
         http.post("/api/plans/$week/shopping/extras") { setBody(ShoppingExtraInput("Coffee")) }
         val list = http.list()
         assertTrue(list.buyAhead.isNotEmpty() && list.stockUp.isNotEmpty())
 
-        // v0.1.2 reads with ignoreUnknownKeys (its ApiClient); its types lack the advice. What it
-        // shows is exactly this week's needs, ticks and all.
-        val v012 = Json {
-            ignoreUnknownKeys = true
-            isLenient = true
-        }
-        val old = v012.decodeFromString<V012ShoppingList>(http.get("/api/plans/$week/shopping").bodyAsText())
+        // The released app's types lack the advice. What it shows is exactly this week's needs, ticks and all.
+        val old = releasedJson.decodeFromString<ReleasedShoppingList>(http.get("/api/plans/$week/shopping").bodyAsText())
         assertEquals(list.items.map { it.key to it.name }, old.items.map { it.key to it.name })
         assertTrue(old.items.none { it.name == "Chicken fillet" || it.name == "Olive oil" })
         // Ticking with its keys works as before, and the advice stays out of its list.
-        val ticked = v012.decodeFromString<V012ShoppingList>(http.tick(old.items.first().key).bodyAsText())
+        val ticked = releasedJson.decodeFromString<ReleasedShoppingList>(http.tick(old.items.first().key).bodyAsText())
         assertTrue(ticked.items.first().checked)
         assertEquals(old.items.map { it.key }, ticked.items.map { it.key })
         // An own item is a row of its list like any other: it shows it and ticks it off with its key.
         val coffee = old.items.single { it.name == "Coffee" }
-        assertTrue(v012.decodeFromString<V012ShoppingList>(http.tick(coffee.key).bodyAsText()).items.single { it.key == coffee.key }.checked)
+        assertTrue(releasedJson.decodeFromString<ReleasedShoppingList>(http.tick(coffee.key).bodyAsText()).items.single { it.key == coffee.key }.checked)
     }
-
-    /** `ShoppingList` and `ShoppingItem` exactly as v0.1.2 has them (offers left out: the store test reads those). */
-    @Serializable
-    private data class V012ShoppingList(val weekStart: String, val items: List<V012ShoppingItem>, val staples: List<String>, val toTaste: List<String> = emptyList())
-
-    @Serializable
-    private data class V012ShoppingItem(
-        val key: String,
-        val name: String,
-        val grams: Double?,
-        val pieces: Double?,
-        val category: String,
-        val recipes: List<String>,
-        val onHand: Boolean,
-        val checked: Boolean,
-        val imageUrl: String? = null,
-    )
 }

@@ -1,15 +1,18 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.ShoppingList
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
+import io.ktor.serialization.JsonConvertException
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 
@@ -25,6 +28,24 @@ class ApiClientTest {
     fun anUnknownTopLevelFieldIsIgnored() = runTest {
         val health = client("""{"status":"ok","version":"1.0","added":"later"}""").health()
         assertEquals("ok", health.status)
+    }
+
+    @Test
+    fun anUnknownEnumValueBecomesTheFieldsDefault() = runTest {
+        val plan = client(
+            """{"weekStart":"2026-11-16","targets":{"kcal":2000,"proteinG":100},"emptySlots":[],"days":[{"date":"2026-11-16","kcal":0,"proteinG":0,
+                "meals":[{"day":0,"slot":"DINNER","recipeId":1,"title":"Soup","portions":1,"kcal":500,"proteinG":30,"status":"COOKED_BY_SOMEONE_ELSE"}]}]}""",
+        ).plan("2026-11-16")
+        assertEquals(MealStatus.PLANNED, plan.days.single().meals.single().status)
+    }
+
+    @Test
+    fun anUnknownEnumValueWithoutADefaultStillFails() = runTest {
+        assertFailsWith<JsonConvertException> {
+            client(
+                """[{"id":1,"title":"Soup","section":"Dinner","tags":[],"servings":2,"source":"IMPORTED","kind":"MEAL","plannable":true}]""",
+            ).recipes()
+        }
     }
 
     @Test

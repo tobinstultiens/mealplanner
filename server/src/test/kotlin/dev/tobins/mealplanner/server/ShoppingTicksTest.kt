@@ -17,6 +17,7 @@ import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.released.api.ShoppingList as ReleasedShoppingList
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -34,8 +35,6 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -432,7 +431,7 @@ class ShoppingTicksTest {
     }
 
     @Test
-    fun theAppOfV012ReadsTheListWithWhatWasBoughtAsBefore() = testApplication {
+    fun theReleasedAppReadsTheListWithWhatWasBoughtAsBefore() = testApplication {
         val http = start().planned()
         assertEquals("Chicken salad", http.rerollMonday())
         for (name in listOf("Lettuce", "Chicken fillet")) http.tick(http.list().item(name).key)
@@ -440,31 +439,10 @@ class ShoppingTicksTest {
         val list = http.list()
         assertTrue(list.noLongerNeeded.isNotEmpty() && list.items.any { it.boughtGrams != null })
 
-        // v0.1.2 reads with ignoreUnknownKeys (its ApiClient): the bought item is not on its list,
+        // The released app's types skip what it does not know: the bought item is not on its list,
         // and what it has is ticked as before.
-        val v012 = Json {
-            ignoreUnknownKeys = true
-            isLenient = true
-        }
-        val old = v012.decodeFromString<V012ShoppingList>(http.get("/api/plans/$week/shopping").bodyAsText())
+        val old = releasedJson.decodeFromString<ReleasedShoppingList>(http.get("/api/plans/$week/shopping").bodyAsText())
         assertEquals(list.items.map { Triple(it.key, it.name, it.checked) }, old.items.map { Triple(it.key, it.name, it.checked) })
         assertTrue(old.items.none { it.name == "Lettuce" })
     }
-
-    /** `ShoppingList` and `ShoppingItem` as v0.1.2 has them (offers left out: the store test reads those). */
-    @Serializable
-    private data class V012ShoppingList(val weekStart: String, val items: List<V012ShoppingItem>, val staples: List<String>, val toTaste: List<String> = emptyList())
-
-    @Serializable
-    private data class V012ShoppingItem(
-        val key: String,
-        val name: String,
-        val grams: Double?,
-        val pieces: Double?,
-        val category: String,
-        val recipes: List<String>,
-        val onHand: Boolean,
-        val checked: Boolean,
-        val imageUrl: String? = null,
-    )
 }

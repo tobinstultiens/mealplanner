@@ -68,11 +68,17 @@ import kotlinx.serialization.json.JsonObject
 data class ServerSettings(val url: String)
 
 /**
- * Ktor's default JSON settings, but tolerant of fields this app version does not know, so the server
- * can add fields to a response without breaking installed apps. Unknown enum values still fail.
+ * Ktor's default JSON settings, but tolerant of what this app version does not know, so the server
+ * can grow a response without breaking installed apps: a field it does not know is skipped
+ * (`ignoreUnknownKeys`), and an enum value it does not know becomes the field's default
+ * (`coerceInputValues`). A field of an enum type without a default still fails on an unknown
+ * value, and so does an enum inside a list or a map, which coercion does not reach: enum fields
+ * added from now on need a default (or are nullable, `= null`), and a new value of an enum that
+ * is already in use waits for a release (README, "API compatibility").
  */
 private val lenientJson = Json {
     ignoreUnknownKeys = true
+    coerceInputValues = true
     encodeDefaults = true
     isLenient = true
     allowSpecialFloatingPointValues = true

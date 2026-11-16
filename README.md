@@ -105,33 +105,27 @@ QT_QPA_PLATFORM=xcb ANDROID_AVD_HOME=$HOME/.config/.android/avd \
 
 ## API compatibility
 
-Installed apps outlive server deployments. App releases up to and including v0.1.1 reject JSON fields
-they do not know, so until a release containing the lenient client (`ApiClient`) is installed, responses
-those apps read must not gain fields: new data goes in new routes or types. Once it is installed, adding
-optional fields is safe. Removing or renaming a field, or changing its meaning, still breaks installed apps.
-The product pictures (`Offer.imageUrl`, `ShoppingItem.imageUrl`) and the recipe pictures
-(`RecipeSummary.imageUrl`) are the first fields added this way, so they are merged together with the
-first app release after v0.1.1. `OfferSourceStatus.warning` (the Lidl check) is always in the offers
-response, so it too needs that release installed. v0.1.2 is that release and is installed, so optional
-fields can now be added freely: `ShoppingItem.regularPrice` and `Offer.paidShare` (the saving per store)
-were added this way, and `ShopsTest` decodes the new shopping list with v0.1.2's types to prove it.
-The buy-ahead and stock-up advice (`ShoppingList.buyAhead`, `stockUp`) came as separate optional lists
-rather than rows of `items`, so v0.1.2 shows only what the week's meals need (`BuyAheadTest`). The account's
-own items (coffee, toilet paper) are the opposite case: they are rows of `items` (keys `x:<id>`), so v0.1.2
-shows and ticks them off without an update, though only a newer app can add one (`BuyAheadTest` decodes and
-ticks one with v0.1.2's types). What a tick remembers of its row came the same way: `ShoppingItem.boughtGrams`
-and `boughtPieces` are optional fields of a row that stays `checked`, so older apps never see a bought item
-come back un-ticked when the plan needs more, and `ShoppingList.noLongerNeeded` (bought items no meal needs
-any more) is a separate list, so they never take it for something to buy (`ShoppingTicksTest` decodes it
-with v0.1.2's types). How much is on hand came the same way (`ShoppingItem.onHandGrams`, and
-`Pantry.onHandGrams` as a map next to the `onHand` list those apps read), and so did what is still to buy
-(`ShoppingItem.toComeGrams`, what the meals to come need, next to `grams`, which keeps meaning the whole week's need; likewise `toComePieces`, `toComeRecipes` and `ownPieces`, and `Pantry.onHandFrom`). A tick still needs only its key, as
-those apps send it; the grams newer apps send with an advice tick (`ShoppingCheck.grams`) are optional and
-left out when unknown, so a server from before them, which refuses fields it does not know, still takes
-every other tick. Ticking a row again and using up a bought item came the other way round, as new routes
-(`shopping/again`, `shopping/use-up`) rather than fields: an app tells a server from before them by the bare
-404 of a path it has no route for, where the routes' own 404s say what was not found, and then does what it
-did before (`ApiClientTest`, `ShoppingSessionTest`).
+Installed apps outlive server deployments: the server deploys itself the night after a merge, an app
+only when the owner runs the Release workflow. The app skips JSON fields it does not know, but fails
+on a field it needs that is missing, and on an enum value it does not know (the whole response then
+fails to read). So, for a response or request that an installed app uses:
+
+- Safe: a new optional field (with a default or `= null`), a new route, a new type.
+- Not safe: removing or renaming a field, changing what a field means, a new required field, and a new
+  value of an enum that the installed app knows (`Store`, `MealStatus`, `MealSlot`, ...). Put new data
+  in new routes or types, and keep the old field for a release.
+
+`ReleasedAppTest` (server) enforces this. It reads every response of the API with the shared API types as
+they were at the latest release (v0.1.3 now; v0.1.2 differs from it only by additions), frozen in
+`server/src/test/kotlin/dev/tobins/mealplanner/server/released/` with a header naming the tag, and
+checks that no enum has a value the frozen one lacks. A pull request that breaks the rule fails `:server:test`.
+
+The app's `ApiClient` turns an unknown enum value into the field's default, so a new value is safe for an
+app from the first release after v0.1.3 on, for a field that has a default; a list of enums is not covered.
+Give enum fields added from now on a default, or make them nullable. The rule above holds until then.
+
+After an app release: `scripts/freeze-api.sh vX.Y.Z`, commit the result. The history of single fields is in
+the test and in `git log`, not here.
 
 ## Screenshot tests
 
