@@ -197,6 +197,39 @@ merger can run `gh pr merge`, and only the merger can start the release, which i
 one beforehand
 (`.claude/hooks/gate-pr-merge.sh`).
 
+### What the agents cost
+
+`scripts/agent-cost` (Python 3, nothing to install) reads the transcripts Claude Code keeps of the
+sub-agent runs of a session and prints, per agent type: runs, tokens (fresh input, cache write,
+cache read, output), the context at the first request, requests per run, the peak context, where
+the tool results came from (Read, Grep/Glob, shell reads, `gh`, git, Gradle) and repeat reads of a
+file. The cost is what the agents' tool lists and briefs are judged by: most of it is the context
+size times the number of requests, not the text read.
+
+```
+scripts/agent-cost                      # newest session of the project you run it in
+scripts/agent-cost --agent coder --since 2026-11-17T00:00:00Z --tools
+scripts/agent-cost --json               # for comparing runs by machine
+scripts/agent-cost --self-test          # on made-up lines, no transcripts needed
+```
+
+It prints counts only, writes nothing and skips lines it does not understand. The cost column is
+in relative units from the list-price ratios at the top of the script, not weighted by model: use
+it to compare runs of the same agent, not to read a bill.
+
+Baseline of 2026-11-16 (189 sub-agent runs of one long session, issue #172):
+
+| Agent | Runs | Context at first request | Requests per run (median / max) | Peak context (median / max) |
+|---|---|---|---|---|
+| `coder` | 46 | 32 k | 36 / 133 | 101 k / 345 k |
+| `coder-deep` | 25 | 33 k | 76 / 209 | 232 k / 481 k |
+| `reviewer` | 96 | 6 k | 14 / 42 | 40 k / 124 k |
+| `emulator-tester` | 14 | 7 k | 46 / 103 | 90 k / 240 k |
+| `architect` | 2 | 8 k | 46 / 56 | 338 k / 426 k |
+
+Of the text the tools returned, 40% was files read or searched through the shell, 24% the Read
+tool, 12% `gh`.
+
 ## Releases
 
 Releases are made by hand, not on every commit: Actions → **Release** → Run workflow, on `main`.
