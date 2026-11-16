@@ -95,15 +95,27 @@ class Login(
         return parsed.parameters["state"] != null && (parsed.parameters["code"] != null || parsed.parameters["error"] != null)
     }
 
-    /** Finishes a login from the redirect [url]: checks it belongs to the login we started and swaps the code for tokens. */
+    /**
+     * True when [url] is a redirect back from the login page while a login waits for its answer, so
+     * it should be [finish]ed. With no login waiting the answer was used already: Android hands the
+     * same redirect over again, e.g. when it re-creates the screen, and reporting it would put
+     * "Could not log in" over a session that works. An answer to another login than the waiting one
+     * does count here, and [finish] refuses it.
+     */
+    fun isAwaitedAnswer(url: String): Boolean = isCallback(url) && pending() != null
+
+    /**
+     * Finishes a login from the redirect [url]: checks it belongs to the login we started and swaps
+     * the code for tokens. An answer that belongs to it is used up, whatever it says, so it works once.
+     */
     suspend fun finish(url: String): Session {
-        val pending = storage.get(PENDING_KEY)?.takeIf { it.isNotBlank() }?.let { json.decodeFromString<PendingLogin>(it) }
-            ?: error(Strings.current(Msg.LOGIN_NOT_STARTED))
+        val pending = pending() ?: error(Strings.current(Msg.LOGIN_NOT_STARTED))
         val params = Url(url).parameters
-        params["error"]?.let { error(params["error_description"] ?: it) }
+        // Checked first, so that a foreign answer can neither end our login nor put its own text on screen.
         check(params["state"] == pending.state) { Strings.current(Msg.LOGIN_ANSWER_MISMATCH) }
-        val code = params["code"] ?: error(Strings.current(Msg.LOGIN_NO_CODE))
         storage.set(PENDING_KEY, "")
+        params["error"]?.let { error(params["error_description"] ?: it) }
+        val code = params["code"] ?: error(Strings.current(Msg.LOGIN_NO_CODE))
         val response = http.submitForm(
             pending.tokenEndpoint,
             parameters {
@@ -159,6 +171,10 @@ class Login(
         refreshToken = tokens.refreshToken ?: previousRefresh,
         expiresAt = Clock.System.now().epochSeconds + tokens.expiresIn,
     )
+
+    /** The login waiting for its answer; an unreadable one counts as none, as an unreadable session does. */
+    private fun pending(): PendingLogin? =
+        storage.get(PENDING_KEY)?.takeIf { it.isNotBlank() }?.let { runCatching { json.decodeFromString<PendingLogin>(it) }.getOrNull() }
 
     fun close() = http.close()
 

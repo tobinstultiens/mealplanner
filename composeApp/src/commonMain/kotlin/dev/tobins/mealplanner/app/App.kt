@@ -151,7 +151,7 @@ fun App(
 
     LaunchedEffect(Unit) {
         loginCallbacks.collect { url ->
-            if (!login.isCallback(url)) return@collect
+            if (!login.isAwaitedAnswer(url)) return@collect
             runCatching { login.finish(url) }
                 .onSuccess {
                     loginError = null

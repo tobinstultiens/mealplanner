@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
             UpdateCheckWorker.schedule(this)
             askForNotifications()
         }
-        intent?.data?.let { loginCallbacks.tryEmit(it.toString()) }
+        intent?.newLoginAnswer(savedInstanceState)?.let { loginCallbacks.tryEmit(it) }
         setContent {
             App(ServerSettings(BuildConfig.SERVER_URL), storage, BrowserLogin(this), loginCallbacks, updater)
         }
@@ -66,6 +66,17 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.data?.let { loginCallbacks.tryEmit(it.toString()) }
+    }
+
+    /**
+     * The login answer this intent brings, when it is new. The intent that started the screen comes
+     * again when Android re-creates it ([savedInstanceState] set: a rotation, a dark mode or language
+     * change, the app stopped in the background) and when the task is opened again from the recent
+     * apps; an answer it holds was handled the first time, and its code works only once.
+     */
+    private fun Intent.newLoginAnswer(savedInstanceState: Bundle?): String? {
+        if (savedInstanceState != null || (flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return null
+        return data?.toString()
     }
 
     /** Android 13+ needs consent for the "update available" notification; asked once. */
