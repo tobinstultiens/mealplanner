@@ -305,7 +305,10 @@ and per meal `reroll`, `lock`, `status` and delete; `PUT meals/{day}/{slot}` wit
 locked, and a skipped meal leaves the day's and the week's totals; a meal that was eaten, or the leftover lunch of an eaten
 dinner, keeps its recipe and its place: `reroll`, `PUT` and delete answer 409, `POST meals/{day}/{slot}/generate` 422, and
 `generate` keeps it; see `docs/data-sources.md`, "Un-eating"), `/api/days/{date}` and `/api/log` (what was eaten)
-`/api/weights` (weight log, trend and target suggestion), `/api/offers` (weekly store offers;
+`/api/weights` (weight log, trend and target suggestion; the newest weighing is the profile's weight, so the targets follow it:
+a weighing for an earlier day leaves the profile alone, and removing the newest one gives the profile the weight of the newest
+one left. Removing the only one keeps the profile's weight, as what it was before is not stored; plans already made keep their
+portions), `/api/offers` (weekly store offers;
 `POST /api/offers/refresh` fetches them now) and `/api/prices` (regular AH prices per ingredient, the
 baseline for costing meals; `POST /api/prices/refresh` starts a lookup).
 

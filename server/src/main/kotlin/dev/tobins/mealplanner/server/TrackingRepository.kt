@@ -65,21 +65,43 @@ class TrackingRepository(
         )
     }
 
-    /** Records a weighing. The newest weighing also becomes the profile's weight, which the targets follow. */
+    /**
+     * Records a weighing (a second one for the same day replaces the first). The newest weighing is
+     * the profile's weight, which the targets follow: a weighing for an earlier day leaves the profile alone.
+     */
     fun setWeight(date: String, kg: Double): WeightLog {
         val day = parseDate(date)
         require(kg in 30.0..300.0) { "kg must be between 30 and 300" }
-        db.transaction {
+        db.writing {
             q.upsertWeight(userId, day.toString(), kg)
-            val newest = q.selectWeights(userId).executeAsList().last()
-            profiles.profile()?.takeIf { it.weightKg != newest.kg }?.let { profiles.save(it.copy(weightKg = newest.kg)) }
+            if (isNewest(day)) followNewestWeighing()
         }
         return weights()
     }
 
+    /**
+     * Removes a weighing. Removing the newest one takes its effect back: the profile's weight becomes
+     * that of the newest weighing left. Removing an older one changes nothing. When it was the only
+     * one the profile keeps its weight: what it was before the first weighing is not stored.
+     */
     fun deleteWeight(date: String): WeightLog {
-        q.deleteWeight(userId, parseDate(date).toString())
+        val day = parseDate(date)
+        db.writing {
+            val wasNewest = isNewest(day)
+            q.deleteWeight(userId, day.toString())
+            if (wasNewest) followNewestWeighing()
+        }
         return weights()
+    }
+
+    /** Whether there is a weighing on [day] and none after it. */
+    private fun isNewest(day: LocalDate): Boolean =
+        q.selectWeights(userId).executeAsList().lastOrNull()?.date == day.toString()
+
+    /** Makes the newest weighing the profile's weight, when there is one and a profile. */
+    private fun followNewestWeighing() {
+        val newest = q.selectWeights(userId).executeAsList().lastOrNull() ?: return
+        profiles.profile()?.takeIf { it.weightKg != newest.kg }?.let { profiles.save(it.copy(weightKg = newest.kg)) }
     }
 
     private fun parseDate(date: String): LocalDate = try {
