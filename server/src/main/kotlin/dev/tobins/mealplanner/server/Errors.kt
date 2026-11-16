@@ -31,7 +31,10 @@ fun StatusPagesConfig.errorMapping() {
         call.application.log.error("Request ${call.request.local.uri} failed", cause)
         call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (cause.message ?: cause::class.simpleName ?: "internal error")))
     }
+    // Answered as the caller's mistake, but a number that fails to parse or a `require` deep in a
+    // repository can be the server's own bug: leave a trace of the path and the message.
     exception<IllegalArgumentException> { call, cause ->
+        call.application.log.warn("Request ${call.request.local.uri} refused as a bad request: ${cause.message}")
         call.respond(HttpStatusCode.BadRequest, mapOf("error" to (cause.message ?: "bad request")))
     }
 }

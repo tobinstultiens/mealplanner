@@ -8,6 +8,10 @@ import dev.tobins.mealplanner.server.prices.PriceSource
 import dev.tobins.mealplanner.server.prices.StoreProduct
 import java.time.Duration
 import java.time.Instant
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodBasis
 import dev.tobins.mealplanner.api.FoodDataset
@@ -23,6 +27,7 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
@@ -33,6 +38,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import org.slf4j.LoggerFactory
 
 class ApplicationTest {
     private fun config(cookingRepo: File?, nevoFile: File?) = ServerConfig(
@@ -253,6 +259,23 @@ class ApplicationTest {
         assertEquals(HttpStatusCode.ServiceUnavailable, http.post("/api/sync/cooking").status)
         assertEquals(HttpStatusCode.NotFound, http.get("/api/recipes/999").status)
         assertEquals(HttpStatusCode.BadRequest, http.get("/api/recipes/abc").status)
+    }
+
+    @Test
+    fun badInputIsAnswered400WithItsMessageAndLoggedAsAWarning() = testApplication {
+        val http = start(cookingRepo = null)
+        val log = LoggerFactory.getLogger("io.ktor.test") as Logger
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        log.addAppender(appender)
+        try {
+            val answer = http.get("/api/recipes/abc")
+            assertEquals(HttpStatusCode.BadRequest, answer.status)
+            assertEquals("""{"error":"Recipe id must be a number"}""", answer.bodyAsText())
+            val warning = appender.list.single { it.level == Level.WARN }.formattedMessage
+            assertTrue("/api/recipes/abc" in warning && "Recipe id must be a number" in warning, warning)
+        } finally {
+            log.detachAppender(appender)
+        }
     }
 
     private val nevoSample = listOf(
