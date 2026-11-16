@@ -73,7 +73,7 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
 
     LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.ingredients() to api.pantry() } }
 
-    SubScreen(t(Msg.PANTRY), onBack, snackbar, notice = { RefreshNotice(loaded) { reload++ } }) { padding ->
+    SubScreen(t(Msg.PANTRY), onBack, snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
@@ -88,7 +88,7 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
                     scope.launch {
                         when (val result = load(action)) {
                             is Load.Ready -> state = Load.Ready(ingredients to result.value)
-                            is Load.Failed -> snackbar.showSnackbar(result.message)
+                            is Load.Failed -> snackbar.showSnackbar(if (result.technical) plainReason(result) else result.message)
                             Load.Loading -> Unit
                         }
                     }

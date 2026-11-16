@@ -332,7 +332,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
         (load { api.routines() } as? Load.Ready)?.value?.let { routines = it }
     }
 
-    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: t(Msg.RECIPE), onBack, notice = { RefreshNotice(loaded) { reload++ } }, actions = {
+    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: t(Msg.RECIPE), onBack, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
         if ((state as? Load.Ready)?.value?.summary?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }) {
             BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
         }

@@ -5,8 +5,11 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -118,13 +121,16 @@ internal fun <T : Any> rememberLoad(key: String): LoadState<T> {
 /**
  * The line a screen shows at its bottom when fetching again failed behind the content it kept: the
  * content stays, the user is told it may be out of date, and [onRetry] asks again. Nothing when all is well.
+ * With [aboveSystemBar] (the screens without a navigation bar of their own) the line keeps clear of the
+ * system's navigation bar or gesture handle, which would otherwise cover the text and Retry; a tab's
+ * NavigationBar already does that, so there it stays off.
  */
 @Composable
-internal fun RefreshNotice(loaded: LoadState<*>, onRetry: () -> Unit) {
+internal fun RefreshNotice(loaded: LoadState<*>, aboveSystemBar: Boolean = false, onRetry: () -> Unit) {
     if (!loaded.refreshFailed) return
     val t = LocalStrings.current
     Surface(Modifier.fillMaxWidth().testTag(RefreshNoticeTag), color = MaterialTheme.colorScheme.errorContainer) {
-        Column {
+        Column(if (aboveSystemBar) Modifier.windowInsetsPadding(WindowInsets.navigationBars) else Modifier) {
             // While a retry is under way the line stays and says so.
             if (loaded.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
             Row(
