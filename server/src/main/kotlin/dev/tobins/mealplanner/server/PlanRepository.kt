@@ -55,25 +55,24 @@ class PlanRepository(
 
     /**
      * Picks a different recipe for one meal and keeps the rest of the week. When a dinner
-     * changes, the next day's lunch made of its leftovers changes with it. When no other
-     * recipe fits the meal, it is kept and a [ConflictException] says so.
+     * changes, the next day's lunch made of its leftovers changes with it ([leftoversToReplace]).
+     * When no other recipe fits the meal, it is kept and a [ConflictException] says so; so it is
+     * when the meal was cooked ([requireNotCooked]).
      */
     fun reroll(weekStart: String, day: Int, slot: MealSlot, seed: Long = Random.nextLong()): WeekPlan {
         val start = parseWeekStart(weekStart)
-        val current = meals(start)
-        val target = current.firstOrNull { it.day == day && it.slot == slot }
-            ?: throw NotFoundException("No meal planned for day $day $slot")
-        requireNotCooked(target, current)
-        val dependentLunch = current.firstOrNull {
-            slot == MealSlot.DINNER && it.day == day + 1 && it.slot == MealSlot.LUNCH && it.leftover && !it.locked
-        }
-        val replaced = listOfNotNull(target, dependentLunch)
-        val planned = WeekPlanner.plan(
-            request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = setOf(target.recipeId)),
-        )
-        val replacement = planned.firstOrNull { it.day == day && it.slot == slot }
-        if (replacement == null || replacement.recipeId == target.recipeId) throw ConflictException("No other recipe fits this meal")
+        // Read and written in one transaction, so a meal eaten meanwhile is not replaced after all.
         db.transaction {
+            val current = meals(start)
+            val target = current.firstOrNull { it.day == day && it.slot == slot }
+                ?: throw NotFoundException("No meal planned for day $day $slot")
+            requireNotCooked(target, current)
+            val replaced = listOfNotNull(target, leftoversToReplace(current, day, slot))
+            val planned = WeekPlanner.plan(
+                request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = setOf(target.recipeId)),
+            )
+            val replacement = planned.firstOrNull { it.day == day && it.slot == slot }
+            if (replacement == null || replacement.recipeId == target.recipeId) throw ConflictException("No other recipe fits this meal")
             for (old in replaced) {
                 q.deleteMeal(userId, start.toString(), old.day.toLong(), old.slot.name)
                 planned.firstOrNull { it.day == old.day && it.slot == old.slot }
@@ -94,15 +93,14 @@ class PlanRepository(
         val detail = recipes.find(recipeId)?.takeIf { recipes.isActive(recipeId) } ?: throw NotFoundException("No recipe $recipeId")
         if (detail.summary.kind == RecipeKind.COMPONENT) throw ConflictException("This recipe is a building block, not a meal")
         val candidate = recipes.candidate(recipeId) ?: throw ConflictException("This recipe has no amounts to plan with")
-        val week = meals(parseWeekStart(weekStart))
-        week.firstOrNull { it.day == day && it.slot == slot }?.let { requireNotCooked(it, week) }
         return place(weekStart, day, slot, candidate, locked = true)
     }
 
     /**
      * Refuses to replace [meal] when the stock went down for it: it was eaten, or it is the leftover
-     * lunch of a dinner that was eaten ([eatFromStock] took its share too). Replacing it would lose that
-     * stock for good, so the user un-eats the dinner first.
+     * lunch of a dinner that was eaten ([eatFromStock] took its share too). What a meal took is kept
+     * under its day and slot, and goes when the meal is replaced, so replacing it would lose that stock
+     * for good; the user un-eats the meal (or its dinner) first.
      */
     private fun requireNotCooked(meal: PlannedMeal, week: List<PlannedMeal>) {
         if (meal.status == MealStatus.EATEN) throw ConflictException("This meal was eaten already")
@@ -110,18 +108,39 @@ class PlanRepository(
     }
 
     /**
+     * [requireNotCooked] for whatever is in a slot; an empty slot can be filled. Writing a new recipe
+     * asks it first, so that Claude does not write one for a meal it may not replace.
+     */
+    fun requireReplaceable(weekStart: String, day: Int, slot: MealSlot) = requireReplaceable(meals(parseWeekStart(weekStart)), day, slot)
+
+    private fun requireReplaceable(week: List<PlannedMeal>, day: Int, slot: MealSlot) {
+        week.firstOrNull { it.day == day && it.slot == slot }?.let { requireNotCooked(it, week) }
+    }
+
+    /**
+     * The next day's leftover lunch that changes along with the dinner in [day]'s [slot]: only one
+     * still planned and not locked. An eaten or skipped one is history and stays as it is; an eaten
+     * one keeps what it took from the stock, to give it back when it is un-eaten.
+     */
+    private fun leftoversToReplace(week: List<PlannedMeal>, day: Int, slot: MealSlot): PlannedMeal? = week.firstOrNull {
+        slot == MealSlot.DINNER && it.day == day + 1 && it.slot == MealSlot.LUNCH && it.leftover && !it.locked && it.status == MealStatus.PLANNED
+    }
+
+    /**
      * Puts [candidate] in a slot, sized to the slot's share of the targets, [locked] or not. A dinner's
-     * leftovers replace the next day's leftover lunch, unless that lunch is locked or done.
+     * leftovers replace the next day's leftover lunch ([leftoversToReplace]). A meal that was cooked is
+     * not replaced ([requireNotCooked]): checked in the transaction that writes, as a recipe can take a
+     * minute to write and the meal may be eaten meanwhile.
      */
     fun place(weekStart: String, day: Int, slot: MealSlot, candidate: PlanCandidate, locked: Boolean = false): WeekPlan {
         val start = parseWeekStart(weekStart)
         val targets = targets()
         val portions = WeekPlanner.portionsFor(candidate, targets.kcal * slot.share)
         val meal = PlannedMeal(day, slot, candidate.recipeId, candidate.title, portions, candidate.kcal * portions, candidate.proteinG * portions, locked = locked)
-        val nextLunch = meals(start).firstOrNull {
-            slot == MealSlot.DINNER && it.day == day + 1 && it.slot == MealSlot.LUNCH && it.leftover && !it.locked && it.status == MealStatus.PLANNED
-        }
         db.transaction {
+            val week = meals(start)
+            requireReplaceable(week, day, slot)
+            val nextLunch = leftoversToReplace(week, day, slot)
             save(start, meal)
             val remaining = candidate.servings - portions
             if (nextLunch != null) {
