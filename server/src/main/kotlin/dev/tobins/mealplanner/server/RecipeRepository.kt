@@ -222,6 +222,9 @@ class RecipeRepository(
         return find(id)!!
     }
 
+    /** Whether the account has the recipe and it is not removed. */
+    fun isActive(id: Long): Boolean = q.selectById(userId, id).executeAsOneOrNull()?.let { it.removedAt == null } ?: false
+
     /** Titles of the most recently planned recipes, newest first; for variety in generation. */
     fun titles(ids: Collection<Long>): List<String> = ids.mapNotNull { q.selectById(userId, it).executeAsOneOrNull()?.title }
 

@@ -89,6 +89,9 @@ class PlanTest {
 
     private val fake = FakeGenerator()
 
+    /** The database of the server [start] built, to read what the API does not show. */
+    private lateinit var db: dev.tobins.mealplanner.server.db.Database
+
     private fun ApplicationTestBuilder.start(): HttpClient {
         val repo = createTempDirectory("cooking").toFile()
         fun write(path: String, text: String) = File(repo, "content/$path").apply { parentFile.mkdirs() }.writeText(text)
@@ -102,7 +105,8 @@ class PlanTest {
             port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
             nevoFile = createTempFile("nevo", ".csv").toFile().apply { writeText(nevo) },
         )
-        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), generator = fake, verifier = TestTokens) }
+        db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), generator = fake, verifier = TestTokens) }
         return createClient {
             install(ContentNegotiation) { json() }
             defaultRequest {
@@ -243,6 +247,46 @@ class PlanTest {
         http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.SKIPPED) }
         val plan = http.put("/api/plans/$week/meals/1/dinner") { setBody(MealChoice(dinner.id)) }.body<WeekPlan>()
         assertEquals(MealStatus.PLANNED, plan.meal(1, MealSlot.DINNER)!!.status)
+    }
+
+    @Test
+    fun aRemovedRecipeIsNotThereAndAComponentIsNoMeal() = testApplication {
+        val http = start().ready()
+        val bowl = http.post("/api/recipes") { setBody(RecipeInput("Beef bowl", 1, "300 | g | beef")) }.body<RecipeDetail>().summary
+        val sauce = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Sauce" }
+        assertEquals(RecipeKind.COMPONENT, sauce.kind)
+        assertEquals(HttpStatusCode.Conflict, http.put("/api/plans/$week/meals/0/dinner") { setBody(MealChoice(sauce.id)) }.status)
+
+        assertEquals(HttpStatusCode.NoContent, http.delete("/api/recipes/${bowl.id}").status)
+        assertEquals(HttpStatusCode.NotFound, http.put("/api/plans/$week/meals/0/dinner") { setBody(MealChoice(bowl.id)) }.status)
+        assertEquals(null, http.get("/api/plans/$week").body<WeekPlan>().meal(0, MealSlot.DINNER))
+    }
+
+    @Test
+    fun aLeftoverLunchOfAnEatenDinnerCannotBeReplacedAndTheStockStaysWhole() = testApplication {
+        val http = start().ready()
+        http.post("/api/plans/$week/generate")
+        val beef = http.get("/api/ingredients").body<List<Ingredient>>().first { it.name == "Beef raw" }.id
+        val userId = db.userQueries.selectBySubject("sub-t").executeAsOne().id
+        IngredientRepository(db, FoodRepository(db), userId).putOnHandFrom(beef, java.time.LocalDate.parse(week), grams = 20_000.0, source = StockSource.STOCK_UP)
+        fun stock() = db.pantryQueries.selectStock(userId, week, listOf(beef)).executeAsOne().grams!!
+        val other = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 9" }
+        val lunch = http.get("/api/plans/$week").body<WeekPlan>().meal(5, MealSlot.LUNCH)!!
+        assertTrue(lunch.leftover)
+
+        http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.EATEN) }
+        val afterEating = stock()
+        assertTrue(afterEating < 20_000.0)
+
+        // Neither choosing nor "Another recipe" may replace the lunch: the stock went down for it too.
+        assertEquals(HttpStatusCode.Conflict, http.put("/api/plans/$week/meals/5/lunch") { setBody(MealChoice(other.id)) }.status)
+        assertEquals(HttpStatusCode.Conflict, http.post("/api/plans/$week/meals/5/lunch/reroll").status)
+        assertEquals(HttpStatusCode.Conflict, http.post("/api/plans/$week/meals/4/dinner/reroll").status, "the eaten dinner itself too")
+        assertEquals(lunch, http.get("/api/plans/$week").body<WeekPlan>().meal(5, MealSlot.LUNCH))
+        assertEquals(afterEating, stock())
+
+        http.put("/api/plans/$week/meals/4/dinner/status") { setBody(MealStatus.PLANNED) }
+        assertEquals(20_000.0, stock(), 1e-6)
     }
 
     @Test

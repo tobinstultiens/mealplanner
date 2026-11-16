@@ -100,9 +100,15 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (Long) -> Unit, onOpenProfile: () -
             title = t(Msg.PLAN_CHOOSE_FOR, t.slot(slot), dayLabel(plusDays(weekStart, day), t.locale)),
             onDismiss = { choosingFor = null },
         ) { recipe ->
-            // A server from before the route says nothing: the picker shows that and stays open.
-            state = Load.Ready(api.chooseRecipe(weekStart, day, slot, recipe.id) ?: throw IllegalStateException(t(Msg.PLAN_CHOOSE_UNSUPPORTED)))
-            choosingFor = null
+            // A refusal (such as "this meal was eaten already") or a server from before the route: the picker shows why and stays open.
+            when (val result = load { api.chooseRecipe(weekStart, day, slot, recipe.id) }) {
+                is Load.Ready -> {
+                    state = Load.Ready(result.value ?: throw IllegalStateException(t(Msg.PLAN_CHOOSE_UNSUPPORTED)))
+                    choosingFor = null
+                }
+                is Load.Failed -> throw IllegalStateException(result.message)
+                Load.Loading -> Unit
+            }
         }
     }
 
