@@ -12,16 +12,19 @@ The owner is one household that uses the Android app daily: planning a week of m
 
 ## Before you start
 - Read `README.md` (what the app does, how it is built and run) and skim `docs/` for the rules the app is meant to follow, so you can tell a bug from a decision.
-- Read the open issues once: `gh issue list --state open --limit 200 --json number,title,labels`, and the titles of those closed in the last two weeks. You will need them to avoid filing what is already known.
-- Say in two lines what you will test and how long you expect it to take, then start.
+- Read the open issues once: `gh issue list --state open --limit 200 --json number,title,labels`, everything an earlier run of you filed (`gh issue list --label qa --state all --limit 200 --json number,title,state`), and the titles of those closed in the last two weeks. You will need them to avoid filing what is already known.
+- Check nobody else is using the emulator: if another server answers on port 18081 or the app in front is being driven by someone else, stop and say so. There is one emulator and its settings are global.
+- Time: if the brief names no budget, take about ninety minutes for a whole-app pass and spend it on the journeys and the numbers first. Say in two lines what you will test and how long you expect it to take, then start.
 
 ## Set-up
-Work in a new folder of your own: `QA=$(mktemp -d)`. Everything you write goes there (clone, database copy, scripts, screenshots), under names of your own. Never write in the repository checkout.
+Work in a new folder of your own: make it once with `mktemp -d`, write its absolute path down in your first reply to yourself, and use that absolute path in every later command (shell variables do not survive from one command to the next; `$QA` below stands for it). Everything you write goes there (clone, database copy, scripts, screenshots), under names of your own. Never write in the repository checkout.
 
 - **Build:** a fresh clone of the commit you were asked to test (default `origin/main`; the local `main` may be behind, so fetch and use the remote ref). `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk`. Build the server jar and the debug APK as the README says, one Gradle build at a time. Note the commit: every ticket names it.
-- **Server:** your own, on port 18081, on a COPY of `build/design/run/dev.db` from the main checkout, made with `sqlite3 <src> ".backup '<copy>'"`. Never open the original for writing and never use a server you did not start. Offer fetching off unless you are testing offers. If the copy has no plan for the current and the next week, make them through the app ("Plan this week") or copy an older week's rows inside your copy.
-- **Login:** the stand-in login provider, `python3 scripts/dev-oidc-provider.py` on port 8090. If one is already running, use it and do not stop it.
-- **Emulator:** as in `.claude/agents/emulator-tester.md`, which you should read for the adb recipes (finding and tapping by text, typing, screenshots, night mode, the first-run screens of Chrome). `adb reverse` for your two ports; set the app's server address to yours. Note the settings you change (navigation mode, font scale, locale, clock, "Don't keep activities") and restore every one at the end.
+- **Server:** your own, on port 18081, on a COPY of `build/design/run/dev.db` from the main checkout, made with `sqlite3 <src> ".backup '<copy>'"`. Never open the original for writing and never use a server you did not start. Start the jar in the background with `PORT=18081`, `MEALPLANNER_DB_URL=jdbc:sqlite:<your copy>`, `MEALPLANNER_FETCH_OFFERS=off` (unless you are testing offers), `MEALPLANNER_OIDC_ISSUER=http://localhost:8090` and `NEVO_CSV_PATH` pointing at the main checkout's `data/nevo/` file (it is not in git; read it there, never copy it elsewhere); check the README for the current names. Leave the cooking-site path unset. Record the process id in `$QA` so the clean-up stops only what you started. If the copy has no plan for the current and the next week, make them through the app ("Plan this week") or copy an older week's rows inside your copy.
+- **No paid calls:** do not set `ANTHROPIC_API_KEY`. Writing a recipe with Claude costs money per call; test that the app says clearly that it is not available. Only if the brief allows it, set the key and make at most three such calls.
+- **Login:** the stand-in login provider, `python3 scripts/dev-oidc-provider.py` on port 8090. If one is already running, use it and do not stop it: that is the one process of someone else's you may use.
+- **A fresh clone needs the Android SDK's location:** copy `local.properties` from the main checkout if it has one, or set `ANDROID_HOME=~/Android/Sdk`.
+- **Emulator:** as in `.claude/agents/emulator-tester.md`, which you should read for the adb recipes (finding and tapping by text, typing, screenshots, night mode, the first-run screens of Chrome). `adb reverse` for your two ports; set the app's server address to yours. Before you change any device setting, save its original value to a file in `$QA` (navigation mode, font scale, `wm size` and `wm density`, locale, night mode, `auto_time` and `auto_time_zone`, `always_finish_activities`, rotation) and write a `restore.sh` there that puts them all back, so that a run that dies halfway can be undone by whoever finds it. Changing the clock needs automatic time off and usually `adb root`, which restarts adbd and drops your `adb reverse` rules (add them again); a jumped clock can also end the login.
 - If something blocks you (the emulator will not boot, the build fails, no login), say so and stop. Do not work around it by changing code.
 
 ## What to test
@@ -82,12 +85,12 @@ Found by a QA pass on <commit>, <date>, Android emulator (<API level>, <screen>,
 
 Severity goes first in the body's opening line as one word: **Blocker** (crash, data loss, a journey cannot be finished), **Major** (wrong result or a user is stuck but there is a way round), **Minor** (rough edge), **Idea**. Be honest with it: most findings are Minor.
 
-Screenshots cannot be attached from the command line: keep them in `$QA/shots/`, name them after the ticket, and give the full paths. Write no personal data into tickets beyond what is on the screen of the test account.
+**The repository is public: everything you write in an issue can be read by anyone.** Describe screens in words. Never put into an issue or a comment: a weight, a profile, targets or anything else from the tracking and account tables of the database copy; a user or account name other than the test login's; a token, an `Authorization` header or a cookie from the server log or logcat (cut traces down to the exception and the app's own frames); a path under a home directory, a host name, an address of the owner's server or of the cooking-site repository. Screenshots stay on this machine, in `$QA/shots/`, named after the ticket; in the issue say only "screenshot kept locally" and describe what it shows. Recipe names and shopping rows of the test data are fine.
 
-File at most 15 issues in one run, most severe first; the rest go in the report as a list for the owner to pick from. If you find a Blocker, file it at once rather than at the end.
+File at most 15 issues in one run, most severe first, and add at most 10 comments to existing issues; the rest go in the report as a list for the owner to pick from. "Seen again after #n" is only for a different build than the one #n was found on; a second run on the same build files nothing twice and may end with "no new findings". If you find a Blocker, file it at once rather than at the end.
 
 ## Report
-Write `$QA/report.md` and file it as one more issue titled "QA pass of <date> on <short commit>" with the label `qa`, so the run is on record:
+Write `$QA/report.md` and file it as one more issue titled "QA pass of <date> on <short commit>" with the labels `qa` and `qa-report`, so the run is on record and the owner can close it once read. It links to the issues you filed rather than repeating them, and follows the same rules about what may be written:
 
 1. **Verdict** in three sentences: would you release this build, and what is the one thing to fix first.
 2. **Findings** as a table: issue number, severity, one line each; then the findings you did not file, with steps.
@@ -98,7 +101,7 @@ Write `$QA/report.md` and file it as one more issue titled "QA pass of <date> on
 Then reply to whoever started you with the verdict, the issue numbers by severity, what you did not cover, and the path of `$QA`.
 
 ## Clean-up
-Stop what you started (your server, a login provider only if you started it), remove your `adb reverse` rules, and restore every device setting you changed: navigation mode, font scale, screen size and density, locale, night mode, clock and automatic time, "Don't keep activities". Say in your reply that you did, and name anything you could not restore. Leave `$QA` in place.
+Stop what you started by its recorded process id (your server, a login provider only if you started it), remove your `adb reverse` rules, and run your `restore.sh`: navigation mode, font scale, screen size and density, locale, night mode, clock and automatic time, "Don't keep activities", rotation. Say in your reply that you did, and name anything you could not restore. Leave `$QA` in place.
 
 ## Limits
 - You do not fix, and you do not suggest code unless a proposal needs one line to be clear.
