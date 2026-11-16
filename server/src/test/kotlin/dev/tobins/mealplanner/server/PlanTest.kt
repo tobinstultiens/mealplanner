@@ -848,4 +848,35 @@ class PlanTest {
         }
         assertEquals(shopping.grams!!, expected, absoluteTolerance = 1e-6)
     }
+
+    @Test
+    fun aRerolledDinnerCooksForItsNewLeftoverLunch() = testApplication {
+        val http = start().ready()
+        val oldLunch = http.post("/api/plans/$week/generate").body<WeekPlan>().meal(2, MealSlot.LUNCH)!!
+        val after = http.post("/api/plans/$week/meals/1/dinner/reroll").body<WeekPlan>()
+        val dinner = after.meal(1, MealSlot.DINNER)!!
+        val lunch = after.meal(2, MealSlot.LUNCH)!!
+        assertNotEquals(oldLunch.recipeId, lunch.recipeId)
+        assertEquals(dinner.portions + lunch.portions, dinner.cookPortions)
+        assertEquals(0.0, lunch.cookPortions)
+    }
+
+    @Test
+    fun aRerolledDinnerCooksOnlyItsOwnWhenTheOldLeftoverLunchWasEaten() = testApplication { rerollKeepingLunch(MealStatus.EATEN) }
+
+    @Test
+    fun aRerolledDinnerCooksOnlyItsOwnWhenTheOldLeftoverLunchWasSkipped() = testApplication { rerollKeepingLunch(MealStatus.SKIPPED) }
+
+    /** The lunch is history and stays: it is the old dinner's leftovers, so nothing of the new dinner's is cooked for it, and it cooks nothing itself. */
+    private suspend fun ApplicationTestBuilder.rerollKeepingLunch(status: MealStatus) {
+        val http = start().ready()
+        val oldLunch = http.post("/api/plans/$week/generate").body<WeekPlan>().meal(2, MealSlot.LUNCH)!!
+        http.put("/api/plans/$week/meals/2/lunch/status") { setBody(status) }
+
+        val after = http.post("/api/plans/$week/meals/1/dinner/reroll").body<WeekPlan>()
+        val dinner = after.meal(1, MealSlot.DINNER)!!
+        assertEquals(oldLunch.recipeId, after.meal(2, MealSlot.LUNCH)!!.recipeId, "kept")
+        assertEquals(dinner.portions, dinner.cookPortions)
+        assertEquals(0.0, after.meal(2, MealSlot.LUNCH)!!.cookPortions)
+    }
 }

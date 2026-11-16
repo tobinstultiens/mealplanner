@@ -377,7 +377,7 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
             is Load.Ready -> {
                 val recipe = current.value
                 // Opened from a planned meal: the amounts are for what is cooked now, unless asked as written.
-                var asWritten by remember(recipeId) { mutableStateOf(false) }
+                var asWritten by rememberSaveable(recipeId) { mutableStateOf(false) }
                 val cooking = meal?.takeIf { it.recipeId == recipeId }
                 val servings = recipe.summary.servings?.takeIf { it > 0 }
                 val factor = if (cooking != null && servings != null && cooking.cookPortions > 0 && !asWritten) cooking.cookPortions / servings else null

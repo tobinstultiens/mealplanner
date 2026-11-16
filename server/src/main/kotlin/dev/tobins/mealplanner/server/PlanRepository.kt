@@ -332,13 +332,13 @@ class PlanRepository(
         /**
          * The servings to cook when [meal] is made ([PlannedMeal.cookPortions]): its own portions plus
          * those of the leftover lunch cooked with it, unless that lunch was eaten and took its own. A
-         * skipped meal and a leftover lunch whose dinner is in the plan (cooked then, or skipped and
-         * then not cooked, as [toCook] has it) are 0, except the lunch of a skipped dinner, which
+         * skipped meal, an eaten leftover lunch (cooked already) and a leftover lunch whose dinner is in
+         * the plan (cooked then, or skipped and then not cooked, as [toCook] has it) are 0, except the lunch of a skipped dinner, which
          * is cooked for itself. So for a week where a recipe is planned once, the amounts of
          * these servings are what the shopping list counts for it.
          */
         fun cookPortions(meal: PlannedMeal, week: List<PlannedMeal>): Double {
-            if (meal.status == MealStatus.SKIPPED) return 0.0
+            if (meal.status == MealStatus.SKIPPED || (meal.leftover && meal.status == MealStatus.EATEN)) return 0.0
             val dinner = dinnerOf(meal, week)
             if (dinner != null) return if (dinner.status == MealStatus.SKIPPED) meal.portions else 0.0
             val leftovers = leftoversOf(meal, week)?.takeIf { it.status != MealStatus.EATEN }
