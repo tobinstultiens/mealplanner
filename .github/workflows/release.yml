@@ -78,11 +78,22 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          # The server a fresh install logs in to, built into the release; a secret, so that the
+          # address is not published in this public repository (README, "Releases").
+          DEFAULT_SERVER: ${{ secrets.MEALPLANNER_DEFAULT_SERVER }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
             echo "::error::ANDROID_KEYSTORE_BASE64 is not set; run scripts/create-release-key.sh once"
             exit 1
           fi
+          # Without it the release would ask every new user for the address; a release only talks HTTPS.
+          case "$DEFAULT_SERVER" in
+            https://?*) ;;
+            *)
+              echo "::error::MEALPLANNER_DEFAULT_SERVER must be the server's https:// address; add it as a repository secret"
+              exit 1
+              ;;
+          esac
           keystore="$RUNNER_TEMP/release.jks"
           echo "$KEYSTORE_BASE64" | base64 -d > "$keystore"
           ./gradlew :androidApp:assembleRelease \
@@ -91,7 +102,8 @@ jobs:
             -Pmealplanner.keystore="$keystore" \
             -Pmealplanner.keystorePassword="$KEYSTORE_PASSWORD" \
             -Pmealplanner.keyAlias="$KEY_ALIAS" \
-            -Pmealplanner.keyPassword="$KEYSTORE_PASSWORD"
+            -Pmealplanner.keyPassword="$KEYSTORE_PASSWORD" \
+            -PreleaseServerUrl="$DEFAULT_SERVER"
           rm "$keystore"
 
       - name: Verify the signature
