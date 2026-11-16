@@ -106,7 +106,9 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenPlan:
                 },
             )
         },
-        snackbarHost = { Column { SnackbarHost(snackbar); RefreshNotice(loaded) { reload++ } } },
+        // The line has a place of its own: the content ends above it, and snackbars show above it.
+        bottomBar = { RefreshNotice(loaded) { reload++ } },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))

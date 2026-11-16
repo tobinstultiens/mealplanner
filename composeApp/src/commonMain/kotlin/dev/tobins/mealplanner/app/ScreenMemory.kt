@@ -3,9 +3,11 @@ package dev.tobins.mealplanner.app
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -15,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 
@@ -58,6 +61,10 @@ internal class LoadState<T : Any>(private val memory: ScreenMemory, private val 
     var refreshFailed by mutableStateOf(false)
         private set
 
+    /** Whether a [refresh] is under way; a retry shows it on the notice, which stays until a refresh succeeds. */
+    var refreshing by mutableStateOf(false)
+        private set
+
     override var value: Load<T>
         get() = state.value
         set(new) {
@@ -72,22 +79,31 @@ internal class LoadState<T : Any>(private val memory: ScreenMemory, private val 
      * Fetches the value again behind what is shown. A screen showing nothing yet shows the spinner and
      * then the result or the failure; one showing content keeps it when the fetch fails (a dropped
      * connection must not wipe a screen that was fine a minute ago), unless the server says the thing
-     * is gone (404), which it then shows. Otherwise [refreshFailed] says so.
+     * is gone (404), which it then shows. Otherwise [refreshFailed] says so, until a refresh succeeds.
      */
     suspend fun refresh(fetch: suspend () -> T) {
-        refreshFailed = false
         if (value !is Load.Ready) value = Load.Loading
-        when (val result = load(fetch)) {
-            is Load.Ready -> value = result
-            is Load.Failed -> if (value !is Load.Ready) {
-                value = result
-            } else if (result.status == 404) {
-                memory.forget(key)
-                value = result
-            } else {
-                refreshFailed = true
+        refreshing = true
+        try {
+            when (val result = load(fetch)) {
+                is Load.Ready -> {
+                    value = result
+                    refreshFailed = false
+                }
+                is Load.Failed -> if (value !is Load.Ready) {
+                    value = result
+                    refreshFailed = false
+                } else if (result.status == 404) {
+                    memory.forget(key)
+                    value = result
+                    refreshFailed = false
+                } else {
+                    refreshFailed = true
+                }
+                Load.Loading -> Unit
             }
-            Load.Loading -> Unit
+        } finally {
+            refreshing = false
         }
     }
 }
@@ -107,14 +123,21 @@ internal fun <T : Any> rememberLoad(key: String): LoadState<T> {
 internal fun RefreshNotice(loaded: LoadState<*>, onRetry: () -> Unit) {
     if (!loaded.refreshFailed) return
     val t = LocalStrings.current
-    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.errorContainer) {
-        Row(
-            Modifier.padding(start = Spacing.ScreenEdge),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(t(Msg.REFRESH_FAILED_KEPT), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-            TextButton(onClick = onRetry) { Text(t(Msg.RETRY)) }
+    Surface(Modifier.fillMaxWidth().testTag(RefreshNoticeTag), color = MaterialTheme.colorScheme.errorContainer) {
+        Column {
+            // While a retry is under way the line stays and says so.
+            if (loaded.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Row(
+                Modifier.padding(start = Spacing.ScreenEdge),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(t(Msg.REFRESH_FAILED_KEPT), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                TextButton(enabled = !loaded.refreshing, onClick = onRetry) { Text(t(Msg.RETRY)) }
+            }
         }
     }
 }
+
+/** Test tag of the [RefreshNotice]. */
+internal const val RefreshNoticeTag = "refreshNotice"

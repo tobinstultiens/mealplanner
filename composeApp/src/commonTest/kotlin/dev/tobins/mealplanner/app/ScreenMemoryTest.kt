@@ -67,6 +67,26 @@ class ScreenMemoryTest {
     }
 
     @Test
+    fun theFailureStaysWhileARetryIsUnderWayAndGoesOnlyWithASuccess() = runTest {
+        val memory = ScreenMemory()
+        memory.keep("recipes", "shown")
+        val state = LoadState<String>(memory, "recipes")
+        state.refresh { throw IOException("offline") }
+        state.refresh {
+            assertTrue(state.refreshFailed)
+            assertTrue(state.refreshing)
+            throw IOException("still offline")
+        }
+        assertTrue(state.refreshFailed)
+        assertEquals(false, state.refreshing)
+        state.refresh {
+            assertTrue(state.refreshFailed)
+            "fresh"
+        }
+        assertEquals(false, state.refreshFailed)
+    }
+
+    @Test
     fun aRecipeTheServerSaysIsGoneIsShownAsFailedAndForgotten() = runTest {
         val api = ApiClient(
             ServerSettings("http://localhost"),

@@ -55,6 +55,10 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.TimeZone
 import kotlinx.coroutines.flow.emptyFlow
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.runBlocking
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -146,6 +150,8 @@ enum class Shot(
     SHOPPING_STORES(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE) }),
     SHOPPING_AT_JUMBO(heightDp = 1500, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE, store = Store.JUMBO) }),
     RECIPES(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
+    // The list was loaded, then the server could not be reached on a refresh: the list stays, with the line and its Retry below.
+    RECIPES_REFRESH_FAILED(heightDp = 1100, content = { api, _ -> recipesRefreshFailed(api) }),
     RECIPES_EMPTY(emptyRecipes = true, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
     RECIPE_DETAIL(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
     // Opened from a planned meal: the amounts of 1.5 of the recipe's 2 servings, and nothing to cook for leftovers.
@@ -312,4 +318,14 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
                 .map { arrayOf<Any>(shot, it) }
         }
     }
+}
+
+/** The recipe list as loaded from [api], then shown with a client that cannot reach the server for its refresh. */
+@Composable
+private fun recipesRefreshFailed(api: ApiClient) {
+    val memory = remember { ScreenMemory().apply { keep("recipes", runBlocking { api.recipes() }) } }
+    val unreachable = remember {
+        ApiClient(ServerSettings("http://localhost"), engine = MockEngine { respond("""{"error":"down"}""", HttpStatusCode.InternalServerError) })
+    }
+    CompositionLocalProvider(LocalScreenMemory provides memory) { RecipeListScreen(unreachable, {}, {}, {}) }
 }

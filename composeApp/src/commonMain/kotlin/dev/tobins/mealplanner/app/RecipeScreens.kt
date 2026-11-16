@@ -128,7 +128,9 @@ fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -
                 },
             )
         },
-        snackbarHost = { Column { SnackbarHost(snackbar); RefreshNotice(loaded) { reload++ } } },
+        // The line has a place of its own: the content ends above it, and snackbars show above it.
+        bottomBar = { RefreshNotice(loaded) { reload++ } },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (generating) {
             GenerateDialog(onDismiss = { generating = false }) { request ->
