@@ -313,13 +313,18 @@ never do: the store parsers skip an item with a missing field without a word. Ni
 decide it either. The same deal again the next week is the offer going on, not a second one: an offer that continues
 says nothing about how often the product is on offer, and a product that is always on offer has its own rule (rule 3).
 An offer is earlier when its store dates ended before today and it is not today's offer itself. Each row of this table is
-a test in `history/OfferPeriodsTest.kt`.
+a test in `history/OfferPeriodsTest.kt`. `history/VerdictPropertiesTest.kt` checks the properties behind it on
+400 made-up histories (fixed seeds): the verdict and every number in it stay the same when nights are dropped from the
+sightings; today's value is what `DealTerms.of` gives for today's offer as shown today (but for the share against a
+reported raise); no offer dated over today or later is an earlier one, nor today's own, nor counted twice; a comparison
+rests on at least 2 earlier offers; and a raise is reported exactly when a price before of the same pack in the 30 days
+before was lower.
 
 | | Pack | Deal | Price | Store dates | Nights missed between | Answer |
 |---|---|---|---|---|---|---|
 | 1 | same | same | same | share a day | none | one offer |
 | 2 | same | same | same | share a day | any number | one offer |
-| 3 | same | same text | moved with the price before ("25% korting" for 2,24, then 2,39) | share a day | any | one offer, at its lowest price |
+| 3 | same | same text | moved with the price before ("25% korting" for 2,24, then 2,39) | share a day | any | one offer; as an earlier offer, at its lowest price |
 | 4 | same | same | same | run on | none | one offer |
 | 5 | same | same | same | run on | any number | one offer |
 | 6 | same | same | same | apart (a day or more between) | none or any | two offers |
@@ -327,7 +332,7 @@ a test in `history/OfferPeriodsTest.kt`.
 | 8 | another | same | any | share a day | any | two offers |
 | 9 | same | no text (Lidl) | another | share a day | any | two offers: the price is the deal |
 | 10 | same | no text | same | run on | any | one offer |
-| 11 | today's | today's | any | share a day with today's offer or run on into it | any; or today's own rows missing | today's offer, never an earlier one |
+| 11 | today's | today's | any | share a day with today's offer or run on into it | any; or today's own rows missing | today's offer, never an earlier one; today's offer is measured as the store shows it today |
 | 12 | today's | today's | any | ended a day or more before today's began | any | an earlier offer |
 | 13 | any | another | any | ended before today | any | an earlier offer |
 | 14 | any | another | any | still dated to run today (Jumbo lists next week's) | any, also the last night | not an earlier offer |
@@ -336,13 +341,17 @@ a test in `history/OfferPeriodsTest.kt`.
 and a stated "25% korting" price with it) is measured at its lowest price. That is the row with the lowest price before,
 since for one deal text the price follows the price before: a share of it, or the price the text names. It is the
 price a customer could have had while the offer ran, against the lowest price before it, as a reduction is measured
-(rule 1). Today's offer is measured at what is paid today, against the lowest price before seen while it ran.
+(rule 1). That is for earlier offers only. Today's offer is measured as the store shows it today, its own price and
+price before, never at a price of a row it was joined with: an older, lower price before would make today's "1+1
+gratis" look cheaper than what is paid. The one exception is rule 1, which measures the share against the price before
+a raise, and says so.
 
 **Long-dated offers.** Jumbo dates some offers over many weeks (38 of the 428 stored offers of 2026-11-16 span more
 than 14 days, up to 356, such as "Jumbo Oosterse maaltijden, 2 voor 5,50" dated 2026-01-07 to 2026-12-08). By rows 2
 and 11, every row of such an offer with the same pack and deal is one offer, and today's. So it errs towards "not
-enough history yet": the product's earlier offers of that deal are not counted as separate ones. Rule 3 still says
-"always on offer" by the days it was seen.
+enough history yet": the product's earlier offers of that deal are not counted as separate ones. Rule 3 counts the
+days the store dated an offer of the deal over, not the days it was seen, so such an offer seen on only two nights is
+"always on offer" over the days its dates cover, and the summary says "dated it on offer".
 
 **What is compared.** What is paid, never the deal's wording, so a "2+1 gratis" is compared with the "1+1 gratis" the
 product had before. Each offer, today's and every earlier one, is read by today's deal reader (`DealTerms.of` on the
@@ -357,8 +366,11 @@ the share, as a price does not depend on what the store says the price was befor
 1. *Not a deal* (`NOT_A_DEAL`): the regular price of the same pack went up in the 30 days before the offer began, and
    with the deal a pack costs at least 97 % of what it cost before. "Before" is the lowest regular price seen in those 30
    days (`REFERENCE_DAYS`), as the EU asks of a shop announcing a reduction (Directive 98/6/EC, article 6a); 97 % is the
-   shopping list's own bound for a deal that saves something (`Discounts.factor`). Regular prices are the store's price
-   before in earlier offers of the same pack, and the looked-up prices (`regularPriceHistory`, AH) of the account's
+   shopping list's own bound for a deal that saves something (`Discounts.factor`). The price now is today's own price
+   before as the store shows it. Regular prices before are the store's price before in every row of the same pack
+   dated to begin before today's offer, whether or not it was joined into today's offer (last week's "1+1 gratis" at
+   1,59 running on into this week's at 3,19 is one offer, and still a raise), each over the row's store dates; prices
+   before within today's own dates are not "before". Then there are the looked-up prices (`regularPriceHistory`, AH) of the account's
    ingredient where the looked-up product is the offer's own: the same name, the offer's title adding at most a size,
    and the same size ("AH Snoepgroente tomaat", 500 g, is "AH Snoepgroente tomaat 500 gram"). A price raised less than
    3 % is no raise. A raise that leaves a saving is reported with the verdict, and the deal's share is then measured
@@ -370,9 +382,10 @@ the share, as a price does not depend on what the store says the price was befor
 2. *Not enough history yet* (`NOT_ENOUGH_HISTORY`) when the store was read on fewer than 56 days (`MIN_DAYS_READ`, 8
    weeks of nightly refreshes). Stores run offers by the week and bring a product back every few weeks, so 8 weeks see
    a usual deal come back at least once. Days read, not calendar time: a store that could not be read was not watched.
-3. *Always on offer* (`ALWAYS_ON_OFFER`): on offer this same way (the same deal at the same price) on at least 90 % of
-   the days read (`ALWAYS_SHARE`, room for a missed night and a pause between two weeks): that is its usual price, not
-   a deal.
+3. *Always on offer* (`ALWAYS_ON_OFFER`): dated on offer this same way (the same deal as the customer sees it: the
+   same text, or for an offer without one the same price) on at least 90 % of the days read (`ALWAYS_SHARE`, room for
+   a pause between two weeks): that is its usual price, not a deal. A day counts when the store's dates of an offer of
+   the deal include it, whether or not the product was seen that night, as for which rows are one offer.
 4. *Can't be compared* (`NOT_COMPARABLE`) when today's offer has none of the measures (a deal of unknown kind, a Lidl
    offer with neither deal nor price). *Not enough history yet* when fewer than 2 earlier offers have the measure
    (`MIN_EARLIER_OFFERS`): one could be the odd one out.
@@ -385,7 +398,7 @@ the share, as a price does not depend on what the store says the price was befor
 With each verdict come the facts it rests on: the measure and today's value in it, the usual (median) and the lowest
 earlier value with its deal and dates, the latest earlier offer at least as cheap as today's (said as "last this
 cheap" when it was about the same, within 3 %, and "last cheaper" when it was clearly less), the
-earlier offers themselves with their dates, deal and values, and on how many of the days read the product was on offer,
+earlier offers themselves with their store dates, deal and values, and on how many of the days read the product was dated on offer,
 and a summary in English, such as: "Worse than usual: 67% of the regular price, where it usually goes for 50% of the
 regular price; last cheaper 50% of the regular price with "1+1 gratis" from 2 Nov 2026 to 8 Nov 2026, …".
 

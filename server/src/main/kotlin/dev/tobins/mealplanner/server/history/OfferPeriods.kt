@@ -62,8 +62,8 @@ data class OfferPeriod(
     /** What makes rows one offer: the pack and the deal as the customer sees it ([joinOffers]). */
     val offerKey get() = identity.product.pack to dealKey
 
-    /** Whether the product was offered this way at the refresh at [instant]. */
-    fun covers(instant: Instant) = instant in firstSeen..lastSeen
+    /** Whether the store's dates of this offer include [day]. */
+    fun dated(day: LocalDate) = !day.isBefore(validFrom) && !day.isAfter(validUntil)
 
     /** Whether the store's dates of this offer share a day with [from] to [until], or run on into them or from them. */
     fun touches(from: LocalDate, until: LocalDate) = !validFrom.isAfter(until.plusDays(1)) && !from.isAfter(validUntil.plusDays(1))
@@ -95,9 +95,6 @@ data class CurrentOffer(val offer: Offer) {
      * it, whatever was paid then and whichever nights it was seen ([joinOffers]).
      */
     fun isItself(run: OfferPeriod) = run.offerKey == offerKey && run.touches(validFrom, validUntil)
-
-    /** The offer at today's price, measured against [priceBefore] (see [joinOffers]). */
-    fun withPriceBefore(priceBefore: Double) = CurrentOffer(offer.copy(originalPrice = priceBefore))
 }
 
 /**
@@ -127,7 +124,7 @@ private fun cheaper(a: OfferIdentity, b: OfferIdentity): Boolean = compareValues
  * - A price that changed while the deal stayed (AH showing another price before mid-week, and a "25% korting"
  *   price with it) is the same offer. It is measured at its lowest price, the row with the lowest price before
  *   ([cheaper]): the price the customer could have had while it ran, against the lowest price before it, as a
- *   reduction is measured ([REFERENCE_DAYS]).
+ *   reduction is measured ([REFERENCE_DAYS]). Today's offer is not measured so: [judge] takes it as it is today.
  * Dates that neither share a day nor run on mean the store ended the offer and began it again: two offers.
  */
 fun joinOffers(periods: List<OfferPeriod>): List<OfferPeriod> =
@@ -138,4 +135,4 @@ fun joinOffers(periods: List<OfferPeriod>): List<OfferPeriod> =
             if (last != null && next.touches(last.validFrom, last.validUntil)) joined[joined.lastIndex] = last.joinedWith(next) else joined += next
             joined
         }
-    }.sortedBy { it.firstSeen }
+    }.sortedWith(compareBy({ it.validFrom }, { it.validUntil }, { it.offerKey.toString() }))

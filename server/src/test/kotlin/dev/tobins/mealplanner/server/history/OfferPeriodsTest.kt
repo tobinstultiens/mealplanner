@@ -114,9 +114,9 @@ class OfferPeriodsTest {
         val verdict = judge(CurrentOffer(now), listOf(realQuarterOff, row(first, TODAY - 3, TODAY - 1), row(now, TODAY, TODAY)), (0..TODAY).map(::night), emptyList(), day(TODAY))
         assertEquals(listOf(realQuarterOff.firstSeen), verdict.earlier.map { it.firstSeen })
         assertEquals(Verdict.NOT_ENOUGH_HISTORY, verdict.verdict)
-        // Measured at what is paid today, 2,39 for the kilo, against the lowest price before while it ran: 80 %.
-        assertEquals(2.39, CurrentOffer(now).withPriceBefore(2.99).measures.perKg!!, 1e-9)
-        assertEquals(2.39 / 2.99, CurrentOffer(now).withPriceBefore(2.99).measures.paidShare!!, 1e-9)
+        // Measured as the store shows it today, 2,39 for the kilo; a price before within its own dates is no raise.
+        assertEquals(Measure.PER_KG to 2.39, verdict.measure to verdict.value)
+        assertEquals(null, verdict.raise)
     }
 
     @Test

@@ -1,6 +1,5 @@
 package dev.tobins.mealplanner.server.history
 
-import dev.tobins.mealplanner.server.serverDay
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -22,7 +21,7 @@ fun DealVerdict.summary(store: String): String {
             "Not enough history yet: $before" + (if (earlier.isEmpty()) "" else ", $compared of them with a ${name(measure!!)}") +
                 "; a verdict needs $MIN_EARLIER_OFFERS earlier offers to compare with."
         }
-        Verdict.ALWAYS_ON_OFFER -> "The usual price, not a deal: on offer this way on $daysThisDeal of the ${days(daysRead)} $store was read$since."
+        Verdict.ALWAYS_ON_OFFER -> "The usual price, not a deal: $store dated it on offer this way on $daysThisDeal of the ${days(daysRead)} it was read$since."
         Verdict.NOT_COMPARABLE -> "Can't be compared: the deal gives no share of the regular price and no price per kg, litre, piece or pack; $before."
         Verdict.REAL_DEAL -> "A real deal: ${amount(value!!)} " +
             (if (lastAsCheap == null) "is less than ever$since (lowest before: ${was(lowest!!)})" else "is as low as it has been (${was(lastAsCheap)})") +
@@ -51,8 +50,8 @@ private fun DealVerdict.lastCheap(): String {
 
 /** An earlier offer: its value in the verdict's measure, its deal and when it ran. */
 private fun DealVerdict.was(run: OfferPeriod): String {
-    val from = serverDay(run.firstSeen)
-    val until = serverDay(run.lastSeen)
+    val from = run.validFrom
+    val until = run.validUntil
     val dates = if (from == until) "on ${date(from)}" else "from ${date(from)} to ${date(until)}"
     val deal = run.deal?.takeIf { it.isNotBlank() }?.let { " with \"$it\"" }.orEmpty()
     return "${amount(run.measures[measure!!]!!)}$deal $dates"

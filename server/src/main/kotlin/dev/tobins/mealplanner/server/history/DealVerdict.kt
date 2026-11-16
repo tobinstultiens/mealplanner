@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.server.history
 
+import dev.tobins.mealplanner.server.SERVER_ZONE
 import dev.tobins.mealplanner.server.serverDay
 import java.time.Instant
 import java.time.LocalDate
@@ -33,7 +34,7 @@ enum class Verdict {
  * (its share measured against the price before a [raise]), the earlier offers' [typical] (median) value, the
  * [lowest] of them and the latest one at least as cheap as now ([lastAsCheap]), how many of them had the
  * measure ([compared]), the [earlier] offers themselves (oldest first), and how many days the store was read
- * since [firstRead], on how many of them the product was on offer at all and in this same way.
+ * since [firstRead], on how many of them the store dated the product on offer at all and in this same way.
  */
 data class DealVerdict(
     val verdict: Verdict,
@@ -105,37 +106,47 @@ const val NO_SAVING_SHARE = 0.97
  * Earlier offers are the [joinOffers] offers whose store dates ended before [day], the day judged on, other than
  * today's offer itself ([CurrentOffer.isItself]). Another offer of the product still dated to run (Jumbo lists
  * next week's) is not an earlier one. Both go by the store's dates alone, never by the nights a product was
- * seen. Today's offer is measured at what is paid today, against the lowest price before seen while it ran.
+ * seen, and so do the days on offer (rule 3): a day is on offer when an offer's store dates include it.
+ *
+ * Today's offer is measured as the store shows it today ([today]: its own price and price before), never at a
+ * price of an earlier row it was joined with. The one exception is rule 1: against a raised regular price the
+ * share is measured against the price before the raise, and the raise is reported with the verdict.
  */
 fun judge(today: CurrentOffer, periods: List<OfferPeriod>, recordings: List<Instant>, regular: List<RegularPrice>, day: LocalDate): DealVerdict {
     val runs = joinOffers(periods)
     val itself = runs.filter(today::isItself)
     val earlier = runs.filter { it !in itself && it.validUntil < day }
-    val lowestBefore = (itself.mapNotNull { it.identity.originalPrice } + listOfNotNull(today.originalPrice)).minOrNull()
-    val offer = if (lowestBefore != null && lowestBefore != today.originalPrice) today.withPriceBefore(lowestBefore) else today
-    val days = recordings.groupBy(::serverDay)
-    fun daysWith(runs: List<OfferPeriod>) = days.values.count { seen -> seen.any { at -> runs.any { it.covers(at) } } }
-    val raise = regularRaise(offer, regular + pricesBefore(runs, offer))
+    val days = recordings.mapTo(sortedSetOf(), ::serverDay)
+    fun daysWith(runs: List<OfferPeriod>) = days.count { d -> runs.any { it.dated(d) } }
+    val raise = regularRaise(today, regular + pricesBefore(periods, today))
     // Against a raised price, the share is what a pack costs with the deal against what it cost before.
-    val share = raise?.let { raised -> (offer.measures.perPack ?: offer.measures.paidShare?.let { it * raised.now })?.let { it / raised.before } }
-        ?: offer.measures.paidShare
+    val share = raise?.let { raised -> (today.measures.perPack ?: today.measures.paidShare?.let { it * raised.now })?.let { it / raised.before } }
+        ?: today.measures.paidShare
     val facts = DealVerdict(
         verdict = Verdict.NOT_ENOUGH_HISTORY, measure = null, value = null, typical = null, lowest = null, lastAsCheap = null, compared = 0,
-        earlier = earlier, daysRead = days.size, daysOnOffer = daysWith(runs), daysThisDeal = daysWith(runs.filter { it.dealKey == offer.dealKey }),
-        firstRead = days.keys.minOrNull(), raise = raise,
+        earlier = earlier, daysRead = days.size, daysOnOffer = daysWith(runs), daysThisDeal = daysWith(runs.filter { it.dealKey == today.dealKey }),
+        firstRead = days.firstOrNull(), raise = raise,
     )
     return when {
         raise != null && share != null && share >= NO_SAVING_SHARE -> facts.copy(verdict = Verdict.NOT_A_DEAL, measure = Measure.PAID_SHARE, value = share)
         facts.daysRead < MIN_DAYS_READ -> facts
         facts.daysThisDeal >= ALWAYS_SHARE * facts.daysRead -> facts.copy(verdict = Verdict.ALWAYS_ON_OFFER)
-        else -> compare(facts, offer.measures.copy(paidShare = share), offer.identity.product.pack)
+        else -> compare(facts, today.measures.copy(paidShare = share), today.identity.product.pack)
     }
 }
 
-/** The store's prices before in the product's offers of the same pack as [offer]: regular prices seen then. */
-private fun pricesBefore(runs: List<OfferPeriod>, offer: CurrentOffer): List<RegularPrice> =
-    runs.filter { it.identity.product.pack == offer.identity.product.pack }
-        .mapNotNull { run -> run.identity.originalPrice?.takeIf { it > 0 }?.let { RegularPrice(it, run.firstSeen, run.lastSeen) } }
+/**
+ * The store's prices before in the product's rows of the same pack as [offer], each as the regular price over the
+ * row's store dates, whether or not the row was joined into today's offer: last week's "1+1 gratis" at 1,59 and this
+ * week's at 3,19 are one offer, and still a raise. By the rows, not the joined offers, which keep only the lowest
+ * price before; by the store's dates, not the nights the row was seen, which say nothing about the price.
+ */
+private fun pricesBefore(rows: List<OfferPeriod>, offer: CurrentOffer): List<RegularPrice> =
+    rows.filter { it.identity.product.pack == offer.identity.product.pack }.mapNotNull { row ->
+        row.identity.originalPrice?.takeIf { it > 0 }?.let {
+            RegularPrice(it, row.validFrom.atStartOfDay(SERVER_ZONE).toInstant(), row.validUntil.atStartOfDay(SERVER_ZONE).toInstant())
+        }
+    }
 
 private fun compare(facts: DealVerdict, now: Measures, pack: String): DealVerdict {
     /** The earlier offers' values in [measure]; a price per pack only of the same pack. */
@@ -159,7 +170,7 @@ private fun compare(facts: DealVerdict, now: Measures, pack: String): DealVerdic
         verdict = verdict,
         typical = median(compared.map { it.second }),
         lowest = lowest.first,
-        lastAsCheap = compared.filter { it.second <= value * (1 + TOLERANCE) }.maxByOrNull { it.first.lastSeen }?.first,
+        lastAsCheap = compared.filter { it.second <= value * (1 + TOLERANCE) }.maxWithOrNull(compareBy({ it.first.validUntil }, { it.first.validFrom }))?.first,
     )
 }
 

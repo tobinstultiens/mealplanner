@@ -197,7 +197,7 @@ class DealVerdictTest {
 
         assertEquals(Verdict.ALWAYS_ON_OFFER, verdict.verdict)
         assertEquals(68 to 71, verdict.daysThisDeal to verdict.daysRead)
-        assertEquals("The usual price, not a deal: on offer this way on 68 of the 71 days Albert Heijn was read since 14 Sep 2026.", verdict.summary("Albert Heijn"))
+        assertEquals("The usual price, not a deal: Albert Heijn dated it on offer this way on 68 of the 71 days it was read since 14 Sep 2026.", verdict.summary("Albert Heijn"))
     }
 
     @Test

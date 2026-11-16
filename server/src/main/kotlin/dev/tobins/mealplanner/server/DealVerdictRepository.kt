@@ -118,7 +118,7 @@ class DealVerdictRepository(
     )
 
     private fun earlierOffer(run: OfferPeriod) = EarlierOffer(
-        serverDay(run.firstSeen).toString(), serverDay(run.lastSeen).toString(), run.deal,
+        run.validFrom.toString(), run.validUntil.toString(), run.deal,
         run.measures.paidShare, run.measures.perKg, run.measures.perLitre, run.measures.perPiece, run.measures.perPack,
     )
 }
@@ -149,13 +149,13 @@ data class OfferVerdict(
     val lowest: EarlierOffer?,
     /** The latest earlier offer at least as cheap as this one, in [measure]; null when none was. */
     val lastAsCheap: EarlierOffer?,
-    /** Days the store was read in the last year, on how many of them the product was on offer, and this same way. */
+    /** Days the store was read in the last year, on how many of them the store dated the product on offer, and this same way. */
     val daysRead: Int,
     val daysOnOffer: Int,
     val daysThisDeal: Int,
     /** The product's regular price went up shortly before this offer began; null when it did not, or can't be told. */
     val regularRaise: RaisedPrice?,
-    /** The earlier offers of the product at the store, oldest first, from and until as server days. */
+    /** The earlier offers of the product at the store, oldest first, from and until as the store dated them. */
     val earlier: List<EarlierOffer>,
 )
 

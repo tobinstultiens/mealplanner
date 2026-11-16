@@ -34,8 +34,10 @@ fun regularRaise(offer: CurrentOffer, regular: List<RegularPrice>): RegularRaise
     if (isGroupOffer(offer.offer.title)) return null
     val start = offer.validFrom.atStartOfDay(SERVER_ZONE).toInstant()
     val windowStart = offer.validFrom.minusDays(REFERENCE_DAYS).atStartOfDay(SERVER_ZONE).toInstant()
-    val before = regular.filter { it.firstSeen < start && it.lastSeen >= windowStart }.minByOrNull { it.packPrice } ?: return null
-    val now = offer.originalPrice ?: regular.maxByOrNull { it.lastSeen }?.packPrice ?: return null
+    // The lowest; of equal ones the one seen last, so that the answer does not hang on the order of the rows.
+    val before = regular.filter { it.firstSeen < start && it.lastSeen >= windowStart }
+        .minWithOrNull(compareBy<RegularPrice> { it.packPrice }.thenByDescending { it.lastSeen }) ?: return null
+    val now = offer.originalPrice ?: regular.maxWithOrNull(compareBy({ it.lastSeen }, { it.packPrice }))?.packPrice ?: return null
     if (now <= before.packPrice * (1 + TOLERANCE)) return null
     return RegularRaise(before.packPrice, serverDay(before.lastSeen), now)
 }
