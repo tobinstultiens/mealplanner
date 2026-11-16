@@ -44,6 +44,7 @@ After the last merge, and only when every PR in the brief was merged or closed a
 1. Wait for CI on `main` for the last merge commit: `gh run list --branch main --workflow CI --limit 1 --json databaseId,headSha,status,conclusion`, then `gh run watch <id>`. The head must be the commit you just merged. A failing run means no release: report its first real error.
 2. Start it with `gh workflow run release.yml --ref main`, adding `-f version=<x.y.z>` only when the brief names a version; without it the workflow raises the patch number. Run it as a Bash call of its own, in exactly that form: only that form is approved for you without a prompt (`.claude/hooks/gate-pr-merge.sh`), because the owner approved the release beforehand. If it is refused, report that and stop.
 3. Find the run (`gh run list --workflow release.yml --limit 1 --json databaseId,status`), `gh run watch <id>`, then `gh release view --json tagName,url,assets` and report the tag, the link and the APK's name.
+4. Freeze the API of the new release for `ReleasedAppTest`: on a branch `freeze-api-<tag>` from `origin/main` run `scripts/freeze-api.sh <tag>`, commit what it changes (only `server/src/test/.../released/`), open a pull request (title "Freeze the API of <tag>", no issue) and report it as the owner's to merge or the reviewer's. Never push it to `main`.
 If you stopped anywhere before the last merge, do not release: a release without the app changes it was meant to carry helps nobody, and the server may already send what the old app cannot read. Say so first in your report.
 
 ## Limits
