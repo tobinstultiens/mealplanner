@@ -51,6 +51,25 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// What the server says it runs (BuildInfo, GET /health): the commit (GITHUB_SHA in CI, else "dev") and the
+// latest v* tag reachable from it without its "v" (else the mealplanner.version of gradle.properties, which
+// is what a build without tags, such as a shallow CI checkout, reports).
+val buildInfo = tasks.register<WriteProperties>("buildInfo") {
+    val commit = providers.environmentVariable("GITHUB_SHA").orElse("dev")
+    val fallback = providers.gradleProperty("mealplanner.version").orElse("dev")
+    val version = providers.exec {
+        commandLine("git", "describe", "--tags", "--match", "v*", "--abbrev=0")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.zip(fallback) { tag, other -> tag.trim().removePrefix("v").ifEmpty { other } }
+    destinationFile = layout.buildDirectory.file("generated/buildinfo/build-info.properties")
+    property("commit", commit)
+    property("version", version)
+}
+
+sourceSets.main {
+    resources.srcDir(buildInfo.map { it.destinationFile.get().asFile.parentFile })
+}
+
 // The web client (composeApp's WebAssembly build) ships inside the server jar and is served at "/".
 tasks.named<Jar>("shadowJar") {
     dependsOn(":composeApp:wasmJsBrowserDistribution")

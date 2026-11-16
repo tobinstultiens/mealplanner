@@ -1,6 +1,13 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.DataHealth
 import dev.tobins.mealplanner.Health
+import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.prices.PriceSource
+import dev.tobins.mealplanner.server.prices.StoreProduct
+import java.time.Duration
+import java.time.Instant
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodBasis
 import dev.tobins.mealplanner.api.FoodDataset
@@ -74,7 +81,110 @@ class ApplicationTest {
 
     @Test
     fun healthReportsVersion() = testApplication {
-        assertEquals(Health("ok", APP_VERSION), start().get("/health").body<Health>())
+        assertEquals(Health("ok", BuildInfo.version, BuildInfo.commit), start().get("/health").body<Health>())
+    }
+
+    @Test
+    fun healthCarriesTheCommitTheBuildWasMadeFrom() = testApplication {
+        // The commit is "dev" outside CI; in CI it is GITHUB_SHA, which the build wrote into the jar.
+        val expected = System.getenv("GITHUB_SHA") ?: "dev"
+        assertEquals(expected, start().get("/health").body<Health>().commit)
+    }
+
+    /** Starts the app with offer fetching [fetchOffers] and no stores to fetch from; [seed] fills the database first. */
+    private fun ApplicationTestBuilder.startFetching(fetchOffers: Boolean, seed: (Database) -> Unit = {}): HttpClient {
+        val config = config(null, null).copy(fetchOffers = fetchOffers)
+        val database = openDatabase(config.databaseUrl).second.also(seed)
+        application { module(config, database, offerSources = emptyList(), priceSource = null, verifier = TestTokens) }
+        return createClient { install(ContentNegotiation) { json() } }
+    }
+
+    /** An offer source row as left by a fetch [hoursAgo] hours ago, optionally with a failed fetch since. */
+    private fun Database.fetchedHoursAgo(store: Store, hoursAgo: Long, error: String? = null) {
+        planQueries.ensureSource(store.name)
+        planQueries.recordSuccess(Instant.now().minus(Duration.ofHours(hoursAgo)).toString(), store.name)
+        error?.let { planQueries.recordFailure(it, store.name) }
+    }
+
+    @Test
+    fun dataIsFreshWithoutBeingLoggedIn() = testApplication {
+        val http = startFetching(fetchOffers = true) { it.fetchedHoursAgo(Store.AH, hoursAgo = 3) }
+        val response = http.get("/health/data")
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(DataHealth("ok"), response.body<DataHealth>())
+    }
+
+    @Test
+    fun dataIsFreshBeforeAnyFetchRecorded() = testApplication {
+        assertEquals(HttpStatusCode.OK, startFetching(fetchOffers = true).get("/health/data").status)
+    }
+
+    @Test
+    fun dataIsStaleWhenAStoreWasLastFetchedThreeDaysAgo() = testApplication {
+        val http = startFetching(fetchOffers = true) {
+            it.fetchedHoursAgo(Store.AH, hoursAgo = 3)
+            it.fetchedHoursAgo(Store.JUMBO, hoursAgo = 72, error = "Jumbo returned no offers; kept the stored ones")
+        }
+        val response = http.get("/health/data")
+        assertEquals(HttpStatusCode.ServiceUnavailable, response.status)
+        val body = response.body<DataHealth>()
+        assertEquals("stale", body.status)
+        assertEquals(1, body.problems.size)
+        assertTrue("Jumbo" in body.problems.single() && "Jumbo returned no offers" in body.problems.single(), body.problems.single())
+    }
+
+    @Test
+    fun dataIsStaleWhenAStoreNeverSucceededAndKeepsFailing() = testApplication {
+        val http = startFetching(fetchOffers = true) {
+            it.planQueries.ensureSource(Store.LIDL.name)
+            it.planQueries.recordFailure("boom", Store.LIDL.name)
+        }
+        assertEquals(HttpStatusCode.ServiceUnavailable, http.get("/health/data").status)
+    }
+
+    @Test
+    fun dataShowsOnlyTheFirstLineOfAStoresErrorCutShort() = testApplication {
+        val http = startFetching(fetchOffers = true) {
+            it.fetchedHoursAgo(Store.AH, hoursAgo = 72, error = "Unexpected token " + "x".repeat(500) + "\nat SELECT secret FROM offer")
+        }
+        val text = http.get("/health/data").body<DataHealth>().problems.single()
+        assertFalse("SELECT" in text, text)
+        assertTrue(text.length < 400, text)
+    }
+
+    @Test
+    fun dataIsStaleWhenTheLidlGuardWarns() = testApplication {
+        val http = startFetching(fetchOffers = true) {
+            it.fetchedHoursAgo(Store.LIDL, hoursAgo = 3)
+            it.planQueries.insertOffer(Store.LIDL.name, "Old", null, 1.0, null, null, null, "2020-01-01", "2020-01-07", null, null)
+        }
+        val response = http.get("/health/data")
+        assertEquals(HttpStatusCode.ServiceUnavailable, response.status)
+        assertTrue("Lidl offers have ended" in response.body<DataHealth>().problems.single())
+    }
+
+    @Test
+    fun dataIsFreshWhenOfferFetchingIsOff() = testApplication {
+        val http = startFetching(fetchOffers = false) { it.fetchedHoursAgo(Store.AH, hoursAgo = 72) }
+        assertEquals(HttpStatusCode.OK, http.get("/health/data").status)
+    }
+
+    @Test
+    fun pricesLookedUpThreeWeeksAgoAreAProblem() {
+        val db = openDatabase("jdbc:sqlite::memory:").second
+        val offers = OfferRepository(db, emptyList())
+        val lookup = object : PriceSource {
+            override val store = Store.AH
+            override suspend fun search(term: String) = emptyList<StoreProduct>()
+        }
+        val prices = PriceRepository(db, lookup, FoodRepository(db), offers)
+        val now = Instant.now()
+        assertEquals(null, prices.problem(now), "nothing looked up yet")
+        db.foodQueries.upsertMeta("pricesFetchedAt", now.minus(Duration.ofDays(13)).toString())
+        assertEquals(null, prices.problem(now))
+        db.foodQueries.upsertMeta("pricesFetchedAt", now.minus(Duration.ofDays(21)).toString())
+        assertTrue(prices.problem(now)!!.contains("regular prices"))
+        assertEquals(null, PriceRepository(db, null, FoodRepository(db), offers).problem(now), "no lookup configured")
     }
 
     @Test
