@@ -397,7 +397,12 @@ forgets it. A ticked row no meal needs any more (its meal was rerolled or remove
 is listed in `ShoppingList.noLongerNeeded`: its key and name, what was bought and whether it is on hand
 already; un-ticking it the usual way takes it off. Advice rows remember their amount in the pantry
 instead (above), and own items are ticked on the item itself. A tick of a key that is no row of the
-week's list at that moment is kept as always, and remembers nothing. Ticks from before version 12 of
+week's list at that moment is kept as always, and remembers nothing. When the text of a ticked text
+row is linked to an ingredient later (a link, an alias, a new or renamed ingredient of its name, or
+the links made on a sync), the row's key becomes the ingredient's (`i<id>`) and its tick moves with
+it, in every week, with what it remembers, so the row stays ticked. Where that ingredient's row is
+ticked already in the week, both ticks stay as they were: the text's is listed as no longer needed,
+and the ingredient's row may need more. Taking a link away again moves no tick back. Ticks from before version 12 of
 the database remember nothing either, as nobody knows what was bought: they stay plain ticks, never
 show as needing more, and are not listed when their row goes. What is remembered is the list as the
 server has it when the tick arrives, so a tick an app sends late (offline first) remembers the plan of

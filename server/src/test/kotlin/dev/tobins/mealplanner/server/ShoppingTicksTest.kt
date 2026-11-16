@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.Profile
@@ -378,6 +379,39 @@ class ShoppingTicksTest {
         assertTrue(list.items.none { it.key == lettuce.key })
         assertEquals(emptyList(), list.noLongerNeeded, "nothing is known of what was bought")
         assertTrue(list.item("Chicken fillet").checked)
+    }
+
+    @Test
+    fun aTickedTextRowStaysTickedWhenItsTextIsLinkedToAnIngredient() = testApplication {
+        val http = start().planned()
+        // A dinner with lines no ingredient is linked to (keys t:<text>), and one of an ingredient of the catalogue.
+        val paste = http.post("/api/ingredients") { setBody(IngredientInput("Sesame paste")) }.body<Ingredient>()
+        val dinner = http.post("/api/recipes") {
+            setBody(RecipeInput("Mezze", 2, "30 | g | tahini\n20 | g | harissa\n10 | g | yuzu kosho\n15 | g | amchur\n10 | g | sesame paste"))
+        }.body<RecipeDetail>().summary
+        db.planQueries.upsertMeal(userId(), week, 0, "DINNER", dinner.id, dinner.title, 2.0, 500.0, 10.0, 0, 0, "PLANNED")
+        for (key in listOf("t:tahini", "t:harissa", "t:yuzu kosho", "t:amchur", "i${paste.id}")) http.tick(key)
+
+        // Linked by an ingredient of its name, and by a link to one of another name: the tick follows the row,
+        // with what it remembers, rather than stay behind as bought and no longer needed (issue 116).
+        val harissa = http.post("/api/ingredients") { setBody(IngredientInput("Harissa")) }.body<Ingredient>()
+        val citrus = http.post("/api/ingredients") { setBody(IngredientInput("Citrus chili paste")) }.body<Ingredient>()
+        http.put("/api/mappings") { setBody(MappingRequest("yuzu kosho", ingredientId = citrus.id)) }
+        var list = http.list()
+        for ((id, grams) in listOf(harissa.id to 20.0, citrus.id to 10.0)) {
+            val row = list.items.single { it.key == "i$id" }
+            assertEquals(true to grams, row.checked to row.boughtGrams, row.name)
+        }
+        assertTrue(list.item("Amchur").checked, "a text not linked keeps its tick")
+        assertEquals(emptyList(), list.noLongerNeeded)
+
+        // Linked to an ingredient whose row is ticked already: neither tick changes, as before. The row needs
+        // more than its tick says, and the text's tick is what was bought of it.
+        http.put("/api/mappings") { setBody(MappingRequest("tahini", ingredientId = paste.id)) }
+        list = http.list()
+        val row = list.items.single { it.key == "i${paste.id}" }
+        assertEquals(Triple(true, 10.0, 40.0), Triple(row.checked, row.boughtGrams, row.grams))
+        assertEquals(listOf("t:tahini" to 30.0), list.noLongerNeeded.map { it.key to it.boughtGrams })
     }
 
     @Test

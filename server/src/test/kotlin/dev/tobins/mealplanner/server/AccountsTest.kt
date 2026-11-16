@@ -225,6 +225,34 @@ class AccountsTest {
     }
 
     @Test
+    fun linkingATextMovesOnlyTheAccountsOwnTicks() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val week = "2026-11-16"
+        val accounts = listOf("alice", "bob").associateWith { clientFor(it) }
+        suspend fun HttpClient.list() = get("/api/plans/$week/shopping").body<ShoppingList>()
+        // Both have the stew, whose beef no ingredient is linked to yet, and both bought it (t:beef).
+        for ((name, client) in accounts) {
+            val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+            db.planQueries.upsertMeal(db.userQueries.selectBySubject("sub-$name").executeAsOne().id, week, 0, "DINNER", stew.id, stew.title, 2.0, 1000.0, 50.0, 0, 0, "PLANNED")
+            client.put("/api/plans/$week/shopping") { setBody(ShoppingCheck("t:beef", true)) }
+        }
+        val alice = accounts.getValue("alice")
+        val bob = accounts.getValue("bob")
+
+        // Alice's new ingredient links her text: her tick follows her row; Bob's list and tick are as they were.
+        val beef = alice.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+        val hers = alice.list()
+        assertEquals(true to 400.0, hers.items.single { it.key == "i${beef.id}" }.let { it.checked to it.boughtGrams })
+        assertEquals(emptyList(), hers.noLongerNeeded)
+        val his = bob.list()
+        assertEquals(true to 400.0, his.items.single { it.key == "t:beef" }.let { it.checked to it.boughtGrams })
+        assertEquals(emptyList(), his.noLongerNeeded)
+        assertEquals(listOf("t:beef"), db.shoppingQueries.selectChecks(db.userQueries.selectBySubject("sub-bob").executeAsOne().id, week).executeAsList().map { it.itemKey })
+    }
+
+    @Test
     fun whatAnAccountBoughtIsSeenAndChangedByItAlone() = testApplication {
         val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
         val db = openDatabase(config.databaseUrl).second

@@ -22,6 +22,14 @@ INSERT OR IGNORE INTO shoppingCheck (userId, weekStart, itemKey, name, grams, pi
 deleteCheck:
 DELETE FROM shoppingCheck WHERE userId = ? AND weekStart = ? AND itemKey = ?;
 
+-- The ticks of rows of a text no ingredient is linked to (keys t:<text>), in every week.
+selectTextChecks:
+SELECT weekStart, itemKey FROM shoppingCheck WHERE userId = ? AND itemKey LIKE 't:%';
+
+-- A tick moved to another key of its week, with what it remembers; where that key has a tick already, both stay as they are.
+moveCheck:
+UPDATE OR IGNORE shoppingCheck SET itemKey = :to WHERE userId = :userId AND weekStart = :weekStart AND itemKey = :from;
+
 -- Things the account put on its shopping list itself (coffee, toilet paper), apart from what the
 -- recipes need. One is on the list of every week from fromWeek on until it is ticked off; ticked
 -- off in a week it belongs to that week (boughtWeek) and is on no other list.

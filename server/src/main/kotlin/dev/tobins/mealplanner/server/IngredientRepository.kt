@@ -42,14 +42,15 @@ enum class StockSource {
 class IngredientRepository(private val db: Database, private val foods: FoodRepository, private val userId: Long) {
     private val q = db.ingredientQueries
     private val pantry = db.pantryQueries
+    private val shopping = db.shoppingQueries
 
     fun list(): List<Ingredient> = q.selectAllIngredients(userId).executeAsList().map { it.toIngredient() }
 
     fun find(id: Long): Ingredient? = q.selectIngredient(userId, id).executeAsOneOrNull()?.toIngredient()
 
-    fun create(input: IngredientInput): Ingredient = db.transactionWithResult { insert(input) }
+    fun create(input: IngredientInput): Ingredient = linking { insert(input) }
 
-    fun update(id: Long, input: IngredientInput): Ingredient = db.transactionWithResult {
+    fun update(id: Long, input: IngredientInput): Ingredient = linking {
         q.selectIngredient(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No ingredient with id $id")
         validate(input, selfId = id)
         q.updateIngredient(
@@ -57,6 +58,33 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
             input.category, input.pricePerKg, if (input.isStaple) 1 else 0, if (input.negligible) 1 else 0, userId, id,
         )
         q.selectIngredient(userId, id).executeAsOne().toIngredient()
+    }
+
+    /**
+     * Runs [change], which may link line texts to ingredients (a link, an alias, a new or renamed
+     * ingredient), in one transaction with moving the ticks of the text rows it linked (issue 116).
+     * A linked text's row changes key, from `t:<text>` to the ingredient's `i<id>`; without this its
+     * tick would stay behind under the old key, listed as bought and no longer needed, while the new
+     * row starts un-ticked. Each such tick, in any week, moves to the ingredient's key with what it
+     * remembers. Only ticks of texts that [change] linked move, and never onto a tick of the ingredient
+     * that is there already: then both stay as they were, as before.
+     */
+    private fun <T> linking(change: () -> T): T = db.transactionWithResult {
+        val ticks = shopping.selectTextChecks(userId).executeAsList()
+            .mapNotNull { row -> (ShoppingKey.parseOrNull(row.itemKey) as? ShoppingKey.Text)?.let { row.weekStart to it } }
+        // The resolver reads the whole catalogue: only when there is a tick to move.
+        if (ticks.isEmpty()) return@transactionWithResult change()
+        val before = resolver()
+        val result = change()
+        val after = resolver()
+        for ((week, key) in ticks) {
+            // The row's key is its text as the list keeps it, which resolves as the lines it stands for do.
+            val text = IngredientLine(null, null, null, null, key.text, null)
+            if (before(text) != null) continue
+            val ingredient = after(text) ?: continue
+            shopping.moveCheck(ShoppingKey.Ingredient(ingredient.id).toString(), userId, week, key.toString())
+        }
+        result
     }
 
     /**
@@ -278,8 +306,8 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      * run on every start. Does nothing until NEVO data has been imported.
      * @return the number of ingredients added.
      */
-    fun applySeed(): Int = db.transactionWithResult {
-        if (foods.dataset().foodCount == 0) return@transactionWithResult 0
+    fun applySeed(): Int = linking {
+        if (foods.dataset().foodCount == 0) return@linking 0
         val text = checkNotNull(javaClass.getResource("/catalogue-seed.csv")) { "catalogue-seed.csv is missing" }.readText()
         var added = 0
         for (row in parseDelimited(text.lineSequence().filterNot { it.startsWith("#") }.joinToString("\n"), '|')) {
@@ -304,11 +332,11 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      * ("raw", "av"). Texts that match several foods are left for the user.
      * @return the number of texts linked.
      */
-    fun autoLink(): Int = db.transactionWithResult {
+    fun autoLink(): Int = linking {
         val resolve = resolver()
         val cores = activeLines().filter { it.amount != null && resolve(it) == null }
             .mapTo(linkedSetOf()) { IngredientLine.withoutDescriptors(IngredientLine.coreText(it.ingredientText)) }
-        if (cores.isEmpty()) return@transactionWithResult 0
+        if (cores.isEmpty()) return@linking 0
 
         val foodsByWords = HashMap<Set<String>, MutableSet<Food>>()
         for (food in foods.all()) {
@@ -335,7 +363,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     }
 
     /** Links a line text to an ingredient, creating the ingredient from a NEVO food if asked. */
-    fun map(request: MappingRequest): Ingredient = db.transactionWithResult {
+    fun map(request: MappingRequest): Ingredient = linking {
         val text = normalise(request.text)
         require(text.isNotEmpty()) { "text must not be blank" }
         val ingredient = when {
