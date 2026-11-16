@@ -15,6 +15,8 @@ import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.server.generation.GenerationContext
 import dev.tobins.mealplanner.server.generation.RecipeGenerator
 import dev.tobins.mealplanner.server.offers.OfferSource
+import dev.tobins.mealplanner.released.api.ShoppingList as ReleasedShoppingList
+import dev.tobins.mealplanner.released.api.WeekPlan as ReleasedWeekPlan
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -32,8 +34,6 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.time.LocalDate
 import kotlin.io.path.createTempDirectory
@@ -181,54 +181,14 @@ class ShopsTest {
     }
 
     @Test
-    fun theAppOfV012StillReadsTheShoppingListAndThePlan() = testApplication {
+    fun theReleasedAppStillReadsTheShoppingListAndThePlan() = testApplication {
         val http = start().ready()
         http.put("/api/shops") { setBody(ShopsSetting(listOf(Store.AH))) }
         http.post("/api/plans/$week/generate")
 
-        // v0.1.2 reads with ignoreUnknownKeys (its ApiClient); its types lack the new fields.
-        val v012 = Json {
-            ignoreUnknownKeys = true
-            isLenient = true
-        }
-        val list = v012.decodeFromString<V012ShoppingList>(http.get("/api/plans/$week/shopping").bodyAsText())
-        assertEquals(listOf(Store.JUMBO), list.items.single { it.name == "Chicken fillet" }.offers.map { it.store })
-        // The plan's types did not change since v0.1.2: it reads as before.
-        assertEquals(7, v012.decodeFromString<WeekPlan>(http.get("/api/plans/$week").bodyAsText()).days.size)
+        // The released app's types read the list and the plan: the shops choice only filters the offers.
+        val list = releasedJson.decodeFromString<ReleasedShoppingList>(http.get("/api/plans/$week/shopping").bodyAsText())
+        assertEquals(listOf("JUMBO"), list.items.single { it.name == "Chicken fillet" }.offers.map { it.store.name })
+        assertEquals(7, releasedJson.decodeFromString<ReleasedWeekPlan>(http.get("/api/plans/$week").bodyAsText()).days.size)
     }
-
-    /** `ShoppingList`, `ShoppingItem` and `Offer` exactly as v0.1.2 has them. */
-    @Serializable
-    private data class V012ShoppingList(val weekStart: String, val items: List<V012ShoppingItem>, val staples: List<String>, val toTaste: List<String> = emptyList())
-
-    @Serializable
-    private data class V012ShoppingItem(
-        val key: String,
-        val name: String,
-        val grams: Double?,
-        val pieces: Double?,
-        val category: String,
-        val recipes: List<String>,
-        val onHand: Boolean,
-        val checked: Boolean,
-        val offers: List<V012Offer> = emptyList(),
-        val imageUrl: String? = null,
-    )
-
-    @Serializable
-    private data class V012Offer(
-        val store: Store,
-        val title: String,
-        val deal: String?,
-        val price: Double? = null,
-        val originalPrice: Double? = null,
-        val packSize: String? = null,
-        val category: String? = null,
-        val validFrom: String,
-        val validUntil: String,
-        val url: String? = null,
-        val ingredientId: Long? = null,
-        val ingredientName: String? = null,
-        val imageUrl: String? = null,
-    )
 }

@@ -3,7 +3,6 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
-import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.ShoppingCheck
@@ -13,11 +12,9 @@ import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.prices.PriceSource
 import dev.tobins.mealplanner.server.prices.StoreProduct
 import dev.tobins.mealplanner.shopping.ShopSection
+import dev.tobins.mealplanner.released.api.ShoppingList as ReleasedShoppingList
 import io.ktor.serialization.kotlinx.json.DefaultJson
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
 import java.time.Duration
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
@@ -130,26 +127,12 @@ class ShopSectionsTest {
         assertEquals(before.items.map { it.key }, after.items.map { it.key })
     }
 
-    /** [ShoppingItem] and [ShoppingList] as apps up to v0.1.1 know them. */
-    @Serializable
-    private data class OldShoppingItem(
-        val key: String, val name: String, val grams: Double?, val pieces: Double?, val category: String,
-        val recipes: List<String>, val onHand: Boolean, val checked: Boolean, val offers: List<Offer> = emptyList(),
-    )
-
-    @Serializable
-    private data class OldShoppingList(val weekStart: String, val items: List<OldShoppingItem>, val staples: List<String>, val toTaste: List<String> = emptyList())
-
     @Test
-    fun anAppFromBeforeSectionsReadsTheListInWalkingOrder() {
+    fun theReleasedAppReadsTheListInWalkingOrder() {
         val (_, user, week) = setup()
         val text = DefaultJson.encodeToString(ShoppingList.serializer(), user.shopping.get(week))
-        // Apps up to v0.1.1 reject fields they do not know, and the product pictures (issue 33) add `imageUrl`:
-        // that change ships only together with an app release that ignores unknown fields (README, "API compatibility").
-        assertFailsWith<SerializationException> { DefaultJson.decodeFromString(OldShoppingList.serializer(), text) }
-        // Decoded as an app does that ignores unknown fields, as every release after v0.1.1 does.
-        val old = Json(DefaultJson) { ignoreUnknownKeys = true }.decodeFromString(OldShoppingList.serializer(), text)
         // Such an app groups the items by category in the order they come.
+        val old = releasedJson.decodeFromString<ReleasedShoppingList>(text)
         assertEquals(route, old.items.groupBy { it.category }.map { (category, items) -> category to items.map { it.name } })
     }
 
