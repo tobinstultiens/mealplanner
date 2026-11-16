@@ -16,9 +16,6 @@ import dev.tobins.mealplanner.units.Dimension
 import java.time.LocalDate
 import dev.tobins.mealplanner.server.db.Ingredient as IngredientRow
 
-/** Thrown for requests that refer to something that does not exist; mapped to 404. */
-class NotFoundException(message: String) : RuntimeException(message)
-
 /** A planned meal by where it is in the plan: what a meal takes from the stock is kept under it. */
 data class MealRef(val week: LocalDate, val day: Int, val slot: MealSlot)
 

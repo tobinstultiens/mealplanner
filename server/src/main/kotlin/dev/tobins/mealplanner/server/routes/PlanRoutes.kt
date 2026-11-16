@@ -1,0 +1,59 @@
+package dev.tobins.mealplanner.server.routes
+
+import dev.tobins.mealplanner.api.GenerateRequest
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.server.generation.GenerationException
+import dev.tobins.mealplanner.server.user
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.RoutingCall
+import io.ktor.server.routing.delete
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.server.routing.put
+import io.ktor.server.routing.route
+
+internal fun RoutingCall.week() = parameters["weekStart"]!!
+
+private fun RoutingCall.day() =
+    parameters["day"]?.toIntOrNull()?.takeIf { it in 0..6 } ?: throw IllegalArgumentException("day must be 0 to 6")
+
+private fun RoutingCall.slot() = MealSlot.entries.firstOrNull { it.name.equals(parameters["slot"], ignoreCase = true) }
+    ?: throw IllegalArgumentException("slot must be one of ${MealSlot.entries.joinToString()}")
+
+/** The week plan: planning a week, and rerolling, locking, removing, generating and marking single meals. */
+
+fun Route.planRoutes() {
+    route("/api/plans/{weekStart}") {
+        get { call.respond(call.user.plans.get(call.week())) }
+
+        // Replans every meal that is not locked.
+        post("/generate") { call.respond(call.user.plans.generate(call.week())) }
+
+        route("/meals/{day}/{slot}") {
+            post("/reroll") { call.respond(call.user.plans.reroll(call.week(), call.day(), call.slot())) }
+            put("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
+            delete("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
+            delete { call.respond(call.user.plans.remove(call.week(), call.day(), call.slot())) }
+            // Writes a new recipe for this meal with Claude and puts it in the plan.
+            post("/generate") {
+                val service = call.user.generation ?: return@post call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    mapOf("error" to "Recipe generation is off: set ANTHROPIC_API_KEY on the server"),
+                )
+                val slot = call.slot()
+                val recipe = service.generate(call.receive<GenerateRequest>().copy(slot = slot))
+                val candidate = call.user.recipes.candidate(recipe.summary.id)
+                    ?: throw GenerationException("The generated recipe has no amounts to plan with")
+                call.respond(call.user.plans.place(call.week(), call.day(), slot, candidate))
+            }
+            // Body: "EATEN", "SKIPPED" or "PLANNED".
+            put("/status") {
+                call.respond(call.user.plans.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))
+            }
+        }
+    }
+}
