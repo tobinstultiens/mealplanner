@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+"""Measures what the sub-agents of a Claude Code session cost, to judge changes to their briefs.
+
+Reads the transcripts Claude Code keeps of every sub-agent run
+(`~/.claude/projects/<project>/<session>/subagents/agent-*.jsonl` with their `agent-*.meta.json`)
+and prints, per agent type: runs, tokens, the context at the first request, requests per run,
+the peak context, where the tool results came from, and repeat reads of a file.
+
+    scripts/agent-cost                          newest session of the project you run it in
+    scripts/agent-cost <session-dir>            a session directory (or its subagents/ directory)
+    scripts/agent-cost --agent coder --since 2026-11-16T00:00:00Z
+    scripts/agent-cost --tools                  also: how often each tool was called
+    scripts/agent-cost --json                   the same numbers for a machine
+    scripts/agent-cost --self-test              checks the script on made-up transcript lines
+
+It prints counts only, never transcript text, and writes nothing. A line it does not recognise is
+skipped. Python 3, standard library only.
+"""
+import argparse
+import collections
+import glob
+import json
+import os
+import re
+import statistics
+import sys
+
+# Price ratios against one fresh input token, from the list prices. They are ratios of the list
+# prices, not weighted by model: an Opus token costs more than a Sonnet token and this does not say so.
+# Use the cost column to compare two runs of the same agent, not to read a bill.
+PRICE_FRESH_INPUT = 1.0
+PRICE_CACHE_WRITE = 1.25
+PRICE_CACHE_READ = 0.1
+PRICE_OUTPUT = 5.0
+
+# Characters per token, to turn the size of a tool result into a token count.
+CHARS_PER_TOKEN = 4
+
+SOURCES = ["Read", "Grep/Glob", "shell read/search", "gh", "git diff/show/log", "Gradle", "other"]
+SHELL_READERS = {"cat", "head", "tail", "sed", "awk", "grep", "rg", "find", "ls", "wc", "tree", "nl"}
+GIT_READERS = {"diff", "show", "log", "grep", "blame", "ls-files", "cat-file"}
+
+
+def result_size(content):
+    """Characters of text in a tool result, which is a string or a list of blocks."""
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        return sum(len(b.get("text") or "") for b in content
+                   if isinstance(b, dict) and b.get("type") == "text")
+    return 0
+
+
+def shell_source(command):
+    """The source category of a shell command, by its first word after any `cd` and `export`."""
+    c = re.sub(r"^(cd [^&;]+(&&|;)\s*)+", "", command.strip())
+    c = re.sub(r"^(export \S+\s*(&&|;)\s*)+", "", c)
+    words = c.split()
+    first = os.path.basename(words[0]) if words else ""
+    if first in SHELL_READERS:
+        return "shell read/search"
+    if first in ("gradlew", "gradle"):
+        return "Gradle"
+    if first == "gh":
+        return "gh"
+    if first == "git" and len(words) > 1 and words[1] in GIT_READERS:
+        return "git diff/show/log"
+    return "other"
+
+
+def source_of(tool, tool_input):
+    if tool == "Bash":
+        return shell_source(tool_input.get("command") or "")
+    if tool in ("Grep", "Glob"):
+        return "Grep/Glob"
+    return "Read" if tool == "Read" else "other"
+
+
+def parse_run(lines):
+    """Reduces the transcript lines of one run to counts. Lines it cannot read are skipped."""
+    run = {"start": None, "requests": 0, "fresh": 0, "cache_write": 0, "cache_read": 0, "output": 0,
+           "first_context": None, "peak_context": 0, "tool_calls": collections.Counter(),
+           "result_chars": collections.Counter(), "reads": 0, "repeat_reads": 0}
+    seen_messages, pending, files = set(), {}, collections.Counter()
+    for line in lines:
+        try:
+            entry = json.loads(line)
+            message = entry.get("message")
+            if not isinstance(message, dict):
+                continue
+            if run["start"] is None and isinstance(entry.get("timestamp"), str):
+                run["start"] = entry["timestamp"]
+            content = message.get("content")
+            if entry.get("type") == "assistant":
+                usage = message.get("usage") or {}
+                if message.get("id") not in seen_messages:
+                    seen_messages.add(message.get("id"))
+                    fresh = usage.get("input_tokens", 0)
+                    write = usage.get("cache_creation_input_tokens", 0)
+                    read = usage.get("cache_read_input_tokens", 0)
+                    run["requests"] += 1
+                    run["fresh"] += fresh
+                    run["cache_write"] += write
+                    run["cache_read"] += read
+                    run["output"] += usage.get("output_tokens", 0)
+                    context = fresh + write + read
+                    if run["first_context"] is None:
+                        run["first_context"] = context
+                    run["peak_context"] = max(run["peak_context"], context)
+                for block in content if isinstance(content, list) else []:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        tool, tool_input = block.get("name"), block.get("input") or {}
+                        run["tool_calls"][tool] += 1
+                        pending[block.get("id")] = source_of(tool, tool_input)
+                        if tool == "Read":
+                            run["reads"] += 1
+                            files[tool_input.get("file_path", "")] += 1
+            elif entry.get("type") == "user" and isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        source = pending.get(block.get("tool_use_id"), "other")
+                        run["result_chars"][source] += result_size(block.get("content"))
+        except (ValueError, AttributeError, TypeError):
+            continue
+    run["repeat_reads"] = sum(n - 1 for n in files.values() if n > 1)
+    return run
+
+
+def cost(tokens):
+    """Relative cost in millions of fresh-input-token equivalents."""
+    return (tokens["fresh"] * PRICE_FRESH_INPUT + tokens["cache_write"] * PRICE_CACHE_WRITE
+            + tokens["cache_read"] * PRICE_CACHE_READ + tokens["output"] * PRICE_OUTPUT) / 1e6
+
+
+def summarise(runs):
+    """Per agent type numbers from `[(agent_type, run)]`."""
+    grouped = collections.defaultdict(list)
+    for agent, run in runs:
+        if run["requests"]:
+            grouped[agent].append(run)
+    summary = {}
+    for agent, rs in grouped.items():
+        tokens = {k: sum(r[k] for r in rs) for k in ("fresh", "cache_write", "cache_read", "output")}
+        chars = collections.Counter()
+        calls = collections.Counter()
+        for r in rs:
+            chars.update(r["result_chars"])
+            calls.update(r["tool_calls"])
+        total = sum(chars.values()) or 1
+        requests = [r["requests"] for r in rs]
+        peaks = [r["peak_context"] for r in rs]
+        summary[agent] = {
+            "runs": len(rs), "tokens": tokens, "relative_cost": round(cost(tokens), 3),
+            "first_context_median": statistics.median(r["first_context"] for r in rs),
+            "requests_median": statistics.median(requests), "requests_max": max(requests),
+            "peak_context_median": statistics.median(peaks), "peak_context_max": max(peaks),
+            "result_tokens": round(sum(chars.values()) / CHARS_PER_TOKEN),
+            "result_share": {s: round(chars[s] / total, 3) for s in SOURCES},
+            "reads": sum(r["reads"] for r in rs), "repeat_reads": sum(r["repeat_reads"] for r in rs),
+            "tool_calls": dict(calls.most_common()),
+        }
+    return summary
+
+
+def subagent_dir(path):
+    return path if os.path.basename(os.path.normpath(path)) == "subagents" else os.path.join(path, "subagents")
+
+
+def default_session():
+    """The newest session of the project of the working directory (a worktree counts as its repo)."""
+    cwd = re.sub(r"/\.claude/worktrees/[^/]+$", "", os.getcwd())
+    config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    project = os.path.join(config, "projects", re.sub(r"[^A-Za-z0-9]", "-", cwd))
+    sessions = [d for d in glob.glob(os.path.join(project, "*")) if os.path.isdir(subagent_dir(d))]
+    if not sessions:
+        sys.exit(f"no session with sub-agent transcripts under {project}")
+    return max(sessions, key=lambda d: os.path.getmtime(subagent_dir(d)))
+
+
+def load(directory, agent, since):
+    runs = []
+    for transcript in sorted(glob.glob(os.path.join(directory, "agent-*.jsonl"))):
+        try:
+            with open(transcript[:-len(".jsonl")] + ".meta.json") as meta_file:
+                kind = json.load(meta_file).get("agentType", "?")
+            with open(transcript) as lines:
+                run = parse_run(lines)
+        except (OSError, ValueError, AttributeError):
+            continue
+        if agent and kind != agent:
+            continue
+        if since and (run["start"] or "") < since:
+            continue
+        runs.append((kind, run))
+    return runs
+
+
+def k(n):
+    return f"{n / 1000:.0f}k"
+
+
+def print_table(summary, with_tools):
+    for agent, s in sorted(summary.items(), key=lambda kv: -kv[1]["relative_cost"]):
+        t = s["tokens"]
+        print(f"\n== {agent}: {s['runs']} runs, relative cost {s['relative_cost']:.1f} M")
+        print(f"   tokens (M): fresh input {t['fresh'] / 1e6:.2f}, cache write {t['cache_write'] / 1e6:.2f}, "
+              f"cache read {t['cache_read'] / 1e6:.1f}, output {t['output'] / 1e6:.2f}")
+        print(f"   context at first request {k(s['first_context_median'])} (median); "
+              f"requests per run {s['requests_median']:.0f} median, {s['requests_max']} max; "
+              f"peak context {k(s['peak_context_median'])} median, {k(s['peak_context_max'])} max")
+        shares = ", ".join(f"{name} {100 * share:.0f}%" for name, share in s["result_share"].items())
+        print(f"   tool results (~{s['result_tokens'] / 1e6:.2f} M tokens): {shares}")
+        print(f"   Read calls {s['reads']}, repeat reads of a file already read {s['repeat_reads']}")
+        if with_tools:
+            print("   tool calls: " + ", ".join(f"{name} {n}" for name, n in s["tool_calls"].items()))
+    print(f"\nCost is in millions of fresh-input-token equivalents (cache write x{PRICE_CACHE_WRITE}, "
+          f"cache read x{PRICE_CACHE_READ}, output x{PRICE_OUTPUT}): list-price ratios, not weighted by model.")
+
+
+def self_test():
+    """Runs the parser on made-up lines, with two lines of an unknown format in between."""
+    def usage(fresh, write, read, out):
+        return {"input_tokens": fresh, "cache_creation_input_tokens": write,
+                "cache_read_input_tokens": read, "output_tokens": out}
+
+    def assistant(mid, use, blocks):
+        return json.dumps({"type": "assistant", "timestamp": "2026-01-01T00:00:00Z",
+                           "message": {"id": mid, "usage": use, "content": blocks}})
+
+    def tool(tid, name, **tool_input):
+        return {"type": "tool_use", "id": tid, "name": name, "input": tool_input}
+
+    def result(tid, text):
+        return json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": tid, "content": text}]}})
+
+    lines = [
+        assistant("m1", usage(10, 1000, 0, 5), [tool("a", "Read", file_path="/x")]),
+        result("a", "x" * 400),
+        "not json at all",
+        json.dumps({"type": "something-new", "message": 7}),
+        assistant("m2", usage(2, 100, 1000, 7), [tool("b", "Read", file_path="/x"),
+                                                 tool("c", "Bash", command="cd /r && grep -rn foo .")]),
+        result("b", "y" * 400),
+        result("c", "z" * 800),
+        assistant("m2", usage(2, 100, 1000, 7), []),  # the same message again: counted once
+    ]
+    run = parse_run(lines)
+    summary = summarise([("coder", run)])["coder"]
+    checks = [
+        (run["requests"], 2), (run["first_context"], 1010), (run["peak_context"], 1102),
+        (run["cache_read"], 1000), (run["output"], 12), (run["repeat_reads"], 1),
+        (summary["tool_calls"], {"Read": 2, "Bash": 1}),
+        (summary["result_share"]["Read"], 0.5), (summary["result_share"]["shell read/search"], 0.5),
+        (shell_source("cd a && export X=1 && ./gradlew test"), "Gradle"),
+        (shell_source("gh pr view 1"), "gh"), (shell_source("git diff main"), "git diff/show/log"),
+        (round(cost({"fresh": 1_000_000, "cache_write": 0, "cache_read": 0, "output": 0}), 3), 1.0),
+    ]
+    failed = [(got, want) for got, want in checks if got != want]
+    for got, want in failed:
+        print(f"self-test: got {got!r}, wanted {want!r}", file=sys.stderr)
+    print("self-test failed" if failed else "self-test passed")
+    return 1 if failed else 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description="What the sub-agents of a Claude Code session cost.")
+    parser.add_argument("session_dir", nargs="?", help="session directory; default: newest of this project")
+    parser.add_argument("--since", help="only runs that started at or after this ISO time")
+    parser.add_argument("--agent", help="only this agent type")
+    parser.add_argument("--tools", action="store_true", help="also print the tool calls per agent")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--self-test", action="store_true", help="check the script on made-up lines")
+    args = parser.parse_args()
+    if args.self_test:
+        return self_test()
+    session = args.session_dir or default_session()
+    summary = summarise(load(subagent_dir(session), args.agent, args.since))
+    if args.json:
+        json.dump(summary, sys.stdout, indent=2)
+        print()
+    elif summary:
+        print_table(summary, args.tools)
+    else:
+        print("no sub-agent runs found")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
