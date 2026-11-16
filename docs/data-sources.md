@@ -488,7 +488,8 @@ Own items show also when the week has no meals.
 recipes, so apps from before own items (v0.1.2) show and tick it. When its name is an ingredient of
 the account's catalogue, found the way a recipe line's text is (a link or alias, the name, a plural
 s), it takes that ingredient's shop section, offers, picture and on-hand mark; it stays a row of
-its own next to the meals' row for the same ingredient, so the meals' amounts stay readable, and
+its own right after the meals' row for the same ingredient (it sorts by the ingredient's name, also
+when it was given an alias such as "Olijfolie"), so the meals' amounts stay readable, and
 stock-up advice leaves that ingredient out, as it is on the list already. Any other name is in
 section Other, at the end of the walk.
 

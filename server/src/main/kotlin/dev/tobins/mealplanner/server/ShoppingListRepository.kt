@@ -456,5 +456,10 @@ class ShoppingListRepository(
     }
 }
 
-/** The order of the walk through the shop, as [shoppingNeeds] gives it: by section, then by name. */
-private val walkingOrder = compareBy<ShoppingNeed>({ it.section.ordinal }, { it.name.lowercase() })
+/**
+ * The order of the walk through the shop, as [shoppingNeeds] gives it: by section, then by name, the
+ * name of the ingredient a row is for where it has one. So an own item named by an alias
+ * ("Olijfolie") sorts next to the meals' row of its ingredient ("Olive oil"), after it, as the sort
+ * keeps the meals' rows first among equals (issue 116).
+ */
+private val walkingOrder = compareBy<ShoppingNeed>({ it.section.ordinal }, { (it.ingredient?.name ?: it.name).lowercase() })
