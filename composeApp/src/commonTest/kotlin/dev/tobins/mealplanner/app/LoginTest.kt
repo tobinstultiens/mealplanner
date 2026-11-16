@@ -117,4 +117,80 @@ class LoginTest {
         assertEquals(null, login.refresh("https://meals.example.nl", storage.session()!!))
         assertEquals(null, storage.session(), "a refused refresh logs out")
     }
+
+    /** What the app does with a redirect it receives (App's login collector): null when it lets it pass unseen. */
+    private suspend fun deliver(login: Login, url: String): Result<Session>? =
+        if (login.isAwaitedAnswer(url)) runCatching { login.finish(url) } else null
+
+    private suspend fun startedLogin(login: Login) =
+        Url(login.start("https://meals.example.nl", "https://meals.example.nl/app/login")).parameters["state"]!!
+
+    @Test
+    fun theSameAnswerTwiceLogsInOnce() = runTest {
+        val storage = MemorySettingsStorage()
+        val forms = mutableListOf<Map<String, String>>()
+        val login = Login(storage, fakeProvider(forms))
+        val answer = "dev.tobins.mealplanner://login?code=the-code&state=${startedLogin(login)}"
+
+        val session = deliver(login, answer)!!.getOrThrow()
+        assertEquals(null, deliver(login, answer), "the second delivery is let pass: no error on screen")
+        assertEquals(session, storage.session())
+        assertEquals(1, forms.size, "the code went to the provider once")
+        // Asked directly, the used answer is still refused: nothing about it was loosened.
+        assertTrue(runCatching { login.finish(answer) }.isFailure)
+        assertEquals(1, forms.size)
+    }
+
+    @Test
+    fun aRecreatedScreenAfterAFinishedLoginChangesNothing() = runTest {
+        val storage = MemorySettingsStorage()
+        val forms = mutableListOf<Map<String, String>>()
+        val first = Login(storage, fakeProvider(forms))
+        val answer = "dev.tobins.mealplanner://login?code=the-code&state=${startedLogin(first)}"
+        val session = deliver(first, answer)!!.getOrThrow()
+
+        // The re-created screen makes a Login of its own over the same storage and gets the old redirect.
+        val again = Login(storage, fakeProvider(forms))
+        assertEquals(null, deliver(again, answer))
+        assertEquals(session, storage.session(), "still logged in, with the same tokens")
+        assertEquals(1, forms.size)
+    }
+
+    @Test
+    fun aNewLoginIsAnsweredAfterAnOldOne() = runTest {
+        val storage = MemorySettingsStorage()
+        val forms = mutableListOf<Map<String, String>>()
+        val login = Login(storage, fakeProvider(forms))
+        val oldAnswer = "dev.tobins.mealplanner://login?code=old-code&state=${startedLogin(login)}"
+        val first = deliver(login, oldAnswer)!!.getOrThrow()
+
+        val newAnswer = "dev.tobins.mealplanner://login?code=new-code&state=${startedLogin(login)}"
+        // While the new login waits, the old answer is another login's: refused, and nothing is ended by it.
+        val refused = deliver(login, oldAnswer)!!
+        assertEquals(Strings.current(Msg.LOGIN_ANSWER_MISMATCH), refused.exceptionOrNull()?.message)
+        assertEquals(first, storage.session(), "a refused answer does not log out")
+
+        val second = deliver(login, newAnswer)!!.getOrThrow()
+        assertEquals(second, storage.session())
+        assertEquals(listOf("old-code", "new-code"), forms.map { it["code"] })
+        assertTrue(forms[0]["code_verifier"] != forms[1]["code_verifier"], "each login has its own PKCE secret")
+    }
+
+    @Test
+    fun aRefusalFromTheProviderIsShownOnce() = runTest {
+        val storage = MemorySettingsStorage()
+        val forms = mutableListOf<Map<String, String>>()
+        val login = Login(storage, fakeProvider(forms))
+        val state = startedLogin(login)
+
+        // An error with another login's state is not the provider's word on ours: its text is not shown, and ours still waits.
+        val foreign = deliver(login, "https://meals.example.nl/app/login?error=access_denied&error_description=Pay+here&state=forged")!!
+        assertEquals(Strings.current(Msg.LOGIN_ANSWER_MISMATCH), foreign.exceptionOrNull()?.message)
+
+        val refusal = "https://meals.example.nl/app/login?error=access_denied&error_description=The+user+said+no&state=$state"
+        assertEquals("The user said no", deliver(login, refusal)!!.exceptionOrNull()?.message)
+        assertEquals(null, deliver(login, refusal), "the refusal ended the login; again it is let pass")
+        assertEquals(null, storage.session())
+        assertTrue(forms.isEmpty())
+    }
 }
