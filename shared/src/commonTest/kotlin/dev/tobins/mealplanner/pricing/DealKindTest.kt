@@ -31,6 +31,7 @@ class DealKindTest {
             "2 VOOR 1.99" to DealKind.MultiPrice(2, 1.99),
             "8 voor 4.69" to DealKind.MultiPrice(8, 4.69),
             "2e halve prijs" to DealKind.NthHalfPrice(2),
+            "3e halve prijs" to DealKind.NthHalfPrice(3),
             "voor 1,00" to DealKind.LowerPrice(1.0),
             "VOOR 2.99" to DealKind.LowerPrice(2.99),
             "voor 18,99 · Alleen online" to DealKind.LowerPrice(18.99),
