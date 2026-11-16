@@ -98,6 +98,8 @@ class PricingTest {
         near(0.5, Discounts.factor(offer("1 + 1 gratis"), null))
         near(2.0 / 3, Discounts.factor(offer("2+1 gratis"), null))
         near(0.75, Discounts.factor(offer("2e halve prijs"), null))
+        near(2.5 / 3, Discounts.factor(offer("3e halve prijs"), null), tolerance = 1e-9)
+        near(0.6, Discounts.factor(offer("2 euro korting"), regularPackPrice = 5.0))
         // Stated prices need the regular price of a pack: 2 for 3.99 against 2.99 each.
         near(1.995 / 2.99, Discounts.factor(offer("2 voor 3,99"), regularPackPrice = 2.99))
         near(4.49 / 5.99, Discounts.factor(offer("voor 4,49"), regularPackPrice = 5.99))
@@ -114,6 +116,7 @@ class PricingTest {
         assertNull(Discounts.factor(offer("10% korting · Alleen online"), null), "not in the shop")
         assertNull(Discounts.factor(offer("voor 6,99"), regularPackPrice = 5.0), "dearer than the baseline")
         assertNull(Discounts.factor(offer("Gratis bezorging"), null))
+        assertNull(Discounts.factor(offer("voor 1,00 per hamburger"), regularPackPrice = 5.0), "a price per hamburger is no price of the pack")
     }
 
     private fun ingredient(id: Long, name: String, gramsPerPiece: Double? = null, negligible: Boolean = false) =

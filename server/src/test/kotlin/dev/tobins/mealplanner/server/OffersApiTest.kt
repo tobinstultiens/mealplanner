@@ -123,9 +123,13 @@ class OffersApiTest {
         val offers = OfferRepository(db, listOf(source))
         offers.refresh(now = Instant.now())
         val before = db.priceHistoryQueries.selectOfferHistory().executeAsList()
+        val recordedBefore = db.priceHistoryQueries.selectOfferRecordings("AH", "", "~").executeAsList()
+        assertEquals(1, recordedBefore.size, "the first refresh is recorded")
         source.offers = many(Store.AH, "New", 5)
         offers.refresh(now = Instant.now().plusSeconds(3600))
         assertEquals(before, db.priceHistoryQueries.selectOfferHistory().executeAsList())
+        // "Store not read" is no "not on offer": the refused refresh adds no recording either.
+        assertEquals(recordedBefore, db.priceHistoryQueries.selectOfferRecordings("AH", "", "~").executeAsList())
     }
 
     @Test

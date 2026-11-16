@@ -87,6 +87,24 @@ none, so the page is the whole list as far as can be found:
 Next week's offers should appear on the same page once they start, so the fetch picks them up
 without changes.
 
+### How a deal text is read
+
+One reader serves the shopping list, the plan's cost and the price history: `Discounts.kind` in
+`shared/.../pricing/`. `Discounts.factor` (the list) and `DealTerms` (the history) both start from its result, so
+the same text gives the same share in both. Only text after a "·" ("· Alleen online") is left out; the rest must
+be one of these forms as a whole, or the kind is `UNKNOWN`, kept with its text and no share ("2 stapelen tot
+35%", "voor 1,00 per hamburger", "Gratis beanie bij 2 stuks"): rather no saving than one that may be wrong.
+
+| `dealKind` | Store text | Numbers | Share |
+|---|---|---|---|
+| `LOWER_PRICE` | "voor 1,99", "14,99 · OP=OP", no text with a price (Lidl) | `dealEuros`: the price | against the regular price of a pack |
+| `PERCENT_OFF` | "25% korting" | `dealPercent` | 1 - percent (25% korting 0.75) |
+| `AMOUNT_OFF` | "1,00 korting", "2 euro korting" | `dealEuros`: off one pack | against the regular price of a pack |
+| `N_FOR_PRICE` | "2 voor 3,00" | `dealPacks`, `dealEuros`: for all of them | against the regular price of a pack |
+| `X_PLUS_Y_FREE` | "1+1 gratis", "2 + 1 gratis" | `dealPacks` (3 for 2+1), `dealFree` (1) | paid / (paid + free) (1+1 0.50, 2+1 0.67) |
+| `NTH_HALF_PRICE` | "2e halve prijs" | `dealPacks` (2) | (n - 0.5) / n (2e 0.75, 3e 0.83) |
+| `PRICE_PER_KG` | "1,00 per kilo", "1,09 per 500 gram", "100 gram voor 1.59" | `dealEuros`: per kg | none (a price per kg) |
+
 ## Regular prices (AH)
 
 Offers only say how much is taken off; to know what a meal costs, and so which offers make it
@@ -119,9 +137,12 @@ cheap, the server keeps a regular price per kg for each ingredient (`PriceReposi
 With each price the lookup keeps the product's `mainCategory` and `subCategory`; they also give the
 ingredient's shop section (below).
 
-An offer becomes a share of the regular price (`Discounts`): "25% korting" pays 0.75, "1+1 gratis"
-0.5, "2e halve prijs" 0.75; stated prices ("2 voor 3,99", "voor 4,49", Lidl's plain prices) are
-compared with the regular price of a pack of the offer's size. Online-only deals are ignored. The
+An offer becomes a share of the regular price (`Discounts.factor`), from the deal text read as in "How a deal
+text is read" (above): "25% korting" pays 0.75, "1+1 gratis" 0.5, "2e halve prijs" 0.75; stated prices ("2 voor
+3,99", "voor 4,49", Lidl's plain prices) are compared with the regular price of a pack of the offer's size. A text
+without a share of its own (a price per weight, an unknown form) is shown without a saving unless the offer's own
+price can be compared. Online-only deals are ignored; the store's price against its price before wins when both
+are given; a result outside 0.2 to 0.97 is dropped. The
 best offer per ingredient in the plan's week applies: the one with the lowest share (it saves most on
 the amount needed, whatever the pack size); offers without a share come after those, one that states a
 price before one with only a deal text, then the server's order (`shopping/BestOffer.kt`, one rule
@@ -199,24 +220,12 @@ pack size is another product. A row is one period in which the product was offer
   that fails). An offer whose dates are no ISO dates (`2026-11-16`) is left out of the history and logged,
   and the store's other offers are recorded; the offer itself is stored with the others as always.
 
-With each row the deal is kept as the store wrote it and as a kind that can be compared (`Discounts.kind`,
-`DealTerms` in `shared/.../pricing/`). Only text after a "·" ("· Alleen online") is left out when reading the
-kind; the rest must be one of these forms as a whole, or the kind is `UNKNOWN`, kept with its text and no share:
-
-| `dealKind` | Store text | Numbers |
-|---|---|---|
-| `LOWER_PRICE` | "voor 1,99", "14,99 · OP=OP", no text with a price (Lidl) | `dealEuros`: the price |
-| `PERCENT_OFF` | "25% korting" | `dealPercent` |
-| `AMOUNT_OFF` | "1,00 korting", "2 euro korting" | `dealEuros`: off one pack |
-| `N_FOR_PRICE` | "2 voor 3,00" | `dealPacks`, `dealEuros`: for all of them |
-| `X_PLUS_Y_FREE` | "1+1 gratis", "2 + 1 gratis" | `dealPacks` (3 for 2+1), `dealFree` (1) |
-| `NTH_HALF_PRICE` | "2e halve prijs" | `dealPacks` (2) |
-| `PRICE_PER_KG` | "1,00 per kilo", "1,09 per 500 gram", "100 gram voor 1.59" | `dealEuros`: per kg |
+With each row the deal is kept as the store wrote it and as a kind that can be compared (`dealKind` and its numbers,
+read as in "How a deal text is read" above; `Discounts.kind`, `DealTerms` in `shared/.../pricing/`).
 
 `dealPacks` is always the packs to buy together for the deal (`Discounts.packsNeeded`). `paidShare` is the
 share of the regular price paid when the deal is used in full, from the offer alone: the price paid per pack
-against the store's price before where it gives one, otherwise the deal's own share (1+1 0.50, 2+1 0.67,
-2e halve prijs 0.75, 25% korting 0.75). Deals stated as a price have no share without a price before; a later
+against the store's price before where it gives one, otherwise the deal's own share (the "Share" column above). Deals stated as a price have no share without a price before; a later
 step can compare them with the regular price history. `eurosPerKg` and `eurosPerPiece` are the price at that
 share, where the pack size (or else the title) gives a weight or a count; volumes are no weight without a
 density, so a pack written as a volume ("1,5 l", "6 x 330 ml", "75 cl") gets `eurosPerLitre` instead, from
