@@ -51,6 +51,61 @@ class DealKindTest {
         }
     }
 
+    /** Wordings with extra words that cost the customer the same as the form inside them. */
+    @Test
+    fun extraWordsThatChangeNothingAreRead() {
+        val expected = mapOf(
+            "25% korting!" to DealKind.PercentOff(25.0),
+            "Nu 25% korting" to DealKind.PercentOff(25.0),
+            "NU 25% KORTING!!" to DealKind.PercentOff(25.0),
+            "Nu 1+1 gratis!" to DealKind.FreeItems(1, 1),
+            "2e halve prijs!" to DealKind.NthHalfPrice(2),
+            "Tweede halve prijs" to DealKind.NthHalfPrice(2),
+            "Derde halve prijs" to DealKind.NthHalfPrice(3),
+            "25% korting op alles" to DealKind.PercentOff(25.0),
+            "25% korting op alles! · Alleen online" to DealKind.PercentOff(25.0),
+            "25% korting bij 2 stuks" to DealKind.PercentOff(25.0),
+            "1+1 gratis bij 2 stuks" to DealKind.FreeItems(1, 1),
+            "2 voor 3,00 bij 2 stuks" to DealKind.MultiPrice(2, 3.0),
+            "2e halve prijs bij 2 stuks" to DealKind.NthHalfPrice(2),
+            "Nu 25% korting op alles bij 3 stuks!" to DealKind.PercentOff(25.0),
+        )
+        for ((text, kind) in expected) assertEquals(kind, Discounts.kind(text), text)
+    }
+
+    @Test
+    fun aPercentageBoughtAtLeastThatManyWantsThatManyPacks() {
+        assertEquals(2, Discounts.packsNeeded("25% korting bij 2 stuks"))
+        assertEquals(3, Discounts.packsNeeded("Nu 25% korting op alles bij 3 stuks!"))
+        assertEquals(1, Discounts.packsNeeded("Nu 25% korting"))
+        assertEquals(2, Discounts.packsNeeded("1+1 gratis bij 2 stuks"))
+        val terms = DealTerms.of(offer("25% korting bij 2 stuks", originalPrice = 2.0, packSize = "500 g"))
+        assertEquals(2, terms.packs)
+        near(0.75, terms.paidShare)
+    }
+
+    @Test
+    fun extraWordsThatMayChangeWhatIsPaidStayUnknown() {
+        for (text in listOf(
+            "Tot 25% korting",
+            "Tot 25% korting bij 2 stuks",
+            "Nu tot 25% korting!",
+            // The count of the deal and the count it is bought at disagree, or a price may be each pack or all.
+            "1+1 gratis bij 4 stuks",
+            "2 voor 3,00 bij 3 stuks",
+            "voor 1,99 bij 2 stuks",
+            "1,00 korting bij 2 stuks",
+            "1,00 korting op alles",
+            "voor 1,99 op alles",
+            "2 voor 3,00 per stuk",
+            "25% korting op alles van dit merk",
+            "25% korting bij 2 producten",
+        )) {
+            assertEquals(DealKind.Unknown(text), Discounts.kind(text), text)
+            assertEquals(1, Discounts.packsNeeded(text), text)
+        }
+    }
+
     @Test
     fun formsThatAreNotKnownStayUnknownWithTheirText() {
         for (text in listOf(

@@ -95,6 +95,14 @@ the same text gives the same share in both. Only text after a "·" ("· Alleen o
 be one of these forms as a whole, or the kind is `UNKNOWN`, kept with its text and no share ("2 stapelen tot
 35%", "voor 1,00 per hamburger", "Gratis beanie bij 2 stuks"): rather no saving than one that may be wrong.
 
+Around a form, wordings that change nothing for the customer are read: a trailing "!" and a leading "Nu"
+("Nu 25% korting!"), "op alles" after a percentage ("25% korting op alles"), the spelled "Tweede halve prijs" and
+"Derde halve prijs", and "bij N stuks": after a percentage it is the packs the deal wants ("25% korting bij 2
+stuks" wants 2); after a deal that already wants N packs ("1+1 gratis bij 2 stuks") it is read as that deal. After
+a price or an amount off ("voor 1,99 bij 2 stuks") it may mean each pack or all of them, so the text stays
+`UNKNOWN`, as does every "Tot 25% korting" (not a firm percentage). The packs a deal wants (`packsNeeded`) come
+from the same reading; only an unknown deal that says "N stapelen" still wants N.
+
 | `dealKind` | Store text | Numbers | Share |
 |---|---|---|---|
 | `LOWER_PRICE` | "voor 1,99", "14,99 · OP=OP", no text with a price (Lidl) | `dealEuros`: the price | against the regular price of a pack |

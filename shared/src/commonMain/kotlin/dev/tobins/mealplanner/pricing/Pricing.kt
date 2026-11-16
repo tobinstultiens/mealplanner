@@ -126,6 +126,9 @@ object Discounts {
     private val stacked = Regex("""(\d+)\s*stapelen""")
     private val fixedPrice = Regex("""^voor\s*(\d+(?:\.\d+)?)""")
     private val halfPriceNth = Regex("""(\d+)\s*e\s*halve prijs""")
+    private val spelledNth = mapOf("tweede" to 2, "derde" to 3)
+    private val spelledHalfPrice = Regex("""(tweede|derde) halve prijs""")
+    private val forAtLeast = Regex(""" bij (\d+) stuks$""")
     private val amountOff = Regex("""^(\d+(?:\.\d+)?)\s*korting""")
     private val amountOffInEuros = Regex("""(\d+(?:\.\d+)?)\s*euro\s*korting""")
     private val barePrice = Regex("""\d+(?:\.\d+)?""")
@@ -137,22 +140,55 @@ object Discounts {
      * compared over time ("this 2+1 pays 67 %, it is 1+1 about every four weeks"). [price] is the offer's
      * own price: without a deal text (Lidl) the offer is that lower price.
      *
-     * Only what the store says after a "·" ("· Alleen online") is left out. The rest must be one of the
-     * known forms as a whole: "2 stapelen tot 35%" ("up to", so not a firm percentage) or "voor 1,00
+     * What the store says after a "·" ("· Alleen online") is left out, and a few wordings that change
+     * nothing for the customer are read (see [read]). The rest must be one of the known forms as a whole: "2 stapelen tot 35%" ("up to", so not a firm percentage) or "voor 1,00
      * per hamburger" are [DealKind.Unknown] rather than read as something they may not be.
      */
     fun kind(deal: String?, price: Double? = null): DealKind {
         if (deal.isNullOrBlank()) return price?.let(DealKind::LowerPrice) ?: DealKind.Unknown(deal)
-        return known(deal) ?: DealKind.Unknown(deal)
+        return read(deal)?.kind ?: DealKind.Unknown(deal)
     }
 
-    /** The kind [deal] is as a whole, or null when it is none of the known forms. */
-    private fun known(deal: String): DealKind? {
-        val t = deal.lowercase().replace(',', '.').substringBefore('·').trim().replace(Regex("""\s+"""), " ")
+    /** A deal read as a whole: its [kind] and the [packs] it wants bought together. */
+    private class Reading(val kind: DealKind, val packs: Int)
+
+    /**
+     * [deal] as one of the known forms, or null. Around a form three wordings change nothing for the
+     * customer and are read: a trailing "!", a leading "Nu", and "op alles" after a percentage (the offer is
+     * for the product, so "25% korting op alles" is 25% off it). "bij N stuks" sets how many packs the
+     * percentage needs, and is read after a deal that wants N packs itself; after a price it is left
+     * unread, as it may mean each pack or all of them ("voor 1,99 bij 2 stuks"). "Tot 25% korting" is no
+     * firm percentage and "Gratis beanie bij 2 stuks" is no price: neither is read.
+     */
+    private fun read(deal: String): Reading? {
+        var t = deal.lowercase().replace(',', '.').substringBefore('·').trim().replace(Regex("""\s+"""), " ")
+        t = t.trimEnd('!').trimEnd().removePrefix("nu ")
+        val atLeast = forAtLeast.find(t)?.also { t = t.removeSuffix(it.value) }?.groupValues?.get(1)?.toInt()
+        val everything = t.endsWith(" op alles")
+        if (everything) t = t.removeSuffix(" op alles")
+        val kind = known(t) ?: return null
+        if (everything && kind !is DealKind.PercentOff) return null
+        val own = when (kind) {
+            is DealKind.FreeItems -> kind.paid + kind.free
+            is DealKind.MultiPrice -> kind.packs
+            is DealKind.NthHalfPrice -> kind.nth
+            else -> 1
+        }
+        return when {
+            atLeast == null -> Reading(kind, own)
+            kind is DealKind.PercentOff -> Reading(kind, atLeast.coerceAtLeast(1))
+            own > 1 && own == atLeast -> Reading(kind, own)
+            else -> null
+        }
+    }
+
+    /** The kind [t] (lower case, as read by [read]) is as a whole, or null when it is none of the known forms. */
+    private fun known(t: String): DealKind? {
         fun Regex.whole() = matchEntire(t)?.groupValues
         fun List<String>.number(i: Int) = get(i).toDouble()
         free.whole()?.let { return DealKind.FreeItems(it[1].toInt(), it[2].toInt()) }
         halfPriceNth.whole()?.let { return DealKind.NthHalfPrice(it[1].toInt()) }
+        spelledHalfPrice.whole()?.let { return DealKind.NthHalfPrice(spelledNth.getValue(it[1])) }
         percent.whole()?.let { return DealKind.PercentOff(it.number(1)) }
         pricePerWeight.whole()?.let { return DealKind.PricePerKg(it.number(1) * 1000 / (it[2].toDoubleOrNull() ?: 1000.0)) }
         weightForPrice.whole()?.let { return DealKind.PricePerKg(it.number(2) * 1000 / it.number(1)) }
@@ -163,20 +199,15 @@ object Discounts {
     }
 
     /**
-     * How many packs the deal wants bought together, from the kind [kind] reads it as: 2 for "2 voor
-     * 3,99", "1+1 gratis" and "2e halve prijs", 4 for "3+1 gratis"; 1 for a percentage, a price or a deal
+     * How many packs the deal wants bought together: 2 for "2 voor 3,99", "1+1 gratis" and "2e halve
+     * prijs", 4 for "3+1 gratis", N for "25% korting bij N stuks"; 1 for a percentage, a price or a deal
      * that says nothing of the kind. The one exception is a deal of unknown kind that says "N stapelen"
      * (AH: stack N packs, "2 stapelen tot 35%"): it says how many packs, though not what they save.
      */
     fun packsNeeded(deal: String?): Int {
-        val count = when (val kind = kind(deal)) {
-            is DealKind.FreeItems -> kind.paid + kind.free
-            is DealKind.MultiPrice -> kind.packs
-            is DealKind.NthHalfPrice -> kind.nth
-            is DealKind.Unknown -> stacked.find(deal?.lowercase().orEmpty())?.groupValues?.get(1)?.toInt()
-            else -> null
-        }
-        return (count ?: 1).coerceAtLeast(1)
+        if (deal.isNullOrBlank()) return 1
+        val packs = read(deal)?.packs ?: stacked.find(deal.lowercase())?.groupValues?.get(1)?.toInt()
+        return (packs ?: 1).coerceAtLeast(1)
     }
 
     /**
