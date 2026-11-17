@@ -2,11 +2,12 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import io.ktor.client.engine.js.JsError
 import kotlinx.browser.document
 import kotlinx.browser.window
+import kotlinx.io.IOException
 import org.w3c.dom.events.Event
 
 /**
@@ -51,16 +52,28 @@ actual fun KeepScreenOn(enabled: Boolean) {}
 @JsFun("() => document.visibilityState === 'visible'")
 private external fun pageVisible(): Boolean
 
-/** The page is in front while its tab shows; the browser says when that changes (`visibilitychange`). */
+/**
+ * The page is in front while its tab shows. The browser's `visibilitychange` goes straight to the
+ * [AppFront], not through the composition: a hidden tab draws no frames, so the composition would
+ * see the change only once the tab showed again, when there was no change left to see (#200).
+ */
 @Composable
-actual fun appInFront(): Boolean {
-    val visible = remember { mutableStateOf(pageVisible()) }
-    DisposableEffect(Unit) {
-        val listener: (Event) -> Unit = { visible.value = pageVisible() }
-        document.addEventListener("visibilitychange", listener)
-        onDispose { document.removeEventListener("visibilitychange", listener) }
-    }
-    return visible.value
+internal actual fun rememberAppFront(): AppFront {
+    val front = remember { AppFront(pageVisible()) }
+    DisposableEffect(front) { onDispose(watchPageVisibility(front::report)) }
+    return front
+}
+
+/**
+ * Calls [onChange] with whether the page shows, at every `visibilitychange` and once now (it may
+ * have changed since the caller last looked); the event comes whether or not a frame is drawn.
+ * Returns what stops it.
+ */
+internal fun watchPageVisibility(onChange: (Boolean) -> Unit): () -> Unit {
+    val listener: (Event) -> Unit = { onChange(pageVisible()) }
+    document.addEventListener("visibilitychange", listener)
+    onChange(pageVisible())
+    return { document.removeEventListener("visibilitychange", listener) }
 }
 
 /** The browser keeps its own cache and sets the User-Agent itself, so there is nothing to configure. */
@@ -70,3 +83,14 @@ actual fun productImageLoader(context: coil3.PlatformContext): coil3.ImageLoader
         .build()
 
 actual fun runsInBrowser(): Boolean = true
+
+/**
+ * The browser rejects a fetch when no answer came (no connection, a refused or reset one), and
+ * Ktor passes that on as a [JsError]: wrapped in `Error("Fail to fetch")` when the request failed, on
+ * its own when reading the body did. The text keeps both, for "Details".
+ */
+internal actual fun connectionFailure(cause: Throwable): IOException? {
+    val chain = generateSequence(cause) { it.cause }.toList()
+    if (chain.none { it is JsError }) return null
+    return IOException(chain.mapNotNull { it.message }.distinct().joinToString(": "), cause)
+}

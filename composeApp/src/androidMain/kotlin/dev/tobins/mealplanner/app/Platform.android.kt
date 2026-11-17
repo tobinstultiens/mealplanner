@@ -2,7 +2,9 @@ package dev.tobins.mealplanner.app
 
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
@@ -48,11 +50,17 @@ actual fun KeepScreenOn(enabled: Boolean) {
     }
 }
 
-/** Started means visible, also in split screen or behind a dialog; stopped means behind another app or the screen is off. */
+/**
+ * Started means visible, also in split screen or behind a dialog; stopped means behind another app or
+ * the screen is off. Read through the composition as before: Android recomposes on a lifecycle change.
+ */
 @Composable
-actual fun appInFront(): Boolean {
+internal actual fun rememberAppFront(): AppFront {
     val state by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    return state.isAtLeast(Lifecycle.State.STARTED)
+    val inFront = state.isAtLeast(Lifecycle.State.STARTED)
+    val front = remember { AppFront(inFront) }
+    SideEffect { front.report(inFront) }
+    return front
 }
 
 actual fun productImageLoader(context: coil3.PlatformContext): coil3.ImageLoader {
@@ -71,3 +79,6 @@ actual fun productImageLoader(context: coil3.PlatformContext): coil3.ImageLoader
 }
 
 actual fun runsInBrowser(): Boolean = false
+
+/** OkHttp reports a failed connection as an IOException already. */
+internal actual fun connectionFailure(cause: Throwable): kotlinx.io.IOException? = null
