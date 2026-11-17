@@ -268,7 +268,10 @@ One-time setup: `scripts/create-release-key.sh` creates the signing key in
 `~/.android/mealplanner-release.jks`, adds the `mealplanner.*` signing properties to
 `~/.gradle/gradle.properties` and stores the key in the repo's GitHub secrets
 (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`). Back up the keystore
-and its password: Android only installs an update signed with the same key.
+and its password: Android only installs an update signed with the same key. The server's address, which
+a release has built in, is the secret `MEALPLANNER_DEFAULT_SERVER` (e.g. `https://mealplanner.example.nl`):
+add it under Settings → Secrets and variables → Actions. The workflow passes it as `-PreleaseServerUrl`
+and stops when it is missing or not an `https://` address; it is kept out of this public repository.
 `scripts/backup-release-key.sh` (run in a terminal) stores both in Bitwarden as the secure note
 `mealplanner-android-signing` and checks the copy; the note says how to restore it.
 
