@@ -74,6 +74,43 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
   is cloned under `<data dir>/users/<id>/cooking` and synced every six hours. `COOKING_REPO_URL` and
   `COOKING_REPO_PATH` only serve the owner until they set one. A sync also keeps a web-sized copy of
   each recipe's picture (see `docs/data-sources.md`, "Recipe pictures"), served only to that account.
+  The site's recipes go to the account's bank, not straight into its recipes: see the next section.
+
+## Recipes: the bank, my recipes and the rotation
+
+The cooking site is a bank of recipes to choose from, not the list of what an account cooks (issue 205).
+
+- **The bank** is every recipe on the account's cooking site that it has not added (`GET /api/recipes/bank`).
+  A sync puts a new file's recipe there. Bank recipes can be read, rated and have their pictures, but
+  nothing else uses them: they are not in the recipe list, the planner never picks them, they cannot be
+  put in a meal by hand (409 "Add … to your recipes first") or pinned as a routine, and their ingredient
+  texts are not linked automatically nor listed under "Link ingredients". Their nutrition comes from what
+  the account has linked already, so it is often incomplete (and says so).
+- **My recipes** are the bank recipes the account added, plus those it made in the app or had Claude write
+  (`GET /api/recipes`). Adding one (`PUT /api/recipes/{id}/added` with `{"added": true}`) links its
+  ingredients that are exactly the name of a NEVO food, as a sync does. Putting one back
+  (`{"added": false}`) returns it to the bank with its rating, kind and slots kept for when it is added
+  again; that is refused (409, naming the days) while it is planned this week or later, and while it is
+  the breakfast or snack routine. A recipe made in the app has no bank to go back to: it is deleted
+  (`DELETE /api/recipes/{id}`), and putting it back is refused. An added recipe whose file leaves the
+  site stays one of my recipes, marked `removedFromSite`, and keeps working as before; it loses its
+  picture with the file. A bank recipe whose file leaves the site is hidden until the file is back.
+- **The rotation** is the part of my recipes the planner picks from on its own: planning or replanning a
+  week, "Another recipe" and the buy-ahead advice for an unplanned week. Any of my recipes can still be
+  put in a meal by hand. Adding a recipe puts it in the rotation unless the request says
+  `"inRotation": false`; recipes made in the app start in it. Taking one out
+  (`PUT /api/recipes/{id}/rotation` with `{"inRotation": false}`) leaves the meals planned with it as they
+  are. Pinning a routine puts its recipe in the rotation, and a routine cannot leave it (409).
+
+`PUT /api/recipes/added` and `PUT /api/recipes/rotation` do the same for many recipes at once
+(`{"ids": [1, 2, 3], "added": false}`) and answer my recipes; if one of them cannot be changed (another
+account's: 404; planned or a routine: 409), none is. Whether a recipe is added and in the rotation is the
+account's: a sync never changes it, nor does saving a recipe's settings. `RecipeSummary` says it in `added`,
+`inRotation` and `removedFromSite`, which default to what servers before the bank meant (`true`, `true`,
+`false`). Recipes there before the bank (database version 17, `16.sqm`) stayed added and in the rotation,
+except those whose file had already left the site, which went to the bank, hidden: an installed app lists
+what it listed before. Apps from before the bank show my recipes only, so a recipe new on the site appears
+in them once it is added from a newer app.
 
 ## Web client
 
@@ -319,7 +356,10 @@ which is ignored by git.
 `shared`'s `CookingRepoParseTest` parses every page of the cooking repo. It looks in
 `../cooking`, or wherever `-PcookingRepo=<path>` points, and is skipped when that is missing.
 
-API overview: `/api/recipes`, `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue),
+API overview: `/api/recipes` (my recipes; `GET /api/recipes/bank` the bank, `PUT /api/recipes/{id}/added` with
+`{"added": true, "inRotation": true}` and `PUT /api/recipes/{id}/rotation` with `{"inRotation": false}` answering the
+recipe, `PUT /api/recipes/added` and `PUT /api/recipes/rotation` with `{"ids": [1, 2, 3], ...}` for many at once
+answering my recipes; see "Recipes: the bank, my recipes and the rotation"), `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue),
 `/api/ingredients/sections` (each ingredient's shop section, which orders the shopping list; `PUT
 /api/ingredients/{id}/section` corrects one for the account, `PUT /api/ingredients/{id}/keeps` whether it
 keeps until next week), `/api/mappings` (links from recipe

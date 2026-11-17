@@ -81,10 +81,10 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         q.setKeeps(keeps?.let { if (it) 1L else 0L }, userId, id)
     }
 
-    /** The ingredients the account's active recipes use, by id. */
+    /** The ingredients my recipes use, by id; recipes only in the bank are not cooked from, so they do not count. */
     fun usedIds(): Set<Long> {
         val resolve = resolver()
-        return activeLines().mapNotNullTo(HashSet()) { resolve(it)?.id }
+        return myLines().mapNotNullTo(HashSet()) { resolve(it)?.id }
     }
 
     /** Shop sections the account set by hand, by ingredient id. Keys this version does not know are skipped. */
@@ -147,14 +147,16 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     }
 
     /**
-     * Links every unlinked core text that is exactly the name of one NEVO food:
+     * Links every unlinked core text of my recipes that is exactly the name of one NEVO food:
      * the same words in any order, ignoring a plural s and NEVO's neutral qualifiers
-     * ("raw", "av"). Texts that match several foods are left for the user.
+     * ("raw", "av"). Texts that match several foods are left for the user. Texts only bank
+     * recipes use are left alone, so the catalogue does not fill with what the account never
+     * added; adding a recipe runs this again ([RecipeRepository.setAdded]).
      * @return the number of texts linked.
      */
     fun autoLink(): Int = linking {
         val resolve = resolver()
-        val cores = activeLines().filter { it.amount != null && resolve(it) == null }
+        val cores = myLines().filter { it.amount != null && resolve(it) == null }
             .mapTo(linkedSetOf()) { IngredientLine.withoutDescriptors(IngredientLine.coreText(it.ingredientText)) }
         if (cores.isEmpty()) return@linking 0
 
@@ -178,7 +180,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     private fun uniqueName(name: String): String =
         generateSequence(name) { "$it (NEVO)" }.first { q.selectIngredientByName(userId, it).executeAsOneOrNull() == null }
 
-    private fun activeLines(): List<IngredientLine> = q.selectActiveLines(userId).executeAsList().map {
+    private fun myLines(): List<IngredientLine> = q.selectMyLines(userId).executeAsList().map {
         IngredientLine(it.amount, it.unit, it.dimension?.let(Dimension::valueOf), it.baseAmount, it.item, it.groupName)
     }
 
@@ -217,7 +219,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     fun unmap(text: String) = q.deleteAlias(userId, normalise(text))
 
     /**
-     * Line texts of active recipes that need attention, most-used first: texts with an
+     * Line texts of my recipes that need attention, most-used first: texts with an
      * amount but no ingredient (with suggestions from the catalogue and from NEVO), and
      * linked texts that are counted in pieces while the weight per piece is unknown.
      */
@@ -227,7 +229,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         data class Use(val text: String, val recipes: MutableSet<String> = linkedSetOf(), var counted: Boolean = false, var ingredient: Ingredient? = null)
 
         val uses = linkedMapOf<String, Use>()
-        for (row in q.selectActiveLines(userId).executeAsList()) {
+        for (row in q.selectMyLines(userId).executeAsList()) {
             val line = IngredientLine(row.amount, row.unit, row.dimension?.let(Dimension::valueOf), row.baseAmount, row.item, row.groupName)
             if (line.amount == null) continue
             val ingredient = resolve(line)

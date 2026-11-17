@@ -217,8 +217,11 @@ class ApplicationTest {
         assertEquals(null, status.error)
         assertEquals(null, status.everyHours, "a local checkout is not synced on a schedule")
 
-        val list = http.get("/api/recipes").body<List<RecipeSummary>>()
+        // In the bank, until the account adds them.
+        assertEquals(emptyList(), http.get("/api/recipes").body<List<RecipeSummary>>())
+        val list = http.get("/api/recipes/bank").body<List<RecipeSummary>>()
         assertEquals(listOf("Gyudon", "Salsa"), list.map { it.title })
+        assertTrue(list.none { it.added || it.inRotation })
         val (gyudonSummary, salsa) = list
         assertTrue(gyudonSummary.plannable)
         assertEquals(RecipeKind.MEAL, gyudonSummary.kind)
@@ -237,7 +240,7 @@ class ApplicationTest {
         val repo = cookingRepo("rice-bowls/gyudon.md" to gyudon, "sauces/salsa.md" to "Blend it.")
         val http = start(repo)
         http.post("/api/sync/cooking")
-        val idBefore = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Gyudon" }.id
+        val idBefore = http.get("/api/recipes/bank").body<List<RecipeSummary>>().first { it.title == "Gyudon" }.id
 
         assertEquals(2, http.post("/api/sync/cooking").body<SyncResult>().unchanged)
 
@@ -246,7 +249,8 @@ class ApplicationTest {
         val sync = http.post("/api/sync/cooking").body<SyncResult>()
         assertEquals(SyncResult(added = 0, updated = 1, unchanged = 0, removed = 1, problems = emptyMap()), sync)
 
-        val list = http.get("/api/recipes").body<List<RecipeSummary>>()
+        // A bank recipe whose file is gone is gone from the bank.
+        val list = http.get("/api/recipes/bank").body<List<RecipeSummary>>()
         assertEquals(listOf("Gyudon"), list.map { it.title })
         assertEquals(idBefore, list.single().id, "a changed file keeps its recipe id")
         val detail = http.get("/api/recipes/$idBefore").body<RecipeDetail>()

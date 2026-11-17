@@ -135,7 +135,7 @@ private val HANGS_OFF = mapOf(
  */
 private val ALLOWED = mapOf(
     ("Recipe.sq" to "selectIngredients") to
-        "takes a recipe id that RecipeRepository read with the account's id first (selectById(userId, id) or selectActive(userId))",
+        "takes a recipe id that RecipeRepository read with the account's id first (selectById(userId, id), selectMine(userId) or selectBank(userId))",
     ("Recipe.sq" to "deleteIngredients") to
         "RecipeRepository.replaceIngredients, called only with a recipe id read with the account's id or just inserted for it",
     ("Recipe.sq" to "insertIngredient") to

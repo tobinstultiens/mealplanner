@@ -626,6 +626,8 @@ or its dinner, is un-eaten:
 | Removing | any other meal | removed; it holds no stock, and an eaten leftover lunch of a removed dinner keeps its own share |
 | Deleting a recipe | planned this week or later | 409, naming the days |
 | Deleting a recipe | planned only in weeks that are over | the plan keeps the meals, and what they took |
+| Putting a recipe back in the bank (`PUT /api/recipes/{id}/added`, `{"added": false}`) | as for deleting; also while it is a routine | as for deleting: 409 naming the days, or the plan keeps the meals |
+| Taking a recipe out of the rotation | any | the meals planned with it stay as they are |
 | Locking, marking eaten, skipped or planned | any | only that flag changes; marking takes and gives back as above |
 
 Removing the leftover lunch of an eaten dinner is refused rather than giving its share back: the

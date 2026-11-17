@@ -1,6 +1,13 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.AddedInput
+import dev.tobins.mealplanner.api.ManyAddedInput
+import dev.tobins.mealplanner.api.ManyRotationInput
+import dev.tobins.mealplanner.api.RotationInput
+import dev.tobins.mealplanner.api.Routines
+import dev.tobins.mealplanner.api.UnmappedText
+import java.io.File
 import dev.tobins.mealplanner.api.AuthConfig
 import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.CookingSyncStatus
@@ -743,6 +750,7 @@ class AccountsTest {
         val alice = clientFor("alice")
         val bob = clientFor("bob")
         assertEquals(HttpStatusCode.OK, alice.post("/api/sync/cooking").status)
+        alice.addWholeBank()
         val pizza = alice.get("/api/recipes").body<List<RecipeSummary>>().single()
         val url = pizza.imageUrl!!
         assertEquals(HttpStatusCode.OK, alice.get(url).status)
@@ -761,6 +769,55 @@ class AccountsTest {
         alice.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting("https://example.org/alice/cooking.git")) }
         assertNull(alice.get("/api/recipes").body<List<RecipeSummary>>().single().imageUrl)
         assertEquals(HttpStatusCode.NotFound, alice.get(url).status)
+    }
+
+    /** The bank, adding and the rotation (issue 205): no route reads or changes another account's recipe. */
+    @Test
+    fun theBankAndTheRotationStayWithTheirAccount() = testApplication {
+        val site = createTempDirectory("cooking").toFile()
+        for (name in listOf("stew", "curry")) {
+            File(site, "content/recipes/$name.md").apply { parentFile.mkdirs() }
+                .writeText("---\ntitle: ${name.replaceFirstChar(Char::uppercase)}\n---\n```ingredients\nservings: 2\n400 | g | mystery meat\n```")
+        }
+        // The server-wide site serves the owner: Alice, who logs in first. Bob has no site.
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = site)
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        alice.post("/api/sync/cooking")
+        val bank = alice.get("/api/recipes/bank").body<List<RecipeSummary>>().associate { it.title to it.id }
+        val (stew, curry) = listOf(bank.getValue("Stew"), bank.getValue("Curry"))
+        alice.put("/api/recipes/$stew/added") { setBody(AddedInput(added = true)) }
+        suspend fun alicesState() = listOf(alice.get("/api/recipes").body<List<RecipeSummary>>(), alice.get("/api/recipes/bank").body<List<RecipeSummary>>())
+        val before = alicesState()
+        val bobsStew = bob.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary.id
+
+        // Bob reads none of Alice's: not her bank, not her recipes, not her texts to link.
+        assertEquals(emptyList(), bob.get("/api/recipes/bank").body<List<RecipeSummary>>())
+        assertEquals(listOf(bobsStew), bob.get("/api/recipes").body<List<RecipeSummary>>().map { it.id })
+        assertTrue(bob.get("/api/mappings/unmapped").body<List<UnmappedText>>().none { it.text == "mystery meat" })
+        assertTrue(alice.get("/api/mappings/unmapped").body<List<UnmappedText>>().any { it.text == "mystery meat" }, "Alice's added stew has it")
+
+        // ...and changes none of them, one at a time or many at once: each a 404, and nothing of his own changes either.
+        for (id in listOf(stew, curry)) {
+            assertEquals(HttpStatusCode.NotFound, bob.get("/api/recipes/$id").status)
+            assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/$id/added") { setBody(AddedInput(added = true)) }.status)
+            assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/$id/added") { setBody(AddedInput(added = false)) }.status)
+            assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/$id/rotation") { setBody(RotationInput(false)) }.status)
+            assertEquals(HttpStatusCode.NotFound, bob.put("/api/routines") { setBody(Routines(breakfast = id)) }.status)
+        }
+        for (added in listOf(true, false)) {
+            assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/added") { setBody(ManyAddedInput(listOf(bobsStew, stew, curry), added)) }.status)
+        }
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/rotation") { setBody(ManyRotationInput(listOf(bobsStew, stew), inRotation = false)) }.status)
+        assertTrue(bob.get("/api/recipes").body<List<RecipeSummary>>().single().inRotation, "his own unchanged: all or nothing")
+        assertEquals(before, alicesState())
+
+        // Alice's own changes leave Bob's recipes alone, also with his recipe's id among hers.
+        assertEquals(HttpStatusCode.NotFound, alice.put("/api/recipes/rotation") { setBody(ManyRotationInput(listOf(stew, bobsStew), inRotation = false)) }.status)
+        assertEquals(HttpStatusCode.NotFound, alice.put("/api/recipes/$bobsStew/added") { setBody(AddedInput(added = false)) }.status)
+        assertEquals(before, alicesState())
+        assertTrue(bob.get("/api/recipes").body<List<RecipeSummary>>().single().added)
     }
 
     @Test

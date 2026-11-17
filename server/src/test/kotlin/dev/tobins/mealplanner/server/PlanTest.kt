@@ -1,6 +1,8 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.AddedInput
+import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.GenerationMode
@@ -127,6 +129,7 @@ class PlanTest {
 
     private suspend fun HttpClient.ready(): HttpClient = apply {
         post("/api/sync/cooking")
+        addWholeBank()
         put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
     }
 
@@ -756,6 +759,7 @@ class PlanTest {
 
         // Settings survive a sync of the cooking repo.
         http.post("/api/sync/cooking")
+        http.addWholeBank()
         assertEquals(listOf(MealSlot.SNACK), http.get("/api/recipes/${dinner0.id}").body<RecipeDetail>().summary.mealSlots)
 
         assertEquals(HttpStatusCode.Conflict, http.put("/api/recipes/${dinner0.id}") { setBody(RecipeInput("X", 1, "1 | g | beef")) }.status)
@@ -911,6 +915,7 @@ class PlanTest {
     fun generatedRecipesAreSizedStoredLinkedAndEditable() = testApplication {
         val http = start()
         http.post("/api/sync/cooking")
+        http.addWholeBank()
         assertEquals(HttpStatusCode.Conflict, http.post("/api/recipes/generate") { setBody(GenerateRequest()) }.status, "needs a profile")
         http.ready()
         val beef = http.get("/api/ingredients").body<List<Ingredient>>().first { it.food?.nevoCode == 10 }
@@ -1222,6 +1227,73 @@ class PlanTest {
             }
             assertEquals(stocked, left(), 1e-6, "seed $seed: the stock after un-eating every meal")
         }
+    }
+
+    /**
+     * The planner picks on its own from my recipes in the rotation only (issue 205), however well another
+     * would score; any of my recipes can be placed by hand, and a recipe only in the bank cannot.
+     */
+    @Test
+    fun theWeekIsPlannedFromTheRotationAndAnyOfMyRecipesByHand() = testApplication {
+        val http = start().ready()
+        val dinners = http.get("/api/recipes").body<List<RecipeSummary>>().filter { it.title.startsWith("Dinner") }.associate { it.title to it.id }
+        val rotation = listOf("Dinner 0", "Dinner 1", "Dinner 2").map(dinners::getValue).toSet()
+        http.put("/api/recipes/rotation") { setBody(ManyRotationInput(dinners.values - rotation, inRotation = false)) }
+        // Rated best of all and the closest to a dinner's calories: the planner would take it if it could.
+        val best = dinners.getValue("Dinner 9")
+        http.put("/api/recipes/$best/rating") { setBody(RatingInput(5)) }
+        fun WeekPlan.recipes() = days.flatMap { day -> day.meals.map { it.recipeId } }.toSet()
+
+        repeat(3) {
+            val plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+            assertEquals(14, plan.days.sumOf { it.meals.size })
+            assertEquals(rotation, plan.recipes(), "only the rotation, all of it")
+        }
+        val rerolled = http.post("/api/plans/$week/meals/2/dinner/reroll")
+        assertEquals(HttpStatusCode.OK, rerolled.status)
+        assertTrue(rerolled.body<WeekPlan>().recipes().all { it in rotation }, "nor by another recipe")
+
+        // By hand any of mine, and replanning keeps it.
+        val chosen = http.put("/api/plans/$week/meals/4/dinner") { setBody(MealChoice(best)) }
+        assertEquals(HttpStatusCode.OK, chosen.status)
+        val replanned = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        assertEquals(best, replanned.meal(4, MealSlot.DINNER)!!.recipeId)
+        assertEquals(rotation + best, replanned.recipes())
+
+        // A recipe leaving the rotation leaves the meals planned with it as they are.
+        http.put("/api/recipes/rotation") { setBody(ManyRotationInput(rotation.toList(), inRotation = false)) }
+        assertEquals(replanned, http.get("/api/plans/$week").body<WeekPlan>())
+
+        // A recipe only in the bank is added first.
+        val banked = dinners.getValue("Dinner 8")
+        http.put("/api/recipes/$banked/added") { setBody(AddedInput(added = false)) }
+        val refused = http.put("/api/plans/$week/meals/3/dinner") { setBody(MealChoice(banked)) }
+        assertEquals(HttpStatusCode.Conflict, refused.status)
+        val error = refused.body<Map<String, String>>().getValue("error")
+        assertEquals("Add \"Dinner 8\" to your recipes first", error)
+    }
+
+    /** With nothing to pick from, the planner leaves the slots empty and says nothing is wrong. */
+    @Test
+    fun anEmptyRotationOrNoRecipesLeavesTheSlotsEmpty() = testApplication {
+        val http = start()
+        http.post("/api/sync/cooking")
+        http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
+        suspend fun plan() = http.post("/api/plans/$week/generate").also { assertEquals(HttpStatusCode.OK, it.status) }.body<WeekPlan>()
+
+        // The site's recipes are in the bank only: no recipes of mine.
+        assertEquals(emptyList(), http.get("/api/recipes").body<List<RecipeSummary>>())
+        val none = plan()
+        assertEquals(MealSlot.entries, none.emptySlots)
+        assertTrue(none.days.all { it.meals.isEmpty() })
+
+        // All of them mine, none in the rotation.
+        http.addWholeBank()
+        val mine = http.get("/api/recipes").body<List<RecipeSummary>>().map { it.id }
+        http.put("/api/recipes/rotation") { setBody(ManyRotationInput(mine, inRotation = false)) }
+        val empty = plan()
+        assertEquals(MealSlot.entries, empty.emptySlots)
+        assertTrue(empty.days.all { it.meals.isEmpty() })
     }
 
     /** The lunch is history and stays: it is the old dinner's leftovers, so nothing of the new dinner's is cooked for it, and it cooks nothing itself. */

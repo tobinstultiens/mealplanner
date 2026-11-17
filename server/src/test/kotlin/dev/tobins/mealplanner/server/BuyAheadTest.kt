@@ -137,6 +137,7 @@ class BuyAheadTest {
      */
     private suspend fun HttpClient.ready(): HttpClient = apply {
         post("/api/sync/cooking")
+        addWholeBank()
         post("/api/offers/refresh")
         put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
         post("/api/ingredients") { setBody(IngredientInput("Spelt flour", pricePerKg = 1.0)) }
@@ -157,6 +158,7 @@ class BuyAheadTest {
             write("beef-$i", meal("Beef $i", "beef"))
         }
         post("/api/sync/cooking")
+        addWholeBank()
     }
 
     private suspend fun HttpClient.list(weekStart: String = week) = get("/api/plans/$weekStart/shopping").body<ShoppingList>()
@@ -557,6 +559,7 @@ class BuyAheadTest {
         write("oil-to-taste", "---\ntitle: Oil to taste\n---\n```ingredients\nservings: 1\n200 | g | lettuce\n | | olive oil\n1 | splash | olive oil\n```")
         write("oil-by-the-spoon", "---\ntitle: Oil by the spoon\n---\n```ingredients\nservings: 1\n200 | g | lettuce\n2 | tbsp | olive oil\n```")
         http.post("/api/sync/cooking")
+        http.addWholeBank()
 
         http.mark(week, http.plan(week, 0, MealSlot.DINNER, "Oil to taste", 1.0), MealStatus.EATEN)
         assertEquals(bought, left(oil, week), "nothing taken: not the whole litre, as before")
@@ -897,6 +900,7 @@ class BuyAheadTest {
         // A text row without an amount and one counted in jars, which can't be weighed; nothing else uses them.
         write("pesto-toast", "---\ntitle: Pesto toast\n---\n```ingredients\nservings: 1\n | | a bit of pesto\n2 | jar | tapenade\n```")
         http.post("/api/sync/cooking")
+        http.addWholeBank()
         val toast = http.plan(week, 4, MealSlot.LUNCH, "Pesto toast", 1.0)
         suspend fun rows() = http.list().items.filter { it.recipes == listOf("Pesto toast") }
         assertEquals(2, rows().size)

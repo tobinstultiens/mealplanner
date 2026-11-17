@@ -89,6 +89,7 @@ class ShopsTest {
 
     private suspend fun HttpClient.ready(): HttpClient = apply {
         post("/api/sync/cooking")
+        addWholeBank()
         post("/api/offers/refresh")
         put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
         for ((name, price) in listOf("Beef" to 10.0, "Chicken fillet" to 20.0)) {

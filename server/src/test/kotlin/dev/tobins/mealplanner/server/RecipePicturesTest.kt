@@ -146,7 +146,7 @@ class RecipePicturesTest {
             setBody(RecipeInput("Own stew", 2, "400 | g | beef"))
         }.body<RecipeDetail>().summary
         assertNull(manual.imageUrl, "recipes made in the app have no picture")
-        val recipes = http.get("/api/recipes").body<List<RecipeSummary>>().associateBy { it.title }
+        val recipes = http.get("/api/recipes/bank").body<List<RecipeSummary>>().associateBy { it.title }
         // Unreadable, implausibly large, or none at all: no picture, and the recipes import all the same.
         for (title in listOf("Greek salad", "Huge", "Bread")) assertNull(recipes.getValue(title).imageUrl, title)
 
@@ -190,7 +190,7 @@ class RecipePicturesTest {
         val sync = http.post("/api/sync/cooking")
         assertEquals(HttpStatusCode.OK, sync.status)
         assertEquals(5, sync.body<SyncResult>().added)
-        assertTrue(http.get("/api/recipes").body<List<RecipeSummary>>().all { it.imageUrl == null }, "nothing stored, nothing promised")
+        assertTrue(http.get("/api/recipes/bank").body<List<RecipeSummary>>().all { it.imageUrl == null }, "nothing stored, nothing promised")
     }
 
     /** An account with the cooking site in [dir], synced the way [CookingSync] does it. */
@@ -207,7 +207,7 @@ class RecipePicturesTest {
             return user.pictures.sync(pages)
         }
 
-        fun summary(title: String) = user.recipes.list().single { it.title == title }
+        fun summary(title: String) = user.recipes.bank().single { it.title == title }
     }
 
     @Test
@@ -252,7 +252,7 @@ class RecipePicturesTest {
 
         // Changing the site forgets every picture until the next sync.
         account.user.pictures.removeAll()
-        assertTrue(account.user.recipes.list().all { it.imageUrl == null })
+        assertTrue(account.user.recipes.bank().all { it.imageUrl == null })
         assertFalse(File(account.images, "1").exists())
     }
 }

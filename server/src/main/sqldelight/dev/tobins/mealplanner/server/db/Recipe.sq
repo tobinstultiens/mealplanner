@@ -1,5 +1,7 @@
 -- A recipe of one account, from any source. Rows synced from the account's cooking repo
 -- are identified by sourcePath; contentHash tells the sync whether the file changed.
+-- A cooking-site recipe is in the account's bank until the account adds it (addedAt): only added
+-- recipes are "my recipes", and only those in the rotation are picked by the planner on its own.
 CREATE TABLE recipe (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
@@ -19,6 +21,8 @@ CREATE TABLE recipe (
     rating INTEGER,                    -- App-owned: 1 to 5, NULL when not rated
     imageSourceHash TEXT,              -- SHA-256 of the picture file the page shows, as last read; NULL when none
     imageVersion TEXT,                 -- version of the web-sized copy kept for it; NULL when there is none
+    addedAt TEXT,                      -- App-owned: when it became one of my recipes; NULL while only in the bank
+    inRotation INTEGER NOT NULL DEFAULT 0,  -- App-owned: 1 when the planner may pick it on its own
     UNIQUE (userId, sourcePath)
 );
 
@@ -36,8 +40,13 @@ CREATE TABLE recipeIngredient (
 
 CREATE INDEX recipeIngredient_recipe ON recipeIngredient(recipeId, position);
 
-selectActive:
-SELECT * FROM recipe WHERE userId = ? AND removedAt IS NULL ORDER BY title COLLATE NOCASE;
+-- My recipes: those the account added, also one whose file has since left the cooking site.
+selectMine:
+SELECT * FROM recipe WHERE userId = ? AND addedAt IS NOT NULL ORDER BY title COLLATE NOCASE;
+
+-- The bank: cooking-site recipes on the site now that the account has not added.
+selectBank:
+SELECT * FROM recipe WHERE userId = ? AND addedAt IS NULL AND removedAt IS NULL ORDER BY title COLLATE NOCASE;
 
 selectById:
 SELECT * FROM recipe WHERE userId = ? AND id = ?;
@@ -46,8 +55,8 @@ selectSynced:
 SELECT id, sourcePath, contentHash, removedAt FROM recipe WHERE userId = ? AND source = 'COOKING_SITE';
 
 insertRecipe:
-INSERT INTO recipe (userId, source, sourcePath, contentHash, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO recipe (userId, source, sourcePath, contentHash, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, addedAt, inRotation)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 lastInsertId:
 SELECT last_insert_rowid();
@@ -67,6 +76,17 @@ WHERE userId = ? AND id = ? AND source IN ('MANUAL', 'GENERATED');
 
 deleteManual:
 DELETE FROM recipe WHERE userId = ? AND id = ? AND source IN ('MANUAL', 'GENERATED');
+
+-- Adding one that is added already keeps when it was first added.
+addToMine:
+UPDATE recipe SET addedAt = coalesce(addedAt, :addedAt), inRotation = :inRotation WHERE userId = :userId AND id = :id;
+
+-- Back to the bank; rating, kind and slots stay for when it is added again.
+removeFromMine:
+UPDATE recipe SET addedAt = NULL, inRotation = 0 WHERE userId = ? AND id = ?;
+
+setInRotation:
+UPDATE recipe SET inRotation = ? WHERE userId = ? AND id = ?;
 
 setRating:
 UPDATE recipe SET rating = ? WHERE userId = ? AND id = ?;
