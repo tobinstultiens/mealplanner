@@ -136,8 +136,11 @@ class RecipeListsTest {
         selection.toggle(4)
         selection.toggle(3)
         assertEquals(setOf(4L), selection.ids)
-        // Taking off the last tick is still selecting: the bar stays until it is closed.
+        // Taking off the last tick ends selecting: there is nothing left to act on.
         selection.toggle(4)
+        assertFalse(selection.selecting)
+        // One started with nothing ticked is selecting, though.
+        selection.start()
         assertTrue(selection.selecting)
         selection.selectAll(listOf(1, 2, 3))
         assertEquals(setOf(1L, 2L, 3L), selection.ids)

@@ -144,6 +144,8 @@ fun RecipeDetailScreen(
             acting = false
             settle(result, Msg.REMOVE_FAILED)
             if (result is Load.Ready) {
+                // The bank view's switch shows what it was (the server's answer is the default), so that adding it again keeps it.
+                pickOnAdd = wasInRotation
                 val undo = snackbar.showSnackbar(t(Msg.REMOVED_ONE, title), actionLabel = t(Msg.UNDO), duration = SnackbarDuration.Long)
                 if (undo == SnackbarResult.ActionPerformed) settle(load { api.setRecipeAdded(recipeId, added = true, inRotation = wasInRotation) }, Msg.ADDED_FAILED)
             }

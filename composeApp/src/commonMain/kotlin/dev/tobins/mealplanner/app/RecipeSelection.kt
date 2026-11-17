@@ -27,8 +27,8 @@ import androidx.compose.ui.unit.dp
 
 /**
  * The recipes ticked while selecting several, on the Recipes tab and in the bank. [ids] is null while
- * nothing is being selected: an empty selection is still selecting (it was started from the menu, or
- * the last tick was taken off) and the bar stays until it is closed.
+ * nothing is being selected: a selection just started from the menu is still selecting with nothing
+ * ticked, but taking off the last tick ends it, as there is then nothing left to act on.
  */
 class Selection(ids: Set<Long>? = null) {
     var ids by mutableStateOf(ids)
@@ -47,7 +47,8 @@ class Selection(ids: Set<Long>? = null) {
 
     fun toggle(id: Long) {
         val current = ids ?: return
-        ids = if (id in current) current - id else current + id
+        val toggled = if (id in current) current - id else current + id
+        ids = toggled.takeIf { it.isNotEmpty() }
     }
 
     fun selectAll(all: Collection<Long>) {

@@ -276,6 +276,8 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
         }
     }
 
+    // Back leaves selecting first, and only then the screen (whose own handler is in App).
+    BackHandler(enabled = selection.selecting, onBack = selection::stop)
     SubScreen(
         title = if (selection.selecting) t(Msg.SELECT_RECIPES) else t(Msg.BANK_TITLE),
         onBack = { if (selection.selecting) selection.stop() else onBack() },
