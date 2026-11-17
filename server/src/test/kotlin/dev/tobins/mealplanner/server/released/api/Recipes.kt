@@ -1,4 +1,4 @@
-// Frozen from v0.1.5 (32d25e8a4073a3eed02ca4fd44a7b98461199be5) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.6 (f0c5fecdfd665b93882988ecd6063a74b6ae974b) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -34,6 +34,42 @@ data class RecipeSummary(
      * (always for recipes made in the app).
      */
     val imageUrl: String? = null,
+    /**
+     * One of my recipes: made in the app, or added from the bank of cooking-site recipes. False for a
+     * recipe only in the bank (`GET /api/recipes/bank`). Servers before the bank had no bank: true.
+     */
+    val added: Boolean = true,
+    /** The planner may pick it on its own; one of my recipes outside the rotation is planned only by hand. */
+    val inRotation: Boolean = true,
+    /** Its file has left the cooking site; an added recipe stays one of my recipes all the same. */
+    val removedFromSite: Boolean = false,
+)
+
+/** Body of `PUT /api/recipes/{id}/added`: adds a bank recipe to my recipes, or puts it back in the bank. */
+@Serializable
+data class AddedInput(
+    val added: Boolean,
+    /** Whether an added recipe is in the rotation; a recipe put back in the bank never is. */
+    val inRotation: Boolean = true,
+)
+
+/** Body of `PUT /api/recipes/added`: [AddedInput] for many recipes at once; nothing changes unless all can. */
+@Serializable
+data class ManyAddedInput(
+    val ids: List<Long>,
+    val added: Boolean,
+    val inRotation: Boolean = true,
+)
+
+/** Body of `PUT /api/recipes/{id}/rotation`. */
+@Serializable
+data class RotationInput(val inRotation: Boolean)
+
+/** Body of `PUT /api/recipes/rotation`: [RotationInput] for many recipes at once; nothing changes unless all can. */
+@Serializable
+data class ManyRotationInput(
+    val ids: List<Long>,
+    val inRotation: Boolean,
 )
 
 /** What a serving costs, from regular store prices and this week's offers. */
@@ -83,7 +119,10 @@ data class RecipeInput(
     val mealSlots: List<MealSlot> = emptyList(),
 )
 
-/** Body of `PUT /api/recipes/{id}/settings`: how the planner treats a recipe. Works for every source. */
+/**
+ * Body of `PUT /api/recipes/{id}/settings`: how the planner treats a recipe. Works for every source. Leaves
+ * whether it is added and in the rotation alone, which released apps that save it know nothing of.
+ */
 @Serializable
 data class RecipeSettings(
     val kind: RecipeKind,

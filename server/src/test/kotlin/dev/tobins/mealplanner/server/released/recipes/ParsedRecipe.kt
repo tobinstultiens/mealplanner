@@ -1,4 +1,4 @@
-// Frozen from v0.1.5 (32d25e8a4073a3eed02ca4fd44a7b98461199be5) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.6 (f0c5fecdfd665b93882988ecd6063a74b6ae974b) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.recipes
 
 import dev.tobins.mealplanner.released.units.Dimension
