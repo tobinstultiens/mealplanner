@@ -1,23 +1,17 @@
 package dev.tobins.mealplanner.app
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
@@ -29,15 +23,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,7 +42,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
@@ -58,7 +49,6 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeCost
-import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.Routines
@@ -72,231 +62,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.io.IOException
 import kotlinx.serialization.SerializationException
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun RecipeListScreen(api: ApiClient, onOpen: (Long) -> Unit, onOpenMapping: () -> Unit, onNewRecipe: () -> Unit) {
-    val t = LocalStrings.current
-    var generating by remember { mutableStateOf(false) }
-    val loaded = rememberLoad<List<RecipeSummary>>("recipes")
-    var state by loaded
-    var reload by remember { mutableIntStateOf(0) }
-    val frontReturns = rememberFrontReturns()
-    val listState = rememberLazyListState()
-    var syncing by remember { mutableStateOf(false) }
-    var query by rememberSaveable { mutableStateOf("") }
-    var mealsOnly by rememberSaveable { mutableStateOf(true) }
-    val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-
-    var syncStatus by remember { mutableStateOf<CookingSyncStatus?>(null) }
-    var editingRepo by remember { mutableStateOf(false) }
-    LaunchedEffect(loaded, reload, frontReturns) {
-        loaded.refresh { api.recipes() }
-        // A failed fetch keeps the line that was shown.
-        (load { api.cookingSyncStatus() } as? Load.Ready)?.value?.let { syncStatus = it }
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(t(Msg.TAB_RECIPES)) },
-                actions = {
-                    BarAction(AppIcons.Add, t(Msg.NEW_RECIPE), onNewRecipe)
-                    BarAction(
-                        AppIcons.Sync,
-                        if (syncing) t(Msg.SYNCING) else t(Msg.SYNC),
-                        busy = syncing,
-                        onClick = {
-                            syncing = true
-                            scope.launch {
-                                val message = when (val result = load { api.syncCookingSite() }) {
-                                    is Load.Ready -> with(result.value) { t(Msg.SYNCED, added, updated, removed) }
-                                    is Load.Failed -> t(Msg.SYNC_FAILED, result.message)
-                                    Load.Loading -> ""
-                                }
-                                syncing = false
-                                reload++
-                                snackbar.showSnackbar(message)
-                            }
-                        },
-                    )
-                    OverflowMenu(
-                        MenuAction(AppIcons.Generate, t(Msg.GENERATE_RECIPE)) { generating = true },
-                        MenuAction(AppIcons.Link, t(Msg.LINK_INGREDIENTS), onOpenMapping),
-                    )
-                },
-            )
-        },
-        // The line has a place of its own: the content ends above it, and snackbars show above it.
-        bottomBar = { RefreshNotice(loaded) { reload++ } },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
-        if (generating) {
-            GenerateDialog(onDismiss = { generating = false }) { request ->
-                val id = api.generateRecipe(request).summary.id
-                generating = false
-                reload++
-                onOpen(id)
-            }
-        }
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text(t(Msg.SEARCH_RECIPES)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge),
-            )
-            FilterChip(
-                selected = mealsOnly,
-                onClick = { mealsOnly = !mealsOnly },
-                label = { Text(t(Msg.MEALS_ONLY)) },
-                modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
-            )
-            syncStatus?.let { SyncLine(it, onEdit = { editingRepo = true }) }
-            if (editingRepo) {
-                CookingRepoDialog(
-                    current = syncStatus?.repoUrl,
-                    onDismiss = { editingRepo = false },
-                    onSave = { url ->
-                        syncStatus = api.setCookingRepo(url)
-                        editingRepo = false
-                        // A new repository is imported right away.
-                        if (url != null) {
-                            val message = when (val result = load { api.syncCookingSite() }) {
-                                is Load.Ready -> with(result.value) { t(Msg.IMPORTED, added, updated, removed) }
-                                is Load.Failed -> t(Msg.IMPORT_FAILED, result.message)
-                                Load.Loading -> ""
-                            }
-                            reload++
-                            snackbar.showSnackbar(message)
-                        }
-                    },
-                )
-            }
-            when (val current = state) {
-                Load.Loading -> LoadingState()
-                is Load.Failed -> ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current) { reload++ }
-                is Load.Ready -> {
-                    val shown = current.value.filter { recipe ->
-                        (!mealsOnly || recipe.kind == RecipeKind.MEAL) &&
-                            (query.isBlank() || recipe.title.contains(query.trim(), ignoreCase = true) ||
-                                recipe.tags.any { it.contains(query.trim(), ignoreCase = true) })
-                    }
-                    if (current.value.isEmpty()) {
-                        EmptyState(
-                            Spot.NoRecipes,
-                            t(Msg.NO_RECIPES_YET),
-                            actionLabel = t(Msg.NEW_RECIPE),
-                            onAction = onNewRecipe,
-                        )
-                    } else if (shown.isEmpty()) {
-                        EmptyState(AppIcons.Recipes, t(Msg.NO_RECIPES_MATCH))
-                    } else {
-                        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
-                            items(shown, key = { it.id }) { recipe ->
-                                RecipeRow(recipe, onClick = { onOpen(recipe.id) })
-                                HorizontalDivider()
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * When the account's cooking site was last read, so it is clear that edits there have
- * arrived; tapping it sets the repository to import from.
- */
-@Composable
-private fun SyncLine(status: CookingSyncStatus, onEdit: () -> Unit) {
-    val t = LocalStrings.current
-    val text = when {
-        status.repoUrl == null && status.syncedAt == null -> t(Msg.SYNC_NONE)
-        status.syncedAt == null -> t(Msg.SYNC_NOT_YET)
-        else -> t(Msg.SYNC_AT, instantLabel(status.syncedAt!!, t))
-    }
-    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onEdit).padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.Center) {
-        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        status.error?.let { ErrorBanner(t(Msg.LAST_SYNC_FAILED), it) }
-    }
-}
-
-/** Sets the git repository of the account's cooking site (Hugo recipes), or clears it. */
-@Composable
-private fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: suspend (String?) -> Unit) {
-    val t = LocalStrings.current
-    var url by remember { mutableStateOf(current.orEmpty()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var saving by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    fun save(value: String?) {
-        saving = true
-        scope.launch {
-            runCatching { onSave(value) }.onFailure { error = (load { throw it } as? Load.Failed)?.message ?: it.message }
-            saving = false
-        }
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(t(Msg.COOKING_SITE)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                Text(t(Msg.COOKING_SITE_EXPLAIN))
-                OutlinedTextField(
-                    url, { url = it; error = null },
-                    label = { Text(t(Msg.REPO_URL)) },
-                    placeholder = { Text(t(Msg.REPO_URL_EXAMPLE)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = !saving && url.isNotBlank(), onClick = { save(url.trim()) }) { Text(if (saving) t(Msg.IMPORTING) else t(Msg.SAVE)) }
-        },
-        dismissButton = {
-            Row {
-                if (current != null) TextButton(enabled = !saving, onClick = { save(null) }) { Text(t(Msg.REMOVE)) }
-                TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) }
-            }
-        },
-    )
-}
-
-/**
- * A recipe in the list: the title, then nutrition left and cost right, then details and a warning badge.
- * A recipe with a photo shows it as a thumbnail at the end of the row, so the text of every row starts
- * at the same place; one without keeps the plain row, with no box in its place.
- */
-@Composable
-internal fun RecipeRow(recipe: RecipeSummary, onClick: () -> Unit) {
-    val text = recipe.rowText(LocalStrings.current)
-    val picture = recipePicture(recipe.imageUrl)
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Spacing.ScreenEdge, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-            Text(recipe.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (text.nutrition != null || text.cost != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
-                    Text(text.nutrition.orEmpty(), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    text.cost?.let { Text(it, style = MaterialTheme.typography.bodyMedium, softWrap = false) }
-                }
-            }
-            text.details?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            text.warning?.let { WarningBadge(it) }
-        }
-        picture?.let { RecipePhoto(it, Modifier.size(72.dp)) }
-    }
-}
 
 /**
  * What the planned meal a recipe was opened from says about cooking it: [portions] of it are eaten,
@@ -318,7 +83,15 @@ fun PlannedMeal.toCook(): MealToCook? = cookPortions?.let { MealToCook(recipeId,
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?, onBack: () -> Unit, onEdit: () -> Unit, meal: MealToCook? = null) {
+fun RecipeDetailScreen(
+    api: ApiClient,
+    recipeId: Long,
+    nutritionSource: String?,
+    onBack: () -> Unit,
+    onEdit: () -> Unit,
+    meal: MealToCook? = null,
+    onOpenMapping: () -> Unit = {},
+) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
     val loaded = rememberLoad<RecipeDetail>("recipe:$recipeId")
@@ -327,14 +100,90 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
     var reload by remember { mutableIntStateOf(0) }
     val frontReturns = rememberFrontReturns()
     val scroll = rememberScrollState()
+    val snackbar = remember { SnackbarHostState() }
+    // A recipe of the bank is read-only until it is added: whether the planner may pick it is asked for with the adding.
+    var pickOnAdd by rememberSaveable(recipeId) { mutableStateOf(true) }
+    var acting by remember { mutableStateOf(false) }
+    var confirmingDelete by remember { mutableStateOf(false) }
     LaunchedEffect(loaded, reload, frontReturns) {
         loaded.refresh { api.recipe(recipeId) }
         (load { api.routines() } as? Load.Ready)?.value?.let { routines = it }
     }
 
-    SubScreen((state as? Load.Ready)?.value?.summary?.title ?: t(Msg.RECIPE), onBack, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
-        if ((state as? Load.Ready)?.value?.summary?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }) {
-            BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
+    /** Shows the recipe the server answered after a change, or tells why the change failed. */
+    suspend fun settle(result: Load<RecipeDetail>, failed: Msg) {
+        when (result) {
+            is Load.Ready -> state = result
+            is Load.Failed -> snackbar.showSnackbar(t(failed, result.message))
+            Load.Loading -> Unit
+        }
+    }
+
+    fun add() {
+        if (acting) return
+        acting = true
+        scope.launch {
+            val result = load { api.setRecipeAdded(recipeId, added = true, inRotation = pickOnAdd) }
+            acting = false
+            settle(result, Msg.ADDED_FAILED)
+            if (result is Load.Ready) {
+                val summary = result.value.summary
+                snackbar.announceAdded(t, t(Msg.ADDED_ONE, summary.title), unlinkedIngredients(listOf(summary)), onOpenMapping) {
+                    settle(load { api.setRecipeAdded(recipeId, added = false) }, Msg.REMOVE_FAILED)
+                }
+            }
+        }
+    }
+
+    /** Puts a recipe from the cooking site back in the bank; a recipe that is planned says so (409) and stays. */
+    fun putBack(title: String, wasInRotation: Boolean) {
+        if (acting) return
+        acting = true
+        scope.launch {
+            val result = load { api.setRecipeAdded(recipeId, added = false) }
+            acting = false
+            settle(result, Msg.REMOVE_FAILED)
+            if (result is Load.Ready) {
+                val undo = snackbar.showSnackbar(t(Msg.REMOVED_ONE, title), actionLabel = t(Msg.UNDO), duration = SnackbarDuration.Long)
+                if (undo == SnackbarResult.ActionPerformed) settle(load { api.setRecipeAdded(recipeId, added = true, inRotation = wasInRotation) }, Msg.ADDED_FAILED)
+            }
+        }
+    }
+
+    fun delete() {
+        acting = true
+        scope.launch {
+            val result = load { api.deleteRecipe(recipeId) }
+            acting = false
+            when (result) {
+                is Load.Ready -> onBack()
+                is Load.Failed -> snackbar.showSnackbar(t(Msg.DELETE_FAILED, result.message))
+                Load.Loading -> Unit
+            }
+        }
+    }
+
+    val opened = (state as? Load.Ready)?.value?.summary
+    if (confirmingDelete && opened != null) {
+        AlertDialog(
+            onDismissRequest = { confirmingDelete = false },
+            title = { Text(t(Msg.DELETE_RECIPE_TITLE, opened.title)) },
+            text = { Text(t(Msg.DELETE_RECIPE_TEXT)) },
+            confirmButton = { TextButton(onClick = { confirmingDelete = false; delete() }) { Text(t(Msg.DELETE), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text(t(Msg.CANCEL)) } },
+        )
+    }
+
+    SubScreen(opened?.title ?: t(Msg.RECIPE), onBack, snackbar = snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
+        val madeHere = opened?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }
+        if (madeHere) BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
+        // What leaves a recipe: from the cooking site it goes back to the bank, one made in the app is deleted.
+        if (opened != null && opened.added) {
+            if (madeHere) {
+                OverflowMenu(MenuAction(AppIcons.Close, t(Msg.DELETE)) { confirmingDelete = true })
+            } else {
+                OverflowMenu(MenuAction(AppIcons.Close, t(Msg.REMOVE_FROM_MINE)) { putBack(opened.title, opened.inRotation) })
+            }
         }
     }) { padding ->
         when (val current = state) {
@@ -362,19 +211,36 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                     recipe.summary.servings?.let {
                         Text(t.plural(Plural.MAKES_SERVINGS, it), style = MaterialTheme.typography.labelLarge)
                     }
+                    if (recipe.summary.removedFromSite) {
+                        Text(t(Msg.REMOVED_FROM_SITE), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (!recipe.summary.added) {
+                        AddFromBank(pickOnAdd, acting, onPick = { pickOnAdd = it }, onAdd = ::add)
+                    }
                     recipe.summary.nutrition?.let { NutritionCard(it, nutritionSource) }
                     recipe.summary.cost?.let { CostCard(it) }
-                    RatingRow(recipe.summary.rating) { rating ->
-                        scope.launch { (load { api.rateRecipe(recipeId, rating) } as? Load.Ready)?.let { state = it } }
-                    }
-                    PlannerSettings(recipe.summary) { settings ->
-                        scope.launch {
-                            (load { api.updateRecipeSettings(recipeId, settings) } as? Load.Ready)?.let { state = it }
+                    // Rating, the rotation, "Plan as" and the routines are about one of my recipes: none until it is added.
+                    if (recipe.summary.added) {
+                        RatingRow(recipe.summary.rating) { rating ->
+                            scope.launch { (load { api.rateRecipe(recipeId, rating) } as? Load.Ready)?.let { state = it } }
                         }
-                    }
-                    routines?.let { current ->
-                        RoutineButtons(recipe.summary, current) { updated ->
-                            scope.launch { (load { api.saveRoutines(updated) } as? Load.Ready)?.let { routines = it.value } }
+                        RotationRow(recipe.summary.inRotation, enabled = !acting) { inRotation ->
+                            acting = true
+                            scope.launch {
+                                val result = load { api.setRecipeRotation(recipeId, inRotation) }
+                                acting = false
+                                settle(result, Msg.ROTATION_FAILED)
+                            }
+                        }
+                        PlannerSettings(recipe.summary) { settings ->
+                            scope.launch {
+                                (load { api.updateRecipeSettings(recipeId, settings) } as? Load.Ready)?.let { state = it }
+                            }
+                        }
+                        routines?.let { current ->
+                            RoutineButtons(recipe.summary, current) { updated ->
+                                scope.launch { (load { api.saveRoutines(updated) } as? Load.Ready)?.let { routines = it.value } }
+                            }
                         }
                     }
                     if (cooking != null && servings != null) {
@@ -430,6 +296,39 @@ fun RecipeDetailScreen(api: ApiClient, recipeId: Long, nutritionSource: String?,
                 }
             }
         }
+    }
+}
+
+/**
+ * What a recipe of the bank offers instead of rating and planning: adding it to my recipes, and under
+ * the button the choice whether the planner may pick it ([pick], on by default).
+ */
+@Composable
+private fun AddFromBank(pick: Boolean, busy: Boolean, onPick: (Boolean) -> Unit, onAdd: () -> Unit) {
+    val t = LocalStrings.current
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+        Button(onClick = onAdd, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t(Msg.ADD_TO_MY_RECIPES)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(t(Msg.LET_PLANNER_PICK), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            Switch(checked = pick, onCheckedChange = onPick)
+        }
+    }
+}
+
+/** The switch that puts one of my recipes in the rotation the planner picks from, with a line on what that means. */
+@Composable
+private fun RotationRow(inRotation: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    val t = LocalStrings.current
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(t(Msg.IN_MY_ROTATION), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+            Switch(checked = inRotation, onCheckedChange = onChange, enabled = enabled)
+        }
+        Text(
+            t(if (inRotation) Msg.ROTATION_ON_HINT else Msg.ROTATION_OFF_HINT),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

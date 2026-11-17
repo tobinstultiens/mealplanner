@@ -30,6 +30,16 @@ class ScreenMemoryTest {
     }
 
     @Test
+    fun theBankTheRecipesTabKeptIsWhereTheBankScreenStarts() {
+        // The tab fetches the bank for its "Browse the bank" and keeps it under `bank`; the bank screen shows it at once.
+        val memory = ScreenMemory()
+        LoadState<List<String>>(memory, "bank").value = Load.Ready(listOf("Pancakes", "Soba salad"))
+        assertEquals(Load.Ready(listOf("Pancakes", "Soba salad")), LoadState<List<String>>(memory, "bank").value)
+        // My recipes are another entry: what the bank holds is not part of them.
+        assertTrue(LoadState<List<String>>(memory, "recipes").value is Load.Loading)
+    }
+
+    @Test
     fun theOldestEntriesGoWhenThereAreTooMany() {
         val memory = ScreenMemory(capacity = 2)
         memory.keep("a", 1)

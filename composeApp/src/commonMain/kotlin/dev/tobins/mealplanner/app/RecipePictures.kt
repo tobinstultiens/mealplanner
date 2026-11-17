@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -51,14 +52,22 @@ fun pictureUrls(recipes: List<RecipeSummary>): Map<Long, String> =
     recipes.mapNotNull { recipe -> recipe.imageUrl?.let { recipe.id to it } }.toMap()
 
 /**
- * The photos of the recipes, loaded once for a screen that only has recipe ids (Today, Plan). Empty
- * until they arrive and when they cannot be loaded: photos are an extra, the screen works without.
+ * My recipes, loaded once for a screen that only has recipe ids (Today, Plan), for their photos and for
+ * what the screen says of the rotation. Null until they arrive and when they cannot be loaded: it is an
+ * extra, the screen works without.
  */
 @Composable
+fun rememberMyRecipes(api: ApiClient): State<List<RecipeSummary>?> {
+    val recipes = remember(api) { mutableStateOf<List<RecipeSummary>?>(null) }
+    LaunchedEffect(api) { runCatching { api.recipes() }.onSuccess { recipes.value = it } }
+    return recipes
+}
+
+/** The photos of my recipes (see [rememberMyRecipes]); empty until they arrive and when they cannot be loaded. */
+@Composable
 fun rememberRecipePictureUrls(api: ApiClient): State<Map<Long, String>> {
-    val urls = remember(api) { mutableStateOf(emptyMap<Long, String>()) }
-    LaunchedEffect(api) { runCatching { api.recipes() }.onSuccess { urls.value = pictureUrls(it) } }
-    return urls
+    val recipes = rememberMyRecipes(api)
+    return remember { derivedStateOf { recipes.value?.let(::pictureUrls).orEmpty() } }
 }
 
 /** What [RecipePhoto] draws; only exists for a recipe that has a photo and when photos can be loaded. */

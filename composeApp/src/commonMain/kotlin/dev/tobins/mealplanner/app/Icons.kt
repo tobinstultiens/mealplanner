@@ -72,6 +72,14 @@ object AppIcons {
         )
     }
 
+    /** Material Symbol `check`. */
+    val Check: ImageVector by lazy {
+        symbol(
+            "Check",
+            "M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z",
+        )
+    }
+
     /** Material Symbol `sync`. */
     val Sync: ImageVector by lazy {
         symbol(

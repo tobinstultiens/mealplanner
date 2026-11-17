@@ -53,7 +53,13 @@ import kotlin.math.roundToInt
 /** The week plan: one card per day with its meals and totals against the targets. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfile: () -> Unit) {
+fun PlanScreen(
+    api: ApiClient,
+    onOpenRecipe: (PlannedMeal) -> Unit,
+    onOpenProfile: () -> Unit,
+    onOpenRecipes: () -> Unit,
+    onOpenBank: () -> Unit,
+) {
     val t = LocalStrings.current
     val now = mondayOf(rememberToday())
     val frontReturns = rememberFrontReturns()
@@ -67,7 +73,10 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfil
     var busy by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val pictures by rememberRecipePictureUrls(api)
+    val myRecipes by rememberMyRecipes(api)
+    val pictures = myRecipes?.let(::pictureUrls).orEmpty()
+    // Known once my recipes are: with none of them in the rotation the planner has nothing to pick from, which is why slots stay empty.
+    val emptyRotation = myRecipes?.let(::rotationIsEmpty) == true
     // The meal a new recipe is being written for.
     var generatingFor by remember { mutableStateOf<PlannedMeal?>(null) }
     // The slot a recipe is being chosen for: a planned meal's or an empty one's.
@@ -118,6 +127,7 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfil
             api, slot,
             title = t(Msg.PLAN_CHOOSE_FOR, t.slot(slot), dayLabel(plusDays(weekStart, day), t.locale)),
             onDismiss = { choosingFor = null },
+            onBrowseBank = { choosingFor = null; onOpenBank() },
         ) { recipe ->
             // A refusal (such as "this meal was eaten already") or a server from before the route: the picker shows why and stays open.
             when (val result = load { api.chooseRecipe(weekStart, day, slot, recipe.id) }) {
@@ -189,7 +199,15 @@ fun PlanScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenProfil
                             Button(enabled = !busy, onClick = { change { api.generatePlan(weekStart) } }) {
                                 Text(if (hasMeals) t(Msg.REPLAN) else t(Msg.PLAN_WEEK))
                             }
-                            if (hasMeals && plan.emptySlots.isNotEmpty()) {
+                            if (plan.emptySlots.isNotEmpty() && emptyRotation) {
+                                // Not for want of recipes in general: none of them is in the rotation.
+                                Text(
+                                    t(Msg.ROTATION_EMPTY_PLAN),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                TextButton(onClick = onOpenRecipes) { Text(t(Msg.OPEN_RECIPES)) }
+                            } else if (hasMeals && plan.emptySlots.isNotEmpty()) {
                                 Text(
                                     t(Msg.NO_RECIPES_FOR, plan.emptySlots.joinToString { t.slot(it) }),
                                     style = MaterialTheme.typography.bodySmall,

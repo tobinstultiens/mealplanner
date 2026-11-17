@@ -28,6 +28,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarData
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -211,9 +216,45 @@ fun SubScreen(
             )
         },
         bottomBar = notice,
-        snackbarHost = { snackbar?.let { SnackbarHost(it) } },
+        snackbarHost = { snackbar?.let { AppSnackbarHost(it) } },
         content = content,
     )
+}
+
+/**
+ * A message with two actions: [actionLabel] (the one `showSnackbar` answers, such as "Undo") and a
+ * [secondLabel] that runs [onSecond] on its own (such as "Link" to a screen). Shown by [AppSnackbarHost];
+ * a standard snackbar has room for one action only.
+ */
+class TwoActionSnackbar(
+    override val message: String,
+    override val actionLabel: String,
+    val secondLabel: String,
+    val onSecond: () -> Unit,
+) : SnackbarVisuals {
+    override val withDismissAction: Boolean = false
+    override val duration: SnackbarDuration = SnackbarDuration.Long
+}
+
+/** The snackbar host of the screens: the standard snackbar, and [TwoActionSnackbar] with both of its actions. */
+@Composable
+fun AppSnackbarHost(state: SnackbarHostState) {
+    SnackbarHost(state) { data ->
+        val two = data.visuals as? TwoActionSnackbar
+        if (two == null) {
+            Snackbar(data)
+        } else {
+            Snackbar(
+                actionOnNewLine = true,
+                action = {
+                    Row {
+                        TextButton(onClick = { data.dismiss(); two.onSecond() }) { Text(two.secondLabel) }
+                        TextButton(onClick = { data.performAction() }) { Text(two.actionLabel) }
+                    }
+                },
+            ) { Text(two.message) }
+        }
+    }
 }
 
 /** The heading of a group of rows or cards, in the accent colour so groups stand out when scrolling. */
@@ -239,7 +280,10 @@ fun EmptyState(
     }
 }
 
-/** An [EmptyState] with a [spot] illustration, which brings its own colours, in place of the plain icon. */
+/**
+ * An [EmptyState] with a [spot] illustration, which brings its own colours, in place of the plain icon.
+ * A second way out, such as "New recipe" next to "Browse the bank", is the quieter [otherActionLabel] button.
+ */
 @Composable
 fun EmptyState(
     spot: Spot,
@@ -247,8 +291,10 @@ fun EmptyState(
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
     onAction: () -> Unit = {},
+    otherActionLabel: String? = null,
+    onOtherAction: () -> Unit = {},
 ) {
-    EmptyStateLayout(message, modifier, actionLabel, onAction) {
+    EmptyStateLayout(message, modifier, actionLabel, onAction, otherActionLabel, onOtherAction) {
         Image(Illustrations.spot(spot), contentDescription = null, Modifier.size(96.dp))
     }
 }
@@ -259,6 +305,8 @@ private fun EmptyStateLayout(
     modifier: Modifier,
     actionLabel: String?,
     onAction: () -> Unit,
+    otherActionLabel: String? = null,
+    onOtherAction: () -> Unit = {},
     art: @Composable () -> Unit,
 ) {
     Column(
@@ -269,6 +317,7 @@ private fun EmptyStateLayout(
         art()
         Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
         if (actionLabel != null) Button(onClick = onAction) { Text(actionLabel) }
+        if (otherActionLabel != null) OutlinedButton(onClick = onOtherAction) { Text(otherActionLabel) }
     }
 }
 

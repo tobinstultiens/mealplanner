@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.app
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,13 +20,16 @@ import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -88,8 +92,20 @@ private fun recipePicker(api: ApiClient) {
     val recipes by produceState<List<RecipeSummary>?>(null) { value = api.recipes() }
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(LocalStrings.current(Msg.PLAN_CHOOSE_FOR, "dinner", "Friday"), style = MaterialTheme.typography.headlineSmall)
-        recipes?.let { RecipePickerBody(it, MealSlot.DINNER, onPick = {}) }
+        // Two recipes of each group: the dialog lists 480 dp at most, and both headings are to be seen.
+        recipes?.filter { it.id in setOf(2L, 3L, 5L, 6L) }?.let { RecipePickerBody(it, MealSlot.DINNER, onBrowseBank = {}, onPick = {}) }
     }
+}
+
+/** The snackbar of a recipe added with ingredients to link, shown the way [announceAdded] shows it. */
+@Composable
+private fun addedSnackbar() {
+    val t = LocalStrings.current
+    val host = remember { SnackbarHostState() }
+    LaunchedEffect(host) {
+        host.announceAdded(t, t(Msg.ADDED_ONE, "Asperge soup"), unlinked = 1, onLink = {}, onUndo = {})
+    }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { AppSnackbarHost(host) }
 }
 
 @Composable
@@ -137,11 +153,15 @@ enum class Shot(
     val emptyOffers: Boolean = false,
     val emptyPrices: Boolean = false,
     val emptyRecipes: Boolean = false,
+    /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
+    val dutch: Boolean = false,
     val heightDp: Int = 640,
     val content: @Composable (ApiClient, ServerSettings) -> Unit,
 ) {
     TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, {}, {}) }),
-    PLAN(heightDp = 4400, content = { api, _ -> PlanScreen(api, {}, {}) }),
+    PLAN(heightDp = 4400, content = { api, _ -> PlanScreen(api, {}, {}, {}, {}) }),
+    // No recipe of mine is in the rotation, so the week stays empty and says why, with a way to the Recipes tab.
+    PLAN_EMPTY_ROTATION(emptyWeek = true, emptyRecipes = true, content = { api, _ -> PlanScreen(api, {}, {}, {}, {}) }),
     RECIPE_PICKER(heightDp = 1300, content = { api, _ -> recipePicker(api) }),
     SHOPPING(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false) }),
     SHOPPING_MODE(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = true) }),
@@ -149,10 +169,26 @@ enum class Shot(
     SHOPPING_EMPTY(emptyWeek = true, content = { api, _ -> shopping(api, shoppingMode = false) }),
     SHOPPING_STORES(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE) }),
     SHOPPING_AT_JUMBO(heightDp = 1500, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE, store = Store.JUMBO) }),
-    RECIPES(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
+    RECIPES(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}) }),
+    RECIPES_ROTATION(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}, initialChoice = RotationChoice.IN_ROTATION) }),
+    RECIPES_NOT_IN_ROTATION(heightDp = 800, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}, initialChoice = RotationChoice.OUT_OF_ROTATION) }),
+    // Two recipes ticked: the bar has the count, "Select all" and the three buttons.
+    RECIPES_SELECTING(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}, initiallySelected = setOf(3L, 6L)) }),
+    // In Dutch at 360 dp with the larger font, where the choices and the bar's buttons are longest (#190).
+    RECIPES_NL(dutch = true, heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}) }),
+    RECIPES_SELECTING_NL(dutch = true, heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}, initiallySelected = setOf(3L, 6L)) }),
+    BANK(heightDp = 1100, content = { api, _ -> RecipeBankScreen(api, {}, {}, {}) }),
+    BANK_NL(dutch = true, heightDp = 1100, content = { api, _ -> RecipeBankScreen(api, {}, {}, {}) }),
+    // A short screen, as in landscape, in Dutch with the larger font: the header scrolls away with the rows and the sections slide sideways.
+    BANK_SHORT_NL(dutch = true, heightDp = 360, content = { api, _ -> RecipeBankScreen(api, {}, {}, {}) }),
+    // A recipe of the bank opened: read-only, with the way to add it and the planner's choice under it.
+    BANK_RECIPE(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 9, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
+    // One of my recipes outside the rotation, and one whose file has left the cooking site.
+    RECIPE_NOT_IN_ROTATION(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 3, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
+    RECIPE_REMOVED_FROM_SITE(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 6, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
     // The list was loaded, then the server could not be reached on a refresh: the list stays, with the line and its Retry below.
     RECIPES_REFRESH_FAILED(heightDp = 1100, content = { api, _ -> recipesRefreshFailed(api) }),
-    RECIPES_EMPTY(emptyRecipes = true, content = { api, _ -> RecipeListScreen(api, {}, {}, {}) }),
+    RECIPES_EMPTY(emptyRecipes = true, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}) }),
     RECIPE_DETAIL(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
     // Opened from a planned meal: the amounts of 1.5 of the recipe's 2 servings, and nothing to cook for leftovers.
     RECIPE_FROM_MEAL(heightDp = 1700, content = { api, _ ->
@@ -177,6 +213,9 @@ enum class Shot(
     FOCUS_FILLED_BUTTON(heightDp = 200, content = { _, _ -> focusRing(0) }),
     FOCUS_OUTLINED_BUTTON(heightDp = 200, content = { _, _ -> focusRing(1) }),
     FOCUS_ICON_BUTTON(heightDp = 200, content = { _, _ -> focusRing(2) }),
+    // What adding a recipe with an ingredient still to link says: two actions, in a snackbar.
+    SNACKBAR_LINK(heightDp = 200, content = { _, _ -> addedSnackbar() }),
+    SNACKBAR_LINK_NL(dutch = true, heightDp = 200, content = { _, _ -> addedSnackbar() }),
     SHELL(content = { _, settings -> shell(settings) }),
     // The dialog's body: a dialog is a window of its own that the picture of the frame does not include.
     UPDATE_NOTES(content = { _, _ ->
@@ -279,7 +318,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
             scenario.onActivity { activity ->
                 activity.setContent { Frame { shot.content(api, backend.settings) } }
             }
-            compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Loading…").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText(if (shot.dutch) "Laden…" else "Loading…").fetchSemanticsNodes().isEmpty() }
             // Some screens load a second thing after the first; give it a moment, then let the UI settle.
             Thread.sleep(300)
             compose.waitForIdle()
@@ -302,7 +341,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         val pictures = remember { fakeImageLoader(RuntimeEnvironment.getApplication(), failing = { "feta" in it }) }
         CompositionLocalProvider(
             LocalDensity provides Density(density.density, look.fontScale),
-            LocalStrings provides Strings.English,
+            LocalStrings provides if (shot.dutch) Strings.Dutch else Strings.English,
             LocalProductImageLoader provides pictures,
             LocalRecipeImages provides RecipeImages(pictures, "http://fake", { null }),
         ) {
@@ -338,5 +377,5 @@ private fun recipesRefreshFailed(api: ApiClient) {
     val unreachable = remember {
         ApiClient(ServerSettings("http://localhost"), engine = MockEngine { respond("""{"error":"down"}""", HttpStatusCode.InternalServerError) })
     }
-    CompositionLocalProvider(LocalScreenMemory provides memory) { RecipeListScreen(unreachable, {}, {}, {}) }
+    CompositionLocalProvider(LocalScreenMemory provides memory) { RecipeListScreen(unreachable, {}, {}, {}, {}) }
 }

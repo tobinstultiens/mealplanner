@@ -70,7 +70,7 @@ class StayCurrentScreensTest {
             // As App does: a new client comes with a new memory, and the open screen stays where it is.
             val memory = remember(current) { ScreenMemory() }
             CompositionLocalProvider(LocalStrings provides Strings.English, LocalScreenMemory provides memory) {
-                RecipeListScreen(current, onOpen = {}, onOpenMapping = {}, onNewRecipe = {})
+                RecipeListScreen(current, onOpen = {}, onOpenMapping = {}, onOpenBank = {}, onNewRecipe = {})
             }
         }
         waitFor("Overnight oats")
@@ -84,7 +84,7 @@ class StayCurrentScreensTest {
     fun aFailedRefreshBehindKeptContentIsShownWithARetry() {
         compose.setContent {
             CompositionLocalProvider(LocalStrings provides Strings.English) {
-                RecipeListScreen(api, onOpen = {}, onOpenMapping = {}, onNewRecipe = {})
+                RecipeListScreen(api, onOpen = {}, onOpenMapping = {}, onOpenBank = {}, onNewRecipe = {})
             }
         }
         waitFor("Overnight oats")
@@ -101,7 +101,7 @@ class StayCurrentScreensTest {
     fun theLineHasRoomOfItsOwnBelowTheEndOfTheList() {
         compose.setContent {
             CompositionLocalProvider(LocalStrings provides Strings.English) {
-                RecipeListScreen(api, onOpen = {}, onOpenMapping = {}, onNewRecipe = {})
+                RecipeListScreen(api, onOpen = {}, onOpenMapping = {}, onOpenBank = {}, onNewRecipe = {})
             }
         }
         waitFor("Overnight oats")
@@ -135,7 +135,7 @@ class StayCurrentScreensTest {
         val server = Flaky()
         compose.setContent {
             CompositionLocalProvider(LocalStrings provides Strings.English) {
-                RecipeListScreen(server.api, onOpen = {}, onOpenMapping = {}, onNewRecipe = {})
+                RecipeListScreen(server.api, onOpen = {}, onOpenMapping = {}, onOpenBank = {}, onNewRecipe = {})
             }
         }
         waitFor("No recipes yet")

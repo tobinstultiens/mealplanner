@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.ShoppingList
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.ServerResponseException
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -127,5 +128,73 @@ class ApiClientTest {
             engine = MockEngine { respond("""{"error":"No recipe 12"}""", HttpStatusCode.NotFound, headersOf(HttpHeaders.ContentType, "application/json")) },
         )
         assertFailsWith<ClientRequestException> { refused.chooseRecipe("2026-11-16", 4, MealSlot.DINNER, 12) }
+    }
+
+    private val bankRecipe =
+        """{"id":8,"title":"Miso aubergine","section":"Dinner","tags":[],"servings":2,"source":"COOKING_SITE","kind":"MEAL","plannable":true,"added":false,"inRotation":false}"""
+
+    /** A client whose server answers [status] and [body] to everything, and which remembers what it was asked. */
+    private fun recipeServer(status: HttpStatusCode, body: String, asked: MutableList<String> = mutableListOf()) = ApiClient(
+        ServerSettings("http://localhost"),
+        engine = MockEngine { request ->
+            asked += "${request.method.value} ${request.url.encodedPath} ${(request.body as? TextContent)?.text.orEmpty()}"
+            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
+        },
+    )
+
+    @Test
+    fun theBankIsReadWithItsFlags() = runTest {
+        val bank = client("[$bankRecipe]").recipeBank()!!
+        assertEquals(listOf(8L), bank.map { it.id })
+        assertEquals(false, bank.single().added)
+        assertEquals(false, bank.single().inRotation)
+    }
+
+    @Test
+    fun aRecipeWithoutTheFlagsIsMineAndInTheRotationAsOnAServerFromBeforeTheBank() = runTest {
+        val recipe = client(
+            """[{"id":1,"title":"Soup","section":"Dinner","tags":[],"servings":2,"source":"COOKING_SITE","kind":"MEAL","plannable":true}]""",
+        ).recipes().single()
+        assertEquals(true, recipe.added)
+        assertEquals(true, recipe.inRotation)
+        assertEquals(false, recipe.removedFromSite)
+    }
+
+    @Test
+    fun aServerFromBeforeTheBankHasNoBank() = runTest {
+        // It reads `bank` as a recipe id and refuses: 400 with its sentence (or a plain 404).
+        assertNull(recipeServer(HttpStatusCode.BadRequest, """{"error":"Recipe id must be a number"}""").recipeBank())
+        assertNull(recipeServer(HttpStatusCode.NotFound, "").recipeBank())
+        // Any other failure is a failure, not "no bank".
+        assertFailsWith<ServerResponseException> { recipeServer(HttpStatusCode.InternalServerError, "{}").recipeBank() }
+    }
+
+    @Test
+    fun addingAndTheRotationSendTheirBodiesToTheirRoutes() = runTest {
+        val detail = """{"summary":$bankRecipe,"ingredients":[],"instructions":"","problems":[]}"""
+        val asked = mutableListOf<String>()
+        val api = recipeServer(HttpStatusCode.OK, detail, asked)
+        api.setRecipeAdded(8, added = true, inRotation = false)
+        api.setRecipeRotation(8, inRotation = true)
+        val many = recipeServer(HttpStatusCode.OK, "[$bankRecipe]", asked)
+        many.setRecipesAdded(listOf(8, 9), added = true)
+        many.setRecipesRotation(listOf(1, 2), inRotation = false)
+        assertEquals(
+            listOf(
+                """PUT /api/recipes/8/added {"added":true,"inRotation":false}""",
+                """PUT /api/recipes/8/rotation {"inRotation":true}""",
+                """PUT /api/recipes/added {"ids":[8,9],"added":true,"inRotation":true}""",
+                """PUT /api/recipes/rotation {"ids":[1,2],"inRotation":false}""",
+            ),
+            asked,
+        )
+    }
+
+    @Test
+    fun aRefusalCarriesTheServersSentence() = runTest {
+        val api = recipeServer(HttpStatusCode.Conflict, """{"error":"“Lentil soup” is planned on Fri 20 Nov"}""")
+        val failed = load { api.setRecipeAdded(5, added = false) } as Load.Failed
+        assertEquals(409, failed.status)
+        assertEquals("“Lentil soup” is planned on Fri 20 Nov", failed.message)
     }
 }

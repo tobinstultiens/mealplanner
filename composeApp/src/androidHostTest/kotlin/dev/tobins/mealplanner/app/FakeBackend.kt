@@ -32,7 +32,12 @@ import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
+import dev.tobins.mealplanner.api.AddedInput
+import dev.tobins.mealplanner.api.ManyAddedInput
+import dev.tobins.mealplanner.api.ManyRotationInput
+import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.TargetSuggestion
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightEntry
@@ -42,6 +47,11 @@ import dev.tobins.mealplanner.shopping.ShopSection
 import dev.tobins.mealplanner.units.Dimension
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.encodeToJsonElement
 import java.net.InetAddress
 import java.net.InetSocketAddress
 
@@ -57,7 +67,19 @@ class FakeBackend(
     private val emptyOffers: Boolean = false,
     private val emptyPrices: Boolean = false,
     private val emptyRecipes: Boolean = false,
+    /** A server from before the recipe bank: no bank route, and recipes without the flags of mine and the rotation. */
+    private val olderServer: Boolean = false,
 ) : AutoCloseable {
+    /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
+    val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+
+    /** Every call the server got, as `GET /api/recipes/bank`, for a test to tell that something was asked (or not). */
+    val requests: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+
+    /** A sentence that makes every change of recipes answer 409, as the server does for a recipe planned on Friday. */
+    @Volatile
+    var refusing: String? = null
+
     private val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
         createContext("/") { exchange -> exchange.respond() }
         start()
@@ -75,8 +97,14 @@ class FakeBackend(
             close()
             return
         }
+        val sent = requestBody.readBytes().decodeToString()
+        requests += "$requestMethod ${requestURI.path}"
+        var status = 200
         val body = try {
-            route(requestURI.path)
+            route(requestMethod, requestURI.path, sent)
+        } catch (e: Refusal) {
+            status = e.status
+            """{"error":${json.encodeToString(e.message)}}"""
         } catch (e: Exception) {
             null
         }
@@ -85,21 +113,30 @@ class FakeBackend(
         } else {
             val bytes = body.toByteArray()
             responseHeaders.add("Content-Type", "application/json")
-            sendResponseHeaders(200, bytes.size.toLong())
+            sendResponseHeaders(status, bytes.size.toLong())
             responseBody.use { it.write(bytes) }
         }
         close()
     }
 
-    private fun route(path: String): String? {
+    /** What the server answers with an error and its sentence, as `{"error": "..."}`. */
+    private class Refusal(val status: Int, message: String) : Exception(message)
+
+    private fun route(method: String, path: String, sent: String): String? {
         val parts = path.trim('/').split('/')
+        if (parts.getOrNull(1) == "recipes" && method != "GET") return changeRecipes(method, parts, sent)
         return when {
             path == "/api/me" -> json.encodeToString(Me("anna", "Anna"))
             path == "/api/foods/dataset" -> json.encodeToString(FoodDataset(2328, "NEVO online version 2025/9.0, RIVM, Bilthoven"))
-            path == "/api/recipes" -> json.encodeToString(if (emptyRecipes) emptyList() else recipes)
-            parts.size == 3 && parts[1] == "recipes" -> json.encodeToString(recipeDetail(parts[2].toLong()))
+            path == "/api/recipes" -> recipesJson(if (emptyRecipes) emptyList() else mine())
+            // A server from before the bank reads `bank` as a recipe id.
+            path == "/api/recipes/bank" -> if (olderServer) throw Refusal(400, "Recipe id must be a number") else recipesJson(bank())
+            parts.size == 3 && parts[1] == "recipes" -> detailJson(parts[2].toLong())
             path == "/api/routines" -> json.encodeToString(Routines(breakfast = 1))
-            path == "/api/sync/cooking" -> json.encodeToString(CookingSyncStatus("2026-11-17T20:00:00Z", "a1b2c3d", null, 6))
+            // A sync that found three new recipes (in the bank on a server that has one) and changed one.
+            method == "PUT" && path == "/api/sync/cooking/repo" -> json.encodeToString(CookingSyncStatus("2026-11-18T10:00:00Z", "d4e5f6a", null, 12, repoUrl = "https://example.com/cooking.git"))
+            method == "POST" && path == "/api/sync/cooking" -> json.encodeToString(SyncResult(added = 3, updated = 1, unchanged = 6, removed = 0, problems = emptyMap()))
+            path == "/api/sync/cooking" -> json.encodeToString(CookingSyncStatus("2026-11-17T20:00:00Z", "a1b2c3d", null, 6, repoUrl = "https://example.com/cooking.git"))
             parts.size == 3 && parts[1] == "days" -> json.encodeToString(day(parts[2]))
             parts.size == 3 && parts[1] == "plans" -> json.encodeToString(plan(parts[2]))
             // Choosing a recipe for a meal: the plan, which already has such a choice.
@@ -269,37 +306,160 @@ class FakeBackend(
         )
     }
 
-    private fun summary(id: Long, title: String, section: String, kcal: Double, protein: Double, rating: Int?, tags: List<String> = emptyList(), photo: Boolean = false) = RecipeSummary(
+    private fun summary(
+        id: Long,
+        title: String,
+        section: String,
+        kcal: Double,
+        protein: Double,
+        rating: Int?,
+        tags: List<String> = emptyList(),
+        photo: Boolean = false,
+        inRotation: Boolean = true,
+        added: Boolean = true,
+        removedFromSite: Boolean = false,
+        /** Ingredients left out of the numbers: the recipe is incomplete until they are linked. */
+        uncounted: List<String> = emptyList(),
+        source: RecipeSource = RecipeSource.COOKING_SITE,
+        kind: RecipeKind = RecipeKind.MEAL,
+    ) = RecipeSummary(
         id = id,
         title = title,
         section = section,
         tags = tags,
         servings = 2,
-        source = RecipeSource.COOKING_SITE,
-        kind = RecipeKind.MEAL,
+        source = source,
+        kind = kind,
         plannable = true,
         nutrition = RecipeNutrition(
             Nutrition(kcal, protein, 22.0, 6.0, 48.0, 7.0, 9.0, 620.0),
-            complete = true, approximate = false, uncounted = emptyList(),
+            complete = uncounted.isEmpty(), approximate = false, uncounted = uncounted,
         ),
-        mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER),
+        mealSlots = if (kind == RecipeKind.MEAL) listOf(MealSlot.LUNCH, MealSlot.DINNER) else emptyList(),
         rating = rating,
         cost = RecipeCost(2.40, 2.10),
         imageUrl = if (photo) "/api/recipes/$id/image?v=0a1b2c" else null,
+        added = added,
+        inRotation = inRotation,
+        removedFromSite = removedFromSite,
     )
 
-    private val recipes = listOf(
+    /**
+     * Every recipe the account has: the first seven are mine, the rest wait in the bank. Of mine, the tuna salad
+     * and the shakshuka are out of the rotation (the shakshuka's file has left the cooking site), the lentil soup
+     * is in it with a ingredient not linked yet, and the peanut sauce is a sauce, not a meal.
+     */
+    private val rows = mutableListOf(
         // Two recipes have a photo, like the real ones where a few do; the others show how the screens look without.
         summary(1, "Overnight oats with blueberries", "Breakfast", 460.0, 24.0, 4, listOf("quick", "vegetarian"), photo = true),
         summary(2, "Chickpea salad with feta and roasted peppers", "Lunch", 640.0, 42.0, 5, listOf("vegetarian")),
-        summary(3, "Tuna pasta salad", "Lunch", 610.0, 38.0, null),
+        summary(3, "Tuna pasta salad", "Lunch", 610.0, 38.0, null, inRotation = false),
         summary(4, "Slow-cooked chicken thighs with coconut, lemon and spinach", "Dinner", 810.0, 55.0, 5, listOf("meal prep", "gluten free"), photo = true),
-        summary(5, "Lentil soup", "Dinner", 520.0, 31.0, 3),
-        summary(6, "Shakshuka", "Dinner", 560.0, 29.0, 4, listOf("vegetarian", "eggs")),
+        summary(5, "Lentil soup", "Dinner", 520.0, 31.0, 3, uncounted = listOf("red lentils")),
+        summary(6, "Shakshuka", "Dinner", 560.0, 29.0, 4, listOf("vegetarian", "eggs"), inRotation = false, removedFromSite = true),
+        summary(7, "Peanut sauce", "", 180.0, 6.0, null, source = RecipeSource.MANUAL, kind = RecipeKind.COMPONENT),
+        summary(8, "Miso aubergine with sesame rice", "Dinner", 590.0, 18.0, null, listOf("vegan"), added = false, inRotation = false),
+        summary(9, "Greek yoghurt pancakes", "Breakfast", 430.0, 28.0, null, listOf("quick", "vegetarian"), photo = true, added = false, inRotation = false),
+        summary(10, "Harissa chickpea stew", "Dinner", 540.0, 22.0, null, listOf("vegan", "spicy"), added = false, inRotation = false, uncounted = listOf("harissa", "preserved lemon")),
+        summary(11, "Soba noodle salad", "Lunch", 480.0, 20.0, null, listOf("vegan"), added = false, inRotation = false),
+        summary(12, "Banana oat cookies", "Snack", 210.0, 5.0, null, listOf("vegan"), added = false, inRotation = false),
     )
 
+    private fun mine() = rows.filter { it.added }
+
+    private fun bank() = rows.filter { !it.added }
+
+    /** The recipes that are planned in the sample week: the server refuses to put them back. */
+    private val planned = setOf(2L, 4L, 5L)
+
+    /** The recipe pinned as the breakfast routine (see `/api/routines`): it can neither leave the rotation nor my recipes. */
+    private val routine = 1L
+
+    private fun row(id: Long) = rows.first { it.id == id }
+
+    private val flags = setOf("added", "inRotation", "removedFromSite")
+
+    /** [this] as an older server sends recipes: without the fields of mine, the rotation and the site. */
+    private fun JsonElement.withoutFlags(): JsonElement = when (this) {
+        is JsonArray -> JsonArray(map { it.withoutFlags() })
+        // A recipe's detail holds its summary; a summary is the object with the flags.
+        is JsonObject -> when {
+            "summary" in this -> JsonObject(mapValues { (key, value) -> if (key == "summary") value.withoutFlags() else value })
+            else -> JsonObject(filterKeys { it !in flags })
+        }
+        else -> this
+    }
+
+    private fun recipesJson(list: List<RecipeSummary>): String =
+        json.encodeToJsonElement(list).let { if (olderServer) it.withoutFlags() else it }.toString()
+
+    private fun detailJson(id: Long): String =
+        json.encodeToJsonElement(recipeDetail(id)).let { if (olderServer) it.withoutFlags() else it }.toString()
+
+    /**
+     * The changes of recipes the app can make, answering as the server does, refusals included: a recipe
+     * that is planned or the routine cannot be put back (409), nor can one made in the app, which is
+     * deleted instead. [refusing] makes every change fail with its sentence. Many at once is all or nothing.
+     */
+    private fun changeRecipes(method: String, parts: List<String>, sent: String): String? {
+        changes += "$method /${parts.joinToString("/")} $sent"
+        if (method == "DELETE" && parts.size == 3) {
+            rows.removeAll { it.id == parts[2].toLong() }
+            return ""
+        }
+        if (olderServer || method != "PUT") return null
+        refusing?.let { throw Refusal(409, it) }
+        val many = parts.size == 3
+        return when (parts.last()) {
+            "added" -> if (many) {
+                val input = json.decodeFromString<ManyAddedInput>(sent)
+                setAdded(input.ids, input.added, input.inRotation)
+                recipesJson(mine())
+            } else {
+                val input = json.decodeFromString<AddedInput>(sent)
+                val id = parts[2].toLong()
+                setAdded(listOf(id), input.added, input.inRotation)
+                detailJson(id)
+            }
+            "rotation" -> if (many) {
+                val input = json.decodeFromString<ManyRotationInput>(sent)
+                setRotation(input.ids, input.inRotation)
+                recipesJson(mine())
+            } else {
+                val id = parts[2].toLong()
+                setRotation(listOf(id), json.decodeFromString<RotationInput>(sent).inRotation)
+                detailJson(id)
+            }
+            else -> null
+        }
+    }
+
+    private fun setAdded(ids: List<Long>, added: Boolean, inRotation: Boolean) {
+        val targets = ids.map(::row)
+        if (!added) {
+            targets.forEach { recipe ->
+                when {
+                    recipe.source != RecipeSource.COOKING_SITE ->
+                        throw Refusal(409, "“${recipe.title}” was made in the app, so it has no bank to go back to: delete it instead")
+                    recipe.id == routine -> throw Refusal(409, "“${recipe.title}” is the breakfast routine, so it cannot go back to the bank")
+                    recipe.id in planned ->
+                        throw Refusal(409, "“${recipe.title}” is planned on Fri 20 Nov, so it cannot go back to the bank yet")
+                }
+            }
+        }
+        rows.replaceAll { if (it.id !in ids) it else if (added) it.copy(added = true, inRotation = inRotation) else it.copy(added = false, inRotation = false) }
+    }
+
+    private fun setRotation(ids: List<Long>, inRotation: Boolean) {
+        val targets = ids.map(::row)
+        if (!inRotation) {
+            targets.firstOrNull { it.id == routine }?.let { throw Refusal(409, "“${it.title}” is the breakfast routine, so it cannot leave the rotation") }
+        }
+        rows.replaceAll { if (it.id in ids) it.copy(inRotation = inRotation) else it }
+    }
+
     private fun recipeDetail(id: Long) = RecipeDetail(
-        summary = recipes.first { it.id == id },
+        summary = row(id),
         ingredients = listOf(
             line(700.0, "g", Dimension.WEIGHT, "chicken thigh fillet"),
             line(400.0, "ml", Dimension.VOLUME, "coconut milk"),

@@ -7,6 +7,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -18,7 +19,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** The recipe screen's one switch ("As written"); the planner chips above it are toggleable too. */
+/** The recipe screen's switches: "In my rotation" first, "As written" last of all; the planner chips above it are toggleable too. */
 private val isSwitch = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)
 
 /** A recipe opened from a meal keeps "As written" when Android re-creates the screen (rotation, dark mode, language). */
@@ -49,12 +50,12 @@ class RecipeRestorationTest {
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(isSwitch).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("525 g chicken thigh fillet", substring = true).assertExists()
 
-        compose.onNode(isSwitch).performScrollTo().performClick()
+        compose.onAllNodes(isSwitch).onLast().performScrollTo().performClick()
         compose.onNodeWithText("700 g chicken thigh fillet", substring = true).assertExists()
 
         restoration.emulateSavedInstanceStateRestore()
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(isSwitch).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNode(isSwitch).assertIsOn()
+        compose.onAllNodes(isSwitch).onLast().assertIsOn()
         compose.onNodeWithText("700 g chicken thigh fillet", substring = true).assertExists()
     }
 }
