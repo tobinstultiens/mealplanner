@@ -10,7 +10,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 
 @Composable
-actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) =
+actual fun BackHandler(enabled: Boolean, rearm: Int, onBack: () -> Unit) =
     androidx.activity.compose.BackHandler(enabled, onBack)
 
 @Composable

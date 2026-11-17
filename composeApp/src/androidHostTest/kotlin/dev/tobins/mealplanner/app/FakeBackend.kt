@@ -21,6 +21,8 @@ import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PricesState
+import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RecipeCost
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKind
@@ -132,6 +134,7 @@ class FakeBackend(
             // A server from before the bank reads `bank` as a recipe id.
             path == "/api/recipes/bank" -> if (olderServer) throw Refusal(400, "Recipe id must be a number") else recipesJson(bank())
             parts.size == 3 && parts[1] == "recipes" -> detailJson(parts[2].toLong())
+            path == "/api/profile" -> profileJson(method, sent)
             path == "/api/routines" -> json.encodeToString(Routines(breakfast = 1))
             // A sync that found three new recipes (in the bank on a server that has one) and changed one.
             method == "PUT" && path == "/api/sync/cooking/repo" -> json.encodeToString(
@@ -166,6 +169,19 @@ class FakeBackend(
     }
 
     private val targets = DailyTargets(2100, 130)
+
+    /** The profile the server holds; null for an account that has not saved one. A test may set it before the screen loads. */
+    @Volatile
+    var profile: Profile? = null
+
+    /** `GET /api/profile`, and `PUT` which stores what was sent (the targets stay the fixed ones). */
+    private fun profileJson(method: String, sent: String): String {
+        if (method == "PUT") {
+            profile = json.decodeFromString<Profile>(sent)
+            changes += "PUT /api/profile $sent"
+        }
+        return json.encodeToString(ProfileState(profile, targets.takeIf { profile != null }, targets.takeIf { profile != null }, 2400.takeIf { profile != null }))
+    }
 
     private fun ingredient(id: Long, name: String, staple: Boolean = false) = Ingredient(id, name, null, null, null, null, null, isStaple = staple)
 
@@ -418,6 +434,8 @@ class FakeBackend(
             rows.removeAll { it.id == parts[2].toLong() }
             return ""
         }
+        // A recipe made or edited in the editor: the answer is always the sample recipe, which the screen only passes on.
+        if (method == "POST" || (method == "PUT" && parts.size == 3 && parts[2].toLongOrNull() != null)) return detailJson(parts.getOrNull(2)?.toLong() ?: 4)
         if (olderServer || method != "PUT") return null
         refusing?.let { throw Refusal(409, it) }
         val many = parts.size == 3

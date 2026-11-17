@@ -211,6 +211,9 @@ enum class Shot(
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
+    // Going back from the profile or the recipe editor with unsaved changes: the dialog's body, as a dialog is a window of its own.
+    DISCARD_QUESTION(heightDp = 260, content = { _, _ -> DiscardQuestion({}, {}) }),
+    DISCARD_QUESTION_NL(dutch = true, heightDp = 260, content = { _, _ -> DiscardQuestion({}, {}) }),
     // A screen's load error: the plain sentence, with the exception's own text behind "Details".
     LOAD_FAILED(content = { _, _ ->
         ErrorMessage(
