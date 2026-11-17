@@ -148,8 +148,18 @@ data class CookingSyncStatus(
     val error: String?,
     /** How often the server syncs on its own; null when it doesn't (no repo URL configured). */
     val everyHours: Int?,
-    /** The account's cooking-site repository; null when none is set. */
+    /**
+     * The repository the account's bank comes from: its own, or the server's when [shared] (then without
+     * a user name or password in it, for an account other than the server's owner). Null when there is none,
+     * or the server's site is a checkout on its disk.
+     */
     val repoUrl: String? = null,
+    /** True when the bank comes from the server's own cooking site, not from a repository the account set. */
+    val shared: Boolean = false,
+    /** True when the server has a cooking site this account may choose ([CookingRepoSetting] without a URL). */
+    val serverSite: Boolean = false,
+    /** The address of that site, to name it, without a user name or password; null when it is a checkout on the server's disk. */
+    val serverRepoUrl: String? = null,
 )
 
 /** Outcome of `POST /api/sync/cooking`. */

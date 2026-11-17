@@ -28,6 +28,17 @@ Gatus checks `/health`.
    `MEALPLANNER_OWNER` and `MEALPLANNER_ANDROID_CERTS` (the release key's certificate fingerprint, for
    the App Link).
 
+## The cooking site
+
+`COOKING_REPO_URL` (set in the container's `env`, with `COOKING_REPO_PATH` for where its clone goes) is the
+server's cooking site. Since issue 208 it is the recipe bank of every account that has not chosen another site
+or none in the app, not only the owner's: each account finds its recipes in its bank and adds the ones it cooks.
+The server fetches it once every six hours into one clone and imports it into each account; the owner's data and
+clone stay where they were. An account that had set a repository of its own keeps it. Every account sees the
+site's address in the app, without a user name or password in it; the owner sees it as configured. To keep the
+site to the owner, as before, set `COOKING_REPO_SHARED=0` (in the Ansible repo's `docker/mealplanner.yml`); other
+accounts then set a site of their own on the recipe bank screen, or have none.
+
 The database and the cooking repo checkout live next to the NEVO file in
 `<docker_config_dir>/mealplanner`, owned by uid 1000 (the container runs as 1000:1000). So do the
 recipe pictures, in `recipe-images/` next to the database (`MEALPLANNER_IMAGE_DIR` moves them): that
@@ -110,8 +121,8 @@ to the container's `env` in `docker/mealplanner.yml`.
 
 A release built with the server's address (README, "Releases") opens Authelia's login page at once.
 Otherwise the app's login screen asks for the server: `https://mealplanner.<DOMAIN>`. The web client
-is served on the same address and goes to the same login page. Each account sets its own cooking
-site on the Recipes tab.
+is served on the same address and goes to the same login page. Each account's recipe bank is the
+server's cooking site unless it chooses a repository of its own, or none, on the recipe bank screen.
 
 ## Kubernetes
 

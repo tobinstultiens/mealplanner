@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.api
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /**
@@ -22,9 +24,20 @@ data class Me(
     val displayName: String?,
 )
 
-/** An account's cooking-site repository, set with `PUT /api/sync/cooking/repo`. */
+/**
+ * Where an account's recipe bank comes from, set with `PUT /api/sync/cooking/repo`: a repository of its
+ * own ([url]), the server's cooking site (no [url]), or nothing at all ([noSite]).
+ */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class CookingRepoSetting(
-    /** A git URL (https://… or git@…), or null for none. */
+    /** A git URL (https://… or git@…) of the account's own repository, or null for none of its own. */
     val url: String?,
+    /**
+     * With no [url]: true for no cooking site at all, false (what apps before it meant by no URL) for the
+     * server's own, when it offers one ([CookingSyncStatus.serverSite]). Never sent when false, so a
+     * server from before it, which refuses fields it does not know, still takes every other choice.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val noSite: Boolean = false,
 )

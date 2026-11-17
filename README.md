@@ -70,11 +70,26 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
   ingredient catalogue. `GET /api/me` names the caller.
 - Data from before accounts existed belongs to account 1, which `MEALPLANNER_OWNER` (a username)
   claims on first login, or else the first account to log in.
-- Each account can set its own cooking-site repository (the recipe bank screen, `PUT /api/sync/cooking/repo`); it
-  is cloned under `<data dir>/users/<id>/cooking` and synced every six hours. `COOKING_REPO_URL` and
-  `COOKING_REPO_PATH` only serve the owner until they set one. A sync also keeps a web-sized copy of
-  each recipe's picture (see `docs/data-sources.md`, "Recipe pictures"), served only to that account.
-  The site's recipes go to the account's bank, not straight into its recipes: see the next section.
+- The server's cooking site (`COOKING_REPO_URL`, or the checkout at `COOKING_REPO_PATH`) is the bank of every
+  account that has not chosen otherwise (issue 208); with `COOKING_REPO_SHARED=0` it is the owner's alone, as
+  before. On the recipe bank screen an account chooses where its bank comes from (`PUT /api/sync/cooking/repo`):
+  the server's site (`{"url": null}`), a git repository of its own (`{"url": "https://…"}`, cloned under
+  `<data dir>/users/<id>/cooking`), or none (`{"url": null, "noSite": true}`). An account that had set a
+  repository of its own before keeps it. `GET /api/sync/cooking` says which is in use: `shared` (the server's
+  site), `serverSite` (the server offers its site to this account) and `serverRepoUrl` (its address, to name it).
+  The server's address is shown to accounts other than the owner without a user name or password in it, and so
+  are the errors of its fetch.
+- The server's site is one clone, fetched once every six hours and then imported into each account that reads
+  it, as rows of the account's own: adding, rating, the rotation and the ingredient links stay per account, and
+  an edit on the site reaches every account. A repository of an account's own is fetched as often. A new account
+  finds the server's site in its bank on its first visit there (`GET /api/recipes/bank` imports it when the account
+  was never synced), without waiting for the schedule. `POST /api/sync/cooking` fetches the account's site at once.
+- Choosing another site leaves the old one at once: its bank-only recipes leave the bank, those the account added
+  stay among its recipes as no longer on the site (until the new site has them), and its pictures go; the new site
+  is imported by the sync the app asks for next (or, for the server's site, the next visit to the bank). A
+  sync also keeps a web-sized copy of each recipe's picture (see `docs/data-sources.md`, "Recipe pictures") per
+  account, served only to that account. The site's recipes go to the account's bank, not straight into its
+  recipes: see the next section.
 
 ## Recipes: the bank, my recipes and the rotation
 
@@ -156,7 +171,7 @@ Offers and shopping-list rows show the product's picture from the store (Coil 3;
 
 **The Recipes tab and the bank** (issues 205 and 206; the words are those of "Recipes: the bank, my recipes and the rotation"). The Recipes tab lists my recipes (`GET /api/recipes`). A choice above the list, All, Rotation or Not in rotation, each with the number of recipes it shows, narrows it (kept like the search text; "Meals only" and the search work within it). A row's switch puts the recipe in the rotation or takes it out without opening it, and fails with the server's sentence in the usual line at the bottom, the row going back. A long press on a row, or "Select recipes" in the menu (for whoever has no long press, as on the web), selects several: the bar at the bottom has "Select all" (what the choice shows), "Add to rotation", "Take out of rotation" and "Remove from my recipes". The last leaves out the recipes made in the app, which have no bank to go back to (the server answers 409 for one), and the message says how many stayed; they are deleted from their own screen (menu → Delete). A refusal (a recipe planned this week or later, or the breakfast or snack routine) shows the server's sentence. A rotation recipe the planner will still skip says so on its row (no amounts or ingredients still to link: the existing marks; a sauce: "Not a meal"), and a recipe whose file left the cooking site is marked "No longer on the cooking site". With no recipes the tab offers "Browse the bank" and "New recipe". Sync stays in the Recipes tab's bar; when it found new recipes the snackbar says "3 new recipes in the bank" and its "Show" opens the bank.
 
-The bank (`Route.Bank`, `#/recipes/bank`; `GET /api/recipes/bank`) is opened by "Browse the bank" on the Recipes tab, which says how many recipes wait there. It has the search (title and tags), a chip per section of the cooking site, rows as on the Recipes tab with an Add button, and selecting several for "Add to my recipes"; the cooking-site line with the sync time and the repository (and the Sync button) is here, as it is about the bank. A row opens the recipe read-only: picture, nutrition, ingredients and steps, "Add to my recipes" and under it "Let the planner pick it" (on); no rating, rotation, "Plan as" or routine until it is added. After adding, a snackbar names it with "Undo" and, when ingredients of it are not linked to a food yet, how many, with "Link" to the linking screen. On one of my recipes the screen has the switch "In my rotation" above "Plan as" with a line under it; from the site a recipe is taken out with "Remove from my recipes" in the menu (a 409 says why not), one made in the app with "Delete". The recipe picker for a meal lists my recipes, those in the rotation first and the rest under their own heading (a recipe only in the bank is not offered; by hand any of mine can be planned), with "Browse the bank…" under the list; the Plan says when slots stay empty because the rotation is empty, with a link to the Recipes tab. Against a server from before the bank (no `GET /api/recipes/bank`: it answers 400 or 404, and the recipes carry no flags) every recipe is mine and in the rotation, "Browse the bank" is not offered, and a switch that cannot be changed fails like any other change.
+The bank (`Route.Bank`, `#/recipes/bank`; `GET /api/recipes/bank`) is opened by "Browse the bank" on the Recipes tab, which says how many recipes wait there. It has the search (title and tags), a chip per section of the cooking site, rows as on the Recipes tab with an Add button, and selecting several for "Add to my recipes"; the cooking-site line with the sync time ("This server's cooking site, synced …" when the bank is the server's) and the Sync button are here, as they are about the bank. Tapping the line opens the cooking-site dialog, which offers where the bank comes from: this server's cooking site (named by its address; only when the server offers it), a repository of my own (with the field for its address), or none; saving imports from the chosen site at once (issue 208). Against a server from before that, the dialog offers a repository of my own or none, which clears it. A row opens the recipe read-only: picture, nutrition, ingredients and steps, "Add to my recipes" and under it "Let the planner pick it" (on); no rating, rotation, "Plan as" or routine until it is added. After adding, a snackbar names it with "Undo" and, when ingredients of it are not linked to a food yet, how many, with "Link" to the linking screen. On one of my recipes the screen has the switch "In my rotation" above "Plan as" with a line under it; from the site a recipe is taken out with "Remove from my recipes" in the menu (a 409 says why not), one made in the app with "Delete". The recipe picker for a meal lists my recipes, those in the rotation first and the rest under their own heading (a recipe only in the bank is not offered; by hand any of mine can be planned), with "Browse the bank…" under the list; the Plan says when slots stay empty because the rotation is empty, with a link to the Recipes tab. Against a server from before the bank (no `GET /api/recipes/bank`: it answers 400 or 404, and the recipes carry no flags) every recipe is mine and in the rotation, "Browse the bank" is not offered, and a switch that cannot be changed fails like any other change.
 
 Recipe photos (from the cooking site) show on the Recipes list, the recipe screen, Today and the Plan, for the recipes that have one; a recipe without one keeps the plain layout, with no placeholder. They come from our own server, so the same loader fetches them with the login token, and the "Show product pictures" setting does not affect them.
 
@@ -198,7 +213,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today, Plan (also with an empty rotation), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank and a recipe from it, recipe detail (in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress,
+Today, Plan (also with an empty rotation), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress,
 Settings and login screens (the login with a known server and with the address asked for), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
@@ -343,12 +358,13 @@ installed side by side: they share the application id but not the signing key.
 | `MEALPLANNER_OIDC_CLIENT_ID` | `mealplanner` | The app's client id at the issuer |
 | `MEALPLANNER_OWNER` | unset | Username that claims the data from before accounts; unset: the first login |
 | `MEALPLANNER_ANDROID_CERTS` | unset | SHA-256 fingerprints of the app's signing certificates, for `assetlinks.json` |
-| `MEALPLANNER_DATA_DIR` | the database's directory | Where per-account cooking repo clones go |
+| `MEALPLANNER_DATA_DIR` | the database's directory | Where per-account cooking repo clones go (and the server's, without `COOKING_REPO_PATH`) |
 | `MEALPLANNER_IMAGE_DIR` | `recipe-images` in the database's directory | Where web-sized copies of the cooking sites' recipe pictures go, one folder per account. Keep it on the same persistent volume as the database: the database says which copies exist |
 | `PORT` | `8080` | Listen port |
 | `MEALPLANNER_DB_URL` | `jdbc:sqlite:.runtime/mealplanner.db` | SQLite database |
-| `COOKING_REPO_URL` | unset | The owner's cooking repo until they set one in the app; cloned and re-synced every six hours |
-| `COOKING_REPO_PATH` | `.runtime/cooking` with a URL | The owner's checkout; without `COOKING_REPO_URL` it is used as is |
+| `COOKING_REPO_URL` | unset | The server's cooking site: the recipe bank of every account that has not chosen another site or none in the app; cloned once and re-synced every six hours. Shown to accounts other than the owner without its user name or password |
+| `COOKING_REPO_PATH` | `.runtime/cooking` with a URL | The server's checkout of that site; without `COOKING_REPO_URL` it is used as is (and synced only when asked) |
+| `COOKING_REPO_SHARED` | on | Set to `0` (or `off`, `false`) to keep the server's cooking site to the owner, as before issue 208; other accounts then set a site of their own or have none |
 | `ANTHROPIC_API_KEY` | unset | Enables recipe generation (`POST /api/recipes/generate`) with Claude; pay per use |
 | `MEALPLANNER_MODEL` | `claude-opus-5-5` | Claude model for generation |
 | `MEALPLANNER_FETCH_OFFERS` | on | Set to `off` to stop fetching store offers and regular prices in the background |

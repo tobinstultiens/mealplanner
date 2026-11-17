@@ -14,16 +14,17 @@ import java.io.File
  * Keeps a local checkout of the cooking repo up to date. With no [url] the directory is
  * used as it is (a checkout managed by hand); with one, it is cloned on first use and
  * reset to the remote branch on every [update], so local edits there are discarded.
- * A remote that says nothing for [timeoutSeconds] fails the update: it runs under the account's
- * sync lock, and the scheduled loop syncs the accounts one after another.
+ * A remote that says nothing for [timeoutSeconds] fails the update: it runs under the clone's
+ * sync lock, and the scheduled loop syncs the clones one after another.
+ * Open so that a test can count the fetches.
  */
-class CookingRepo(val dir: File, val url: String?, private val timeoutSeconds: Int = 60) {
+open class CookingRepo(val dir: File, val url: String?, private val timeoutSeconds: Int = 60) {
 
     /**
      * Brings the checkout up to date with the repo's default branch (whatever it is called).
      * @return the commit now checked out, or null without [url].
      */
-    fun update(): String? {
+    open fun update(): String? {
         if (url == null) return null
         if (!File(dir, ".git").isDirectory) {
             dir.mkdirs()
@@ -35,6 +36,15 @@ class CookingRepo(val dir: File, val url: String?, private val timeoutSeconds: I
             git.reset().setMode(ResetCommand.ResetType.HARD).setRef("origin/${git.repository.branch}").call()
             return git.repository.resolve("HEAD")?.name
         }
+    }
+
+    /** Whether there is something to read: a checkout managed by hand always is, a clone once it was made. */
+    fun cloned(): Boolean = url == null || File(dir, ".git").isDirectory
+
+    /** The commit checked out, as [update] answers it, without fetching; null without [url] or a clone. */
+    fun head(): String? {
+        if (url == null || !cloned()) return null
+        return Git.open(dir).use { it.repository.resolve("HEAD")?.name }
     }
 
     /** The repo's unit table (`data/units.yaml`), or the built-in copy when the file is missing. */

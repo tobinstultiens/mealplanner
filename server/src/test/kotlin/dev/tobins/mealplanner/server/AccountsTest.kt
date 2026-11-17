@@ -61,12 +61,14 @@ import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
+import kotlinx.serialization.json.Json
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -728,7 +730,7 @@ class AccountsTest {
         start()
         val alice = clientFor("alice")
         val bob = clientFor("bob")
-        assertNull(bob.get("/api/sync/cooking").body<CookingSyncStatus>().repoUrl)
+        assertNull(bob.get("/api/sync/cooking").body<CookingSyncStatus>().repoUrl, "no site on this server, none of his own")
         assertEquals(HttpStatusCode.BadRequest, bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting("not a url")) }.status)
 
         val status = bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting("https://example.org/bob/cooking.git")) }.body<CookingSyncStatus>()
@@ -744,7 +746,7 @@ class AccountsTest {
             "content/recipes/pizza/index.md" to PictureFixtures.page("Pizza", "image: pizza.jpg"),
             "content/recipes/pizza/pizza.jpg" to PictureFixtures.jpeg(40, 30),
         )
-        // The server-wide site serves the owner: Alice, who logs in first.
+        // The server's site is the bank of both: Alice, the owner, who logs in first, and Bob.
         val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = site, imageDir = createTempDirectory("images").toFile())
         application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
         val alice = clientFor("alice")
@@ -755,32 +757,165 @@ class AccountsTest {
         val url = pizza.imageUrl!!
         assertEquals(HttpStatusCode.OK, alice.get(url).status)
 
-        // Bob gets nothing, by the picture's URL or by the recipe's id.
+        // Bob sees the picture of the pizza in his own bank, a copy of his own at a URL of his own...
+        val bobsPizza = bob.get("/api/recipes/bank").body<List<RecipeSummary>>().single()
+        assertNotEquals(pizza.id, bobsPizza.id)
+        val bobsUrl = bobsPizza.imageUrl!!
+        assertEquals(HttpStatusCode.OK, bob.get(bobsUrl).status)
+        // ...and gets nothing of Alice's, by the picture's URL or by the recipe's id, nor she of his.
         assertEquals(HttpStatusCode.NotFound, bob.get(url).status)
         assertEquals(HttpStatusCode.NotFound, bob.get("/api/recipes/${pizza.id}/image").status)
-        // Syncing, setting and clearing a site of his own touch only his account.
-        assertEquals(HttpStatusCode.ServiceUnavailable, bob.post("/api/sync/cooking").status)
+        assertEquals(HttpStatusCode.NotFound, alice.get(bobsUrl).status)
+        // Syncing, setting a site of his own and going back to the server's touch only his account.
+        assertEquals(HttpStatusCode.OK, bob.post("/api/sync/cooking").status)
         bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting("https://example.org/bob/cooking.git")) }
+        assertEquals(emptyList(), bob.get("/api/recipes/bank").body<List<RecipeSummary>>(), "the server's bank-only recipes left with its site")
+        assertEquals(HttpStatusCode.NotFound, bob.get(bobsUrl).status)
         bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting(null)) }
+        assertEquals(HttpStatusCode.OK, bob.get(bob.get("/api/recipes/bank").body<List<RecipeSummary>>().single().imageUrl!!).status, "back on the server's site")
         assertEquals(url, alice.get("/api/recipes").body<List<RecipeSummary>>().single().imageUrl)
         assertEquals(HttpStatusCode.OK, alice.get(url).status)
 
-        // Alice moving to another site of her own removes her pictures until that one is synced.
+        // Alice moving to another site of her own removes her pictures until that one is synced; Bob keeps his.
         alice.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting("https://example.org/alice/cooking.git")) }
         assertNull(alice.get("/api/recipes").body<List<RecipeSummary>>().single().imageUrl)
         assertEquals(HttpStatusCode.NotFound, alice.get(url).status)
+        assertTrue(bob.get("/api/recipes/bank").body<List<RecipeSummary>>().single().imageUrl != null)
+    }
+
+    /** A cooking site's pages, each a recipe of 400 g of a [meat] that no catalogue links. */
+    private fun site(vararg titles: String, meat: String = "mystery meat"): File = createTempDirectory("cooking").toFile().also { site ->
+        for (title in titles) {
+            File(site, "content/recipes/${title.lowercase()}.md").apply { parentFile.mkdirs() }
+                .writeText("---\ntitle: $title\n---\n```ingredients\nservings: 2\n400 | g | $meat\n```")
+        }
+    }
+
+    /**
+     * The server's cooking site is the bank of every account (issue 208), as rows of each account's own: Bob's first
+     * look at the bank finds it without a sync, and adding, rating and the rotation in one account leave the other's alone.
+     */
+    @Test
+    fun theServersSiteIsEveryAccountsBankAsItsOwnRecipes() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = site("Stew", "Curry"))
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        alice.post("/api/sync/cooking")
+        val alices = alice.get("/api/recipes/bank").body<List<RecipeSummary>>().associate { it.title to it.id }
+
+        // Bob, who never synced, finds the server's recipes in his bank, and none of them in his recipes.
+        val status = bob.get("/api/sync/cooking").body<CookingSyncStatus>()
+        assertTrue(status.shared && status.serverSite, "$status")
+        val bobs = bob.get("/api/recipes/bank").body<List<RecipeSummary>>().associate { it.title to it.id }
+        assertEquals(setOf("Curry", "Stew"), bobs.keys)
+        assertTrue(bobs.values.none { it in alices.values }, "rows of his own: $bobs, Alice's $alices")
+        assertEquals(emptyList(), bob.get("/api/recipes").body<List<RecipeSummary>>())
+        assertNotNull(bob.get("/api/sync/cooking").body<CookingSyncStatus>().syncedAt, "the first look imported")
+
+        // Bob adds the stew, rates it and takes it out of his rotation: Alice's stew stays in her bank, unrated.
+        bob.put("/api/recipes/${bobs.getValue("Stew")}/added") { setBody(AddedInput(added = true)) }
+        bob.put("/api/recipes/${bobs.getValue("Stew")}/rating") { setBody(RatingInput(5)) }
+        bob.put("/api/recipes/${bobs.getValue("Stew")}/rotation") { setBody(RotationInput(false)) }
+        assertEquals(emptyList(), alice.get("/api/recipes").body<List<RecipeSummary>>())
+        assertEquals(setOf("Curry", "Stew"), alice.get("/api/recipes/bank").body<List<RecipeSummary>>().map { it.title }.toSet())
+        assertNull(alice.get("/api/recipes/${alices.getValue("Stew")}").body<RecipeDetail>().summary.rating)
+
+        // Alice adds both, in her rotation, and rates the curry: Bob's stay as he left them.
+        alice.addWholeBank()
+        alice.put("/api/recipes/${alices.getValue("Curry")}/rating") { setBody(RatingInput(2)) }
+        val bobsStew = bob.get("/api/recipes").body<List<RecipeSummary>>().single()
+        assertEquals(listOf("Stew", "5", "false"), listOf(bobsStew.title, "${bobsStew.rating}", "${bobsStew.inRotation}"))
+        assertEquals(listOf("Curry"), bob.get("/api/recipes/bank").body<List<RecipeSummary>>().map { it.title })
+        assertNull(bob.get("/api/recipes/${bobs.getValue("Curry")}").body<RecipeDetail>().summary.rating)
+        assertTrue(alice.get("/api/recipes").body<List<RecipeSummary>>().all { it.inRotation })
+
+        // Neither reads nor changes the other's recipes by id.
+        for ((reader, ids) in listOf(bob to alices.values, alice to bobs.values)) {
+            for (id in ids) {
+                assertEquals(HttpStatusCode.NotFound, reader.get("/api/recipes/$id").status)
+                assertEquals(HttpStatusCode.NotFound, reader.get("/api/recipes/$id/image").status)
+                assertEquals(HttpStatusCode.NotFound, reader.put("/api/recipes/$id/rating") { setBody(RatingInput(1)) }.status)
+                assertEquals(HttpStatusCode.NotFound, reader.put("/api/recipes/$id/added") { setBody(AddedInput(added = true)) }.status)
+                assertEquals(HttpStatusCode.NotFound, reader.put("/api/recipes/$id/rotation") { setBody(RotationInput(true)) }.status)
+            }
+        }
+        assertNull(bob.get("/api/recipes/${bobs.getValue("Curry")}").body<RecipeDetail>().summary.rating)
+        assertEquals(2, alice.get("/api/recipes/${alices.getValue("Curry")}").body<RecipeDetail>().summary.rating)
+    }
+
+    /** `COOKING_REPO_SHARED=0`: the server's site is the owner's alone, as before issue 208. */
+    @Test
+    fun unsharedTheServersSiteIsOnlyTheOwners() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = site("Stew"), cookingRepoShared = false)
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        assertEquals(listOf("Stew"), alice.get("/api/recipes/bank").body<List<RecipeSummary>>().map { it.title }, "the owner's first look imports too")
+        assertTrue(alice.get("/api/sync/cooking").body<CookingSyncStatus>().shared)
+
+        assertEquals(emptyList(), bob.get("/api/recipes/bank").body<List<RecipeSummary>>())
+        assertEquals(HttpStatusCode.ServiceUnavailable, bob.post("/api/sync/cooking").status)
+        bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting(null)) }
+        assertEquals(emptyList(), bob.get("/api/recipes/bank").body<List<RecipeSummary>>(), "not his to choose")
+        val status = bob.get("/api/sync/cooking").body<CookingSyncStatus>()
+        assertEquals(listOf(false, false), listOf(status.shared, status.serverSite))
+        assertNull(status.serverRepoUrl)
+    }
+
+    /** An account may have no bank at all: what it added stays its own, the rest leaves its bank. */
+    @Test
+    fun anAccountCanChooseNoSite() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = site("Stew", "Curry"))
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        alice.get("/api/recipes/bank")
+        val stew = bob.get("/api/recipes/bank").body<List<RecipeSummary>>().single { it.title == "Stew" }
+        bob.put("/api/recipes/${stew.id}/added") { setBody(AddedInput(added = true)) }
+
+        val none = bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting(null, noSite = true)) }.body<CookingSyncStatus>()
+        assertEquals(listOf(false, true), listOf(none.shared, none.serverSite))
+        assertNull(none.repoUrl)
+        assertEquals(emptyList(), bob.get("/api/recipes/bank").body<List<RecipeSummary>>())
+        assertEquals(listOf("Stew" to true), bob.get("/api/recipes").body<List<RecipeSummary>>().map { it.title to it.removedFromSite })
+        assertEquals(HttpStatusCode.ServiceUnavailable, bob.post("/api/sync/cooking").status)
+        assertEquals(2, alice.get("/api/recipes/bank").body<List<RecipeSummary>>().size, "Alice's bank is hers")
+
+        // Back to the server's site: the curry is in the bank again, and the stew on the site.
+        assertTrue(bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting(null)) }.body<CookingSyncStatus>().shared)
+        assertEquals(listOf("Curry"), bob.get("/api/recipes/bank").body<List<RecipeSummary>>().map { it.title })
+        assertEquals(listOf("Stew" to false), bob.get("/api/recipes").body<List<RecipeSummary>>().map { it.title to it.removedFromSite })
+    }
+
+    /** The server's address may hold a token; only the owner, who configured it, sees it. */
+    @Test
+    fun onlyTheOwnerSeesTheServersSiteWithItsCredentials() = testApplication {
+        val url = "http://reader:s3cret@127.0.0.1:1/cooking.git"
+        val config = ServerConfig(
+            port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = createTempDirectory("clone").toFile(), cookingRepoUrl = url,
+            dataDir = createTempDirectory("data").toFile(),
+        )
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        assertEquals(url, alice.get("/api/sync/cooking").body<CookingSyncStatus>().repoUrl, "the owner's, as before")
+        // Nothing listens there: the fetch fails, and its message is kept for Bob too.
+        assertFalse(bob.post("/api/sync/cooking").status.isSuccess())
+        val text = bob.get("/api/sync/cooking").bodyAsText()
+        val status = Json { ignoreUnknownKeys = true }.decodeFromString<CookingSyncStatus>(text)
+        assertEquals("http://127.0.0.1:1/cooking.git", status.repoUrl)
+        assertEquals("http://127.0.0.1:1/cooking.git", status.serverRepoUrl)
+        assertNotNull(status.error)
+        assertFalse("s3cret" in text || "reader" in text, text)
+        assertEquals(listOf("http://127.0.0.1:1/x and git@host:y"), listOf(CookingSync.withoutCredentials("http://a:b@127.0.0.1:1/x and git@host:y")))
     }
 
     /** The bank, adding and the rotation (issue 205): no route reads or changes another account's recipe. */
     @Test
     fun theBankAndTheRotationStayWithTheirAccount() = testApplication {
-        val site = createTempDirectory("cooking").toFile()
-        for (name in listOf("stew", "curry")) {
-            File(site, "content/recipes/$name.md").apply { parentFile.mkdirs() }
-                .writeText("---\ntitle: ${name.replaceFirstChar(Char::uppercase)}\n---\n```ingredients\nservings: 2\n400 | g | mystery meat\n```")
-        }
-        // The server-wide site serves the owner: Alice, who logs in first. Bob has no site.
-        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = site)
+        // The server's site is the bank of both: Alice, the owner, who logs in first, and Bob.
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = site("Stew", "Curry"))
         application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
         val alice = clientFor("alice")
         val bob = clientFor("bob")
@@ -792,8 +927,11 @@ class AccountsTest {
         val before = alicesState()
         val bobsStew = bob.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary.id
 
-        // Bob reads none of Alice's: not her bank, not her recipes, not her texts to link.
-        assertEquals(emptyList(), bob.get("/api/recipes/bank").body<List<RecipeSummary>>())
+        // Bob reads none of Alice's: not her bank (his has the same recipes, as rows of his own), not her recipes,
+        // not her texts to link.
+        val bobsBank = bob.get("/api/recipes/bank").body<List<RecipeSummary>>()
+        assertEquals(setOf("Stew", "Curry"), bobsBank.map { it.title }.toSet())
+        assertTrue(bobsBank.none { it.id == stew || it.id == curry })
         assertEquals(listOf(bobsStew), bob.get("/api/recipes").body<List<RecipeSummary>>().map { it.id })
         assertTrue(bob.get("/api/mappings/unmapped").body<List<UnmappedText>>().none { it.text == "mystery meat" })
         assertTrue(alice.get("/api/mappings/unmapped").body<List<UnmappedText>>().any { it.text == "mystery meat" }, "Alice's added stew has it")
@@ -818,6 +956,7 @@ class AccountsTest {
         assertEquals(HttpStatusCode.NotFound, alice.put("/api/recipes/$bobsStew/added") { setBody(AddedInput(added = false)) }.status)
         assertEquals(before, alicesState())
         assertTrue(bob.get("/api/recipes").body<List<RecipeSummary>>().single().added)
+        assertEquals(bobsBank, bob.get("/api/recipes/bank").body<List<RecipeSummary>>())
     }
 
     @Test

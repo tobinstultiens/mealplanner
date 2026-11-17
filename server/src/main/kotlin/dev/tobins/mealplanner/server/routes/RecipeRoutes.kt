@@ -9,7 +9,9 @@ import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.Routines
+import dev.tobins.mealplanner.server.CookingSync
 import dev.tobins.mealplanner.server.NotFoundException
+import dev.tobins.mealplanner.server.accountId
 import dev.tobins.mealplanner.server.user
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -29,11 +31,15 @@ import io.ktor.server.routing.route
  * Recipes: my recipes and the bank, adding and the rotation, reading and writing them, routines, generating one
  * with Claude, and a recipe's settings, rating and picture.
  */
-fun Route.recipeRoutes() {
+fun Route.recipeRoutes(cooking: CookingSync) {
     // My recipes only, so that a released app, which knows nothing of the bank, lists the right ones.
     get("/api/recipes") { call.respond(call.user.recipes.list()) }
 
-    get("/api/recipes/bank") { call.respond(call.user.recipes.bank()) }
+    // A new account's first look at the bank finds the server's site there, without waiting for the schedule.
+    get("/api/recipes/bank") {
+        cooking.importFirst(call.accountId)
+        call.respond(call.user.recipes.bank())
+    }
 
     // Many at once, answering my recipes; an id that is not the account's is a 404 and nothing changes.
     put("/api/recipes/added") { call.respond(call.user.recipes.setAdded(call.receive<ManyAddedInput>())) }

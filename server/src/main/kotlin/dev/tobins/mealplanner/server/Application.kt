@@ -50,10 +50,12 @@ data class ServerConfig(
     val port: Int,
     /** JDBC URL of the SQLite database. */
     val databaseUrl: String,
-    /** Local checkout of the cooking repo, for the owner account (see [CookingSync]); null when none. */
+    /** Local checkout of the server's cooking site (see [CookingSync]); null when none. */
     val cookingRepo: File?,
-    /** Git URL of the owner's cooking repo, until they set one in the app. */
+    /** Git URL of the server's cooking site, cloned into [cookingRepo]. */
     val cookingRepoUrl: String? = null,
+    /** Whether the server's cooking site is the bank of every account without a site of its own, or only the owner's. */
+    val cookingRepoShared: Boolean = true,
     /** The NEVO main csv to import nutrition data from; null leaves the food table as it is. */
     val nevoFile: File? = null,
     /** Fetch store offers in the background. Off unless set, so tests never reach the stores. */
@@ -89,6 +91,7 @@ data class ServerConfig(
                 cookingRepo = (env["COOKING_REPO_PATH"]?.takeIf { it.isNotBlank() }
                     ?: env["COOKING_REPO_URL"]?.takeIf { it.isNotBlank() }?.let { ".runtime/cooking" })?.let(::File),
                 cookingRepoUrl = env["COOKING_REPO_URL"]?.takeIf { it.isNotBlank() },
+                cookingRepoShared = env["COOKING_REPO_SHARED"]?.trim()?.lowercase() !in setOf("false", "off", "0"),
                 nevoFile = env["NEVO_CSV_PATH"]?.takeIf { it.isNotBlank() }?.let(::File),
                 fetchOffers = env["MEALPLANNER_FETCH_OFFERS"]?.lowercase() !in setOf("false", "off", "0"),
                 oidcIssuer = env["MEALPLANNER_OIDC_ISSUER"]?.takeIf { it.isNotBlank() },
@@ -125,19 +128,13 @@ fun Application.module(
     val users = UserRepository(database)
     // Everything else belongs to one account and is reached through its scope.
     fun scope(accountId: Long) = UserScope(accountId, database, foods, offers, prices, generator, config.imageDir)
-    val cooking = CookingSync(users, config.dataDir, config.cookingRepo, config.cookingRepoUrl, ::scope)
+    val serverSite = CookingSync.serverSite(config.cookingRepo, config.cookingRepoUrl, config.dataDir)
+    val cooking = CookingSync(users, config.dataDir, serverSite, config.cookingRepoShared, ::scope)
 
-    // Accounts with a repository of their own: synced a few times a day.
+    // Cooking sites the server fetches itself: synced a few times a day.
     launch {
         while (true) {
-            for (accountId in cooking.scheduled()) {
-                try {
-                    cooking.sync(accountId)?.let { log.info("Cooking repo of account $accountId synced at ${it.commit}: ${it.added} added, ${it.updated} updated, ${it.removed} removed") }
-                } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    log.warn("Cooking repo sync of account $accountId failed: ${e.message}")
-                }
-            }
+            cooking.syncScheduled()
             delay(CookingSync.EVERY_HOURS.hours)
         }
     }
@@ -198,7 +195,7 @@ fun Application.module(
         publicRoutes(config, verifier, offers, prices)
         authenticate("api") {
             accountRoutes(cooking)
-            recipeRoutes()
+            recipeRoutes(cooking)
             ingredientRoutes(config, foods, users, ::scope)
             planRoutes()
             shoppingRoutes()

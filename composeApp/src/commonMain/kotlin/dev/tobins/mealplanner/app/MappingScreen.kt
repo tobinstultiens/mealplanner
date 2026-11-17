@@ -380,22 +380,23 @@ private fun SectionDialog(entry: IngredientSection, onDismiss: () -> Unit, onCon
 internal fun SectionChoices(entry: IngredientSection, choice: String?, onChoice: (String?) -> Unit, keeps: Boolean?, onKeeps: (Boolean?) -> Unit) {
     val t = LocalStrings.current
     Column(Modifier.verticalScroll(rememberScrollState())) {
-        SectionOption(t(Msg.AUTOMATIC, t.sectionTitleOfKey(entry.automatic)), entry.source, selected = choice == null) { onChoice(null) }
+        RadioOption(t(Msg.AUTOMATIC, t.sectionTitleOfKey(entry.automatic)), entry.source, selected = choice == null) { onChoice(null) }
         ShopSection.entries.forEach { section ->
-            SectionOption(t(section.msg()), null, selected = choice == section.name) { onChoice(section.name) }
+            RadioOption(t(section.msg()), null, selected = choice == section.name) { onChoice(section.name) }
         }
         Text(t(Msg.KEEPS_TITLE), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Spacing.InsideCard))
         Text(t(Msg.KEEPS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // The automatic answer follows the section chosen above.
         val section = ShopSection.fromKey(choice ?: entry.automatic) ?: ShopSection.OTHER
-        SectionOption(t(Msg.AUTOMATIC, t(if (section.shelfLife.keepsUntilNextWeek) Msg.KEEPS_YES else Msg.KEEPS_NO)), null, selected = keeps == null) { onKeeps(null) }
-        SectionOption(t(Msg.KEEPS_YES), null, selected = keeps == true) { onKeeps(true) }
-        SectionOption(t(Msg.KEEPS_NO), null, selected = keeps == false) { onKeeps(false) }
+        RadioOption(t(Msg.AUTOMATIC, t(if (section.shelfLife.keepsUntilNextWeek) Msg.KEEPS_YES else Msg.KEEPS_NO)), null, selected = keeps == null) { onKeeps(null) }
+        RadioOption(t(Msg.KEEPS_YES), null, selected = keeps == true) { onKeeps(true) }
+        RadioOption(t(Msg.KEEPS_NO), null, selected = keeps == false) { onKeeps(false) }
     }
 }
 
+/** One of a set of choices: a radio button with its [label] and, under it, a [detail]. The whole row is the target. */
 @Composable
-private fun SectionOption(label: String, detail: String?, selected: Boolean, onSelect: () -> Unit) {
+internal fun RadioOption(label: String, detail: String?, selected: Boolean, onSelect: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().selectable(selected, onClick = onSelect, role = Role.RadioButton).padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,

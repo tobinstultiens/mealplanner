@@ -43,13 +43,14 @@ fun Route.accountRoutes(cooking: CookingSync) {
 
     get("/api/sync/cooking") { call.respond(cooking.status(call.accountId)) }
 
-    // The account's own cooking-site repository; synced right away when set.
+    // Where the account's bank comes from: a repository of its own, the server's site, or none. The apps sync right after.
     put("/api/sync/cooking/repo") {
-        cooking.setRepo(call.accountId, call.receive<CookingRepoSetting>().url)
+        val setting = call.receive<CookingRepoSetting>()
+        cooking.setRepo(call.accountId, setting.url, setting.noSite)
         call.respond(cooking.status(call.accountId))
     }
 
-    // Fetches the account's cooking repo and brings its recipes in line with it.
+    // Fetches the account's cooking site and brings its recipes in line with it.
     post("/api/sync/cooking") {
         val result = cooking.sync(call.accountId)
         if (result == null) {

@@ -19,7 +19,12 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.eclipse.jgit.api.Git
+import java.util.concurrent.atomic.AtomicInteger
 import org.eclipse.jgit.api.errors.GitAPIException
 import java.io.File
 import java.net.InetAddress
@@ -31,6 +36,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -229,5 +235,142 @@ class CookingRepoTest {
         sync()
         assertKept("after its file came back")
         assertEquals(listOf("Soup"), bank())
+    }
+
+    /** The server's site in a clone that counts its fetches. */
+    private class CountingRepo(dir: File, url: String) : CookingRepo(dir, url) {
+        val fetches = AtomicInteger()
+
+        override fun update(): String? {
+            fetches.incrementAndGet()
+            return super.update()
+        }
+    }
+
+    /** A server's accounts and their cooking sites, without HTTP: [accounts] logged in, the first of them the owner. */
+    private class Accounts(site: CookingRepo?, shared: Boolean = true, accounts: Int = 2) {
+        private val db = openDatabase("jdbc:sqlite::memory:").second
+        private val foods = FoodRepository(db)
+        private val offers = OfferRepository(db, emptyList())
+        private val prices = PriceRepository(db, null, foods, offers)
+        private val images = createTempDirectory("images").toFile()
+        private val users = UserRepository(db)
+        val ids = (1..accounts).map { users.resolve(Identity("sub-$it", "user$it")).id }
+        val cooking = CookingSync(users, createTempDirectory("data").toFile(), site, shared, ::scope)
+
+        fun scope(id: Long) = UserScope(id, db, foods, offers, prices, null, images)
+        fun bank(id: Long) = scope(id).recipes.bank().map { it.title }.sorted()
+        fun mine(id: Long) = scope(id).recipes.list().associate { it.title to it.removedFromSite }
+        fun add(id: Long, title: String) = scope(id).recipes.let { it.setAdded(it.bank().single { r -> r.title == title }.id, AddedInput(added = true)) }
+        fun grams(id: Long, title: String) = scope(id).recipes.let { r ->
+            (r.list() + r.bank()).single { it.title == title }.let { r.find(it.id)!!.ingredients.single().line.amount }
+        }
+    }
+
+    private fun page(title: String, grams: Int = 400) = "---\ntitle: $title\n---\n```ingredients\nservings: 2\n$grams | g | beef\n```"
+
+    /**
+     * Two accounts on the server's site (issue 208): one fetch a round, and each account's own rows. A changed file
+     * reaches both; a deleted one leaves both banks, and stays where it was added.
+     */
+    @Test
+    fun accountsOnTheServersSiteShareOneFetchAndKeepTheirOwnRows() = runBlocking {
+        val upstream = Upstream()
+        upstream.commit(mapOf("content/recipes/stew.md" to page("Stew"), "content/recipes/curry.md" to page("Curry")))
+        val site = CountingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url)
+        val accounts = Accounts(site)
+        val (owner, other) = accounts.ids
+
+        accounts.cooking.syncScheduled()
+        assertEquals(1, site.fetches.get())
+        for (id in accounts.ids) assertEquals(listOf("Curry", "Stew"), accounts.bank(id), "account $id")
+        accounts.add(other, "Curry")
+        assertEquals(mapOf("Curry" to false), accounts.mine(other))
+        assertEquals(emptyMap(), accounts.mine(owner), "added in one account only")
+
+        upstream.commit(mapOf("content/recipes/stew.md" to page("Stew", 500)))
+        upstream.delete("content/recipes/curry.md")
+        accounts.cooking.syncScheduled()
+        assertEquals(2, site.fetches.get(), "one fetch for both accounts")
+        for (id in accounts.ids) {
+            assertEquals(listOf("Stew"), accounts.bank(id), "account $id")
+            assertEquals(500.0, accounts.grams(id, "Stew"), "account $id")
+            assertTrue(accounts.cooking.status(id).shared)
+        }
+        assertEquals(mapOf("Curry" to true), accounts.mine(other), "kept where it was added, as no longer on the site")
+        assertEquals(emptyMap(), accounts.mine(owner))
+    }
+
+    /** An account that sets its own repository leaves the server's bank, and keeps what it added from it. */
+    @Test
+    fun anAccountThatSetsItsOwnRepositoryKeepsWhatItAddedFromTheServersSite() = runBlocking {
+        val server = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"), "content/recipes/curry.md" to page("Curry"))) }
+        val accounts = Accounts(CookingRepo(File(createTempDirectory("server").toFile(), "cooking"), server.url))
+        val (owner, other) = accounts.ids
+        accounts.cooking.syncScheduled()
+        accounts.add(other, "Stew")
+
+        // An address of the account's own is never a file on the server, so this one is not fetched here.
+        val own = "https://example.invalid/mine/cooking.git"
+        assertFailsWith<IllegalArgumentException> { accounts.cooking.setRepo(other, server.url) }
+        accounts.cooking.setRepo(other, own)
+        assertEquals(emptyList(), accounts.bank(other), "the server's bank-only recipes left with its site")
+        assertEquals(mapOf("Stew" to true), accounts.mine(other), "kept, as no longer on its site")
+        val status = accounts.cooking.status(other)
+        assertEquals(listOf(own, "false", "null"), listOf(status.repoUrl, "${status.shared}", "${status.syncedAt}"))
+        accounts.cooking.importFirst(other)
+        assertEquals(emptyList(), accounts.bank(other), "a first visit imports the server's site only for who reads it")
+
+        assertNotNull(accounts.cooking.sync(owner))
+        assertEquals(listOf("Curry", "Stew"), accounts.bank(owner), "the owner's bank is the server's still")
+        assertEquals(emptyMap(), accounts.mine(owner))
+
+        // Back to the server's site: the curry is in the bank again, and the stew on the site, still added.
+        accounts.cooking.setRepo(other, null)
+        accounts.cooking.importFirst(other)
+        assertEquals(listOf("Curry"), accounts.bank(other))
+        assertEquals(mapOf("Stew" to false), accounts.mine(other))
+    }
+
+    /** A never synced account's first visits to the bank, two at once, import once: one clone, no second fetch. */
+    @Test
+    fun firstVisitsAtOnceImportOnce() = runBlocking {
+        val upstream = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"))) }
+        val site = CountingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url)
+        val accounts = Accounts(site)
+        val (owner, other) = accounts.ids
+
+        (1..4).map { launch(Dispatchers.IO) { accounts.cooking.importFirst(other) } }.joinAll()
+        assertEquals(1, site.fetches.get(), "cloned once, as there was no clone")
+        assertEquals(listOf("Stew"), accounts.bank(other))
+        assertNotNull(accounts.cooking.status(other).syncedAt)
+        accounts.cooking.importFirst(owner)
+        assertEquals(1, site.fetches.get(), "the clone is there: no fetch")
+        assertEquals(listOf("Stew"), accounts.bank(owner))
+    }
+
+    /** `COOKING_REPO_SHARED=0`: only the owner reads the server's site. */
+    @Test
+    fun unsharedOnlyTheOwnerReadsTheServersSite() = runBlocking {
+        val upstream = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"))) }
+        val accounts = Accounts(CookingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url), shared = false)
+        val (owner, other) = accounts.ids
+        accounts.cooking.syncScheduled()
+        accounts.cooking.importFirst(other)
+        assertEquals(listOf("Stew"), accounts.bank(owner))
+        assertEquals(emptyList(), accounts.bank(other))
+        assertNull(accounts.cooking.sync(other))
+        assertEquals(upstream.url, accounts.cooking.status(owner).repoUrl)
+        assertEquals(listOf(false, false), accounts.cooking.status(other).let { listOf(it.shared, it.serverSite) })
+    }
+
+    @Test
+    fun theServersSiteIsTheConfiguredCheckoutAsBefore() {
+        val path = createTempDirectory("checkout").toFile()
+        val data = createTempDirectory("data").toFile()
+        assertEquals(path, CookingSync.serverSite(path, "https://example.org/c.git", data)!!.dir, "the owner's clone stays where it was")
+        assertEquals(File(data, "cooking"), CookingSync.serverSite(null, "https://example.org/c.git", data)!!.dir)
+        assertNull(CookingSync.serverSite(path, null, data)!!.url, "a checkout managed by hand")
+        assertNull(CookingSync.serverSite(null, null, data))
     }
 }

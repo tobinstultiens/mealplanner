@@ -129,9 +129,10 @@ class ApiClient(
 
     suspend fun me(): Me = http.get("api/me").body()
 
-    suspend fun setCookingRepo(url: String?): CookingSyncStatus = http.put("api/sync/cooking/repo") {
+    /** Where the account's bank comes from: its own repository, the server's site, or none. */
+    suspend fun setCookingRepo(setting: CookingRepoSetting): CookingSyncStatus = http.put("api/sync/cooking/repo") {
         contentType(ContentType.Application.Json)
-        setBody(CookingRepoSetting(url))
+        setBody(setting)
     }.body()
 
     suspend fun health(): Health = http.get("health").body()
