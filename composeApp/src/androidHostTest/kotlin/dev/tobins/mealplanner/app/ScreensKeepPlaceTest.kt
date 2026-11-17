@@ -111,6 +111,8 @@ class ScreensKeepPlaceTest {
 
     @Test
     fun theSearchOfTheRecipeListSurvivesOpeningARecipe() {
+        // Tall enough for every row of the list, so that "Shakshuka" being gone is the search's doing.
+        RuntimeEnvironment.setQualifiers("en-rGB-w411dp-h1200dp")
         startApp()
         waitFor("Today")
         openTab("Recipes")
@@ -125,6 +127,78 @@ class ScreensKeepPlaceTest {
         waitFor("Lentil soup")
         compose.onAllNodesWithText("Shakshuka").assertCountEquals(0)
         compose.onNodeWithText("lentil").assertExists()
+    }
+
+    @Test
+    fun theChoiceOfTheRecipeListSurvivesOpeningARecipeAndARecreatedActivity() {
+        startApp()
+        waitFor("Today")
+        openTab("Recipes")
+        waitFor("Not in rotation (2)")
+        compose.onNodeWithText("Rotation (4)").performClick()
+        waitFor("Lentil soup")
+        compose.onAllNodesWithText("Tuna pasta salad").assertCountEquals(0)
+
+        compose.onNodeWithText("Lentil soup").performClick()
+        goBack()
+        waitFor("Lentil soup")
+        compose.onAllNodesWithText("Tuna pasta salad").assertCountEquals(0)
+
+        // Android re-creates the activity: still the rotation, still without the recipes outside it.
+        restoration.emulateSavedInstanceStateRestore()
+        waitFor("Lentil soup")
+        compose.onAllNodesWithText("Tuna pasta salad").assertCountEquals(0)
+        compose.onAllNodesWithText("Shakshuka").assertCountEquals(0)
+    }
+
+    @Test
+    fun theSearchOfTheBankSurvivesOpeningARecipeAndARecreatedActivity() {
+        startApp()
+        waitFor("Today")
+        openTab("Recipes")
+        waitFor("Browse the bank")
+        compose.onNodeWithText("Browse the bank").performClick()
+        waitFor("Greek yoghurt pancakes")
+        compose.onNodeWithText("Search title or tag").performTextInput("quick")
+        waitFor("Greek yoghurt pancakes")
+        compose.onAllNodesWithText("Soba noodle salad").assertCountEquals(0)
+
+        // A bank recipe opens read-only; back from it the bank is as it was.
+        compose.onNodeWithText("Greek yoghurt pancakes").performClick()
+        waitFor("Add to my recipes")
+        goBack()
+        waitFor("Greek yoghurt pancakes")
+        compose.onAllNodesWithText("Soba noodle salad").assertCountEquals(0)
+
+        restoration.emulateSavedInstanceStateRestore()
+        waitFor("Greek yoghurt pancakes")
+        compose.onAllNodesWithText("Soba noodle salad").assertCountEquals(0)
+        compose.onNodeWithText("quick").assertExists()
+    }
+
+    @Test
+    fun theScrollOfTheBankSurvivesOpeningARecipeAndARecreatedActivity() {
+        // A short phone, so that the five recipes of the bank do not all fit.
+        RuntimeEnvironment.setQualifiers("en-rGB-w411dp-h480dp")
+        startApp()
+        waitFor("Today")
+        openTab("Recipes")
+        waitFor("Browse the bank")
+        compose.onNodeWithText("Browse the bank").performClick()
+        waitFor("Miso aubergine with sesame rice")
+        compose.onNode(hasScrollAction()).performScrollToIndex(4)
+        waitFor("Banana oat cookies")
+        compose.onNodeWithText("Banana oat cookies").assertIsDisplayed()
+
+        compose.onNodeWithText("Banana oat cookies").performClick()
+        waitFor("Add to my recipes")
+        goBack()
+        waitFor("Banana oat cookies")
+        compose.onNodeWithText("Banana oat cookies").assertIsDisplayed()
+
+        restoration.emulateSavedInstanceStateRestore()
+        waitFor("Banana oat cookies")
+        compose.onNodeWithText("Banana oat cookies").assertIsDisplayed()
     }
 
     @Test

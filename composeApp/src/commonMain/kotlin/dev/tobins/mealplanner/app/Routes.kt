@@ -14,6 +14,9 @@ sealed interface Route {
     /** The recipe editor: [id] is the recipe being edited, null a new recipe. */
     data class RecipeEditor(val id: Long?) : Route
 
+    /** The recipe bank: the cooking-site recipes to add to my recipes from. */
+    data object Bank : Route
+
     data object Mapping : Route
     data object Profile : Route
     data object Pantry : Route
@@ -27,6 +30,7 @@ sealed interface Route {
             is TabRoute -> tab.slug
             is Recipe -> "recipes/$id"
             is RecipeEditor -> if (id == null) "recipes/new" else "recipes/$id/edit"
+            Bank -> "recipes/bank"
             Mapping -> "mapping"
             Profile -> "profile"
             Pantry -> "pantry"
@@ -51,6 +55,7 @@ fun parseRoute(hash: String): Route {
                 else -> null
             }
         parts[0] == "recipes" && parts.size == 2 && parts[1] == "new" -> Route.RecipeEditor(null)
+        parts == listOf("recipes", "bank") -> Route.Bank
         parts[0] == "recipes" && parts.size == 2 && id != null -> Route.Recipe(id)
         parts[0] == "recipes" && parts.size == 3 && parts[2] == "edit" && id != null -> Route.RecipeEditor(id)
         parts == listOf("offers", "prices") -> Route.Prices
@@ -75,6 +80,8 @@ data class OpenScreens(
     val offers: Boolean = false,
     val prices: Boolean = false,
     val settings: Boolean = false,
+    /** The recipe bank, opened from the Recipes tab; a recipe opened from it is in front of it. */
+    val bank: Boolean = false,
 ) {
     /** The route of what is on screen: the same order of precedence as the screens are drawn in. */
     val route: Route
@@ -87,6 +94,7 @@ data class OpenScreens(
             profile -> Route.Profile
             mapping -> Route.Mapping
             recipeId != null -> Route.Recipe(recipeId)
+            bank -> Route.Bank
             else -> Route.TabRoute(tab)
         }
 }
@@ -96,6 +104,7 @@ fun Route.openScreens(): OpenScreens = when (this) {
     is Route.TabRoute -> OpenScreens(tab = tab)
     is Route.Recipe -> OpenScreens(tab = Tab.RECIPES, recipeId = id)
     is Route.RecipeEditor -> OpenScreens(tab = Tab.RECIPES, recipeId = id, editing = id ?: -1)
+    Route.Bank -> OpenScreens(tab = Tab.RECIPES, bank = true)
     Route.Mapping -> OpenScreens(tab = Tab.RECIPES, mapping = true)
     Route.Profile -> OpenScreens(tab = Tab.PROGRESS, profile = true)
     Route.Pantry -> OpenScreens(tab = Tab.SHOPPING, pantry = true)

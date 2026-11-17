@@ -5,8 +5,11 @@ import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodDataset
 import dev.tobins.mealplanner.api.GenerateRequest
+import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientSection
+import dev.tobins.mealplanner.api.ManyAddedInput
+import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealChoice
@@ -23,6 +26,7 @@ import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.ShoppingAdvice
@@ -132,7 +136,47 @@ class ApiClient(
 
     suspend fun health(): Health = http.get("health").body()
 
+    /** My recipes: those added from the bank and those made in the app; every recipe the server has before the bank. */
     suspend fun recipes(): List<RecipeSummary> = http.get("api/recipes").body()
+
+    /**
+     * The cooking-site recipes not added yet, or null from a server from before the bank: it reads
+     * `bank` as a recipe id and answers 400 (or 404), where the bank's own answer is always a list.
+     * The caller then offers no bank.
+     */
+    suspend fun recipeBank(): List<RecipeSummary>? = try {
+        http.get("api/recipes/bank").body()
+    } catch (e: ClientRequestException) {
+        if (e.response.status != HttpStatusCode.BadRequest && e.response.status != HttpStatusCode.NotFound) throw e
+        null
+    }
+
+    /** Adds a bank recipe to my recipes, in the rotation unless [inRotation] is false; or puts it back with [added] false. */
+    suspend fun setRecipeAdded(id: Long, added: Boolean, inRotation: Boolean = true): RecipeDetail =
+        http.put("api/recipes/$id/added") {
+            contentType(ContentType.Application.Json)
+            setBody(AddedInput(added, inRotation))
+        }.body()
+
+    /** Puts one of my recipes in the rotation the planner picks from, or takes it out. */
+    suspend fun setRecipeRotation(id: Long, inRotation: Boolean): RecipeDetail = http.put("api/recipes/$id/rotation") {
+        contentType(ContentType.Application.Json)
+        setBody(RotationInput(inRotation))
+    }.body()
+
+    /** [setRecipeAdded] for many recipes, all or none; answers my recipes. */
+    suspend fun setRecipesAdded(ids: List<Long>, added: Boolean, inRotation: Boolean = true): List<RecipeSummary> =
+        http.put("api/recipes/added") {
+            contentType(ContentType.Application.Json)
+            setBody(ManyAddedInput(ids, added, inRotation))
+        }.body()
+
+    /** [setRecipeRotation] for many recipes, all or none; answers my recipes. */
+    suspend fun setRecipesRotation(ids: List<Long>, inRotation: Boolean): List<RecipeSummary> =
+        http.put("api/recipes/rotation") {
+            contentType(ContentType.Application.Json)
+            setBody(ManyRotationInput(ids, inRotation))
+        }.body()
 
     suspend fun recipe(id: Long): RecipeDetail = http.get("api/recipes/$id").body()
 

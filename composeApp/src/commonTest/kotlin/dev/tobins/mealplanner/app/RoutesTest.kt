@@ -8,7 +8,7 @@ class RoutesTest {
     private val today = Route.TabRoute(Tab.TODAY)
 
     private val allRoutes = Tab.entries.map { Route.TabRoute(it) } + listOf(
-        Route.Recipe(12), Route.RecipeEditor(12), Route.RecipeEditor(null),
+        Route.Recipe(12), Route.RecipeEditor(12), Route.RecipeEditor(null), Route.Bank,
         Route.Mapping, Route.Profile, Route.Pantry, Route.Offers, Route.Prices, Route.Settings,
     )
 
@@ -16,6 +16,20 @@ class RoutesTest {
     fun everyRouteReadsBackFromItsAddress() {
         allRoutes.forEach { assertEquals(it, parseRoute(it.hash), it.hash) }
         assertEquals("#/recipes/12", Route.Recipe(12).hash)
+        assertEquals("#/recipes/bank", Route.Bank.hash)
+    }
+
+    @Test
+    fun theBankIsOpenedOverTheRecipesTabAndARecipeOpenedFromItIsInFrontOfIt() {
+        assertEquals(OpenScreens(tab = Tab.RECIPES, bank = true), Route.Bank.openScreens())
+        // A recipe opened from the bank, and the linking screen opened from either, are drawn above it.
+        assertEquals(Route.Recipe(8), OpenScreens(tab = Tab.RECIPES, recipeId = 8, bank = true).route)
+        assertEquals(Route.Mapping, OpenScreens(tab = Tab.RECIPES, mapping = true, bank = true).route)
+        assertEquals(Route.Bank, OpenScreens(tab = Tab.RECIPES, bank = true).route)
+        assertEquals("#/recipes/bank", addressFor(OpenScreens(tab = Tab.RECIPES, bank = true), loggedIn = true))
+        // `bank` is no recipe number, and a recipe number is no bank.
+        assertEquals(Route.Recipe(7), parseRoute("#/recipes/7"))
+        assertEquals(today, parseRoute("#/recipes/bank/extra"))
     }
 
     @Test

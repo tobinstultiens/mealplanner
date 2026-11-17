@@ -143,6 +143,7 @@ fun App(
     // Null: no editor open. -1: a new recipe. Otherwise the id of the recipe being edited.
     var editing by rememberSaveable { mutableStateOf(start.editing) }
     var mapping by rememberSaveable { mutableStateOf(start.mapping) }
+    var bankOpen by rememberSaveable { mutableStateOf(start.bank) }
     var profileOpen by rememberSaveable { mutableStateOf(start.profile) }
     var pantryOpen by rememberSaveable { mutableStateOf(start.pantry) }
     var offersOpen by rememberSaveable { mutableStateOf(start.offers) }
@@ -160,6 +161,7 @@ fun App(
         editing?.let { add("editor:$it") }
         openRecipeId?.let { add("recipe:$it") }
         if (mapping) add("mapping")
+        if (bankOpen) add("bank")
         if (profileOpen) add("profile")
         if (pantryOpen) add("pantry")
         if (offersOpen) add("offers")
@@ -171,7 +173,7 @@ fun App(
         previousKeys = openKeys
     }
     // The address follows the open screen, so that a reload comes back to it.
-    val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen)
+    val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen, bankOpen)
     LaunchedEffect(open, session != null) { addressFor(open, loggedIn = session != null)?.let(routes::write) }
     // Leaving the Plan tab the plan may have changed: the current week's list is fetched for the shop.
     var previousTab by remember { mutableStateOf(tab) }
@@ -353,7 +355,22 @@ fun App(
                     }
                     recipeId != null -> screenStates.SaveableStateProvider("recipe:$recipeId") {
                         BackHandler(enabled = true) { openRecipeId = null }
-                        RecipeDetailScreen(api, recipeId, nutritionSource, onBack = { openRecipeId = null }, onEdit = { editing = recipeId }, meal = openMeal)
+                        RecipeDetailScreen(
+                            api, recipeId, nutritionSource,
+                            onBack = { openRecipeId = null },
+                            onEdit = { editing = recipeId },
+                            meal = openMeal,
+                            onOpenMapping = { mapping = true },
+                        )
+                    }
+                    bankOpen -> screenStates.SaveableStateProvider("bank") {
+                        BackHandler(enabled = true) { bankOpen = false }
+                        RecipeBankScreen(
+                            api,
+                            onBack = { bankOpen = false },
+                            onOpen = { openRecipeId = it; openMeal = null },
+                            onOpenMapping = { mapping = true },
+                        )
                     }
                     else -> Scaffold(
                         bottomBar = {
@@ -377,12 +394,19 @@ fun App(
                             screenStates.SaveableStateProvider("tab:${tab.slug}") {
                               when (tab) {
                                 Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it.recipeId; openMeal = it.toCook() }, onOpenPlan = { tab = Tab.PLAN })
-                                Tab.PLAN -> PlanScreen(api, onOpenRecipe = { openRecipeId = it.recipeId; openMeal = it.toCook() }, onOpenProfile = { profileOpen = true })
+                                Tab.PLAN -> PlanScreen(
+                                    api,
+                                    onOpenRecipe = { openRecipeId = it.recipeId; openMeal = it.toCook() },
+                                    onOpenProfile = { profileOpen = true },
+                                    onOpenRecipes = { tab = Tab.RECIPES },
+                                    onOpenBank = { tab = Tab.RECIPES; bankOpen = true },
+                                )
                                 Tab.SHOPPING -> ShoppingScreen(shopping, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
                                 Tab.RECIPES -> RecipeListScreen(
                                     api,
                                     onOpen = { openRecipeId = it; openMeal = null },
                                     onOpenMapping = { mapping = true },
+                                    onOpenBank = { bankOpen = true },
                                     onNewRecipe = { editing = -1 },
                                 )
                                 Tab.PROGRESS -> ProgressScreen(
