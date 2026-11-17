@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.DailyTargets
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.Pantry
@@ -8,6 +9,7 @@ import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.ManyAddedInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -106,7 +108,15 @@ class CatalogueTest {
     fun exactMatchesAreLinkedWithoutAnyManualStep() = testApplication {
         val http = start()
         val sync = http.post("/api/sync/cooking").body<SyncResult>()
-        assertEquals(1, sync.autoLinked, "beef is exactly the NEVO food 'Beef raw'; onion and soy sauce come from the default catalogue")
+        assertEquals(0, sync.autoLinked, "nothing is added yet, and texts only bank recipes use are not linked")
+        val inBank = http.get("/api/recipes/bank").body<List<RecipeSummary>>().single { it.title == "Gyudon" }
+        assertFalse(inBank.nutrition!!.complete, "the beef is not linked yet")
+        // Adding it links what is exactly a food's name, as a sync does: beef is the NEVO food 'Beef raw';
+        // onion and soy sauce come from the default catalogue.
+        val added = http.put("/api/recipes/${inBank.id}/added") { setBody(AddedInput(added = true)) }.body<RecipeDetail>()
+        assertTrue(added.summary.added && added.summary.inRotation)
+        assertEquals("Beef raw", added.ingredients.first().ingredientName)
+        http.addWholeBank()
 
         val gyudon = http.recipe("Gyudon")
         val nutrition = gyudon.summary.nutrition!!
@@ -130,6 +140,12 @@ class CatalogueTest {
     fun onlyUnclearTextsAreLeftForTheUser() = testApplication {
         val http = start()
         http.post("/api/sync/cooking")
+        suspend fun texts() = http.get("/api/mappings/unmapped").body<List<UnmappedText>>().map { it.text }
+        assertEquals(emptyList(), texts(), "texts only bank recipes use are not the account's to link")
+        val bank = http.get("/api/recipes/bank").body<List<RecipeSummary>>()
+        http.put("/api/recipes/added") { setBody(ManyAddedInput(bank.filter { it.title != "Chicken" }.map { it.id }, added = true)) }
+        assertEquals(emptyList(), texts(), "the chicken's texts are still only in the bank")
+        http.addWholeBank()
 
         val unmapped = http.get("/api/mappings/unmapped").body<List<UnmappedText>>()
         assertEquals(listOf("chicken thigh", "mystery beans"), unmapped.map { it.text })
@@ -145,6 +161,7 @@ class CatalogueTest {
     fun oneManualLinkCoversAllVariantsAndThenAsksForTheMissingWeight() = testApplication {
         val http = start()
         http.post("/api/sync/cooking")
+        http.addWholeBank()
 
         val thigh = http.put("/api/mappings") { setBody(MappingRequest("chicken thigh", nevoCode = 20, name = "Chicken thigh")) }
             .body<Ingredient>()
@@ -180,6 +197,7 @@ class CatalogueTest {
     fun anExactLinkForAFullTextWinsOverTheGeneralOne() = testApplication {
         val http = start()
         http.post("/api/sync/cooking")
+        http.addWholeBank()
         http.put("/api/mappings") { setBody(MappingRequest("beef, thinly sliced", nevoCode = 21, name = "Not beef")) }
 
         assertEquals("Not beef", http.recipe("Gyudon").ingredients[0].ingredientName)

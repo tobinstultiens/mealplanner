@@ -5,6 +5,7 @@ import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MealChoice
@@ -13,6 +14,8 @@ import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.RotationInput
+import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingRowKey
@@ -159,6 +162,7 @@ class WriteLockTest {
     fun aChangeThatReadsFirstWaitsForAnotherConnectionThatWritesMeanwhile() = testApplication {
         val http = start()
         http.post("/api/sync/cooking")
+        http.addWholeBank()
         http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
         val beef = http.get("/api/ingredients").body<List<Ingredient>>().first { it.name == "Beef raw" }.id
         val dinner = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 1" }
@@ -187,6 +191,9 @@ class WriteLockTest {
         whileAnotherWrites("a new ingredient", "IngredientRepository.linking") { http.post("/api/ingredients") { setBody(IngredientInput("Pepper")) } }
         val own = http.post("/api/recipes") { setBody(RecipeInput("Beef bowl", 1, "300 | g | beef")) }.body<RecipeDetail>().summary
         whileAnotherWrites("editing a recipe", "RecipeRepository.update") { http.put("/api/recipes/${own.id}") { setBody(RecipeInput("Beef bowl", 2, "300 | g | beef")) } }
+        whileAnotherWrites("taking it out of the rotation", "RecipeRepository.changeRotation") { http.put("/api/recipes/${own.id}/rotation") { setBody(RotationInput(false)) } }
+        whileAnotherWrites("adding it again, in the rotation", "RecipeRepository.changeAdded") { http.put("/api/recipes/${own.id}/added") { setBody(AddedInput(added = true)) } }
+        whileAnotherWrites("pinning it as a routine", "RecipeRepository.saveRoutines") { http.put("/api/routines") { setBody(Routines(snack = own.id)) } }
         File(dir, "cooking/content/recipes/dinner0.md").appendText("\nA new note.")
         whileAnotherWrites("a sync of the cooking site", "RecipeRepository.syncCookingSite") { http.post("/api/sync/cooking") }
 

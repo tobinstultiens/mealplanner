@@ -3,7 +3,10 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.api.RecipeCost
 import java.time.LocalDate
+import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.ManyAddedInput
+import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeDetail
@@ -14,6 +17,7 @@ import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.planner.PlanCandidate
@@ -39,7 +43,11 @@ private val componentSections = setOf("sauces", "spices", "templates", "ideas", 
 /** A recipe's base yield and its lines, each with the ingredient it means (null when unknown). */
 data class RecipeLines(val servings: Int, val lines: List<Pair<IngredientLine, Ingredient?>>)
 
-/** One account's recipes. */
+/**
+ * One account's recipes. Those from its cooking site start in its bank; the account adds the ones it
+ * cooks to "my recipes", and the planner picks on its own only from my recipes in the rotation. Recipes
+ * made in the app are always mine. See README, "Recipes: the bank, my recipes and the rotation".
+ */
 class RecipeRepository(
     private val db: Database,
     private val ingredients: IngredientRepository,
@@ -55,10 +63,26 @@ class RecipeRepository(
         return pricing(today, today.plusDays(6))
     }
 
-    fun list(): List<RecipeSummary> {
+    /** My recipes: what a released app lists as the account's recipes, so it needs to know nothing of the bank. */
+    fun list(): List<RecipeSummary> = summaries(mine())
+
+    /**
+     * The bank: the cooking-site recipes on the site that the account has not added. Their nutrition is
+     * worked out from what the account has linked, which for texts only bank recipes use is often nothing
+     * yet ([IngredientRepository.autoLink] runs when one is added), so it is often incomplete and says so.
+     */
+    fun bank(): List<RecipeSummary> = summaries(q.selectBank(userId).executeAsList())
+
+    /**
+     * My recipes' rows. SQLDelight gives `selectMine` a type of its own, with `addedAt` not null as its
+     * WHERE says; read as [Recipe] rows, they go through the same code as every other recipe.
+     */
+    private fun mine(): List<Recipe> = q.selectMine(userId, ::Recipe).executeAsList()
+
+    private fun summaries(rows: List<Recipe>): List<RecipeSummary> {
         val resolve = ingredients.resolver()
         val prices = currentPricing()
-        return q.selectActive(userId).executeAsList().map { row ->
+        return rows.map { row ->
             val lines = linesOf(row.id)
             row.toSummary(nutritionOf(row, lines, resolve), costOf(row, lines, resolve, prices))
         }
@@ -86,12 +110,9 @@ class RecipeRepository(
     }
 
     /**
-     * Recipes the planner may use: meals whose nutrition is complete. Which slots a recipe
-     * suits follows from its section on the cooking site until that can be set per recipe.
-     */
-    /**
      * One recipe as a plan candidate, even with incomplete nutrition (used when the user
      * puts a recipe in a slot themselves). Null when the recipe has no amounts at all.
+     * Callers make sure it is one of my recipes first ([requireMine]).
      */
     fun candidate(id: Long): PlanCandidate? {
         val row = q.selectById(userId, id).executeAsOneOrNull() ?: return null
@@ -108,6 +129,9 @@ class RecipeRepository(
     }
 
     /**
+     * The recipes the planner may pick on its own: my recipes in the rotation that are meals with complete
+     * nutrition. One of my recipes outside the rotation is planned only by hand ([candidate]).
+     *
      * @param dislikes words for ingredients never to plan; a recipe with a line whose text
      *   or linked ingredient name contains one of them as a word (or its plural) is left out.
      * @param onHand the ingredients on hand in the week being planned ([StockRepository.onHandFor]).
@@ -121,8 +145,8 @@ class RecipeRepository(
         val resolve = ingredients.resolver()
         val disliked = dislikes.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
             .map { Regex("\\b${Regex.escape(it)}(s|es|en|n)?\\b", RegexOption.IGNORE_CASE) }
-        return q.selectActive(userId).executeAsList().mapNotNull { row ->
-            if (row.kind != RecipeKind.MEAL.name) return@mapNotNull null
+        return mine().mapNotNull { row ->
+            if (row.kind != RecipeKind.MEAL.name || row.inRotation == 0L) return@mapNotNull null
             val lines = linesOf(row.id)
             if (disliked.isNotEmpty() && lines.any { line ->
                     val names = listOfNotNull(line.ingredientText, resolve(line)?.name)
@@ -158,7 +182,7 @@ class RecipeRepository(
         }.toMap()
     }
 
-    /** Creates a recipe of the user's own, or one generated for them ([source] GENERATED). */
+    /** Creates a recipe of the user's own, or one generated for them ([source] GENERATED): one of mine, in the rotation. */
     fun create(input: RecipeInput, source: RecipeSource = RecipeSource.MANUAL): RecipeDetail = db.transactionWithResult {
         require(source != RecipeSource.COOKING_SITE) { "cooking site recipes come from the sync" }
         val parsed = parse(input)
@@ -175,6 +199,8 @@ class RecipeRepository(
             hasIngredientsBlock = 1,
             problemsJson = "[]",
             kind = RecipeKind.MEAL.name,
+            addedAt = Instant.now().toString(),
+            inRotation = 1,
         )
         val id = q.lastInsertId().executeAsOne()
         q.updateSettings(RecipeKind.MEAL.name, Json.encodeToString(input.mealSlots), userId, id)
@@ -222,23 +248,121 @@ class RecipeRepository(
         return find(id)!!
     }
 
-    /** Whether the account has the recipe and it is not removed. */
-    fun isActive(id: Long): Boolean = q.selectById(userId, id).executeAsOneOrNull()?.let { it.removedAt == null } ?: false
+    /**
+     * The account's recipe [id], when it is in the bank or one of mine. One whose file left the site
+     * while it was only in the bank is as good as not there, as removed recipes were before the bank.
+     */
+    private fun known(id: Long): Recipe =
+        q.selectById(userId, id).executeAsOneOrNull()?.takeIf { it.addedAt != null || it.removedAt == null }
+            ?: throw NotFoundException("No recipe with id $id")
+
+    /** The account's recipe [id] as one of mine ([known]); a [ConflictException] while it is only in the bank. */
+    fun requireMine(id: Long): Recipe =
+        known(id).also { if (it.addedAt == null) throw ConflictException("Add \"${it.title}\" to your recipes first") }
+
+    /** Adds a bank recipe to my recipes, or puts it back in the bank ([changeAdded]). */
+    fun setAdded(id: Long, input: AddedInput): RecipeDetail {
+        changeAdded(listOf(id), input.added, input.inRotation)
+        return find(id)!!
+    }
+
+    /** [setAdded] for many recipes at once, answering my recipes as they are then. */
+    fun setAdded(input: ManyAddedInput): List<RecipeSummary> {
+        changeAdded(input.ids, input.added, input.inRotation)
+        return list()
+    }
+
+    /** Puts one of my recipes in the rotation or takes it out ([changeRotation]). */
+    fun setRotation(id: Long, input: RotationInput): RecipeDetail {
+        changeRotation(listOf(id), input.inRotation)
+        return find(id)!!
+    }
+
+    /** [setRotation] for many recipes at once, answering my recipes as they are then. */
+    fun setRotation(input: ManyRotationInput): List<RecipeSummary> {
+        changeRotation(input.ids, input.inRotation)
+        return list()
+    }
+
+    /**
+     * Adds [ids] to my recipes, [inRotation] or not, or puts them back in the bank: all of them, or none
+     * when one cannot be (not the account's: 404; [requireRemovable], [requireNotRoutine]: 409). Adding
+     * one that is added keeps when it was added and sets its rotation; putting back one that is in the
+     * bank changes nothing. What is added gets its exact-name ingredients linked, as after a sync; that
+     * runs after the change, as it reads every NEVO food and the write lock is everyone's.
+     */
+    private fun changeAdded(ids: Collection<Long>, added: Boolean, inRotation: Boolean) {
+        db.writing {
+            val rows = ids.distinct().map(::known)
+            if (added) {
+                if (!inRotation) rows.forEach(::requireNotRoutine)
+                val now = Instant.now().toString()
+                rows.forEach { q.addToMine(addedAt = now, inRotation = inRotation.toLong(), userId = userId, id = it.id) }
+            } else {
+                val mine = rows.filter { it.addedAt != null }
+                mine.forEach(::requireRemovable)
+                mine.forEach { q.removeFromMine(userId, it.id) }
+            }
+        }
+        if (added) ingredients.autoLink()
+    }
+
+    /** Puts [ids], all of them mine, in the rotation or takes them out; none when one cannot be ([requireNotRoutine]). */
+    private fun changeRotation(ids: Collection<Long>, inRotation: Boolean) = db.writing {
+        val rows = ids.distinct().map(::requireMine)
+        if (!inRotation) rows.forEach(::requireNotRoutine)
+        rows.forEach { q.setInRotation(inRotation.toLong(), userId, it.id) }
+    }
+
+    /**
+     * Refuses to put [row] back in the bank while the plan or the routines use it: the shopping list would
+     * go on buying for a recipe the account no longer has, as for [delete]. A recipe made in the app has no
+     * bank to go back to: it is deleted ([delete]), which putting back never does on its own.
+     */
+    private fun requireRemovable(row: Recipe) {
+        if (row.source != RecipeSource.COOKING_SITE.name) {
+            throw ConflictException("\"${row.title}\" was made in the app, so it has no bank to go back to: delete it instead")
+        }
+        val days = plannedDays(row.id)
+        if (days.isNotEmpty()) {
+            throw ConflictException("\"${row.title}\" is planned on ${days.joinToString(", ", transform = ::dayName)}: choose another recipe there first")
+        }
+        requireNotRoutine(row)
+    }
+
+    /** The planner pins a routine only from the rotation, so a routine stays in it until another is chosen. */
+    private fun requireNotRoutine(row: Recipe) {
+        val routines = routines()
+        val slot = when (row.id) {
+            routines.breakfast -> "breakfast"
+            routines.snack -> "snack"
+            else -> return
+        }
+        throw ConflictException("\"${row.title}\" is your $slot routine: choose another routine first")
+    }
 
     /** Titles of the most recently planned recipes, newest first; for variety in generation. */
     fun titles(ids: Collection<Long>): List<String> = ids.mapNotNull { q.selectById(userId, it).executeAsOneOrNull()?.title }
 
-    fun allTitles(): List<String> = q.selectActive(userId).executeAsList().map { it.title }
+    /** The titles of my recipes, for Claude not to write one of them again. */
+    fun allTitles(): List<String> = mine().map { it.title }
 
     fun routines(): Routines =
         db.userQueries.selectUserMeta(userId, ROUTINES_KEY).executeAsOneOrNull()?.let { Json.decodeFromString<Routines>(it) } ?: Routines()
 
-    fun saveRoutines(routines: Routines): Routines {
-        listOfNotNull(routines.breakfast, routines.snack).forEach {
-            q.selectById(userId, it).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $it")
-        }
+    /**
+     * Pins the breakfast and snack routines. A newly pinned recipe must be one of mine ([requireMine]) and
+     * goes in the rotation, from which the planner pins it. One pinned already is kept as it is, so that a
+     * released app saving the routines it read is not refused for a pin from before the bank.
+     */
+    fun saveRoutines(routines: Routines): Routines = db.writing {
+        val pinned = routines()
+        val ids = listOfNotNull(routines.breakfast, routines.snack)
+        ids.forEach { q.selectById(userId, it).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $it") }
+        val new = ids.filter { it != pinned.breakfast && it != pinned.snack }.map(::requireMine)
+        new.forEach { q.setInRotation(1, userId, it.id) }
         db.userQueries.upsertUserMeta(userId, ROUTINES_KEY, Json.encodeToString(routines))
-        return routines
+        routines
     }
 
     fun updateSettings(id: Long, settings: RecipeSettings): RecipeDetail {
@@ -296,9 +420,12 @@ class RecipeRepository(
     }
 
     /**
-     * Makes the stored cooking-site recipes match [parsed], the full current content
+     * Makes the stored cooking-site recipes match [pages], the full current content
      * of the repo. Files are identified by path; unchanged hashes are skipped; recipes
      * whose file is gone are marked removed, and come back if the file reappears.
+     * A new file's recipe goes to the bank. Whether a recipe is added and in the rotation
+     * is the account's and never changed here: an added recipe whose file is gone stays one
+     * of mine ([RecipeSummary.removedFromSite]), a bank one is hidden until it is back.
      * Pictures are left to [RecipePictures.sync], after this.
      */
     fun syncCookingSite(pages: List<SitePage>, now: Instant = Instant.now()): SyncResult {
@@ -325,6 +452,9 @@ class RecipeRepository(
                             hasIngredientsBlock = recipe.hasIngredientsBlock.toLong(),
                             problemsJson = Json.encodeToString(recipe.problems),
                             kind = (if (recipe.section in componentSections) RecipeKind.COMPONENT else RecipeKind.MEAL).name,
+                            // New on the site: in the bank until the account adds it.
+                            addedAt = null,
+                            inRotation = 0,
                         )
                         replaceIngredients(q.lastInsertId().executeAsOne(), recipe.ingredients)
                         added++
@@ -381,6 +511,9 @@ class RecipeRepository(
         rating = rating?.toInt(),
         cost = cost,
         imageUrl = imageVersion?.let { "/api/recipes/$id/image?v=$it" },
+        added = addedAt != null,
+        inRotation = inRotation != 0L,
+        removedFromSite = removedAt != null,
     )
 
     private fun Boolean.toLong() = if (this) 1L else 0L

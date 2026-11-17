@@ -1,9 +1,13 @@
 package dev.tobins.mealplanner.server.routes
 
+import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.GenerateRequest
+import dev.tobins.mealplanner.api.ManyAddedInput
+import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
+import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.server.NotFoundException
 import dev.tobins.mealplanner.server.user
@@ -21,9 +25,20 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 
-/** Recipes: reading and writing them, routines, generating one with Claude, and a recipe's settings, rating and picture. */
+/**
+ * Recipes: my recipes and the bank, adding and the rotation, reading and writing them, routines, generating one
+ * with Claude, and a recipe's settings, rating and picture.
+ */
 fun Route.recipeRoutes() {
+    // My recipes only, so that a released app, which knows nothing of the bank, lists the right ones.
     get("/api/recipes") { call.respond(call.user.recipes.list()) }
+
+    get("/api/recipes/bank") { call.respond(call.user.recipes.bank()) }
+
+    // Many at once, answering my recipes; an id that is not the account's is a 404 and nothing changes.
+    put("/api/recipes/added") { call.respond(call.user.recipes.setAdded(call.receive<ManyAddedInput>())) }
+
+    put("/api/recipes/rotation") { call.respond(call.user.recipes.setRotation(call.receive<ManyRotationInput>())) }
 
     get("/api/recipes/{id}") {
         val id = call.parameters["id"]?.toLongOrNull()
@@ -61,6 +76,8 @@ fun Route.recipeRoutes() {
         }
         put("/settings") { call.respond(call.user.recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }
         put("/rating") { call.respond(call.user.recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
+        put("/added") { call.respond(call.user.recipes.setAdded(call.id(), call.receive<AddedInput>())) }
+        put("/rotation") { call.respond(call.user.recipes.setRotation(call.id(), call.receive<RotationInput>())) }
         // The recipe's picture, at the URL in its summary. That URL changes with the picture, so
         // clients may keep it for good; private, since it is this account's.
         get("/image") {

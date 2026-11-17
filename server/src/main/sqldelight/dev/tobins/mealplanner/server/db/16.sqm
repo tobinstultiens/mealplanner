@@ -1,0 +1,14 @@
+-- Version 16 -> 17: the recipe bank (issue 205). A cooking-site recipe is now in the account's bank until
+-- the account adds it to its recipes (addedAt), and the planner picks on its own only from the added
+-- recipes in the rotation (inRotation). Only added columns, so no table is rebuilt and no row is lost.
+--
+-- Every recipe the account sees now stays one of its recipes and in the rotation, so nothing changes for
+-- an app that knows nothing of the bank: the recipes made in the app, and the cooking-site recipes whose
+-- file is on the site. A recipe whose file left the site was hidden; it goes to the bank, where a recipe
+-- that is not on the site is hidden too, and comes back there (not in the account's recipes) if its file
+-- returns. Its rating, kind and slots stay.
+
+ALTER TABLE recipe ADD COLUMN addedAt TEXT;
+ALTER TABLE recipe ADD COLUMN inRotation INTEGER NOT NULL DEFAULT 0;
+
+UPDATE recipe SET addedAt = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), inRotation = 1 WHERE removedAt IS NULL;

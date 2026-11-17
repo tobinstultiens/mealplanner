@@ -258,6 +258,7 @@ class OffersApiTest {
         application { module(config, openDatabase(config.databaseUrl).second, listOf(ah, lidl), verifier = TestTokens) }
         val http = clientFor("t")
         http.post("/api/sync/cooking")
+        http.addWholeBank()
         http.post("/api/offers/refresh")
         http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
         http.post("/api/plans/2026-11-09/generate")
@@ -292,6 +293,7 @@ class OffersApiTest {
         val owner = clientFor("t")
         val bob = clientFor("bob")
         owner.post("/api/sync/cooking")
+        owner.addWholeBank()
         owner.post("/api/offers/refresh")
         // The regular price's product, as the weekly lookup stores it for every account.
         db.priceQueries.upsertPrice("Minced beef", "AH", "AH Rundergehakt", "300 g", 3.0, 10.0, "2026-11-15T00:00:00Z", "Vlees", null, productPicture)

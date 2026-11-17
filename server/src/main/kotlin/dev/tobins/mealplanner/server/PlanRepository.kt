@@ -108,11 +108,12 @@ class PlanRepository(
      * so that replanning keeps it. The recipe need not be marked for the slot, and an empty slot can be
      * filled. A [NotFoundException] when the recipe is not the account's, a [ConflictException] when it
      * has no amounts to plan with, is a component or when the slot's meal was cooked ([requireNotCooked]).
-     * A removed recipe is as good as not there.
+     * Any of my recipes can be chosen, in the rotation or not; one only in the bank is a [ConflictException]
+     * until it is added ([RecipeRepository.requireMine]).
      */
     fun choose(weekStart: String, day: Int, slot: MealSlot, recipeId: Long): WeekPlan {
-        val detail = recipes.find(recipeId)?.takeIf { recipes.isActive(recipeId) } ?: throw NotFoundException("No recipe $recipeId")
-        if (detail.summary.kind == RecipeKind.COMPONENT) throw ConflictException("This recipe is a building block, not a meal")
+        val recipe = recipes.requireMine(recipeId)
+        if (recipe.kind == RecipeKind.COMPONENT.name) throw ConflictException("This recipe is a building block, not a meal")
         val candidate = recipes.candidate(recipeId) ?: throw ConflictException("This recipe has no amounts to plan with")
         return place(weekStart, day, slot, candidate, locked = true)
     }

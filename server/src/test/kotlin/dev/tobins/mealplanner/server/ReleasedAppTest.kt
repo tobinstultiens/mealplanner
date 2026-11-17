@@ -164,6 +164,9 @@ class ReleasedAppTest {
 
         // Setting up an account: the cooking site, offers, a profile, shops, a routine.
         assertTrue(http.post("/api/sync/cooking").read<SyncResult>().added > 0)
+        // The site's recipes start in the bank (issue 205), which the installed app does not know; the account
+        // adds them in a newer app, or had them before the bank. The installed app lists them from then on.
+        http.addWholeBank()
         http.read<CookingSyncStatus>("/api/sync/cooking")
         http.post("/api/offers/refresh").read<OffersState>()
         val profile = Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000, likes = listOf("chicken"))

@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.OfferSource
 import kotlinx.coroutines.runBlocking
@@ -121,7 +122,13 @@ class MigrationTest {
 
     /** Version 16 added what a tick's offer saved (15.sqm). */
     private fun dropTickSavings(statement: Statement) {
+        dropRecipeBank(statement)
         for (column in listOf("saving", "savingStore")) statement.execute("ALTER TABLE shoppingCheck DROP COLUMN $column")
+    }
+
+    /** Version 17 added whether a recipe is one of the account's and in its rotation (16.sqm). */
+    private fun dropRecipeBank(statement: Statement) {
+        for (column in listOf("addedAt", "inRotation")) statement.execute("ALTER TABLE recipe DROP COLUMN $column")
     }
 
     @Test
@@ -158,7 +165,7 @@ class MigrationTest {
         // Everything from before accounts belongs to account 1, which nobody has claimed yet.
         val owner = reopened.userQueries.selectUnclaimed().executeAsOne()
         assertEquals(1L, owner.id)
-        assertTrue(reopened.recipeQueries.selectActive(owner.id).executeAsList().single().rating == null, "existing rows survive")
+        assertTrue(reopened.recipeQueries.selectMine(owner.id).executeAsList().single().rating == null, "existing rows survive, as my recipes")
     }
 
     @Test
@@ -793,6 +800,87 @@ class MigrationTest {
         db.planQueries.upsertMeal(1, week, 0, "DINNER", chicken.id, chicken.title, 1.0, 800.0, 40.0, 0, 0, "PLANNED")
         val row = scope.shopping.get(week).items.single()
         assertEquals(listOf("i1", true, 1000.0, null, null), listOf(row.key, row.checked, row.boughtGrams, row.boughtSaving, row.boughtOfferStore))
+        driver.close()
+    }
+
+    /**
+     * Version 16 is the schema of 15.sqm, which servers before the bank (issue 205) run. Under option 1(a)
+     * of that issue every recipe the account sees stays one of its recipes and in the rotation, so a released
+     * app lists the same recipes and the planner picks from the same ones. A recipe whose file had left the
+     * site was hidden; it goes to the bank, where it stays hidden until its file is back.
+     */
+    @Test
+    fun aVersionSixteenDatabaseKeepsEveryRecipeItShowsAddedAndInTheRotation() {
+        val file = createTempFile("v16", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropRecipeBank(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', '2026-11-01T00:00:00Z')")
+                // Alice: a site meal she rated, a site sauce, one whose file left the site, one of her own (her
+                // breakfast routine) and one Claude wrote. Bob: a meal of his own site.
+                statement.execute(
+                    "INSERT INTO recipe (id, userId, source, sourcePath, contentHash, section, title, tagsJson, servings, instructions, " +
+                        "hasIngredientsBlock, problemsJson, kind, mealSlotsJson, removedAt, rating, imageSourceHash, imageVersion) VALUES " +
+                        "(1, 1, 'COOKING_SITE', 'recipes/stew.md', 'h1', 'recipes', 'Stew', '[]', 4, '', 1, '[]', 'MEAL', '[\"DINNER\"]', NULL, 4, 'p1', 'v1'), " +
+                        "(2, 1, 'COOKING_SITE', 'sauces/salsa.md', 'h2', 'sauces', 'Salsa', '[]', 2, '', 1, '[]', 'COMPONENT', NULL, NULL, NULL, NULL, NULL), " +
+                        "(3, 1, 'COOKING_SITE', 'recipes/gone.md', 'h3', 'recipes', 'Gone', '[]', 2, '', 1, '[]', 'MEAL', NULL, '2026-11-02T00:00:00Z', 5, NULL, NULL), " +
+                        "(4, 1, 'MANUAL', NULL, NULL, 'own', 'Porridge', '[]', 1, '', 1, '[]', 'MEAL', '[\"BREAKFAST\"]', NULL, NULL, NULL, NULL), " +
+                        "(5, 1, 'GENERATED', NULL, NULL, 'own', 'Curry', '[]', 4, '', 1, '[]', 'MEAL', NULL, NULL, 3, NULL, NULL), " +
+                        "(6, 2, 'COOKING_SITE', 'recipes/stew.md', 'h1', 'recipes', 'Bob stew', '[]', 4, '', 1, '[]', 'MEAL', NULL, NULL, NULL, NULL, NULL)",
+                )
+                statement.execute(
+                    "INSERT INTO recipeIngredient (recipeId, position, amount, unit, item) VALUES (1, 0, 500, 'g', 'beef'), (3, 0, 1, NULL, 'onion'), (6, 0, 400, 'g', 'beef')",
+                )
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked) " +
+                        "VALUES (1, '2026-11-16', 0, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 0)",
+                )
+                statement.execute("INSERT INTO userMeta (userId, key, value) VALUES (1, 'routines', '{\"breakfast\":4}')")
+                statement.execute("PRAGMA user_version = 16")
+            }
+        }
+        val oldColumns = columns(url, "recipe")
+        fun recipes() = single(url, "SELECT ${oldColumns.joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }} FROM recipe ORDER BY id")
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        val before = recipes() to counts()
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, recipes() to counts(), "every row as it was, in every table")
+        assertEquals(
+            "1:1:1,2:1:1,3:0:0,4:1:1,5:1:1,6:1:1",
+            single(url, "SELECT id || ':' || (addedAt IS NOT NULL) || ':' || inRotation FROM recipe ORDER BY id"),
+            "all but the recipe that had left the site are added and in the rotation",
+        )
+
+        // The installed app lists what it listed before: every recipe but the one that had left the site.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        fun scope(id: Long) = UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+        val alice = scope(1).recipes
+        assertEquals(listOf("Curry", "Porridge", "Salsa", "Stew"), alice.list().map { it.title })
+        assertTrue(alice.list().all { it.added && it.inRotation && !it.removedFromSite })
+        assertEquals(4, alice.list().single { it.title == "Stew" }.rating, "the rating stays")
+        assertEquals(emptyList(), alice.bank(), "the recipe that had left the site is hidden in the bank")
+        assertEquals(listOf("Bob stew"), scope(2).recipes.list().map { it.title })
+
+        // With its file back on the site, it is in the bank with its rating, not among Alice's recipes.
+        val parser = HugoRecipeParser()
+        val pages = listOf("recipes/stew.md" to "h1", "sauces/salsa.md" to "h2", "recipes/gone.md" to "h3b").map { (path, hash) ->
+            SitePage(parser.parse(path, "---\ntitle: ${path.substringAfter('/').removeSuffix(".md")}\n---\n```ingredients\nservings: 2\n1 | | onion\n```"), hash)
+        }
+        alice.syncCookingSite(pages)
+        val gone = alice.bank().single()
+        assertEquals(Triple(3L, false, 5), Triple(gone.id, gone.added, gone.rating))
+        assertEquals(listOf("Curry", "Porridge", "Salsa", "Stew"), alice.list().map { it.title })
         driver.close()
     }
 }

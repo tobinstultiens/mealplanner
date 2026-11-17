@@ -54,7 +54,7 @@ class ApiClientTest {
     fun anUnknownFieldInANestedObjectIsIgnored() = runTest {
         val recipes = client(
             """[{"id":1,"title":"Soup","section":"Dinner","tags":[],"servings":2,"source":"MANUAL","kind":"MEAL",
-                "plannable":true,"added":{"x":1},"cost":{"perServing":1.5,"perServingWithOffers":1.2,"added":true}}]""",
+                "plannable":true,"addedLater":{"x":1},"cost":{"perServing":1.5,"perServingWithOffers":1.2,"addedLater":true}}]""",
         ).recipes()
         assertEquals("Soup", recipes.single().title)
     }
