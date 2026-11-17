@@ -322,7 +322,6 @@ fun App(
                 val editingId = editing
                 when {
                     editingId != null -> screenStates.SaveableStateProvider("editor:$editingId") {
-                        BackHandler(enabled = true) { editing = null }
                         RecipeEditorScreen(
                             api = api,
                             recipeId = editingId.takeIf { it >= 0 },
@@ -346,7 +345,6 @@ fun App(
                         PantryScreen(api, onBack = { pantryOpen = false })
                     }
                     profileOpen -> screenStates.SaveableStateProvider("profile") {
-                        BackHandler(enabled = true) { profileOpen = false }
                         ProfileScreen(api, onBack = { profileOpen = false })
                     }
                     mapping -> screenStates.SaveableStateProvider("mapping") {

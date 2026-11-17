@@ -32,14 +32,15 @@ private fun listenForBack() {
  * The browser's back button closes the open screen: while [enabled], a history entry is
  * added and going back from it calls [onBack]. When several are enabled (a selection on a
  * screen), only the innermost is called. When the screen is closed from inside the
- * app instead, the entry stays; going back over it later does nothing visible.
+ * app instead, the entry stays; going back over it later does nothing visible. A change of
+ * [rearm] adds a new entry, for a screen that stayed open after a back.
  */
 @Composable
-actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
+actual fun BackHandler(enabled: Boolean, rearm: Int, onBack: () -> Unit) {
     val currentOnBack = rememberUpdatedState(onBack)
     // Composition runs outside in, so this tells which handler is inside which.
     val order = remember { nextBackOrder++ }
-    DisposableEffect(enabled) {
+    DisposableEffect(enabled, rearm) {
         if (!enabled) return@DisposableEffect onDispose {}
         listenForBack()
         window.history.pushState(null, "")

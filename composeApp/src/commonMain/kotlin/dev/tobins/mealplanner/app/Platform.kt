@@ -6,9 +6,13 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import kotlinx.io.IOException
 
-/** Runs [onBack] instead of the platform's default back action while [enabled]. */
+/**
+ * Runs [onBack] instead of the platform's default back action while [enabled]. In the browser each
+ * back uses up the history entry the handler added; a screen that stays open after it (to ask first)
+ * changes [rearm] so that a new entry is added and the next back asks again. Android has no entry to use up.
+ */
 @Composable
-expect fun BackHandler(enabled: Boolean, onBack: () -> Unit)
+expect fun BackHandler(enabled: Boolean, rearm: Int = 0, onBack: () -> Unit)
 
 /** Makes the status and navigation bar icons readable on a [dark] or light app. */
 @Composable

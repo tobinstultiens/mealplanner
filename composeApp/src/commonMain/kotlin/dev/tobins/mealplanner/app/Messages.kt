@@ -639,6 +639,12 @@ enum class Msg(private val english: String, private val dutch: String) {
     ),
     PROFILE_SAVED("Profile saved", "Profiel opgeslagen"),
 
+    // --- Leaving a form with unsaved changes
+    DISCARD_CHANGES_TITLE("Discard your changes?", "Wijzigingen weggooien?"),
+    DISCARD_CHANGES_TEXT("What you changed has not been saved.", "Wat je hebt gewijzigd is nog niet opgeslagen."),
+    KEEP_EDITING("Keep editing", "Blijven bewerken"),
+    DISCARD("Discard", "Weggooien"),
+
     // --- Link ingredients
     FOOD_SUMMARY("{0} · {1} kcal, {2} g protein per {3}", "{0} · {1} kcal, {2} g eiwit per {3}"),
     INGREDIENTS_LOAD_FAILED("Could not load ingredients", "De ingrediënten konden niet worden geladen"),
