@@ -415,6 +415,87 @@ class RecipeBankScreensTest {
         assertEquals("""PUT /api/recipes/3/added {"added":true,"inRotation":false}""", fake.changes.last())
     }
 
+    /**
+     * Removes the tuna pasta salad (out of the rotation to begin with, in it when [inRotation]) from its screen, which turns
+     * into the bank's view; then adds it again and says what was sent.
+     */
+    private fun removeThenAdd(inRotation: Boolean) {
+        val id = 3L
+        val fake = backend()
+        show { RecipeDetailScreen(client(fake), id, null, onBack = {}, onEdit = {}) }
+        waitFor("In my rotation")
+        if (inRotation) {
+            compose.onAllNodes(isSwitch).onFirst().performClick()
+            waitFor("The planner may pick this")
+        }
+        compose.onNodeWithContentDescription("More").performClick()
+        compose.onNodeWithText("Remove from my recipes").performClick()
+        waitFor("Add to my recipes")
+        waitFor("Let the planner pick it")
+        val pick = compose.onAllNodes(isSwitch).onFirst()
+        if (inRotation) pick.assertIsOn() else pick.assertIsOff()
+        compose.onNodeWithText("Add to my recipes").performClick()
+        waitFor("In my rotation")
+        assertEquals("""PUT /api/recipes/$id/added {"added":true,"inRotation":$inRotation}""", fake.changes.last())
+    }
+
+    @Test
+    fun afterARemoveTheBankViewsSwitchIsOffForARecipeOutOfTheRotationAndAddingKeepsIt() = removeThenAdd(inRotation = false)
+
+    @Test
+    fun afterARemoveTheBankViewsSwitchIsOnForARecipeInTheRotationAndAddingKeepsIt() = removeThenAdd(inRotation = true)
+
+    @Test
+    fun takingOffTheLastTickLeavesSelectingInTheBankAndOnTheRecipesTab() {
+        val fake = backend()
+        show { RecipeBankScreen(client(fake), onBack = {}, onOpen = {}, onOpenMapping = {}) }
+        waitFor("Soba noodle salad")
+        selectFromMenu()
+        waitFor("0 selected")
+        compose.onNodeWithText("Soba noodle salad").performClick()
+        waitFor("1 selected")
+        compose.onNodeWithText("Soba noodle salad").performClick()
+        // Nothing is left to act on: the bar is gone and the rows have their Add buttons again.
+        waitForDescription("Add Soba noodle salad to my recipes")
+        compose.onAllNodesWithText("0 selected").assertCountEquals(0)
+    }
+
+    @Test
+    fun takingOffTheLastTickLeavesSelectingOnTheRecipesTab() {
+        val fake = backend()
+        showList(client(fake))
+        waitFor("Tuna pasta salad")
+        compose.onNodeWithText("Lentil soup").performTouchInput { longClick() }
+        waitFor("1 selected")
+        compose.onNodeWithText("Lentil soup").performClick()
+        compose.onAllNodesWithText("1 selected").assertCountEquals(0)
+        compose.onAllNodesWithText("0 selected").assertCountEquals(0)
+        compose.onAllNodesWithText("Recipes").onFirst().assertExists()
+    }
+
+    @Test
+    fun backWhileSelectingLeavesSelectingFirstAndThenTheScreen() {
+        val fake = backend()
+        var left = 0
+        var dispatcher: androidx.activity.OnBackPressedDispatcher? = null
+        // As App has it: the screen's own handler, with the bank's inside it.
+        show {
+            dispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+            BackHandler(enabled = true) { left++ }
+            RecipeBankScreen(client(fake), onBack = { left++ }, onOpen = {}, onOpenMapping = {})
+        }
+        waitFor("Soba noodle salad")
+        selectFromMenu()
+        waitFor("0 selected")
+        compose.runOnUiThread { dispatcher!!.onBackPressed() }
+        compose.waitForIdle()
+        compose.onAllNodesWithText("0 selected").assertCountEquals(0)
+        assertEquals(0, left)
+        compose.runOnUiThread { dispatcher!!.onBackPressed() }
+        compose.waitForIdle()
+        assertEquals(1, left)
+    }
+
     @Test
     fun aRecipeMadeInTheAppIsDeletedNotPutBack() {
         val fake = backend()

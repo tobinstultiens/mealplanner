@@ -128,6 +128,8 @@ fun RecipeListScreen(
 
     val mine = (state as? Load.Ready)?.value.orEmpty()
     val chosen = selection.ids.orEmpty()
+    // Back leaves selecting instead of whatever Back does on a tab.
+    BackHandler(enabled = selection.selecting, onBack = selection::stop)
 
     Scaffold(
         topBar = {

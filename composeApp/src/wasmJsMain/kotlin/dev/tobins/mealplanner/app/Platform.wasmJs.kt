@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import io.ktor.client.engine.js.JsError
@@ -10,20 +11,41 @@ import kotlinx.browser.window
 import kotlinx.io.IOException
 import org.w3c.dom.events.Event
 
+/** A [BackHandler] that is on, with the order it was composed in: a handler inside another's screen is composed after it. */
+private class BackEntry(val order: Int, val onBack: State<() -> Unit>)
+
+private val backEntries = mutableListOf<BackEntry>()
+private var nextBackOrder = 0
+private var backListening = false
+
+/**
+ * One `popstate` listener for all handlers: a back goes to the innermost one (the last composed) only, so that
+ * leaving a selection does not also close the screen it is on.
+ */
+private fun listenForBack() {
+    if (backListening) return
+    backListening = true
+    window.addEventListener("popstate") { backEntries.maxByOrNull { it.order }?.onBack?.value?.invoke() }
+}
+
 /**
  * The browser's back button closes the open screen: while [enabled], a history entry is
- * added and going back from it calls [onBack]. When the screen is closed from inside the
+ * added and going back from it calls [onBack]. When several are enabled (a selection on a
+ * screen), only the innermost is called. When the screen is closed from inside the
  * app instead, the entry stays; going back over it later does nothing visible.
  */
 @Composable
 actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
     val currentOnBack = rememberUpdatedState(onBack)
+    // Composition runs outside in, so this tells which handler is inside which.
+    val order = remember { nextBackOrder++ }
     DisposableEffect(enabled) {
         if (!enabled) return@DisposableEffect onDispose {}
+        listenForBack()
         window.history.pushState(null, "")
-        val listener: (Event) -> Unit = { currentOnBack.value() }
-        window.addEventListener("popstate", listener)
-        onDispose { window.removeEventListener("popstate", listener) }
+        val entry = BackEntry(order, currentOnBack)
+        backEntries += entry
+        onDispose { backEntries -= entry }
     }
 }
 
