@@ -160,6 +160,12 @@ data class CookingSyncStatus(
     val serverSite: Boolean = false,
     /** The address of that site, to name it, without a user name or password; null when it is a checkout on the server's disk. */
     val serverRepoUrl: String? = null,
+    /**
+     * When the server last fetched its cooking site, for an account whose bank it is ([shared]): a sync within a few
+     * minutes of a fetch imports the site as it was then, without fetching it again. Null for any other site, and
+     * until the server's first fetch since it started.
+     */
+    val fetchedAt: String? = null,
 )
 
 /** Outcome of `POST /api/sync/cooking`. */

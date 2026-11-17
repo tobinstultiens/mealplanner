@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
@@ -19,12 +20,16 @@ import java.util.concurrent.ConcurrentHashMap
  * The server's site is the bank of every account by default; with [shareServerSite] false
  * (`COOKING_REPO_SHARED=0`) only the owner's, as before. Its recipes still become rows of each account's
  * own, so that adding, rating and the rotation stay the account's: the server's site is one clone, fetched
- * once per round of the schedule, and its pages are imported into each account that reads it.
+ * once per round of the schedule or when an account asks, and its pages are imported into each account that reads it.
  *
  * Two kinds of lock keep syncs apart. One per account, taken first: no two imports into one account's
  * recipes and pictures, and no change of its site meanwhile. One for the server's clone: no fetch while
  * its files are read. A repository of an account's own is a clone of that account alone, so the account's
  * lock is its clone's lock too.
+ *
+ * Any account on the server's site may ask for a sync, and a fetch holds the clone's lock (up to the git
+ * timeout) while every other account's import waits. So the server's clone is fetched at most once per
+ * [fetchInterval] (issue 215): a sync inside it imports the clone as it is, and [status] says when it was fetched.
  */
 class CookingSync(
     private val users: UserRepository,
@@ -35,9 +40,21 @@ class CookingSync(
     /** Whether every account may read [serverSite], or only the owner. */
     private val shareServerSite: Boolean,
     private val scope: (Long) -> UserScope,
+    /** The least time between two fetches of [serverSite], from the end of one to the start of the next. */
+    private val fetchInterval: Duration = FETCH_INTERVAL,
+    /** The time now; a test's clock moves on its own. */
+    private val now: () -> Instant = Instant::now,
 ) {
     private val locks = ConcurrentHashMap<Long, Mutex>()
     private val serverLock = Mutex()
+
+    /** When the last fetch of [serverSite] ended, failed or not; written under [serverLock]. */
+    @Volatile
+    private var lastFetchEnded: Instant? = null
+
+    /** When [serverSite] was last fetched successfully, for [status]; since the server started. */
+    @Volatile
+    private var serverFetchedAt: Instant? = null
 
     private fun lockOf(accountId: Long) = locks.getOrPut(accountId) { Mutex() }
 
@@ -109,8 +126,9 @@ class CookingSync(
     }
 
     /**
-     * Fetches the account's site and imports it, when asked to (`POST /api/sync/cooking`). Null without a site,
-     * or when it has no `content/` folder.
+     * Fetches the account's site and imports it, when asked to (`POST /api/sync/cooking`); the server's site only
+     * when its last fetch is [fetchInterval] old ([fetchServerSite]). Null without a site, or when it has no
+     * `content/` folder.
      */
     suspend fun sync(accountId: Long): SyncResult? = lockOf(accountId).withLock {
         withContext(Dispatchers.IO) {
@@ -132,16 +150,15 @@ class CookingSync(
 
     /**
      * Imports the server's site into the account; the caller holds the account's lock. Fetches first when
-     * [fetch], or when there is no clone yet. Reading the pages and the pictures holds the clone's lock, so
-     * that no fetch changes its files meanwhile; the import into the database does not, so that another
-     * account reading the clone does not wait for it.
+     * [fetch], or when there is no clone yet, as [fetchServerSite] allows. Reading the pages and the pictures
+     * holds the clone's lock, so that no fetch changes its files meanwhile; the import into the database does
+     * not, so that another account reading the clone does not wait for it.
      */
     private suspend fun importServerSite(accountId: Long, fetch: Boolean): SyncResult? {
         val site = serverSite ?: return null
         return recording(accountId) {
             val (commit, pages) = serverLock.withLock {
-                val commit = if (fetch || !site.cloned()) site.update() else site.head()
-                commit to CookingSiteReader(site).readAll()
+                fetchServerSite(site, fetch) to CookingSiteReader(site).readAll()
             }
             if (pages == null) return@recording null
             val user = scope(accountId)
@@ -149,10 +166,38 @@ class CookingSync(
         }
     }
 
+    /**
+     * Fetches the server's [site] when [wanted] or there is no clone yet, unless a fetch ended less than
+     * [fetchInterval] ago; answers the commit checked out. The caller holds [serverLock], so that requests at once
+     * decide one after another and fetch once. A failed fetch counts too, or a slow remote would hold the lock for
+     * every request. Without a clone inside the interval (the last fetch failed) there is nothing to read: that
+     * fails at once rather than trying again.
+     */
+    private fun fetchServerSite(site: CookingRepo, wanted: Boolean): String? {
+        if (site.url == null) return null
+        val due = fetchDue()
+        if (site.cloned() && !(wanted && due)) return site.head()
+        check(due) { "The server's cooking site could not be fetched; it is tried again ${fetchInterval.toMinutes()} minutes after the last try" }
+        try {
+            return site.update().also { serverFetchedAt = now() }
+        } finally {
+            lastFetchEnded = now()
+        }
+    }
+
+    /**
+     * Whether the last fetch of the server's site ended [fetchInterval] ago or more. Also when the clock went back
+     * since: a fetch "in the future" would otherwise block fetching for as long as the clock jumped.
+     */
+    private fun fetchDue(): Boolean {
+        val last = lastFetchEnded ?: return true
+        return now() !in last..<last.plus(fetchInterval)
+    }
+
     /** Brings the account's recipes in line with [pages], read at [commit], and records the sync. */
     private fun importPages(accountId: Long, user: UserScope, commit: String?, pages: List<SitePage>): SyncResult =
         user.recipes.syncCookingSite(pages).copy(autoLinked = user.ingredients.autoLink(), commit = commit).also {
-            users.setMeta(accountId, SYNCED_AT_KEY, Instant.now().toString())
+            users.setMeta(accountId, SYNCED_AT_KEY, now().toString())
             users.setMeta(accountId, SYNCED_COMMIT_KEY, it.commit)
             users.setMeta(accountId, SYNC_ERROR_KEY, null)
         }
@@ -180,9 +225,9 @@ class CookingSync(
     /**
      * Imports the server's site into an account that was never synced, on its first visit to the bank, rather
      * than leaving the bank empty until the schedule comes by. Checked again under the account's lock, so that
-     * two visits at once import once. It fetches only when there is no clone yet, so it waits at most for a fetch
-     * that is running already, and other accounts not at all. A failure is kept for [status], and the bank
-     * stays as it was; the next visit tries again.
+     * two visits at once import once. It fetches only when there is no clone yet (and not twice in [fetchInterval]),
+     * so it waits at most for a fetch that is running already, and other accounts not at all. A failure is kept for
+     * [status], and the bank stays as it was; the next visit tries again.
      */
     suspend fun importFirst(accountId: Long) {
         if (!neverSynced(accountId)) return
@@ -201,7 +246,8 @@ class CookingSync(
     private fun neverSynced(accountId: Long) = users.meta(accountId, SYNCED_AT_KEY) == null && siteOf(accountId) == Site.Server
 
     /**
-     * One round of the schedule: the server's site is fetched once and imported into every account that reads it,
+     * One round of the schedule: the server's site is fetched once (unless a sync fetched it less than
+     * [fetchInterval] ago, which is as good) and imported into every account that reads it,
      * then each account's own repository is fetched and imported. A site on the server's disk (no URL) is not
      * fetched, so not scheduled. A failure is logged and kept for the account ([status]), and stops nothing else.
      */
@@ -217,7 +263,7 @@ class CookingSync(
     /** Fetches the server's site once, then imports it into each of [accounts] that still reads it. */
     private suspend fun syncServerSite(accounts: Collection<Long>) {
         try {
-            serverLock.withLock { withContext(Dispatchers.IO) { serverSite!!.update() } }
+            serverLock.withLock { withContext(Dispatchers.IO) { fetchServerSite(serverSite!!, wanted = true) } }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             log.warn("The server's cooking site could not be fetched: ${e.message}")
@@ -259,6 +305,7 @@ class CookingSync(
             shared = site == Site.Server,
             serverSite = offersServerSite(accountId),
             serverRepoUrl = serverSite?.url?.takeIf { offersServerSite(accountId) }?.let(::withoutCredentials),
+            fetchedAt = serverFetchedAt?.takeIf { site == Site.Server }?.toString(),
         )
     }
 
@@ -270,6 +317,14 @@ class CookingSync(
 
         /** The cooking site changes rarely; four times a day picks up edits the same day. */
         const val EVERY_HOURS = 6
+
+        /**
+         * The least time between two fetches of the server's site (`COOKING_REPO_FETCH_INTERVAL_MINUTES`). Short
+         * enough that an edit pushed to the site arrives with a Sync a few minutes later; long enough that a
+         * fetch running into the git timeout (a minute) holds the clone's lock a sixth of the time at most.
+         */
+        val FETCH_INTERVAL: Duration = Duration.ofMinutes(5)
+
         private const val REPO_KEY = "cookingRepoUrl"
 
         /** Set when the account chose to have no cooking site, not even the server's. */

@@ -83,7 +83,12 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
   it, as rows of the account's own: adding, rating, the rotation and the ingredient links stay per account, and
   an edit on the site reaches every account. A repository of an account's own is fetched as often. A new account
   finds the server's site in its bank on its first visit there (`GET /api/recipes/bank` imports it when the account
-  was never synced), without waiting for the schedule. `POST /api/sync/cooking` fetches the account's site at once.
+  was never synced), without waiting for the schedule. `POST /api/sync/cooking` fetches the account's site at once;
+  the server's site at most once every five minutes (`COOKING_REPO_FETCH_INTERVAL_MINUTES`; issue 215), as every
+  account's imports wait while it is fetched. A sync within five minutes of the last fetch (by any account, the
+  schedule, or one that failed) imports the clone as it is, without an error, and `fetchedAt` in
+  `GET /api/sync/cooking` says when the server's site was last fetched. Without a clone yet (the first fetch
+  failed) such a sync fails at once rather than trying again.
 - Choosing another site leaves the old one at once: its bank-only recipes leave the bank, those the account added
   stay among its recipes as no longer on the site (until the new site has them), and its pictures go; the new site
   is imported by the sync the app asks for next (or, for the server's site, the next visit to the bank). A
@@ -365,6 +370,7 @@ installed side by side: they share the application id but not the signing key.
 | `COOKING_REPO_URL` | unset | The server's cooking site: the recipe bank of every account that has not chosen another site or none in the app; cloned once and re-synced every six hours. Shown to accounts other than the owner without its user name or password |
 | `COOKING_REPO_PATH` | `.runtime/cooking` with a URL | The server's checkout of that site; without `COOKING_REPO_URL` it is used as is (and synced only when asked) |
 | `COOKING_REPO_SHARED` | on | Set to `0` (or `off`, `false`) to keep the server's cooking site to the owner, as before issue 208; other accounts then set a site of their own or have none |
+| `COOKING_REPO_FETCH_INTERVAL_MINUTES` | `5` | The least time between two fetches of the server's cooking site, which any account's Sync asks for while the others' imports wait; a Sync within it imports the clone as it is. `0` fetches on every Sync. A value that is not a whole number of minutes stops the server at start |
 | `ANTHROPIC_API_KEY` | unset | Enables recipe generation (`POST /api/recipes/generate`) with Claude; pay per use |
 | `MEALPLANNER_MODEL` | `claude-opus-5-5` | Claude model for generation |
 | `MEALPLANNER_FETCH_OFFERS` | on | Set to `off` to stop fetching store offers and regular prices in the background |
