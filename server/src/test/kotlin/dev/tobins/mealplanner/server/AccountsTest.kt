@@ -33,6 +33,7 @@ import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
+import dev.tobins.mealplanner.server.history.Verdict
 import dev.tobins.mealplanner.server.offers.OfferSource
 import dev.tobins.mealplanner.shopping.ShopSection
 import io.ktor.client.HttpClient
@@ -49,6 +50,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
@@ -151,6 +153,38 @@ class AccountsTest {
         bob.put("/api/shops") { setBody(ShopsSetting(null)) }
         assertEquals(listOf(Store.AH), alice.get("/api/shops").body<ShopsSetting>().stores)
         assertNull(bob.get("/api/shops").body<ShopsSetting>().stores)
+    }
+
+    @Test
+    fun theVerdictsOnOffersGoByTheAccountsOwnIngredientsAndStores() = testApplication {
+        val today = serverToday()
+        val samphire = Offer(Store.AH, "AH Zeekraal 100 gram", "1+1 gratis", category = "Groente, aardappelen", validFrom = today.toString(), validUntil = today.plusDays(6).toString())
+        val ah = object : OfferSource {
+            override val store = Store.AH
+            override suspend fun fetch() = listOf(samphire)
+        }
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = listOf(ah), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        suspend fun HttpClient.verdicts() = get("/api/offers/verdicts").body<DealVerdicts>().verdicts.map { it.ingredient to it.verdict }
+
+        alice.post("/api/ingredients") { setBody(IngredientInput("Zeekraal")) }
+        alice.post("/api/offers/refresh")
+        assertEquals(listOf("Zeekraal"), db.priceHistoryQueries.selectOfferHistory().executeAsList().map { it.ingredient }, "the shared history names her ingredient")
+
+        assertEquals(listOf("Zeekraal" to Verdict.NOT_ENOUGH_HISTORY), alice.verdicts())
+        // Bob has nothing like it in his catalogue: nothing of hers reaches him through the history.
+        assertEquals(emptyList(), bob.verdicts())
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/offers/verdicts").status)
+        // The route only reads; what Bob chooses or calls changes nothing of Alice's.
+        assertFalse(bob.post("/api/offers/verdicts").status.isSuccess())
+        bob.put("/api/shops") { setBody(ShopsSetting(listOf(Store.JUMBO))) }
+        assertEquals(listOf("Zeekraal" to Verdict.NOT_ENOUGH_HISTORY), alice.verdicts())
+        // Her own choice of stores is what limits hers.
+        alice.put("/api/shops") { setBody(ShopsSetting(listOf(Store.LIDL))) }
+        assertEquals(emptyList(), alice.verdicts())
     }
 
     @Test

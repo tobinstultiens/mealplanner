@@ -169,6 +169,20 @@ class DealKindTest {
     }
 
     @Test
+    fun thePricePerPackIsWhatOnePackCostsWithTheDealUsedInFull() {
+        // No size to read, so nothing per kg: the price per pack still compares this product's offers.
+        DealTerms.of(offer("2 voor 5.50", title = "AH Goudse plakken")).let { near(2.75, it.eurosPerPack); assertNull(it.eurosPerKg) }
+        near(2.49, DealTerms.of(offer("Voor 2.49")).eurosPerPack)
+        // Lidl: a price without a deal text.
+        near(4.59, DealTerms.of(offer(null, price = 4.59)).eurosPerPack)
+        near(1.5, DealTerms.of(offer("1+1 gratis", originalPrice = 3.0)).eurosPerPack)
+        near(2.25, DealTerms.of(offer("25% korting", originalPrice = 3.0)).eurosPerPack)
+        assertNull(DealTerms.of(offer("1+1 gratis")).eurosPerPack, "no price before: the share alone")
+        assertNull(DealTerms.of(offer("1,00 per kilo", packSize = "500 g")).eurosPerPack, "a price by weight is no price per pack")
+        assertNull(DealTerms.of(offer("Gratis beanie bij 2 stuks", price = 3.0)).eurosPerPack, "unknown")
+    }
+
+    @Test
     fun aPackWithoutAVolumeHasNoPricePerLitre() {
         DealTerms.of(offer("voor 2,00", packSize = "500 g")).let { near(4.0, it.eurosPerKg); assertNull(it.eurosPerLitre) }
         assertNull(DealTerms.of(offer("voor 2,00", packSize = "4 stuks")).eurosPerLitre)
@@ -240,6 +254,7 @@ class DealKindTest {
             assertNull(PackSize.toBuy(offer("2 voor 3,99", packSize = text, title = "Product"), 500.0, 3.0), text)
             val terms = DealTerms.of(offer("2 voor 3,99", packSize = text, originalPrice = 2.0))
             for (value in listOf(terms.eurosPerKg, terms.eurosPerPiece, terms.eurosPerLitre)) assertNull(value, text)
+            assertEquals(1.995, terms.eurosPerPack, "the price per pack needs no size")
         }
         // A real small pack is still read.
         assertEquals(0.5, PackSize.grams("0,5 g"))

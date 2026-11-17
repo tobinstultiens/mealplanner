@@ -257,13 +257,15 @@ class PriceHistoryTest {
         refresh(ah, 6)
 
         val history = PriceHistoryRepository(db)
-        fun titles(stores: Collection<Store>, from: Int, until: Int) =
-            history.offerPeriods(stores, night(from), night(until)).map { "${it.title} ${it.deal}" }.sorted()
-        assertEquals(listOf("Kaas 25% korting"), titles(listOf(Store.AH), 1, 5), "a period running into the range")
-        assertEquals(listOf("Kaas 1+1 gratis", "Kaas 25% korting"), titles(listOf(Store.AH), 0, 6))
-        assertEquals(listOf("Ham 25% korting", "Kaas 25% korting"), titles(Store.entries, 1, 4))
-        assertEquals(listOf("Brood 25% korting", "Ham 25% korting"), titles(listOf(Store.JUMBO, Store.LIDL), 0, 6))
-        assertEquals(emptyList(), titles(Store.entries, 2, 2), "nothing was seen that night")
+        val products = listOf("kaas", "ham", "brood")
+        fun titles(store: Store, from: Int, until: Int, of: List<String> = products) =
+            history.offerPeriods(store, of, night(from), night(until)).map { "${it.title} ${it.deal}" }.sorted()
+        assertEquals(listOf("Kaas 25% korting"), titles(Store.AH, 1, 5), "a period running into the range")
+        assertEquals(listOf("Kaas 1+1 gratis", "Kaas 25% korting"), titles(Store.AH, 0, 6))
+        assertEquals(listOf("Ham 25% korting"), titles(Store.JUMBO, 1, 4), "only the store asked for")
+        assertEquals(emptyList(), titles(Store.AH, 0, 6, of = listOf("ham", "brood")), "only the products asked for")
+        assertEquals(emptyList(), titles(Store.AH, 0, 6, of = emptyList()))
+        assertEquals(emptyList(), Store.entries.flatMap { titles(it, 2, 2) }, "nothing was seen that night")
         assertEquals(listOf(night(1), night(6)).map { it.toString() }, history.recordings(Store.AH, night(1), night(6)).map { it.seenAt })
     }
 
@@ -271,7 +273,7 @@ class PriceHistoryTest {
     private fun planOf(label: String, vararg values: String): String {
         val source = File("src/main/sqldelight/dev/tobins/mealplanner/server/db/PriceHistory.sq").readText()
         val sql = source.substringAfter("\n$label:\n").substringBefore(";")
-            .replace(":stores", "(?, ?)").replace(Regex(""":\w+"""), "?")
+            .replace(Regex(""":(products|names)\b"""), "(?, ?)").replace(Regex(""":\w+"""), "?")
         return opened.first.executeQuery(null, "EXPLAIN QUERY PLAN $sql", { cursor ->
             val steps = mutableListOf<String>()
             while (cursor.next().value) steps += cursor.getString(3).orEmpty()
@@ -280,11 +282,13 @@ class PriceHistoryTest {
     }
 
     @Test
-    fun readingThePeriodsAndRecordingsUsesAnIndex() {
-        val periods = planOf("selectOfferPeriods", "AH", "JUMBO", night(0).toString(), night(7).toString())
-        assertTrue(periods.contains("USING INDEX offerHistory_seen (store=? AND lastSeen>?)"), periods)
+    fun readingThePeriodsRecordingsAndRegularPricesUsesAnIndex() {
+        val periods = planOf("selectOfferPeriods", "AH", "kaas", "ham", night(0).toString(), night(7).toString())
+        assertTrue(periods.contains("USING INDEX offerHistory_product (store=? AND productKey=?)"), periods)
         val recordings = planOf("selectOfferRecordings", "AH", night(0).toString(), night(7).toString())
         assertTrue(recordings.contains("USING INDEX sqlite_autoindex_offerRecording_1 (store=? AND seenAt>? AND seenAt<?)"), recordings)
+        val regular = planOf("selectRegularPrices", "Kipfilet", "Zeekraal", night(0).toString())
+        assertTrue(regular.contains("USING INDEX regularPriceHistory_name (name=?)"), regular)
     }
 
     @Test
