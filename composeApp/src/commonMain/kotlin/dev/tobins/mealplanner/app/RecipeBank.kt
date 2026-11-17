@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.RecipeSummary
 import kotlinx.coroutines.launch
@@ -78,12 +80,34 @@ internal suspend fun syncCookingSite(api: ApiClient, t: Strings, bank: Boolean, 
     }
 
 /**
- * Sets the account's repository to [url] (null clears it), tells [onStatus] the status that answers, and imports from the
- * new repository at once; null when there is none to import from.
+ * Sets where the account's bank comes from, tells [onStatus] the status that answers, and imports from that site at
+ * once; null when the account has none to import from.
  */
-internal suspend fun saveCookingRepo(api: ApiClient, t: Strings, url: String?, onStatus: (CookingSyncStatus) -> Unit): SyncOutcome? {
-    onStatus(api.setCookingRepo(url))
-    return url?.let { syncCookingSite(api, t, bank = true, imported = true) }
+internal suspend fun saveCookingRepo(api: ApiClient, t: Strings, setting: CookingRepoSetting, onStatus: (CookingSyncStatus) -> Unit): SyncOutcome? {
+    val status = api.setCookingRepo(setting)
+    onStatus(status)
+    return if (status.shared || status.repoUrl != null) syncCookingSite(api, t, bank = true, imported = true) else null
+}
+
+/** Where the bank comes from, as the cooking-site dialog offers it. */
+internal enum class SiteChoice { SERVER, OWN, NONE }
+
+/** The choice in use. A server from before the server's site was everyone's (issue 208) says nothing of [CookingSyncStatus.shared]: its site is the account's own. */
+internal fun CookingSyncStatus.siteChoice(): SiteChoice = when {
+    shared -> SiteChoice.SERVER
+    repoUrl != null -> SiteChoice.OWN
+    else -> SiteChoice.NONE
+}
+
+/**
+ * What the server is sent for [choice], with the address [url] of a repository of the account's own. "None" is said
+ * as such only to a server that offers its site ([serverSite]): to any other, no URL means none already, and one from
+ * before issue 208 refuses a field it does not know.
+ */
+internal fun siteSetting(choice: SiteChoice, url: String, serverSite: Boolean): CookingRepoSetting = when (choice) {
+    SiteChoice.OWN -> CookingRepoSetting(url.trim())
+    SiteChoice.SERVER -> CookingRepoSetting(null)
+    SiteChoice.NONE -> CookingRepoSetting(null, noSite = serverSite)
 }
 
 /**
@@ -113,8 +137,9 @@ internal suspend fun ApiClient.setAdded(ids: List<Long>, added: Boolean): List<R
 internal fun SyncLine(status: CookingSyncStatus, onEdit: () -> Unit) {
     val t = LocalStrings.current
     val text = when {
-        status.repoUrl == null && status.syncedAt == null -> t(Msg.SYNC_NONE)
+        status.siteChoice() == SiteChoice.NONE && status.syncedAt == null -> t(Msg.SYNC_NONE)
         status.syncedAt == null -> t(Msg.SYNC_NOT_YET)
+        status.shared -> t(Msg.SYNC_SERVER_AT, instantLabel(status.syncedAt!!, t))
         else -> t(Msg.SYNC_AT, instantLabel(status.syncedAt!!, t))
     }
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onEdit).padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.Center) {
@@ -123,18 +148,23 @@ internal fun SyncLine(status: CookingSyncStatus, onEdit: () -> Unit) {
     }
 }
 
-/** Sets the git repository of the account's cooking site (Hugo recipes), or clears it. */
+/**
+ * Chooses where the account's bank comes from (Hugo recipes): the server's cooking site, when it offers one, a git
+ * repository of the account's own, or none. Starts on the choice in [status], the one in use.
+ */
 @Composable
-internal fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: suspend (String?) -> Unit) {
+internal fun CookingRepoDialog(status: CookingSyncStatus?, onDismiss: () -> Unit, onSave: suspend (CookingRepoSetting) -> Unit) {
     val t = LocalStrings.current
-    var url by remember { mutableStateOf(current.orEmpty()) }
+    val serverSite = status?.serverSite == true
+    var choice by remember { mutableStateOf(status?.siteChoice() ?: SiteChoice.NONE) }
+    var url by remember { mutableStateOf(status?.repoUrl?.takeIf { choice == SiteChoice.OWN }.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    fun save(value: String?) {
+    fun save() {
         saving = true
         scope.launch {
-            runCatching { onSave(value) }.onFailure { error = (load { throw it } as? Load.Failed)?.message ?: it.message }
+            runCatching { onSave(siteSetting(choice, url, serverSite)) }.onFailure { error = (load { throw it } as? Load.Failed)?.message ?: it.message }
             saving = false
         }
     }
@@ -142,28 +172,53 @@ internal fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: 
         onDismissRequest = onDismiss,
         title = { Text(t(Msg.COOKING_SITE)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                Text(t(Msg.COOKING_SITE_EXPLAIN))
-                OutlinedTextField(
-                    url, { url = it; error = null },
-                    label = { Text(t(Msg.REPO_URL)) },
-                    placeholder = { Text(t(Msg.REPO_URL_EXAMPLE)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            }
+            CookingSiteChoices(
+                serverSite = serverSite || choice == SiteChoice.SERVER, serverUrl = status?.serverRepoUrl,
+                choice = choice, onChoice = { choice = it; error = null },
+                url = url, onUrl = { url = it; error = null },
+                error = error,
+            )
         },
         confirmButton = {
-            TextButton(enabled = !saving && url.isNotBlank(), onClick = { save(url.trim()) }) { Text(if (saving) t(Msg.IMPORTING) else t(Msg.SAVE)) }
-        },
-        dismissButton = {
-            Row {
-                if (current != null) TextButton(enabled = !saving, onClick = { save(null) }) { Text(t(Msg.REMOVE)) }
-                TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) }
+            TextButton(enabled = !saving && (choice != SiteChoice.OWN || url.isNotBlank()), onClick = ::save) {
+                Text(if (saving && choice != SiteChoice.NONE) t(Msg.IMPORTING) else t(Msg.SAVE))
             }
         },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )
+}
+
+/**
+ * The cooking-site dialog's body: the server's site (named by its address [serverUrl]) when it offers one ([serverSite]),
+ * a repository of the account's own with the field for its address under it, and none.
+ */
+@Composable
+internal fun CookingSiteChoices(
+    serverSite: Boolean,
+    serverUrl: String?,
+    choice: SiteChoice,
+    onChoice: (SiteChoice) -> Unit,
+    url: String,
+    onUrl: (String) -> Unit,
+    error: String?,
+) {
+    val t = LocalStrings.current
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+        Text(t(Msg.COOKING_SITE_CHOOSE))
+        if (serverSite) RadioOption(t(Msg.SITE_OF_SERVER), serverUrl, selected = choice == SiteChoice.SERVER) { onChoice(SiteChoice.SERVER) }
+        RadioOption(t(Msg.SITE_OWN), t(Msg.COOKING_SITE_EXPLAIN), selected = choice == SiteChoice.OWN) { onChoice(SiteChoice.OWN) }
+        if (choice == SiteChoice.OWN) {
+            OutlinedTextField(
+                url, onUrl,
+                label = { Text(t(Msg.REPO_URL)) },
+                placeholder = { Text(t(Msg.REPO_URL_EXAMPLE)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        RadioOption(t(Msg.SITE_NONE), t(Msg.SITE_NONE_EXPLAIN), selected = choice == SiteChoice.NONE) { onChoice(SiteChoice.NONE) }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+    }
 }
 
 /**
@@ -289,11 +344,11 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
         }
         if (editingRepo) {
             CookingRepoDialog(
-                current = syncStatus?.repoUrl,
+                status = syncStatus,
                 onDismiss = { editingRepo = false },
-                onSave = { url ->
+                onSave = { setting ->
                     // The dialog stays, saying "Importing…", until this is done: closing it first would cancel it, as its scope goes with it.
-                    val outcome = saveCookingRepo(api, t, url) { syncStatus = it }
+                    val outcome = saveCookingRepo(api, t, setting) { syncStatus = it }
                     editingRepo = false
                     // The bank and the line above it show what the import found.
                     reload++

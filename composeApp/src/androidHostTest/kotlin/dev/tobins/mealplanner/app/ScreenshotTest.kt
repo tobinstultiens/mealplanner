@@ -97,6 +97,15 @@ private fun recipePicker(api: ApiClient) {
     }
 }
 
+/** The cooking-site dialog's body on a server that offers its site, with [choice] made and [url] typed. */
+@Composable
+private fun cookingSiteChoices(choice: SiteChoice, url: String) {
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(LocalStrings.current(Msg.COOKING_SITE), style = MaterialTheme.typography.headlineSmall)
+        CookingSiteChoices(true, "https://github.com/example/cooking.git", choice, {}, url, {}, error = null)
+    }
+}
+
 /** The snackbar of a recipe added with ingredients to link, shown the way [announceAdded] shows it. */
 @Composable
 private fun addedSnackbar() {
@@ -229,6 +238,9 @@ enum class Shot(
             UpdateBody(update, "0.1.1")
         }
     }),
+    // The cooking-site dialog's body, for the same reason: a repository of one's own being typed, and in Dutch the server's site chosen.
+    COOKING_SITE_CHOICES(heightDp = 700, content = { _, _ -> cookingSiteChoices(SiteChoice.OWN, "https://github.com/anna/koken.git") }),
+    COOKING_SITE_CHOICES_NL(dutch = true, heightDp = 700, content = { _, _ -> cookingSiteChoices(SiteChoice.SERVER, "") }),
     // The correction dialog of an ingredient's section and "keeps": its body, for the same reason.
     SECTION_CHOICES(heightDp = 1050, content = { _, _ ->
         val entry = IngredientSection(7, "Minced beef", "MEAT", "MEAT", "Albert Heijn: Rundergehakt", byHand = false, keeps = true, keepsAutomatic = true)

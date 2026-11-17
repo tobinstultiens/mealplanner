@@ -931,7 +931,7 @@ A reference is the name of one of the front matter's `resources` (what `img` ref
 relative to the page's folder, or a path from the site's root, looked up in `static/` and then
 `assets/`. The owner's site uses the second form in one page bundle (`recipes/ala_mario`: two
 `resources`, shown with `img`); the others have no pictures yet. Pictures on other websites are not
-fetched, and nothing outside the account's checkout is read, also not through `..` or a symbolic link.
+fetched, and nothing outside the checkout of the account's site is read, also not through `..` or a symbolic link.
 
 The server keeps a copy at most 800 pixels on its longest side (smaller ones keep their size), turned
 upright as its EXIF orientation says, as a JPEG (quality 0.82, typically 50 to 150 KB), in
@@ -944,7 +944,10 @@ picture.
 Each sync compares the SHA-256 of every picture file with the one it last read: a changed picture is
 copied again (and gets a new `v`), an unchanged one is left alone, and the copy of a recipe that is
 gone, or whose page no longer shows a picture, is deleted. Setting another cooking site deletes all of
-the account's copies until the new site is synced. `GET /api/recipes/{id}/image` serves the copy to the
+the account's copies until the new site is synced. Accounts that read the server's cooking site (issue 208)
+read its one clone, but each keeps copies of its own, under its own recipe ids: a copy is about 130 KB (the
+one photo on the site in November 2026: 3.2 MB as taken, 134 KB as copied, 0.12 s to scale), so a copy per
+account costs little, and a picture is served by the same check as any other: the account's own recipe. `GET /api/recipes/{id}/image` serves the copy to the
 account that owns the recipe (404 to any other), with
 `Cache-Control: private, max-age=31536000, immutable`: the URL changes when the picture does. It needs
 the login like every other call, so the apps fetch it with their access token rather than handing the

@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MappingRequest
@@ -110,7 +111,8 @@ class ApiClientWasmTest {
     @Test
     fun everyKindOfRequestBodyIsWrittenAsBefore() = runTest {
         val requests = sent { api ->
-            api.setCookingRepo("https://example.org/r.git")
+            api.setCookingRepo(CookingRepoSetting("https://example.org/r.git"))
+            api.setCookingRepo(CookingRepoSetting(null, noSite = true))
             api.logFood(LogEntry(date = "2026-11-16", description = "Apple", kcal = 50.5, proteinG = 0.5))
             api.setWeight("2026-11-16", 80.5)
             api.setShoppingChecked("2026-11-16", "i1", true)
@@ -135,6 +137,7 @@ class ApiClientWasmTest {
         assertEquals(
             listOf(
                 """PUT /api/sync/cooking/repo {"url":"https://example.org/r.git"}""",
+                """PUT /api/sync/cooking/repo {"url":null,"noSite":true}""",
                 """POST /api/log {"id":0,"date":"2026-11-16","description":"Apple","kcal":50.5,"proteinG":0.5}""",
                 """PUT /api/weights/2026-11-16 80.5""",
                 """PUT /api/plans/2026-11-16/shopping {"key":"i1","checked":true}""",
