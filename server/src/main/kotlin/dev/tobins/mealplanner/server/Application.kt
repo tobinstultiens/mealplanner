@@ -56,6 +56,8 @@ data class ServerConfig(
     val cookingRepoUrl: String? = null,
     /** Whether the server's cooking site is the bank of every account without a site of its own, or only the owner's. */
     val cookingRepoShared: Boolean = true,
+    /** The least time between two fetches of the server's cooking site, which any account on it can ask for. */
+    val cookingFetchInterval: Duration = CookingSync.FETCH_INTERVAL,
     /** The NEVO main csv to import nutrition data from; null leaves the food table as it is. */
     val nevoFile: File? = null,
     /** Fetch store offers in the background. Off unless set, so tests never reach the stores. */
@@ -92,6 +94,8 @@ data class ServerConfig(
                     ?: env["COOKING_REPO_URL"]?.takeIf { it.isNotBlank() }?.let { ".runtime/cooking" })?.let(::File),
                 cookingRepoUrl = env["COOKING_REPO_URL"]?.takeIf { it.isNotBlank() },
                 cookingRepoShared = env["COOKING_REPO_SHARED"]?.trim()?.lowercase() !in setOf("false", "off", "0"),
+                cookingFetchInterval = env["COOKING_REPO_FETCH_INTERVAL_MINUTES"]?.takeIf { it.isNotBlank() }?.let(::minutes)
+                    ?: CookingSync.FETCH_INTERVAL,
                 nevoFile = env["NEVO_CSV_PATH"]?.takeIf { it.isNotBlank() }?.let(::File),
                 fetchOffers = env["MEALPLANNER_FETCH_OFFERS"]?.lowercase() !in setOf("false", "off", "0"),
                 oidcIssuer = env["MEALPLANNER_OIDC_ISSUER"]?.takeIf { it.isNotBlank() },
@@ -102,6 +106,12 @@ data class ServerConfig(
                 imageDir = env["MEALPLANNER_IMAGE_DIR"]?.takeIf { it.isNotBlank() }?.let(::File)
                     ?: File(databaseDir ?: dataDir, "recipe-images"),
             )
+        }
+
+        /** A whole number of minutes, 0 or more; anything else stops the start rather than being guessed at. */
+        private fun minutes(text: String): Duration {
+            val minutes = requireNotNull(text.trim().toLongOrNull()?.takeIf { it >= 0 }) { "Not a number of minutes: '$text'" }
+            return Duration.ofMinutes(minutes)
         }
     }
 }
@@ -129,7 +139,7 @@ fun Application.module(
     // Everything else belongs to one account and is reached through its scope.
     fun scope(accountId: Long) = UserScope(accountId, database, foods, offers, prices, generator, config.imageDir)
     val serverSite = CookingSync.serverSite(config.cookingRepo, config.cookingRepoUrl, config.dataDir)
-    val cooking = CookingSync(users, config.dataDir, serverSite, config.cookingRepoShared, ::scope)
+    val cooking = CookingSync(users, config.dataDir, serverSite, config.cookingRepoShared, ::scope, config.cookingFetchInterval)
 
     // Cooking sites the server fetches itself: synced a few times a day.
     launch {

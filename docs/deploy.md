@@ -34,7 +34,10 @@ Gatus checks `/health`.
 server's cooking site. Since issue 208 it is the recipe bank of every account that has not chosen another site
 or none in the app, not only the owner's: each account finds its recipes in its bank and adds the ones it cooks.
 The server fetches it once every six hours into one clone and imports it into each account; the owner's data and
-clone stay where they were. An account that had set a repository of its own keeps it. Every account sees the
+clone stay where they were. Any account's Sync fetches it too, but not within five minutes of the last fetch (then
+it imports the clone as it is), so that nobody's taps keep the others waiting on the fetch: an edit pushed to the
+site arrives with the first Sync at least five minutes after the last fetch. `COOKING_REPO_FETCH_INTERVAL_MINUTES` changes
+the five minutes (`0`: every Sync fetches, as before issue 215); nothing needs setting. An account that had set a repository of its own keeps it. Every account sees the
 site's address in the app, without a user name or password in it; the owner sees it as configured. To keep the
 site to the owner, as before, set `COOKING_REPO_SHARED=0` (in the Ansible repo's `docker/mealplanner.yml`); other
 accounts then set a site of their own on the recipe bank screen, or have none.
