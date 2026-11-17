@@ -1,9 +1,13 @@
-// Frozen from v0.1.4 (12dcec0137b710f972f7d35039ee32797a1ae2e7) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.5 (32d25e8a4073a3eed02ca4fd44a7b98461199be5) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
 
-/** What became of a planned meal. */
+/**
+ * What became of a planned meal. Annotated because the app sends it bare as a request body: the web
+ * client cannot find a serializer by reflection, as the JVM and Android do for an enum without one.
+ */
+@Serializable
 enum class MealStatus { PLANNED, EATEN, SKIPPED }
 
 /** Something eaten outside the plan, logged with rough numbers. */
