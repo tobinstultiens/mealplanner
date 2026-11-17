@@ -1,4 +1,4 @@
-// Frozen from v0.1.4 (12dcec0137b710f972f7d35039ee32797a1ae2e7) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.5 (32d25e8a4073a3eed02ca4fd44a7b98461199be5) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.EncodeDefault
@@ -100,6 +100,18 @@ data class ShoppingItem(
      * without [otherAmounts] or without such a count.
      */
     val ownPieces: Double? = null,
+    /**
+     * On a ticked row of what the week's meals need ([ShoppingList.items], [ShoppingList.noLongerNeeded]):
+     * the euros its offer saved when it was ticked, as a store header counted it then
+     * ([dev.tobins.mealplanner.shopping.savingToday], on the server's day of the tick, at the account's
+     * stores); 0 when it saved nothing then. It stays as it was, so a meal eaten or an offer ended since
+     * does not change what a bought row saved, and the app counts it instead of what the row would save
+     * now. Null when that is not known: a row not ticked, a tick from before the server kept it or of a
+     * row the list did not have, and the advice and own items, whose savings go as before.
+     */
+    val boughtSaving: Double? = null,
+    /** The store of the offer [boughtSaving] was saved with, under which the app keeps the bought row; null when it saved nothing. */
+    val boughtOfferStore: Store? = null,
 )
 
 /**
