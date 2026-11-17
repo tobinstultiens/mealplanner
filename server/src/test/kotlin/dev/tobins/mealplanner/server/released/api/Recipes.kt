@@ -1,4 +1,4 @@
-// Frozen from v0.1.6 (f0c5fecdfd665b93882988ecd6063a74b6ae974b) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.7 (45c196e24b79b6b3893e23fd5cc3364fa46acc38) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -149,8 +149,24 @@ data class CookingSyncStatus(
     val error: String?,
     /** How often the server syncs on its own; null when it doesn't (no repo URL configured). */
     val everyHours: Int?,
-    /** The account's cooking-site repository; null when none is set. */
+    /**
+     * The repository the account's bank comes from: its own, or the server's when [shared] (then without
+     * a user name or password in it, for an account other than the server's owner). Null when there is none,
+     * or the server's site is a checkout on its disk.
+     */
     val repoUrl: String? = null,
+    /** True when the bank comes from the server's own cooking site, not from a repository the account set. */
+    val shared: Boolean = false,
+    /** True when the server has a cooking site this account may choose ([CookingRepoSetting] without a URL). */
+    val serverSite: Boolean = false,
+    /** The address of that site, to name it, without a user name or password; null when it is a checkout on the server's disk. */
+    val serverRepoUrl: String? = null,
+    /**
+     * When the server last fetched its cooking site, for an account whose bank it is ([shared]): a sync within a few
+     * minutes of a fetch imports the site as it was then, without fetching it again. Null for any other site, and
+     * until the server's first fetch since it started.
+     */
+    val fetchedAt: String? = null,
 )
 
 /** Outcome of `POST /api/sync/cooking`. */
