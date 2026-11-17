@@ -39,6 +39,10 @@ internal fun searched(recipes: List<RecipeSummary>, mealsOnly: Boolean, query: S
 internal fun choiceCounts(searched: List<RecipeSummary>): Map<RotationChoice, Int> =
     RotationChoice.entries.associateWith { choice -> searched.count(choice::shows) }
 
+/** How many of [mine] that match [query] "Meals only" leaves out, so that a recipe just added does not seem to have vanished. */
+internal fun notMealsHidden(mine: List<RecipeSummary>, query: String): Int =
+    mine.count { it.kind != RecipeKind.MEAL && it.matches(query) }
+
 /** The sections of the cooking site that the bank's recipes are in, for its filter. */
 internal fun bankSections(bank: List<RecipeSummary>): List<String> =
     bank.map { it.section }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }

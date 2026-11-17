@@ -118,13 +118,15 @@ class RecipeBankScreensTest {
         var opened = false
         show { RecipeListScreen(client(fake), onOpen = { opened = true }, onOpenMapping = {}, onOpenBank = {}, onNewRecipe = {}) }
         waitFor("Tuna pasta salad")
-        compose.onNodeWithContentDescription("In the rotation: Tuna pasta salad").assertIsOff()
+        compose.onNodeWithContentDescription("Not in the rotation: Tuna pasta salad").assertIsOff()
         compose.onNodeWithContentDescription("In the rotation: Overnight oats with blueberries").assertIsOn()
 
-        compose.onNodeWithContentDescription("In the rotation: Tuna pasta salad").performClick()
+        compose.onNodeWithContentDescription("Not in the rotation: Tuna pasta salad").performClick()
         waitFor("Rotation (5)")
         waitFor("Not in rotation (1)")
+        // The description says what the switch is now, not what it was.
         compose.onNodeWithContentDescription("In the rotation: Tuna pasta salad").assertIsOn()
+        compose.onAllNodesWithContentDescription("Not in the rotation: Tuna pasta salad").assertCountEquals(0)
         assertEquals(listOf("""PUT /api/recipes/3/rotation {"inRotation":true}"""), fake.changes)
         assertFalse(opened)
     }
@@ -135,9 +137,9 @@ class RecipeBankScreensTest {
         fake.refusing = "“Shakshuka” is planned on Fri 20 Nov"
         showList(client(fake))
         waitFor("Shakshuka")
-        compose.onNodeWithContentDescription("In the rotation: Shakshuka").performClick()
+        compose.onNodeWithContentDescription("Not in the rotation: Shakshuka").performClick()
         waitFor("Could not change the rotation: “Shakshuka” is planned on Fri 20 Nov")
-        compose.onNodeWithContentDescription("In the rotation: Shakshuka").assertIsOff()
+        compose.onNodeWithContentDescription("Not in the rotation: Shakshuka").assertIsOff()
         waitFor("Not in rotation (2)")
     }
 
@@ -151,7 +153,7 @@ class RecipeBankScreensTest {
         compose.onNodeWithText("Shakshuka").performClick()
         waitFor("2 selected")
         // While selecting the rows have no switch to change a single one by accident.
-        compose.onAllNodesWithContentDescription("In the rotation: Shakshuka").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Not in the rotation: Shakshuka").assertCountEquals(0)
 
         compose.onNodeWithText("Add to rotation").performClick()
         waitFor("2 recipes are in the rotation now")
@@ -235,7 +237,7 @@ class RecipeBankScreensTest {
         showList(client(fake), onOpenBank = { bank++ })
         waitFor("No recipes yet. Add some from the recipe bank, or write one yourself.")
         compose.onNodeWithText("New recipe", substring = false).assertExists()
-        compose.onNodeWithText("Browse the bank").performClick()
+        compose.onNodeWithText("Browse the bank (5)").performClick()
         assertEquals(1, bank)
     }
 
@@ -290,7 +292,7 @@ class RecipeBankScreensTest {
         waitFor("Breakfast")
 
         compose.onNodeWithContentDescription("Add Greek yoghurt pancakes to my recipes").performClick()
-        waitFor("“Greek yoghurt pancakes” is in my recipes")
+        waitFor("“Greek yoghurt pancakes” added")
         compose.onAllNodesWithText("Greek yoghurt pancakes").assertCountEquals(0)
         assertEquals(listOf("""PUT /api/recipes/9/added {"added":true,"inRotation":true}"""), fake.changes)
 
@@ -307,6 +309,7 @@ class RecipeBankScreensTest {
         waitFor("Harissa chickpea stew")
         compose.onNodeWithContentDescription("Add Harissa chickpea stew to my recipes").performClick()
         waitFor("2 ingredients to link", substring = true)
+        waitFor("Link")
         compose.onNodeWithText("Link").performClick()
         assertEquals(1, linking)
     }
@@ -330,7 +333,7 @@ class RecipeBankScreensTest {
         // The Add buttons give way to the checkboxes while selecting.
         compose.onAllNodesWithContentDescription("Add Soba noodle salad to my recipes").assertCountEquals(0)
         compose.onNodeWithText("Add to my recipes").performClick()
-        waitFor("2 recipes added to my recipes")
+        waitFor("2 recipes added")
         assertEquals(listOf("""PUT /api/recipes/added {"ids":[11,12],"added":true,"inRotation":true}"""), fake.changes)
         compose.onAllNodesWithText("Soba noodle salad").assertCountEquals(0)
     }
@@ -349,7 +352,7 @@ class RecipeBankScreensTest {
 
         compose.onAllNodes(isSwitch).onFirst().performClick()
         compose.onNodeWithText("Add to my recipes").performClick()
-        waitFor("“Greek yoghurt pancakes” is in my recipes")
+        waitFor("“Greek yoghurt pancakes” added")
         assertEquals(listOf("""PUT /api/recipes/9/added {"added":true,"inRotation":false}"""), fake.changes)
         // Now it is one of mine, out of the rotation as asked.
         waitFor("In my rotation")
@@ -465,5 +468,34 @@ class RecipeBankScreensTest {
         assertEquals(1, browsed)
         // A recipe only in the bank is not among them.
         compose.onAllNodesWithText("Greek yoghurt pancakes").assertCountEquals(0)
+    }
+
+    @Test
+    fun whatMealsOnlyLeavesOutIsSaidWithAWayToShowIt() {
+        val fake = backend()
+        showList(client(fake))
+        waitFor("1 recipe not shown (not a meal)")
+        compose.onAllNodesWithText("Peanut sauce").assertCountEquals(0)
+        compose.onNodeWithText("Show them").performClick()
+        waitFor("Peanut sauce")
+        // Everything is shown now, so nothing is left to say.
+        compose.onAllNodesWithText("1 recipe not shown (not a meal)").assertCountEquals(0)
+    }
+
+    @Test
+    fun severalAddedAtOnceSayHowManyIngredientsAreToLinkWithTheWayToTheLinkingScreen() {
+        val fake = backend()
+        var linking = 0
+        show { RecipeBankScreen(client(fake), onBack = {}, onOpen = {}, onOpenMapping = { linking++ }) }
+        waitFor("Harissa chickpea stew")
+        selectFromMenu()
+        compose.onNodeWithText("Harissa chickpea stew").performClick()
+        compose.onNodeWithText("Soba noodle salad").performClick()
+        waitFor("2 selected")
+        compose.onNodeWithText("Add to my recipes").performClick()
+        waitFor("2 recipes added. 2 ingredients to link.")
+        waitFor("Link")
+        compose.onNodeWithText("Link").performClick()
+        assertEquals(1, linking)
     }
 }

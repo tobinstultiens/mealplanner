@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.app
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -186,7 +187,7 @@ class ScreensKeepPlaceTest {
         waitFor("Browse the bank")
         compose.onNodeWithText("Browse the bank").performClick()
         waitFor("Miso aubergine with sesame rice")
-        compose.onNode(hasScrollAction()).performScrollToIndex(4)
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(5)
         waitFor("Banana oat cookies")
         compose.onNodeWithText("Banana oat cookies").assertIsDisplayed()
 

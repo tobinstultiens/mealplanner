@@ -1,10 +1,10 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -78,6 +78,15 @@ internal suspend fun syncCookingSite(api: ApiClient, t: Strings, bank: Boolean, 
     }
 
 /**
+ * Sets the account's repository to [url] (null clears it), tells [onStatus] the status that answers, and imports from the
+ * new repository at once; null when there is none to import from.
+ */
+internal suspend fun saveCookingRepo(api: ApiClient, t: Strings, url: String?, onStatus: (CookingSyncStatus) -> Unit): SyncOutcome? {
+    onStatus(api.setCookingRepo(url))
+    return url?.let { syncCookingSite(api, t, bank = true, imported = true) }
+}
+
+/**
  * Tells that recipes were added, with "Undo" and, when ingredients of them are not linked to a food yet,
  * how many and a way to link them ([onLink]). Runs [onUndo] when "Undo" is tapped. Returns when the
  * snackbar is gone.
@@ -85,7 +94,7 @@ internal suspend fun syncCookingSite(api: ApiClient, t: Strings, bank: Boolean, 
 internal suspend fun SnackbarHostState.announceAdded(t: Strings, message: String, unlinked: Int, onLink: () -> Unit, onUndo: suspend () -> Unit) {
     val undo = t(Msg.UNDO)
     val result = if (unlinked > 0) {
-        showSnackbar(TwoActionSnackbar(message + " " + t.plural(Plural.INGREDIENTS_TO_LINK, unlinked) + ".", undo, t(Msg.LINK_SHORT), onLink))
+        showSnackbar(TwoActionSnackbar("$message. " + t.plural(Plural.INGREDIENTS_TO_LINK, unlinked) + ".", undo, t(Msg.LINK_SHORT), onLink))
     } else {
         showSnackbar(message, actionLabel = undo, duration = SnackbarDuration.Long)
     }
@@ -162,7 +171,6 @@ internal fun CookingRepoDialog(current: String?, onDismiss: () -> Unit, onSave: 
  * section and add from, one at a time with the button on a row or several with a selection. A row opens
  * the recipe read-only. The cooking-site line, with its sync and repository, is here because it is about the bank.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenMapping: () -> Unit) {
     val t = LocalStrings.current
@@ -252,70 +260,78 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
             OverflowMenu(MenuAction(AppIcons.Check, t(Msg.SELECT_RECIPES)) { selection.start() })
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text(t(Msg.SEARCH_RECIPES)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge),
-            )
-            val bank = (state as? Load.Ready)?.value.orEmpty()
-            val sections = bankSections(bank)
-            if (sections.size > 1) {
-                FlowRow(Modifier.padding(horizontal = Spacing.ScreenEdge), horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                    FilterChip(selected = section.isEmpty(), onClick = { section = "" }, label = { Text(t(Msg.BANK_ALL_SECTIONS)) })
-                    sections.forEach { name ->
-                        FilterChip(selected = section == name, onClick = { section = name }, label = { Text(name) })
+        val bank = (state as? Load.Ready)?.value.orEmpty()
+        val sections = bankSections(bank)
+        // The header scrolls with the rows, so that a short screen (landscape, a large font) is not taken up by it.
+        val header: @Composable () -> Unit = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text(t(Msg.SEARCH_RECIPES)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge),
+                )
+                if (sections.size > 1) {
+                    // One row to slide sideways: sixteen sections wrapped would be half the screen.
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Spacing.ScreenEdge),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
+                    ) {
+                        FilterChip(selected = section.isEmpty(), onClick = { section = "" }, label = { Text(t(Msg.BANK_ALL_SECTIONS)) })
+                        sections.forEach { name ->
+                            FilterChip(selected = section == name, onClick = { section = name }, label = { Text(name) })
+                        }
                     }
                 }
+                syncStatus?.let { SyncLine(it, onEdit = { editingRepo = true }) }
             }
-            syncStatus?.let { SyncLine(it, onEdit = { editingRepo = true }) }
-            if (editingRepo) {
-                CookingRepoDialog(
-                    current = syncStatus?.repoUrl,
-                    onDismiss = { editingRepo = false },
-                    onSave = { url ->
-                        syncStatus = api.setCookingRepo(url)
-                        editingRepo = false
-                        // A new repository is imported right away.
-                        if (url != null) {
-                            val outcome = syncCookingSite(api, t, bank = true, imported = true)
-                            reload++
-                            snackbar.showSnackbar(outcome.message)
-                        }
-                    },
-                )
+        }
+        if (editingRepo) {
+            CookingRepoDialog(
+                current = syncStatus?.repoUrl,
+                onDismiss = { editingRepo = false },
+                onSave = { url ->
+                    // The dialog stays, saying "Importing…", until this is done: closing it first would cancel it, as its scope goes with it.
+                    val outcome = saveCookingRepo(api, t, url) { syncStatus = it }
+                    editingRepo = false
+                    // The bank and the line above it show what the import found.
+                    reload++
+                    outcome?.let { scope.launch { snackbar.showSnackbar(it.message) } }
+                },
+            )
+        }
+        when (val current = state) {
+            Load.Loading -> Column(Modifier.padding(padding).fillMaxSize()) { header(); LoadingState() }
+            is Load.Failed -> Column(Modifier.padding(padding).fillMaxSize()) {
+                header()
+                ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current) { reload++ }
             }
-            when (val current = state) {
-                Load.Loading -> LoadingState()
-                is Load.Failed -> ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current) { reload++ }
-                is Load.Ready -> {
-                    val shown = bankShown(current.value, section.ifEmpty { null }, query)
+            is Load.Ready -> {
+                val shown = bankShown(current.value, section.ifEmpty { null }, query)
+                LazyColumn(Modifier.padding(padding).fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
+                    item(key = "header") { header() }
                     if (current.value.isEmpty()) {
-                        EmptyState(AppIcons.Recipes, t(Msg.BANK_EMPTY))
+                        item(key = "empty") { Text(t(Msg.BANK_EMPTY), Modifier.padding(Spacing.ScreenEdge)) }
                     } else if (shown.isEmpty()) {
-                        EmptyState(AppIcons.Recipes, t(Msg.NO_RECIPES_MATCH))
-                    } else {
-                        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
-                            items(shown, key = { it.id }) { recipe ->
-                                val selecting = selection.selecting
-                                RecipeRow(
-                                    recipe,
-                                    onClick = { if (selecting) selection.toggle(recipe.id) else onOpen(recipe.id) },
-                                    onLongClick = { if (!selecting) selection.start(recipe.id) },
-                                    selected = if (selecting) selection.contains(recipe.id) else null,
-                                    action = if (selecting) null else ({
-                                        FilledTonalButton(
-                                            onClick = { add(listOf(recipe)) },
-                                            enabled = !acting,
-                                            modifier = Modifier.semantics { contentDescription = t(Msg.ADD_RECIPE, recipe.title) },
-                                        ) { Text(t(Msg.ADD)) }
-                                    }),
-                                )
-                                HorizontalDivider()
-                            }
-                        }
+                        item(key = "none") { Text(t(Msg.NO_RECIPES_MATCH), Modifier.padding(Spacing.ScreenEdge)) }
+                    }
+                    items(shown, key = { it.id }) { recipe ->
+                        val selecting = selection.selecting
+                        RecipeRow(
+                            recipe,
+                            onClick = { if (selecting) selection.toggle(recipe.id) else onOpen(recipe.id) },
+                            onLongClick = { if (!selecting) selection.start(recipe.id) },
+                            selected = if (selecting) selection.contains(recipe.id) else null,
+                            action = if (selecting) null else ({
+                                FilledTonalButton(
+                                    onClick = { add(listOf(recipe)) },
+                                    enabled = !acting,
+                                    modifier = Modifier.semantics { contentDescription = t(Msg.ADD_RECIPE, recipe.title) },
+                                ) { Text(t(Msg.ADD)) }
+                            }),
+                        )
+                        HorizontalDivider()
                     }
                 }
             }

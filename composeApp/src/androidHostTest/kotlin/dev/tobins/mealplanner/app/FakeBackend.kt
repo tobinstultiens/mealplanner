@@ -134,8 +134,9 @@ class FakeBackend(
             parts.size == 3 && parts[1] == "recipes" -> detailJson(parts[2].toLong())
             path == "/api/routines" -> json.encodeToString(Routines(breakfast = 1))
             // A sync that found three new recipes (in the bank on a server that has one) and changed one.
+            method == "PUT" && path == "/api/sync/cooking/repo" -> json.encodeToString(CookingSyncStatus("2026-11-18T10:00:00Z", "d4e5f6a", null, 12, repoUrl = "https://example.com/cooking.git"))
             method == "POST" && path == "/api/sync/cooking" -> json.encodeToString(SyncResult(added = 3, updated = 1, unchanged = 6, removed = 0, problems = emptyMap()))
-            path == "/api/sync/cooking" -> json.encodeToString(CookingSyncStatus("2026-11-17T20:00:00Z", "a1b2c3d", null, 6))
+            path == "/api/sync/cooking" -> json.encodeToString(CookingSyncStatus("2026-11-17T20:00:00Z", "a1b2c3d", null, 6, repoUrl = "https://example.com/cooking.git"))
             parts.size == 3 && parts[1] == "days" -> json.encodeToString(day(parts[2]))
             parts.size == 3 && parts[1] == "plans" -> json.encodeToString(plan(parts[2]))
             // Choosing a recipe for a meal: the plan, which already has such a choice.

@@ -28,6 +28,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -204,67 +205,92 @@ fun RecipeListScreen(
                 onOpen(id)
             }
         }
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text(t(Msg.SEARCH_RECIPES)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge),
-            )
-            val counts = choiceCounts(searched(mine, mealsOnly, query))
-            FlowRow(Modifier.padding(horizontal = Spacing.ScreenEdge), horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                RotationChoice.entries.forEach { entry ->
+        // The header scrolls with the rows, so that a short screen (landscape, a large font) is not taken up by it.
+        val header: @Composable () -> Unit = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text(t(Msg.SEARCH_RECIPES)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge),
+                )
+                val counts = choiceCounts(searched(mine, mealsOnly, query))
+                FlowRow(Modifier.padding(horizontal = Spacing.ScreenEdge), horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                    RotationChoice.entries.forEach { entry ->
+                        FilterChip(
+                            selected = choice == entry,
+                            onClick = { choiceName = entry.name },
+                            label = { Text("${t(entry.label)} (${counts[entry]})") },
+                        )
+                    }
                     FilterChip(
-                        selected = choice == entry,
-                        onClick = { choiceName = entry.name },
-                        label = { Text("${t(entry.label)} (${counts[entry]})") },
+                        selected = mealsOnly,
+                        onClick = { mealsOnly = !mealsOnly },
+                        label = { Text(t(Msg.MEALS_ONLY)) },
                     )
                 }
-                FilterChip(
-                    selected = mealsOnly,
-                    onClick = { mealsOnly = !mealsOnly },
-                    label = { Text(t(Msg.MEALS_ONLY)) },
-                )
+                // What "Meals only" leaves out is said, so that a recipe just added (a sauce) does not seem to have vanished.
+                val hidden = if (mealsOnly) notMealsHidden(mine, query) else 0
+                if (hidden > 0) NotShownLine(hidden) { mealsOnly = false }
+                // With none of my recipes the empty state below has the button.
+                bank?.takeIf { mine.isNotEmpty() }?.let { BankLink(it.size, onOpenBank) }
             }
-            // With none of my recipes the empty state below has the button.
-            bank?.takeIf { mine.isNotEmpty() }?.let { BankLink(it.size, onOpenBank) }
-            when (val current = state) {
-                Load.Loading -> LoadingState()
-                is Load.Failed -> ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current) { reload++ }
-                is Load.Ready -> {
-                    val shown = searched(current.value, mealsOnly, query).filter(choice::shows)
-                    if (current.value.isEmpty()) {
+        }
+        when (val current = state) {
+            Load.Loading -> Column(Modifier.padding(padding).fillMaxSize()) { header(); LoadingState() }
+            is Load.Failed -> Column(Modifier.padding(padding).fillMaxSize()) {
+                header()
+                ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current) { reload++ }
+            }
+            is Load.Ready -> {
+                val shown = searched(current.value, mealsOnly, query).filter(choice::shows)
+                if (current.value.isEmpty()) {
+                    Column(Modifier.padding(padding).fillMaxSize()) {
+                        header()
                         EmptyState(
                             Spot.NoRecipes,
                             t(if (bank != null) Msg.NO_RECIPES_YET_BANK else Msg.NO_RECIPES_YET),
-                            actionLabel = if (bank != null) t(Msg.BROWSE_BANK) else t(Msg.NEW_RECIPE),
+                            actionLabel = if (bank != null) t(Msg.BROWSE_BANK_COUNT, bank.size) else t(Msg.NEW_RECIPE),
                             onAction = if (bank != null) onOpenBank else onNewRecipe,
                             otherActionLabel = if (bank != null) t(Msg.NEW_RECIPE) else null,
                             onOtherAction = onNewRecipe,
                         )
-                    } else if (shown.isEmpty()) {
-                        EmptyState(AppIcons.Recipes, t(Msg.NO_RECIPES_MATCH))
-                    } else {
-                        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
-                            items(shown, key = { it.id }) { recipe ->
-                                val selecting = selection.selecting
-                                RecipeRow(
-                                    recipe,
-                                    onClick = { if (selecting) selection.toggle(recipe.id) else onOpen(recipe.id) },
-                                    onLongClick = { if (!selecting) selection.start(recipe.id) },
-                                    selected = if (selecting) selection.contains(recipe.id) else null,
-                                    trailing = if (selecting) null else ({
-                                        RotationSwitch(recipe, pending[recipe.id] ?: recipe.inRotation) { setRotation(recipe, it) }
-                                    }),
-                                )
-                                HorizontalDivider()
-                            }
+                    }
+                } else {
+                    LazyColumn(Modifier.padding(padding).fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
+                        item(key = "header") { header() }
+                        if (shown.isEmpty()) item(key = "none") { Text(t(Msg.NO_RECIPES_MATCH), Modifier.padding(Spacing.ScreenEdge)) }
+                        items(shown, key = { it.id }) { recipe ->
+                            val selecting = selection.selecting
+                            RecipeRow(
+                                recipe,
+                                onClick = { if (selecting) selection.toggle(recipe.id) else onOpen(recipe.id) },
+                                onLongClick = { if (!selecting) selection.start(recipe.id) },
+                                selected = if (selecting) selection.contains(recipe.id) else null,
+                                trailing = if (selecting) null else ({
+                                    RotationSwitch(recipe, pending[recipe.id] ?: recipe.inRotation) { setRotation(recipe, it) }
+                                }),
+                            )
+                            HorizontalDivider()
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/** "2 recipes not shown (not meals)" with the way to show them: "Meals only" is on by default. */
+@Composable
+private fun NotShownLine(count: Int, onShow: () -> Unit) {
+    val t = LocalStrings.current
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onShow).padding(start = Spacing.ScreenEdge),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(t.plural(Plural.NOT_SHOWN, count), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = onShow) { Text(t(Msg.SHOW_THEM)) }
     }
 }
 
@@ -293,7 +319,7 @@ private fun RotationSwitch(recipe: RecipeSummary, checked: Boolean, onChange: (B
         Switch(
             checked = checked,
             onCheckedChange = onChange,
-            modifier = Modifier.semantics { contentDescription = t(Msg.ROTATION_OF, recipe.title) },
+            modifier = Modifier.semantics { contentDescription = t(if (checked) Msg.ROTATION_OF else Msg.ROTATION_NOT_OF, recipe.title) },
         )
         Text(t(Msg.FILTER_IN_ROTATION), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

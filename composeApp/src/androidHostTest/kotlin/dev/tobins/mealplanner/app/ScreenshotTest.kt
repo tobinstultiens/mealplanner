@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.app
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,13 +20,16 @@ import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -91,6 +95,17 @@ private fun recipePicker(api: ApiClient) {
         // Two recipes of each group: the dialog lists 480 dp at most, and both headings are to be seen.
         recipes?.filter { it.id in setOf(2L, 3L, 5L, 6L) }?.let { RecipePickerBody(it, MealSlot.DINNER, onBrowseBank = {}, onPick = {}) }
     }
+}
+
+/** The snackbar of a recipe added with ingredients to link, shown the way [announceAdded] shows it. */
+@Composable
+private fun addedSnackbar() {
+    val t = LocalStrings.current
+    val host = remember { SnackbarHostState() }
+    LaunchedEffect(host) {
+        host.announceAdded(t, t(Msg.ADDED_ONE, "Asperge soup"), unlinked = 1, onLink = {}, onUndo = {})
+    }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { AppSnackbarHost(host) }
 }
 
 @Composable
@@ -164,6 +179,8 @@ enum class Shot(
     RECIPES_SELECTING_NL(dutch = true, heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}, initiallySelected = setOf(3L, 6L)) }),
     BANK(heightDp = 1100, content = { api, _ -> RecipeBankScreen(api, {}, {}, {}) }),
     BANK_NL(dutch = true, heightDp = 1100, content = { api, _ -> RecipeBankScreen(api, {}, {}, {}) }),
+    // A short screen, as in landscape, in Dutch with the larger font: the header scrolls away with the rows and the sections slide sideways.
+    BANK_SHORT_NL(dutch = true, heightDp = 360, content = { api, _ -> RecipeBankScreen(api, {}, {}, {}) }),
     // A recipe of the bank opened: read-only, with the way to add it and the planner's choice under it.
     BANK_RECIPE(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 9, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
     // One of my recipes outside the rotation, and one whose file has left the cooking site.
@@ -196,6 +213,9 @@ enum class Shot(
     FOCUS_FILLED_BUTTON(heightDp = 200, content = { _, _ -> focusRing(0) }),
     FOCUS_OUTLINED_BUTTON(heightDp = 200, content = { _, _ -> focusRing(1) }),
     FOCUS_ICON_BUTTON(heightDp = 200, content = { _, _ -> focusRing(2) }),
+    // What adding a recipe with an ingredient still to link says: two actions, in a snackbar.
+    SNACKBAR_LINK(heightDp = 200, content = { _, _ -> addedSnackbar() }),
+    SNACKBAR_LINK_NL(dutch = true, heightDp = 200, content = { _, _ -> addedSnackbar() }),
     SHELL(content = { _, settings -> shell(settings) }),
     // The dialog's body: a dialog is a window of its own that the picture of the frame does not include.
     UPDATE_NOTES(content = { _, _ ->

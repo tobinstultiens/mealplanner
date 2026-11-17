@@ -60,6 +60,14 @@ class RecipeListsTest {
     }
 
     @Test
+    fun whatMealsOnlyLeavesOutIsCountedAlongWithTheSearch() {
+        // The sauce and the draft are no meals; a search narrows what is counted as hidden.
+        assertEquals(2, notMealsHidden(mine, ""))
+        assertEquals(1, notMealsHidden(mine, "sauce"))
+        assertEquals(0, notMealsHidden(mine, "stew"))
+    }
+
+    @Test
     fun theBankIsFilteredBySectionAndSearch() {
         val bank = listOf(
             recipe(10, "Pancakes", section = "Breakfast", tags = listOf("quick")),
