@@ -135,6 +135,10 @@ enum class Msg(private val english: String, private val dutch: String) {
         "You were logged out: your login ran out or was ended. Log in again to carry on.",
         "Je bent uitgelogd: je inlog is verlopen of beëindigd. Log opnieuw in om verder te gaan.",
     ),
+    LOGGED_OUT_NOT_RENEWED(
+        "You were logged out: your login could not be renewed for a while, as the login server kept answering with an error. Log in again to carry on.",
+        "Je bent uitgelogd: je inlog kon al een tijd niet worden verlengd, omdat de inlogserver steeds met een fout antwoordde. Log opnieuw in om verder te gaan.",
+    ),
     LOGGING_IN("Logging in…", "Inloggen…"),
     LOGIN_AT("Logs in at {0}", "Logt in bij {0}"),
     CHANGE_SERVER("Change server", "Andere server"),

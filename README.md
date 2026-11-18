@@ -51,10 +51,14 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
   when Android does not open the app for it, that page sends the browser on to the app's own scheme.
   Both stay: a Custom Tab hands nothing back to the app by itself, and installed apps up to v0.1.4 use them.
 - Logged out, the apps show a login screen of their own: the app's name, Log in, the server it logs in
-  to (with "Change server", which opens the settings) and why the last session ended (logged out, or the
-  login ran out or was ended). They open the login page by themselves once per logged-out state: on a
-  fresh install (or the first start logged out after an update) with a known server. Once that page
-  was opened, closed, or answered, after logging out and after an expired session, only the Log in
+  to (with "Change server", which opens the settings; while the screen asks for the address instead, a
+  "Settings" link, so language and theme can be set first) and why the last session ended (logged out, the
+  login ran out or was ended, or it could not be renewed for a while). Saving another server ends the
+  session, as it has its own accounts; the screen then says "You are logged out." only when there was a
+  session to end, and nothing on an install that never logged in. They open the login page by
+  themselves once per logged-out state: on a fresh install (or the first start logged out after an
+  update) with a known server. Once that page was opened, closed, or answered, after logging out or
+  choosing another server, and after a session that ended by itself, only the Log in
   button opens it (kept in storage, so neither Back, a rotation, the app returning to the front, a
   re-created screen nor a restart opens it again). Android opens the page in a Custom Tab over the app
   (`androidx.browser`), or in the browser when no browser offers Custom Tabs; never in a WebView, and the
@@ -62,9 +66,22 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
 - The answer goes to `LoginExchange` (`Login.kt`), which lives as long as the process (Android) or the
   page (web), not the screen: the token exchange finishes when Android re-creates the screen during it,
   and the screen that is there then takes the result. One answer is exchanged at most once.
+- Logging out or saving another server calls off a login under way, which may belong to the old server
+  (issue 198): a running token exchange is cancelled and saves nothing, a login page still open answers in
+  vain (its answer is let pass), and a login still asking the server how to log in opens no page. A renewal
+  answered after the log-out, or after another login, is dropped as well. Log in waits while a login is being
+  started or exchanged, in the settings as on the login screen.
 - An access token the server refuses is renewed with the refresh token. When the provider refuses that
-  (400 or 401, or there is no refresh token) the session ends on the login screen, saying why; a network
-  error or a provider in trouble (5xx, 429, 404) ends nothing, and the next request tries again.
+  (400 or 401, or there is no refresh token) the session ends at once on the login screen, saying the login
+  ran out or was ended. Another error from the token endpoint ends it only when it goes on (issue 198): on
+  the third failed renewal in a row, when the first was at least 15 minutes earlier for another client error
+  (403, 404, …; a proxy's 404 while the provider restarts lasts a minute or two) or at least 24 hours earlier
+  for a provider in trouble (5xx, 408, 429). "In a row" means without a renewal that worked in between; the
+  time is counted from the first failure, not from when the access token expired, since a token unused for a
+  week expired a week ago and one hiccup then must not end the session. The login screen then says the login
+  could not be renewed for a while. A renewal without an answer (a network error) or without the server's
+  login settings ends nothing, and neither counts nor starts the count afresh; until the session ends, the
+  next request tries again. Ending a session forgets the shopping lists stored for it, with their unsent ticks.
 - The server accepts JWT access tokens (RS256) from that issuer issued to that client, checked against
   the provider's keys. The token's subject is the account; new accounts start with the default
   ingredient catalogue. `GET /api/me` names the caller.
@@ -187,7 +204,7 @@ Logged out, the app shows its login screen (see "Accounts and login"). A release
 address opens that server's login page at once; a debug build asks for the address on the login screen
 first, suggesting `http://10.0.2.2:8080` (the host machine, seen from an emulator), which `-PserverUrl=…`
 changes at build time. The address can be changed under Progress → Settings, or with "Change server" on
-the login screen. The tokens are kept in the app's private storage.
+the login screen (its "Settings" link while it asks for the address). The tokens are kept in the app's private storage.
 
 The app is in English and Dutch. Progress → Settings → Appearance → Language picks System (Dutch when the
 device, or the browser for the web app, is set to a `nl` language, English otherwise), English or Nederlands;

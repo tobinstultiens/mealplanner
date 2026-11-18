@@ -50,6 +50,8 @@ fun ServerSettingsScreen(
     account: String?,
     loggedIn: Boolean,
     loginError: String?,
+    /** A login is being started or its answer swapped for tokens: Log in waits, as on the login screen. */
+    loggingIn: Boolean,
     /** Saves [ServerSettings] and opens the login page of that server's identity provider. */
     onLogin: (ServerSettings) -> Unit,
     onLogout: () -> Unit,
@@ -132,7 +134,9 @@ fun ServerSettingsScreen(
                         t(Msg.LOGIN_EXPLAIN),
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Button(enabled = urlValid, onClick = { onLogin(draft) }) { Text(t(Msg.LOG_IN)) }
+                    Button(enabled = urlValid && !loggingIn, onClick = { onLogin(draft) }) {
+                        Text(if (loggingIn) t(Msg.LOGGING_IN) else t(Msg.LOG_IN))
+                    }
                 }
                 loginError?.let { ErrorBanner(t(Msg.COULD_NOT_LOG_IN), it) }
             }

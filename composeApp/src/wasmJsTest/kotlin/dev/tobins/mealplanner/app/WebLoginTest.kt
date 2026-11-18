@@ -36,7 +36,7 @@ class WebLoginTest {
         val storage = MemorySettingsStorage()
         val page = MainScope()
         val logins = LoginExchange(storage, page, Login(storage, provider))
-        val state = Url(logins.start("https://meals.example.nl", "https://meals.example.nl/")).parameters["state"]!!
+        val state = Url(logins.start("https://meals.example.nl", "https://meals.example.nl/")!!).parameters["state"]!!
 
         logins.deliver("https://meals.example.nl/?code=the-code&state=$state")
         logins.progress.first { it is LoginProgress.Done }

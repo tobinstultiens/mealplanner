@@ -1,6 +1,8 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -9,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -20,6 +23,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -36,13 +40,15 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 /**
  * The whole app logged out, on a fake server and a fake login provider: it opens the login page by
  * itself once, shows its login screen when that page is closed, survives a re-created screen in the
- * middle of the token exchange, and ends on the login screen, saying why, when a session is over.
+ * middle of the token exchange, drops that exchange when another server is saved during it, ends on the
+ * login screen, saying why, when a session is over, and reaches the settings while it asks for the address.
  */
 @OptIn(ExperimentalTime::class)
 @RunWith(RobolectricTestRunner::class)
@@ -66,9 +72,16 @@ class LoginFlowTest {
         }
     }
 
-    /** The token requests the provider got; one waits for [gate]. */
+    /** The token requests the provider got; a login's waits for [gate], a renewal is answered [refreshStatus]. */
     private val tokenRequests: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private val gate = CompletableDeferred<Unit>()
+    @Volatile private var refreshStatus = HttpStatusCode.BadRequest
+
+    /** What the login takes for now, to count how long renewing has failed. */
+    @Volatile private var now = Instant.parse("${FakeBackend.TODAY}T10:30:00Z")
+    private val loginClock = object : Clock {
+        override fun now() = now
+    }
     private val provider = HttpClient(
         MockEngine { request ->
             val json = headersOf(HttpHeaders.ContentType, "application/json")
@@ -81,7 +94,7 @@ class LoginFlowTest {
                     val grant = (request.body as FormDataContent).formData["grant_type"]!!
                     tokenRequests += grant
                     if (grant == "refresh_token") {
-                        respond("""{"error":"invalid_grant"}""", HttpStatusCode.BadRequest, json)
+                        respond("""{"error":"invalid_grant"}""", refreshStatus, json)
                     } else {
                         gate.await()
                         respond("""{"access_token":"anna-token","refresh_token":"anna-refresh","expires_in":3600}""", headers = json)
@@ -94,7 +107,7 @@ class LoginFlowTest {
     private val scope = MainScope()
 
     /** Outlives every screen of the test, as it outlives every screen of the process on a phone (MainActivity). */
-    private val logins = LoginExchange(storage, scope, Login(storage, provider))
+    private val logins = LoginExchange(storage, scope, Login(storage, provider, loginClock))
 
     @Before
     fun fixTimeAndLanguage() {
@@ -213,5 +226,94 @@ class LoginFlowTest {
         waitUntil { opened.size == 1 }
         assertTrue(storage.hasSavedServer())
         assertNotNull(storage.loggedOut())
+    }
+
+    /** The same fake server under another address: another server to the app, with nothing to fetch from the internet. */
+    private val otherServer by lazy { backend.settings.url.replace("127.0.0.1", "localhost") }
+
+    /** "Change server" on the login screen, then [inSettings] there, a new address, Save. */
+    private fun changeServerTo(url: String, inSettings: () -> Unit = {}) {
+        compose.onNodeWithText("Change server").performClick()
+        waitFor("Test connection")
+        inSettings()
+        compose.onNode(hasSetTextAction()).performTextReplacement(url)
+        compose.onNodeWithText("Save").performClick()
+    }
+
+    /** Gives what might still come from another thread (a provider's answer) time to arrive, before checking that it did not. */
+    private fun settle() = repeat(20) {
+        Thread.sleep(25)
+        ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+    }
+
+    @Test
+    fun anotherServerSavedDuringTheTokenExchangeDropsThatLogin() {
+        startApp()
+        waitUntil { opened.size == 1 }
+        val state = Url(opened.single()).parameters["state"]!!
+        logins.deliver("${backend.settings.url}/app/login?code=the-code&state=$state")
+        waitUntil { logins.progress.value == LoginProgress.Exchanging }
+
+        // While the old server's provider answers, the user saves another server; Log in there waits meanwhile.
+        changeServerTo(otherServer) { compose.onNodeWithText("Logging in…").performScrollTo().assertIsNotEnabled() }
+        waitFor("Logs in at ${otherServer.substringAfter("://")}")
+        gate.complete(Unit)
+        settle()
+
+        assertEquals(null, storage.session(), "the old server's login was dropped")
+        assertEquals(LoginProgress.Idle, logins.progress.value)
+        compose.onNodeWithText("Log in").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithText("Shopping").fetchSemanticsNodes().isEmpty(), "not logged in")
+        assertEquals(listOf("authorization_code"), tokenRequests.toList(), "no old refresh token went anywhere")
+    }
+
+    @Test
+    fun anotherServerChosenBeforeEverLoggingInSaysNothingAboutALogOut() {
+        startApp()
+        waitUntil { opened.size == 1 }
+        waitFor("Logs in at 127.0.0.1")
+
+        changeServerTo(otherServer)
+        waitFor("Logs in at ${otherServer.substringAfter("://")}")
+        compose.waitForIdle()
+        assertTrue(compose.onAllNodesWithText("You are logged out.").fetchSemanticsNodes().isEmpty())
+        assertEquals(1, opened.size, "nothing opens by itself")
+    }
+
+    @Test
+    fun aTokenEndpointThatKeepsFailingEndsOnTheLoginScreenWithTheReason() {
+        refreshStatus = HttpStatusCode.NotFound
+        storage.saveSession(Session(FakeBackend.REFUSED_TOKEN, "still-good", expiresAt = 0))
+        // Twenty minutes ago renewing failed twice: every screen said so, and the session stayed.
+        runBlocking { repeat(2) { logins.renew(backend.settings.url) } }
+        assertNotNull(storage.session())
+        now += 20.minutes
+
+        startApp()
+        waitFor("could not be renewed for a while")
+        compose.onNodeWithText("Log in").assertIsDisplayed()
+        compose.waitForIdle()
+        assertTrue(opened.isEmpty(), "the reason is shown, not covered by the login page")
+        assertEquals(null, storage.session())
+    }
+
+    @Test
+    fun whileTheAddressIsAskedForTheOtherSettingsAreOneTapAway() {
+        startApp(builtIn = false)
+        waitFor("Server address")
+        compose.onNode(hasSetTextAction()).performTextReplacement("https://meals.example.org")
+
+        compose.onNodeWithText("Settings").performClick()
+        waitFor("Appearance")
+        compose.onNodeWithText("Nederlands").performScrollTo().performClick()
+        waitFor("Instellingen")
+        compose.onNodeWithContentDescription("Terug").performClick()
+
+        // Back on the login screen, in Dutch, with the address typed before.
+        waitFor("Serveradres")
+        compose.onNodeWithText("https://meals.example.org").assertIsDisplayed()
+        assertEquals(AppLanguage.DUTCH, storage.appLanguage())
+        assertTrue(opened.isEmpty())
     }
 }
