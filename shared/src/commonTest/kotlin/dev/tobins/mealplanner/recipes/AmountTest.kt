@@ -15,6 +15,15 @@ class AmountTest {
     }
 
     @Test
+    fun readsADecimalCommaAsADecimalPoint() {
+        assertEquals(0.5, parseAmount("0,5"))
+        assertEquals(1.75, parseAmount("1,75"))
+        for (bad in listOf("1,", ",5", "1,000,5", "1,5,5", "1,5/2")) {
+            assertNull(parseAmount(bad), "expected null for '$bad'")
+        }
+    }
+
+    @Test
     fun rejectsRangesAndMalformedInput() {
         for (bad in listOf("", "2-3", "1/0", "a", "1 2", "1/2 1", "1e3", "-1", "1 1/2 3")) {
             assertNull(parseAmount(bad), "expected null for '$bad'")

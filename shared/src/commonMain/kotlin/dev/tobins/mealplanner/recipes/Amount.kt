@@ -2,8 +2,10 @@ package dev.tobins.mealplanner.recipes
 
 /**
  * Parses an ingredient amount as written in the cooking repo: a decimal (`1.5`),
- * a fraction (`1/3`) or a mixed number (`1 1/2`). Returns null for anything else,
- * including ranges and zero denominators.
+ * a fraction (`1/3`) or a mixed number (`1 1/2`). A decimal comma (`0,5`) reads as a
+ * decimal point: it is how a Dutch reader writes an amount, and no recipe was readable
+ * with a comma before, so no existing recipe changes. Returns null for anything else,
+ * including ranges, thousands separators and zero denominators.
  */
 fun parseAmount(text: String): Double? {
     val parts = text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -27,8 +29,8 @@ private fun parseSimple(token: String): Double? {
         n.toDouble() / d
     } else {
         // Reject forms such as "1e3", "NaN" or "0x10" that toDouble would accept.
-        if (!Regex("\\d+(\\.\\d+)?|\\.\\d+").matches(token)) return null
-        token.toDouble()
+        if (!Regex("\\d+([.,]\\d+)?|\\.\\d+").matches(token)) return null
+        token.replace(',', '.').toDouble()
     }
     return value.takeIf { it >= 0 }
 }

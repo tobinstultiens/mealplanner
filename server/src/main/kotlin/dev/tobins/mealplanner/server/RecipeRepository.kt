@@ -375,7 +375,8 @@ class RecipeRepository(
         require(input.title.isNotBlank()) { "title must not be blank" }
         require(input.servings in 1..100) { "servings must be between 1 and 100" }
         val parsed = HugoRecipeParser().parse("$MANUAL_SECTION/x.md", "```ingredients\n${input.ingredients}\n```")
-        require(parsed.problems.isEmpty()) { parsed.problems.joinToString("; ") }
+        // One problem per line, so that an app can show each unreadable ingredient line on its own.
+        require(parsed.problems.isEmpty()) { parsed.problems.joinToString("\n") }
         require(parsed.ingredients.isNotEmpty()) { "at least one ingredient line is required" }
         return parsed.copy(title = input.title.trim())
     }
