@@ -31,11 +31,12 @@ private fun ShoppingItem.groupStore(shops: Set<Store>, today: String): Store? =
     if (covered) null else keptStore(shops) ?: savingOffer(shops, today)?.store
 
 /**
- * The offer of the store a row is listed under ([groupStore]): for a row bought there for its offer
- * ([keptStore]) that store's offer while it lasts, else its [savingOffer].
+ * The offer a row shows as its chip. A row bought for an offer ([keptStore]) shows that store's offer
+ * while it lasts and no chip once it has ended, never another store's offer of today, which it was
+ * not bought for. Any other row shows its best offer.
  */
-private fun ShoppingItem.groupOffer(shops: Set<Store>, today: String): Offer? {
-    val kept = keptStore(shops) ?: return savingOffer(shops, today)
+fun ShoppingItem.chipOffer(shops: Set<Store>, today: String): Offer? {
+    val kept = keptStore(shops) ?: return bestOffer(shops, today)
     return bestOffer(setOf(kept), today)
 }
 
@@ -100,10 +101,7 @@ fun storeOverview(items: List<ShoppingItem>, shops: Set<Store>, today: String): 
     )
 }
 
-/**
- * An item that is cheaper at another store than the one chosen, with the [offer] that makes it so; for
- * one bought there for its offer, null once that offer has ended.
- */
+/** An item that is cheaper at another store than the one chosen, with the [offer] that makes it so. */
 data class CheaperElsewhere(val item: ShoppingItem, val offer: Offer?)
 
 /**
@@ -121,17 +119,18 @@ data class StoreVisit(
 /**
  * The visit to [store]: its own offer items and everything without an offer, grouped by shop
  * section as in [shoppingSections]; the items listed under another store in [shops] ([groupStore]:
- * its saving offer is there, or it was bought there for its offer) are set apart as
- * [StoreVisit.elsewhere], unless nothing of them is left to buy.
+ * its saving offer is there) are set apart as [StoreVisit.elsewhere], unless nothing of them is left
+ * to buy. A row already bought is never "cheaper elsewhere": it stays in its section, with the chip
+ * of the store it was bought at ([chipOffer]).
  */
 fun storeVisit(items: List<ShoppingItem>, store: Store, shops: Set<Store>, today: String, shoppingMode: Boolean): StoreVisit {
-    val (here, elsewhere) = items.partition { (it.groupStore(shops, today) ?: store) == store }
+    val (here, elsewhere) = items.partition { it.keptStore(shops) != null || (it.groupStore(shops, today) ?: store) == store }
     return StoreVisit(
         store,
         shoppingSections(here, shoppingMode),
-        elsewhere.map { CheaperElsewhere(it, it.groupOffer(shops, today)) },
-        // Items without a saving offer here add nothing.
-        savingOf(here, shops, today),
+        elsewhere.map { CheaperElsewhere(it, it.savingOffer(shops, today)) },
+        // Items without a saving offer here add nothing, nor do rows bought for another store's offer.
+        savingOf(here.filter { it.keptStore(shops).let { kept -> kept == null || kept == store } }, shops, today),
     )
 }
 

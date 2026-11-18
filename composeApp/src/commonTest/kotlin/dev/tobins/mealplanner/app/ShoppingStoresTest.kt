@@ -542,12 +542,30 @@ class ShoppingStoresTest {
     @Test
     fun aVisitCountsWhatWasBoughtAtThatStoreOnly() {
         assertEquals(1.0, storeVisit(listOf(bought), Store.JUMBO, all, today, shoppingMode = false).saving)
-        // At AH it is set apart with Jumbo's offer while that lasts, and counts nothing there.
+        // At AH it stays in its sections, not "cheaper elsewhere", and counts nothing there.
         val atAh = storeVisit(listOf(bought), Store.AH, all, today, shoppingMode = false)
-        assertEquals(listOf(CheaperElsewhere(bought, jumboDeal)), atAh.elsewhere)
+        assertTrue(atAh.elsewhere.isEmpty())
+        assertEquals(listOf("chicken"), keys(atAh.sections.flatMap { it.open + it.done }))
         assertNull(atAh.saving)
-        val ended = storeVisit(listOf(bought), Store.AH, all, "2026-01-08", shoppingMode = false)
-        assertEquals(listOf(CheaperElsewhere(bought, null)), ended.elsewhere)
-        assertNull(ended.elsewhere.single().where(Strings.English, "2026-01-08"))
+    }
+
+    @Test
+    fun aBoughtRowWhoseOfferEndedDoesNotShowAnotherStoresDeal() {
+        // Bought at Jumbo; its offer has ended and AH has one running.
+        val ahDeal = jumboDeal.copy(store = Store.AH, validUntil = "2026-01-20", paidShare = 0.5)
+        val row = bought.copy(offers = listOf(jumboDeal.copy(validUntil = "2026-01-05"), ahDeal))
+        val day = "2026-01-10"
+        assertEquals(Store.AH, row.bestOffer(all, day)?.store)
+        assertNull(row.chipOffer(all, day))
+        assertEquals(Store.JUMBO, storeOverview(listOf(row), all, day).stores.single().store)
+        // While Jumbo's offer lasts the chip is Jumbo's, even if AH's saves more.
+        assertEquals(Store.JUMBO, bought.copy(offers = listOf(jumboDeal, ahDeal.copy(paidShare = 0.1))).chipOffer(all, today)?.store)
+        // At AH's visit it is not listed under "Cheaper elsewhere"; a row still to buy with an AH deal is not affected.
+        val open = row.copy(key = "open", checked = false, boughtSaving = null, boughtOfferStore = null)
+        val visit = storeVisit(listOf(row, open), Store.LIDL, all, day, shoppingMode = false)
+        assertEquals(listOf("open"), keys(visit.elsewhere.map { it.item }))
+        assertEquals(setOf("chicken"), keys(visit.sections.flatMap { it.open + it.done }).toSet())
+        // A row not bought keeps today's best offer.
+        assertEquals(Store.AH, open.chipOffer(all, day)?.store)
     }
 }
