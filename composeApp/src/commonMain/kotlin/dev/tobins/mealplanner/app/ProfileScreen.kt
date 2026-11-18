@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -35,6 +36,7 @@ import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.Sex
+import dev.tobins.mealplanner.planner.PortionRange
 import dev.tobins.mealplanner.targets.TargetCalculator
 import kotlinx.coroutines.launch
 
@@ -60,6 +62,8 @@ private data class ProfileForm(
     val proteinOverride: String = "",
     val likes: String = "",
     val dislikes: String = "",
+    val minPortions: String = "0.75",
+    val maxPortions: String = "1.5",
 ) {
     companion object {
         /** The form showing [profile], or the empty form for none. */
@@ -75,13 +79,16 @@ private data class ProfileForm(
                 proteinOverride = it.proteinOverrideG?.toString().orEmpty(),
                 likes = it.likes.joinToString(", "),
                 dislikes = it.dislikes.joinToString(", "),
+                minPortions = formatAmount(it.minPortions, locale),
+                maxPortions = formatAmount(it.maxPortions, locale),
             )
         } ?: ProfileForm()
 
-        private fun ProfileForm.fields() = listOf(weight, height, age, sex.name, activity.name, goal, kcalOverride, proteinOverride, likes, dislikes)
+        private fun ProfileForm.fields() =
+            listOf(weight, height, age, sex.name, activity.name, goal, kcalOverride, proteinOverride, likes, dislikes, minPortions, maxPortions)
 
         private fun fromFields(v: List<String>) =
-            ProfileForm(v[0], v[1], v[2], Sex.valueOf(v[3]), ActivityLevel.valueOf(v[4]), v[5], v[6], v[7], v[8], v[9])
+            ProfileForm(v[0], v[1], v[2], Sex.valueOf(v[3]), ActivityLevel.valueOf(v[4]), v[5], v[6], v[7], v[8], v[9], v[10], v[11])
 
         val Saver = listSaver<ProfileForm, String>(save = { it.fields() }, restore = ::fromFields)
 
@@ -134,6 +141,13 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
         Profile(w, h, a, form.sex, form.activity, g, form.kcalOverride.trim().toIntOrNull(), form.proteinOverride.trim().toIntOrNull(), words(form.likes), words(form.dislikes))
     }
     val problems = draft?.let(TargetCalculator::problems)
+    // Apart from the draft, so that a range being typed does not hide the targets.
+    val portions = run {
+        val min = number(form.minPortions) ?: return@run null
+        val max = number(form.maxPortions) ?: return@run null
+        PortionRange(min, max)
+    }
+    val portionProblems = portions?.problems().orEmpty()
 
     SubScreen(t(Msg.PROFILE_AND_TARGETS), leave, snackbar) { padding ->
         when (val current = loaded) {
@@ -182,6 +196,17 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                 NumberField(t(Msg.CALORIES_PER_DAY), form.kcalOverride, decimal = false) { form = form.copy(kcalOverride = it) }
                 NumberField(t(Msg.PROTEIN_PER_DAY), form.proteinOverride, decimal = false) { form = form.copy(proteinOverride = it) }
 
+                Text(t(Msg.PORTION_PER_MEAL), style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                    NumberField(t(Msg.PORTION_FROM), form.minPortions, decimal = true, Modifier.weight(1f)) { form = form.copy(minPortions = it) }
+                    NumberField(t(Msg.PORTION_TO), form.maxPortions, decimal = true, Modifier.weight(1f)) { form = form.copy(maxPortions = it) }
+                }
+                Text(
+                    if (portionProblems.isEmpty()) t(Msg.PORTION_HINT) else portionProblems.joinToString("\n") { t.profileProblem(it) },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (portions == null || portionProblems.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
                 Text(t(Msg.TASTE), style = MaterialTheme.typography.labelLarge)
                 OutlinedTextField(
                     form.likes, { form = form.copy(likes = it) },
@@ -197,11 +222,12 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                 )
 
                 Button(
-                    enabled = draft != null && problems.isNullOrEmpty(),
+                    enabled = draft != null && problems.isNullOrEmpty() && portions != null && portionProblems.isEmpty(),
                     onClick = {
                         val saving = form
+                        val profile = draft!!.copy(minPortions = portions!!.min, maxPortions = portions.max)
                         scope.launch {
-                            when (val result = load { api.saveProfile(draft!!) }) {
+                            when (val result = load { api.saveProfile(profile) }) {
                                 is Load.Ready -> {
                                     loaded = result
                                     baseline = saving
@@ -219,13 +245,13 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
 }
 
 @Composable
-private fun NumberField(label: String, value: String, decimal: Boolean, onChange: (String) -> Unit) {
+private fun NumberField(label: String, value: String, decimal: Boolean, modifier: Modifier = Modifier.fillMaxWidth(), onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
     )
 }

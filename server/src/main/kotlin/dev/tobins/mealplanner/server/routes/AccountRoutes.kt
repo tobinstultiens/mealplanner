@@ -10,6 +10,7 @@ import dev.tobins.mealplanner.server.CookingSync
 import dev.tobins.mealplanner.server.accountId
 import dev.tobins.mealplanner.server.user
 import io.ktor.http.HttpStatusCode
+import io.ktor.serialization.kotlinx.json.DefaultJson
 import io.ktor.server.auth.principal
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -17,6 +18,8 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 
 /** The calling account: who it is, its profile, shops and shopping advice, and the sync of its cooking-site repository. */
 fun Route.accountRoutes(cooking: CookingSync) {
@@ -29,7 +32,11 @@ fun Route.accountRoutes(cooking: CookingSync) {
 
     get("/api/profile") { call.respond(call.user.profiles.state()) }
 
-    put("/api/profile") { call.respond(call.user.profiles.save(call.receive<Profile>())) }
+    // Read as JSON first, to see which fields were sent: an older app's profile has no portion range.
+    put("/api/profile") {
+        val sent = call.receive<JsonObject>()
+        call.respond(call.user.profiles.save(DefaultJson.decodeFromJsonElement<Profile>(sent), sent.keys))
+    }
 
     // The stores the account shops at; offers elsewhere don't count for its plans and costs.
     get("/api/shops") { call.respond(call.user.shops.setting()) }

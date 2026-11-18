@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.planner.PortionRange
 import dev.tobins.mealplanner.shopping.ShopSection
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -137,6 +138,22 @@ class StringsTest {
         assertEquals("Weight must be between 30 and 300", Strings.English.profileProblem("weightKg must be between 30 and 300"))
         assertEquals("Leeftijd moet tussen 18 en 100 liggen", Strings.Dutch.profileProblem("ageYears must be between 18 and 100"))
         assertEquals("something else", Strings.Dutch.profileProblem("something else"))
+    }
+
+    @Test
+    fun portionRangeProblemsAreWordedInTheAppsLanguageWithItsNumbers() {
+        // Every problem the shared range check can give is translated.
+        val all = listOf(PortionRange(0.0, 3.25), PortionRange(0.8, 0.6)).flatMap { it.problems() }
+        assertEquals(5, all.toSet().size)
+        for (problem in all) assertNotEquals(problem, Strings.Dutch.profileProblem(problem))
+
+        assertEquals("Smallest portion must be between 0.25 and 3", Strings.English.profileProblem("minPortions must be between 0.25 and 3"))
+        assertEquals("Grootste portie moet tussen 0,25 en 3 liggen", Strings.Dutch.profileProblem("maxPortions must be between 0.25 and 3"))
+        assertEquals("Kleinste portie moet in kwarten, zoals 1,25", Strings.Dutch.profileProblem("minPortions must be in quarter servings"))
+        assertEquals(
+            "The smallest portion must not be larger than the largest",
+            Strings.English.profileProblem("minPortions must not be more than maxPortions"),
+        )
     }
 
     @Test

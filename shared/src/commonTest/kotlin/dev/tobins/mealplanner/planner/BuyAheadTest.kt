@@ -20,7 +20,15 @@ class BuyAheadTest {
             dinner(3, kcal = 90.0),
             dinner(4, slot = MealSlot.BREAKFAST),
         )
-        assertEquals(listOf(2L), BuyAhead.provisional(candidates, targets, plannedThisWeek = setOf(1L)).map { it.recipeId })
+        assertEquals(listOf(2L), BuyAhead.provisional(candidates, targets, PortionRange(), plannedThisWeek = setOf(1L)).map { it.recipeId })
+    }
+
+    @Test
+    fun aDinnerThatNeedsMoreThanTheLargestPortionIsNotBoughtAheadFor() {
+        // The dinner budget is 760 kcal: 200 kcal reaches half of it at two servings, not at 1.5.
+        val light = listOf(dinner(1, kcal = 200.0))
+        assertEquals(emptyList(), BuyAhead.provisional(light, targets, PortionRange(0.75, 1.5), plannedThisWeek = emptySet()))
+        assertEquals(listOf(1L), BuyAhead.provisional(light, targets, PortionRange(0.5, 2.0), plannedThisWeek = emptySet()).map { it.recipeId })
     }
 
     @Test

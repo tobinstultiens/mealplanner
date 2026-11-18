@@ -41,9 +41,12 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
+import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
@@ -84,6 +87,12 @@ private fun shopping(api: ApiClient, shoppingMode: Boolean, view: ShoppingView =
     val session = remember { ShoppingSession(scope, api.shoppingServer(), ShoppingCache(storage)) }
     ShoppingScreen(session, storage, remember { AccountShops(storage, { shops?.let { ShopsSetting(it.toList()) } ?: api.shops() }, { it }) }, {}, {})
 }
+
+/** A saved profile with a portion range other than the defaults, for the profile screen. */
+private val sampleProfile = Profile(
+    82.5, 180.0, 40, Sex.MALE, ActivityLevel.LIGHT, likes = listOf("Korean", "spicy"), dislikes = listOf("mushroom"),
+    minPortions = 1.0, maxPortions = 1.75,
+)
 
 /** Controls of three kinds; the test gives the one tagged [FOCUSED] keyboard focus, to see the ring on each. */
 /** The recipe picker's body for a dinner, over the fake backend's recipes: a dialog is a window the picture does not include. */
@@ -155,7 +164,7 @@ private fun shell(settings: ServerSettings) {
 /**
  * A screen under test and the sample data it gets. [heightDp] is the height of the picture: a
  * screen that scrolls gets a tall one, so what is lower down is checked too. The `empty` flags
- * leave that list of the fake backend empty.
+ * leave that list of the fake backend empty; [profile] is the one the fake backend holds.
  */
 enum class Shot(
     val emptyWeek: Boolean = false,
@@ -165,6 +174,7 @@ enum class Shot(
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
     val dutch: Boolean = false,
     val heightDp: Int = 640,
+    val profile: Profile? = null,
     val content: @Composable (ApiClient, ServerSettings) -> Unit,
 ) {
     TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, {}, {}) }),
@@ -211,6 +221,9 @@ enum class Shot(
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
+    // The profile with a portion range of its own, in both languages: the range's fields side by side.
+    PROFILE(heightDp = 1800, profile = sampleProfile, content = { api, _ -> ProfileScreen(api, {}) }),
+    PROFILE_NL(dutch = true, heightDp = 1800, profile = sampleProfile, content = { api, _ -> ProfileScreen(api, {}) }),
     // Going back from the profile or the recipe editor with unsaved changes: the dialog's body, as a dialog is a window of its own.
     DISCARD_QUESTION(heightDp = 260, content = { _, _ -> DiscardQuestion({}, {}) }),
     DISCARD_QUESTION_NL(dutch = true, heightDp = 260, content = { _, _ -> DiscardQuestion({}, {}) }),
@@ -306,7 +319,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     @get:Rule
     val compose = createEmptyComposeRule()
 
-    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes)
+    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes).also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)
 
     @Before

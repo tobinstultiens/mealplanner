@@ -30,12 +30,12 @@ object BuyAhead {
     const val MIN_SAVING = 0.5
 
     /**
-     * The dinners the planner could pick next week, for someone with [targets]: meals by their
-     * calories, and not one of [plannedThisWeek], which the planner avoids next week as recently
-     * eaten.
+     * The dinners the planner could pick next week, for someone with [targets] and [portions]: meals
+     * by their calories at a portion within the range, and not one of [plannedThisWeek], which the
+     * planner avoids next week as recently eaten.
      */
-    fun provisional(candidates: List<PlanCandidate>, targets: DailyTargets, plannedThisWeek: Set<Long>): List<PlanCandidate> =
-        candidates.filter { it.recipeId !in plannedThisWeek && WeekPlanner.fitsAsMeal(it, MealSlot.DINNER, targets) }
+    fun provisional(candidates: List<PlanCandidate>, targets: DailyTargets, portions: PortionRange, plannedThisWeek: Set<Long>): List<PlanCandidate> =
+        candidates.filter { it.recipeId !in plannedThisWeek && WeekPlanner.fitsAsMeal(it, MealSlot.DINNER, targets, portions) }
 
     /**
      * The meals to buy ahead for, best first: those saving at least [MIN_SAVING], most saved first,

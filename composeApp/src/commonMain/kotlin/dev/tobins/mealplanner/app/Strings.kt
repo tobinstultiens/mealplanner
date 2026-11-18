@@ -43,18 +43,27 @@ class Strings private constructor(val language: Language, val locale: FormatLoca
      * in this language. A problem in another form is shown as it came.
      */
     fun profileProblem(problem: String): String {
-        val match = Regex("""^(\w+) must be between (\d+) and (\d+)$""").matchEntire(problem) ?: return problem
-        val (field, low, high) = match.destructured
-        val name = when (field) {
-            "weightKg" -> Msg.WEIGHT
-            "heightCm" -> Msg.HEIGHT
-            "ageYears" -> Msg.AGE
-            "goalKgPerWeek" -> Msg.GOAL
-            "kcalOverride" -> Msg.CALORIES_PER_DAY
-            "proteinOverrideG" -> Msg.PROTEIN_PER_DAY
-            else -> return problem
+        if (problem == "minPortions must not be more than maxPortions") return this(Msg.PROBLEM_PORTIONS_ORDER)
+        Regex("""^(\w+) must be in quarter servings$""").matchEntire(problem)?.let { quarters ->
+            return profileField(quarters.groupValues[1])?.let { this(Msg.PROBLEM_QUARTERS, this(it)) } ?: problem
         }
-        return this(Msg.PROBLEM_RANGE, this(name), low, high)
+        val match = Regex("""^(\w+) must be between ([\d.]+) and ([\d.]+)$""").matchEntire(problem) ?: return problem
+        val (field, low, high) = match.destructured
+        val name = profileField(field) ?: return problem
+        return this(Msg.PROBLEM_RANGE, this(name), formatAmount(low.toDouble(), locale), formatAmount(high.toDouble(), locale))
+    }
+
+    /** The name the profile form gives the field the shared calculator calls [field]; null for one it does not know. */
+    private fun profileField(field: String): Msg? = when (field) {
+        "weightKg" -> Msg.WEIGHT
+        "heightCm" -> Msg.HEIGHT
+        "ageYears" -> Msg.AGE
+        "goalKgPerWeek" -> Msg.GOAL
+        "kcalOverride" -> Msg.CALORIES_PER_DAY
+        "proteinOverrideG" -> Msg.PROTEIN_PER_DAY
+        "minPortions" -> Msg.SMALLEST_PORTION
+        "maxPortions" -> Msg.LARGEST_PORTION
+        else -> null
     }
 
     /**

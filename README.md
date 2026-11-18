@@ -134,6 +134,28 @@ except those whose file had already left the site, which went to the bank, hidde
 what it listed before. Apps from before the bank show my recipes only, so a recipe new on the site appears
 in them once it is added from a newer app.
 
+## Portion per meal
+
+The planner sizes every meal to its slot's share of the daily calories (breakfast 22 %, lunch 30 %,
+dinner 38 %, snack 10 %) in quarter servings, within the profile's range: `Profile.minPortions` to
+`maxPortions`, 0.75 to 1.5 servings unless set otherwise on the profile screen ("Portion per meal",
+issue 227). A range runs from 0.25 to 3 servings in quarter steps, the smallest no larger than the
+largest; anything else is a 400. All the rules are in `PortionRange`:
+
+- A recipe that cannot reach half its slot's calories at the largest portion is not a meal there: the
+  planner does not pick it on its own, nor does the buy-ahead advice. When nothing in the rotation fits,
+  the slots stay empty and the plan says so (`emptySlots`).
+- Breakfast and snack go up to 2 servings even when the range stops lower: a bowl of quark written as
+  one serving is simply made larger.
+- A leftover lunch gets what the dinner left, at most the largest portion; less than the smallest one
+  (down to half a serving) rather than nothing.
+- A recipe put in a meal by hand is sized within the range too, also one too light to be a meal there.
+- Meals already planned keep their portions; a new range counts from the next plan, "Another recipe" or
+  choice.
+
+An app from before the range saves a profile without its two fields; the server keeps the stored range
+then, rather than going back to the defaults.
+
 ## Web client
 
 `composeApp` also builds for the browser (`./gradlew :composeApp:wasmJsBrowserDistribution`), and the
@@ -220,7 +242,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today, Plan (also with an empty rotation), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress,
+Today, Plan (also with an empty rotation), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
@@ -410,8 +432,8 @@ answering my recipes; see "Recipes: the bank, my recipes and the rotation"), `/a
 `/api/ingredients/sections` (each ingredient's shop section, which orders the shopping list; `PUT
 /api/ingredients/{id}/section` corrects one for the account, `PUT /api/ingredients/{id}/keeps` whether it
 keeps until next week), `/api/mappings` (links from recipe
-ingredient texts to catalogue ingredients), `/api/profile` (body data
-and daily targets), `/api/shops` (the stores the account shops at; only their offers count for plans and costs),
+ingredient texts to catalogue ingredients), `/api/profile` (body data, daily targets and the portion range; see
+"Portion per meal"), `/api/shops` (the stores the account shops at; only their offers count for plans and costs),
 `/api/shopping-advice` (whether the shopping list advises buying ahead and stocking up; see
 `docs/data-sources.md`, "Buying ahead and stocking up"), `/api/pantry` (staples and on-hand items), `/api/plans/{weekStart}` (week plans: `generate`, `shopping`
 with `shopping/dismissed/{group}` and the account's own items, `POST shopping/extras` with `{"name": "Coffee"}` and

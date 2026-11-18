@@ -10,6 +10,7 @@ import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.planner.PlanRequest
+import dev.tobins.mealplanner.planner.PortionRange
 import dev.tobins.mealplanner.planner.WeekPlanner
 import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.server.db.Database
@@ -167,7 +168,8 @@ class PlanRepository(
     }
 
     /**
-     * Puts [candidate] in a slot, sized to the slot's share of the targets, [locked] or not. A dinner's
+     * Puts [candidate] in a slot, sized to the slot's share of the targets within the profile's portion
+     * range, [locked] or not; also a recipe too light to be a meal there, as the user chose it. A dinner's
      * leftovers replace the next day's leftover lunch ([leftoversToReplace]). A meal that was cooked is
      * not replaced ([requireNotCooked]): checked in the transaction that writes, as a recipe can take a
      * minute to write and the meal may be eaten meanwhile.
@@ -175,7 +177,8 @@ class PlanRepository(
     fun place(weekStart: String, day: Int, slot: MealSlot, candidate: PlanCandidate, locked: Boolean = false): WeekPlan {
         val start = parseWeekStart(weekStart)
         val targets = targets()
-        val portions = WeekPlanner.portionsFor(candidate, targets.kcal * slot.share)
+        val range = profiles.portions()
+        val portions = WeekPlanner.portionsFor(candidate, slot, targets, range)
         val meal = PlannedMeal(day, slot, candidate.recipeId, candidate.title, portions, candidate.kcal * portions, candidate.proteinG * portions, locked = locked)
         db.writing {
             val week = meals(start)
@@ -184,8 +187,8 @@ class PlanRepository(
             save(start, meal)
             val remaining = candidate.servings - portions
             if (nextLunch != null) {
-                if (remaining >= 0.5) {
-                    val lunchPortions = WeekPlanner.portionsFor(candidate, targets.kcal * MealSlot.LUNCH.share, remaining)
+                if (remaining >= PortionRange.LEAST_LEFTOVER) {
+                    val lunchPortions = WeekPlanner.portionsFor(candidate, MealSlot.LUNCH, targets, range, available = remaining)
                     save(start, nextLunch.copy(recipeId = candidate.recipeId, title = candidate.title, portions = lunchPortions,
                         kcal = candidate.kcal * lunchPortions, proteinG = candidate.proteinG * lunchPortions))
                 } else {
@@ -308,6 +311,7 @@ class PlanRepository(
         locked = locked,
         // What was planned the week before counts as recently eaten.
         recent = meals(start.minusDays(DAYS.toLong())).mapTo(HashSet()) { it.recipeId },
+        portions = profiles.portions(),
         seed = seed,
     )
 

@@ -230,6 +230,59 @@ class PlanTest {
         assertEquals(null, plan.meal(1, MealSlot.LUNCH))
     }
 
+    /** Saves the test's profile with the portion range [min] to [max]. */
+    private suspend fun HttpClient.portions(min: Double, max: Double) = apply {
+        val profile = Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000, minPortions = min, maxPortions = max)
+        assertEquals(HttpStatusCode.OK, put("/api/profile") { setBody(profile) }.status)
+    }
+
+    /**
+     * A beef recipe of 195 kcal a serving: half the dinner's 760 kcal at two servings, not at 1.5; nor
+     * half the lunch's 600 at 1.5.
+     */
+    private suspend fun HttpClient.lightDinner(): RecipeSummary =
+        post("/api/recipes") { setBody(RecipeInput("Beef taster", 3, "390 | g | beef", mealSlots = listOf(MealSlot.DINNER))) }.body<RecipeDetail>().summary
+
+    @Test
+    fun aChosenRecipeIsSizedWithinTheProfilesRangeAlsoWhenItIsTooLightToBeAMeal() = testApplication {
+        val http = start().ready()
+        // Dinner 0 is 450 kcal a serving: 1.75 servings come closest to the dinner's 760, 1.5 within the defaults.
+        val dinner0 = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 0" }
+        val dinner9 = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 9" }
+        val light = http.lightDinner()
+        suspend fun choose(day: Int, slot: MealSlot, recipe: RecipeSummary) =
+            http.put("/api/plans/$week/meals/$day/${slot.name.lowercase()}") { setBody(MealChoice(recipe.id)) }.body<WeekPlan>().meal(day, slot)!!
+
+        assertEquals(1.5, choose(0, MealSlot.DINNER, dinner0).portions)
+        assertEquals(1.5, choose(1, MealSlot.DINNER, light).portions, "the user chose it, so it is planned, at the largest portion")
+        // A 720 kcal dinner as a snack of 200 kcal: the smallest portion, not less.
+        assertEquals(0.75, choose(1, MealSlot.SNACK, dinner9).portions)
+
+        http.portions(0.25, 2.0)
+        assertEquals(1.75, choose(2, MealSlot.DINNER, dinner0).portions)
+        assertEquals(2.0, choose(3, MealSlot.DINNER, light).portions)
+        assertEquals(0.25, choose(3, MealSlot.SNACK, dinner9).portions)
+        // Meals planned before the range changed keep their portions.
+        assertEquals(1.5, http.get("/api/plans/$week").body<WeekPlan>().meal(0, MealSlot.DINNER)!!.portions)
+    }
+
+    @Test
+    fun aRotationOfDinnersTooLightForTheRangeLeavesTheSlotsEmptyAndThePlanSaysSo() = testApplication {
+        val http = start().ready()
+        val site = http.get("/api/recipes").body<List<RecipeSummary>>().map { it.id }
+        http.put("/api/recipes/rotation") { setBody(ManyRotationInput(site, inRotation = false)) }
+        val light = http.lightDinner()
+
+        val plan = http.post("/api/plans/$week/generate").body<WeekPlan>()
+        assertEquals(MealSlot.entries, plan.emptySlots)
+        assertTrue(plan.days.all { it.meals.isEmpty() })
+
+        // Up to two servings it fills every dinner, and every lunch with leftovers or cooked fresh.
+        val wide = http.portions(0.5, 2.0).post("/api/plans/$week/generate").body<WeekPlan>()
+        assertEquals(listOf(MealSlot.BREAKFAST, MealSlot.SNACK), wide.emptySlots)
+        assertTrue(wide.days.all { day -> day.meals.all { it.recipeId == light.id } })
+    }
+
     @Test
     fun choosingARecipeWithNothingLeftOverTakesTheOldDinnersLeftoversAway() = testApplication {
         val http = start().ready()
@@ -981,12 +1034,12 @@ class PlanTest {
         val dinner = after.days[1].meals.first { it.slot == MealSlot.DINNER }
         assertEquals("Beef bowl deluxe", dinner.title)
         assertEquals(MealSlot.DINNER, fake.contexts.single().slot)
-        // 225 kcal a serving against a 760 kcal dinner budget: two servings, the most allowed.
-        assertEquals(2.0, dinner.portions)
+        // 225 kcal a serving against a 760 kcal dinner budget: 1.5 servings, the most the profile's range allows.
+        assertEquals(1.5, dinner.portions)
         val lunch = after.days[2].meals.first { it.slot == MealSlot.LUNCH }
         assertEquals(dinner.recipeId, lunch.recipeId, "the next lunch is the new dinner's leftovers")
         assertTrue(lunch.leftover)
-        assertEquals(2.0, lunch.portions, "four servings made, two eaten at dinner")
+        assertEquals(1.5, lunch.portions, "four servings made, 1.5 eaten at dinner, and 1.5 of the 2.5 left is the most allowed")
 
         val untouched = { plan: WeekPlan -> plan.days.flatMap { it.meals }.filterNot { (it.day == 1 && it.slot == MealSlot.DINNER) || (it.day == 2 && it.slot == MealSlot.LUNCH) } }
         assertEquals(untouched(before), untouched(after))

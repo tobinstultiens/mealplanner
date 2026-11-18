@@ -459,7 +459,8 @@ back to the section's answer), for instance for long-life milk.
 
 **Buy ahead for next week** (`ShoppingList.buyAhead`, keys `ahead:i<id>`), only for a week with a
 plan. Next week's meals are those already planned there, or else a provisional choice
-(`BuyAhead.provisional`): the dinners the planner could pick, a meal by calories, not disliked and
+(`BuyAhead.provisional`): the dinners the planner could pick, a meal by calories at a portion within the
+profile's range (README, "Portion per meal"), not disliked and
 not planned this week (the planner avoids last week's recipes), one batch each. An ingredient of
 them qualifies when it keeps, is on offer this week but not (as far as known) next week, is not a
 staple and not on hand, and its saving is known. The meals saving at least €0.50 that way, at most

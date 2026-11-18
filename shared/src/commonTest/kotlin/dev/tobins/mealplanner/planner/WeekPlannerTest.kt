@@ -66,15 +66,29 @@ class WeekPlannerTest {
     }
 
     @Test
-    fun portionsAreScaledToTheSlotBudgetWithinOneBatch() {
+    fun portionsAreScaledToTheSlotBudgetWithinTheRange() {
+        val wide = PortionRange(0.5, 2.0)
         // Dinner budget is 760 kcal: 1.5 servings of a 500 kcal recipe is closest.
-        assertEquals(1.5, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0), budget = 760.0))
-        // A single-serving recipe is simply made larger, up to double.
-        assertEquals(1.5, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0, servings = 1), budget = 760.0))
-        assertEquals(2.0, WeekPlanner.portionsFor(candidate(1, DINNER, 150.0, 40.0, servings = 1), budget = 760.0))
+        assertEquals(1.5, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0), DINNER, targets, wide))
+        assertEquals(1.5, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0, servings = 1), DINNER, targets, wide))
+        assertEquals(2.0, WeekPlanner.portionsFor(candidate(1, DINNER, 150.0, 40.0, servings = 1), DINNER, targets, wide))
         // Leftovers are limited to what remains.
-        assertEquals(1.0, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0), budget = 760.0, available = 1.0))
-        assertEquals(0.5, WeekPlanner.portionsFor(candidate(1, DINNER, 2000.0, 40.0), budget = 760.0))
+        assertEquals(1.0, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0), DINNER, targets, wide, available = 1.0))
+        assertEquals(0.5, WeekPlanner.portionsFor(candidate(1, DINNER, 2000.0, 40.0), DINNER, targets, wide))
+
+        // The profile's defaults: 0.75 to 1.5 servings for lunch and dinner.
+        val defaults = PortionRange()
+        assertEquals(1.5, WeekPlanner.portionsFor(candidate(1, DINNER, 150.0, 40.0, servings = 1), DINNER, targets, defaults))
+        assertEquals(0.75, WeekPlanner.portionsFor(candidate(1, DINNER, 2000.0, 40.0), DINNER, targets, defaults))
+        assertEquals(1.5, WeekPlanner.portionsFor(candidate(1, LUNCH, 300.0, 40.0), LUNCH, targets, defaults))
+        // Breakfast and snack still go up to two servings: a single-serving bowl is simply made larger.
+        assertEquals(2.0, WeekPlanner.portionsFor(candidate(1, BREAKFAST, 220.0, 20.0, servings = 1), BREAKFAST, targets, defaults))
+        assertEquals(2.0, WeekPlanner.portionsFor(candidate(1, SNACK, 100.0, 5.0, servings = 1), SNACK, targets, defaults))
+        // A profile that allows more than two lets them go as far as the rest.
+        assertEquals(2.5, WeekPlanner.portionsFor(candidate(1, BREAKFAST, 176.0, 20.0, servings = 1), BREAKFAST, targets, PortionRange(1.0, 2.5)))
+        // What a dinner left may be less than the smallest portion; that is all the lunch gets.
+        assertEquals(0.5, WeekPlanner.portionsFor(candidate(1, DINNER, 500.0, 40.0), LUNCH, targets, defaults, available = 0.5))
+        assertEquals(1.5, WeekPlanner.portionsFor(candidate(1, DINNER, 300.0, 40.0), LUNCH, targets, defaults, available = 2.5))
     }
 
     @Test
@@ -122,14 +136,26 @@ class WeekPlannerTest {
 
     @Test
     fun leftoversNeverExceedWhatTheBatchLeaves() {
-        // Three servings of 390 kcal: dinner takes 2, so lunch gets the one that remains, not 1.5.
+        // Three servings of 390 kcal, up to two a meal: dinner takes 2, so lunch gets the one that remains, not 1.5.
         val small = (1L..7L).map { candidate(it, DINNER, 390.0, 40.0, servings = 3) }
-        val plan = WeekPlanner.plan(PlanRequest(targets, small))
+        val plan = WeekPlanner.plan(PlanRequest(targets, small, portions = PortionRange(0.5, 2.0)))
 
         assertEquals(2.0, plan.at(0, DINNER).portions)
         val leftovers = plan.filter { it.leftover }
         assertEquals(6, leftovers.size)
         assertTrue(leftovers.all { it.portions == 1.0 })
+    }
+
+    @Test
+    fun aLeftoverLunchMayBeSmallerThanTheSmallestPortion() {
+        // Two servings of 520 kcal: dinner takes 1.5, and the half that remains is lunch rather than thrown away.
+        val small = (1L..7L).map { candidate(it, DINNER, 520.0, 40.0, servings = 2) }
+        val plan = WeekPlanner.plan(PlanRequest(targets, small))
+
+        assertEquals(1.5, plan.at(0, DINNER).portions)
+        val leftovers = plan.filter { it.leftover }
+        assertEquals(6, leftovers.size)
+        assertTrue(leftovers.all { it.portions == 0.5 }, "got ${leftovers.map { it.portions }}")
     }
 
     @Test
@@ -232,5 +258,105 @@ class WeekPlannerTest {
         // The first lunch has no leftovers yet, so it is cooked from a dinner recipe too.
         val cooked = plan.filter { (it.slot == DINNER || it.slot == LUNCH) && !it.leftover }.map { it.recipeId }.toSet()
         assertTrue(cooked.containsAll((20L..23L).toList()), "every cheap dinner is used, got $cooked")
+    }
+
+    /**
+     * Light and heavy recipes of one to six servings in every slot, so that the old range of 0.5 to 2
+     * servings used all of it; the dinners' first tag repeats, so tags count too.
+     */
+    private val variedRecipes = listOf(
+        candidate(1, BREAKFAST, 430.0, 35.0, servings = 1),
+        candidate(2, BREAKFAST, 180.0, 12.0, servings = 1),
+        candidate(5, BREAKFAST, 260.0, 20.0, servings = 2),
+        candidate(3, SNACK, 200.0, 18.0, servings = 1),
+        candidate(4, SNACK, 90.0, 4.0, servings = 1),
+        candidate(6, LUNCH, 350.0, 25.0, servings = 2),
+        candidate(7, LUNCH, 240.0, 15.0, servings = 1),
+    ) + (10L..29L).map { id ->
+        candidate(id, DINNER, kcal = 170.0 + (id * 97) % 760, protein = 15.0 + (id * 13) % 40, servings = 1 + (id % 6).toInt(), tag = "T${id % 4}")
+    }
+
+    private val variedTargets = listOf(DailyTargets(2000, 150), DailyTargets(1500, 110), DailyTargets(2800, 180))
+
+    @Test
+    fun withTheDefaultsLunchAndDinnerStayWithinTheRange() {
+        for (targets in variedTargets) for (seed in 0L until 50L) {
+            val plan = WeekPlanner.plan(PlanRequest(targets, variedRecipes, seed = seed))
+            val case = "${targets.kcal} kcal, seed $seed"
+            for (meal in plan.filter { it.slot == DINNER || (it.slot == LUNCH && !it.leftover) }) {
+                assertTrue(meal.portions in 0.75..1.5, "$case: ${meal.slot} of ${meal.portions}")
+            }
+            // A leftover lunch is what the dinner left, which may be less than the smallest portion.
+            for (meal in plan.filter { it.leftover }) assertTrue(meal.portions in 0.5..1.5, "$case: leftovers of ${meal.portions}")
+            for (meal in plan.filter { it.slot == BREAKFAST || it.slot == SNACK }) {
+                assertTrue(meal.portions in 0.75..2.0, "$case: ${meal.slot} of ${meal.portions}")
+            }
+        }
+    }
+
+    @Test
+    fun aRecipeThatNeedsTwoServingsToReachHalfTheDinnerIsNoDinner() {
+        // The dinner budget is 760 kcal: 200 kcal reaches half of it at two servings, not at 1.5.
+        val light = candidate(30, DINNER, 200.0, 30.0)
+        val recipes = listOf(light, candidate(31, DINNER, 650.0, 50.0))
+
+        assertFalse(WeekPlanner.fitsAsMeal(light, DINNER, targets, PortionRange()))
+        assertTrue(WeekPlanner.plan(PlanRequest(targets, recipes)).none { it.recipeId == 30L })
+        // Up to two servings it was a dinner, which the planner took for variety.
+        assertTrue(WeekPlanner.fitsAsMeal(light, DINNER, targets, PortionRange(0.5, 2.0)))
+        val wide = WeekPlanner.plan(PlanRequest(targets, recipes, portions = PortionRange(0.5, 2.0)))
+        assertTrue(wide.any { it.recipeId == 30L && it.slot == DINNER && it.portions == 2.0 })
+    }
+
+    @Test
+    fun aSingleServingBreakfastIsStillPlannedAtUpToTwo() {
+        // The breakfast budget is 440 kcal: two servings of 180 come closest.
+        val recipes = listOf(candidate(2, BREAKFAST, 180.0, 12.0, servings = 1), candidate(10, DINNER, 650.0, 50.0))
+        val plan = WeekPlanner.plan(PlanRequest(targets, recipes))
+        assertEquals(List(7) { 2.0 }, plan.filter { it.slot == BREAKFAST }.map { it.portions })
+    }
+
+    /**
+     * A range of 0.5 to 2 servings plans exactly as the planner did before the range (issue 227): the
+     * plans of the first seed in full, and of 50 seeds for three targets, and every portion and
+     * meal-or-not of every recipe in every slot, as checksums of what the planner then made.
+     */
+    @Test
+    fun aRangeOfHalfToTwoServingsPlansAsBefore() {
+        val wide = PortionRange(0.5, 2.0)
+        fun plan(targets: DailyTargets, seed: Long) = WeekPlanner.plan(PlanRequest(targets, variedRecipes, portions = wide, seed = seed))
+        // Day, slot's first letter, recipe, quarter servings, and L for leftovers.
+        fun List<PlannedMeal>.fingerprint() =
+            joinToString(" ") { "${it.day}${it.slot.name.first()}${it.recipeId}x${(it.portions * 4).toInt()}${if (it.leftover) "L" else ""}" }
+        fun checksum(text: String) = text.fold(0L) { sum, c -> sum * 31 + c.code }
+
+        assertEquals(
+            "0B5x7 0L6x7 0D18x8 0S3x4 1B5x7 1L7x8 1D27x6 1S3x4 2B5x7 2L27x5L 2D17x8 2S3x4 3B5x7 3L17x8L 3D24x8 3S3x4 " +
+                "4B5x7 4L6x7 4D26x7 4S3x4 5B5x7 5L26x5L 5D12x5 5S3x4 6B5x7 6L7x8 6D11x6 6S3x4",
+            plan(variedTargets[0], 0).fingerprint(),
+        )
+        assertEquals(
+            "0B1x3 0L6x5 0D18x6 0S3x3 1B1x3 1L7x7 1D17x8 1S3x3 2B1x3 2L17x6L 2D24x8 2S3x3 3B1x3 3L6x5 3D26x6 3S3x3 " +
+                "4B1x3 4L26x4L 4D12x4 4S3x3 5B1x3 5L7x7 5D11x5 5S3x3 6B1x3 6L11x4L 6D10x6 6S3x3",
+            plan(variedTargets[1], 0).fingerprint(),
+        )
+        assertEquals(
+            "0B1x6 0L6x8 0D27x8 0S3x6 1B1x6 1L27x7L 1D12x7 1S3x6 2B1x6 2L7x8 2D18x8 2S3x6 3B1x6 3L6x8 3D11x8 3S3x6 " +
+                "4B1x6 4L11x7L 4D21x6 4S3x6 5B1x6 5L21x5L 5D20x7 5S3x6 6B1x6 6L20x5L 6D15x5 6S3x6",
+            plan(variedTargets[2], 0).fingerprint(),
+        )
+        val plans = variedTargets.joinToString("\n") { targets -> (0L until 50L).joinToString("\n") { plan(targets, it).fingerprint() } }
+        assertEquals(-7531212802159692011L, checksum(plans))
+
+        val everywhere = variedRecipes.map { it.copy(slots = MealSlot.entries.toSet()) }
+        val sizes = variedTargets.joinToString("\n") { targets ->
+            variedRecipes.indices.joinToString(" ") { i ->
+                MealSlot.entries.joinToString(",") { slot ->
+                    val quarters = (WeekPlanner.portionsFor(variedRecipes[i], slot, targets, wide) * 4).toInt()
+                    "$quarters${if (WeekPlanner.fitsAsMeal(everywhere[i], slot, targets, wide)) "y" else "n"}"
+                }
+            }
+        }
+        assertEquals(-4364112392982162551L, checksum(sizes))
     }
 }
