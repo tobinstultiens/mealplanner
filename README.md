@@ -112,7 +112,9 @@ The cooking site is a bank of recipes to choose from, not the list of what an ac
   (`{"added": false}`) returns it to the bank with its rating, kind and slots kept for when it is added
   again; that is refused (409, naming the days) while it is planned this week or later, and while it is
   the breakfast or snack routine. A recipe made in the app has no bank to go back to: it is deleted
-  (`DELETE /api/recipes/{id}`), and putting it back is refused. An added recipe whose file leaves the
+  (`DELETE /api/recipes/{id}`), and putting it back is refused. Ingredient amounts may be written with a decimal
+  comma (`0,5 | kg | banaan`); a line that cannot be read is refused (400) with `Unreadable ingredient line: ...`,
+  one per line of the error, and the app shows those lines. An added recipe whose file leaves the
   site stays one of my recipes, marked `removedFromSite`, and keeps working as before; it loses its
   picture with the file. A bank recipe whose file leaves the site is hidden until the file is back.
 - **The rotation** is the part of my recipes the planner picks from on its own: planning or replanning a

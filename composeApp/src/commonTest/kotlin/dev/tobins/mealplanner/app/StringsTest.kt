@@ -20,6 +20,17 @@ class StringsTest {
     )
 
     @Test
+    fun aRefusedRecipeNamesTheLinesTheServerCouldNotRead() {
+        val server = "Unreadable ingredient line: 0,5x | kg | banaan\nUnreadable ingredient line: x | g | ei"
+        assertEquals(
+            "Dit is niet te lezen: \"0,5x | kg | banaan\" / \"x | g | ei\"\nElke regel heeft de vorm hoeveelheid | eenheid | product",
+            checkLinesMessage(Strings.Dutch, server),
+        )
+        assertTrue(checkLinesMessage(Strings.English, server).startsWith("Cannot read: \"0,5x"))
+        assertEquals(Strings.Dutch(Msg.CHECK_LINES), checkLinesMessage(Strings.Dutch, "title must not be blank"))
+    }
+
+    @Test
     fun everyMessageHasBothLanguagesAndTheSamePlaceholders() {
         for (msg in Msg.entries) {
             val english = msg.text(Language.ENGLISH)

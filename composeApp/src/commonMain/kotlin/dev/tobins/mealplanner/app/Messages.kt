@@ -266,6 +266,10 @@ enum class Msg(private val english: String, private val dutch: String) {
         "Check the ingredient lines: each needs the form amount | unit | item",
         "Controleer de ingrediëntregels: elke regel heeft de vorm hoeveelheid | eenheid | product",
     ),
+    UNREADABLE_LINES(
+        "Cannot read: {0}\nEach line needs the form amount | unit | item",
+        "Dit is niet te lezen: {0}\nElke regel heeft de vorm hoeveelheid | eenheid | product",
+    ),
     SAVE_FAILED("Could not save: {0}", "Opslaan is niet gelukt: {0}"),
     DELETE("Delete", "Verwijderen"),
     DELETE_FAILED("Could not delete: {0}", "Verwijderen is niet gelukt: {0}"),

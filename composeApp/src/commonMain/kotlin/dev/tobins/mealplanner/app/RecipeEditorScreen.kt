@@ -170,7 +170,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                                 is Load.Failed -> {
                                     saving = false
                                     snackbar.showSnackbar(
-                                        if (result.status == 400) t(Msg.CHECK_LINES) else t(Msg.SAVE_FAILED, result.message),
+                                        if (result.status == 400) checkLinesMessage(t, result.message) else t(Msg.SAVE_FAILED, result.message),
                                     )
                                 }
                                 Load.Loading -> Unit
@@ -199,4 +199,16 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
             }
         }
     }
+}
+
+private const val UNREADABLE_PREFIX = "Unreadable ingredient line: "
+
+/**
+ * The text for a refused recipe: the lines the server could not read, quoted as typed, or the
+ * general hint when the refusal was about something else. The server names each such line on
+ * its own line of the error, in English; only the line itself is shown.
+ */
+internal fun checkLinesMessage(t: Strings, serverMessage: String): String {
+    val lines = serverMessage.lines().filter { it.startsWith(UNREADABLE_PREFIX) }.map { it.removePrefix(UNREADABLE_PREFIX) }
+    return if (lines.isEmpty()) t(Msg.CHECK_LINES) else t(Msg.UNREADABLE_LINES, lines.joinToString(" / ") { "\"$it\"" })
 }

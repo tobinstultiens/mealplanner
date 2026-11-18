@@ -96,6 +96,18 @@ class RecipeBankTest {
     private suspend fun HttpResponse.error() = body<Map<String, String>>().getValue("error")
 
     @Test
+    fun aDecimalCommaInAnAmountReadsAsHalfAKiloAndAnUnreadableLineIsNamed() = testApplication {
+        val http = start()
+        val saved = http.post("/api/recipes") { setBody(RecipeInput("Kwark", 2, "200 | g | magere kwark\n0,5 | kg | banaan")) }
+        assertEquals(HttpStatusCode.Created, saved.status)
+        assertEquals(listOf(0.5, 200.0), saved.body<RecipeDetail>().ingredients.map { it.line.amount }.sortedBy { it })
+
+        val refused = http.post("/api/recipes") { setBody(RecipeInput("Kwark", 2, "200 | g | kwark\n1 of 2 | kg | banaan\n3 | st | ei")) }
+        assertEquals(HttpStatusCode.BadRequest, refused.status)
+        assertEquals("Unreadable ingredient line: 1 of 2 | kg | banaan", refused.error())
+    }
+
+    @Test
     fun addingMovesARecipeFromTheBankToMyRecipesAndPuttingItBackKeepsItsRating() = testApplication {
         val http = start()
         assertEquals(emptyList(), http.mine())
