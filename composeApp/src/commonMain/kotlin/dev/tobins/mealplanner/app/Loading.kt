@@ -71,9 +71,15 @@ internal fun sentence(text: String): String =
  * Every place that shows a failed request in a sentence goes through here, so none shows raw text.
  */
 internal fun failureSentence(failed: Load.Failed, msg: Msg? = null): String {
-    val reason = if (failed.technical) plainReason(failed) else failed.message
+    val reason = reasonOf(failed)
     return sentence(if (msg == null) reason else Strings.current(msg, reason))
 }
+
+/** Runs [action]; null when it worked, else the sentence for a snackbar. */
+internal suspend fun failureOf(action: suspend () -> Unit): String? = (load(action) as? Load.Failed)?.let { failureSentence(it) }
+
+/** Why [failed] failed, as a fragment for inside a sentence: the server's explanation or a plain reason. */
+internal fun reasonOf(failed: Load.Failed): String = if (failed.technical) plainReason(failed) else failed.message
 
 @Composable
 internal fun ErrorMessage(title: String, failed: Load.Failed, onRetry: () -> Unit) {

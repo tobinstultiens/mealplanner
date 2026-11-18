@@ -75,7 +75,7 @@ internal suspend fun syncCookingSite(api: ApiClient, t: Strings, bank: Boolean, 
                 else -> SyncOutcome(t(if (imported) Msg.IMPORTED_BANK else Msg.SYNCED_BANK, added, updated, removed), 0)
             }
         }
-        is Load.Failed -> SyncOutcome(t(if (imported) Msg.IMPORT_FAILED else Msg.SYNC_FAILED, result.message), 0)
+        is Load.Failed -> SyncOutcome(failureSentence(result, if (imported) Msg.IMPORT_FAILED else Msg.SYNC_FAILED), 0)
         Load.Loading -> SyncOutcome("", 0)
     }
 
@@ -164,7 +164,7 @@ internal fun CookingRepoDialog(status: CookingSyncStatus?, onDismiss: () -> Unit
     fun save() {
         saving = true
         scope.launch {
-            runCatching { onSave(siteSetting(choice, url, serverSite)) }.onFailure { error = (load { throw it } as? Load.Failed)?.message ?: it.message }
+            runCatching { onSave(siteSetting(choice, url, serverSite)) }.onFailure { error = (load { throw it } as? Load.Failed)?.let { failureSentence(it) } ?: it.message }
             saving = false
         }
     }
@@ -266,11 +266,11 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
                     selection.stop()
                     val message = if (recipes.size == 1) t(Msg.ADDED_ONE, recipes.single().title) else t.plural(Plural.ADDED_MANY, recipes.size)
                     snackbar.announceAdded(t, message, unlinkedIngredients(result.value.filter { it.id in ids }), onOpenMapping) {
-                        (load { api.setAdded(ids, added = false) } as? Load.Failed)?.let { snackbar.showSnackbar(t(Msg.REMOVE_FAILED, it.message)) }
+                        (load { api.setAdded(ids, added = false) } as? Load.Failed)?.let { snackbar.showSnackbar(failureSentence(it, Msg.REMOVE_FAILED)) }
                         reload++
                     }
                 }
-                is Load.Failed -> snackbar.showSnackbar(t(Msg.ADDED_FAILED, result.message))
+                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.ADDED_FAILED))
                 Load.Loading -> Unit
             }
         }

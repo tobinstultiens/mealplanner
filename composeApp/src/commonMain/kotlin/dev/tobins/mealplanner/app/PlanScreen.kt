@@ -104,7 +104,7 @@ fun PlanScreen(
         scope.launch {
             when (val result = load(action)) {
                 is Load.Ready -> state = result
-                is Load.Failed -> snackbar.showSnackbar(result.message)
+                is Load.Failed -> snackbar.showSnackbar(failureSentence(result))
                 Load.Loading -> Unit
             }
             busy = false
@@ -135,7 +135,7 @@ fun PlanScreen(
                     state = Load.Ready(result.value ?: throw IllegalStateException(t(Msg.PLAN_CHOOSE_UNSUPPORTED)))
                     choosingFor = null
                 }
-                is Load.Failed -> throw IllegalStateException(result.message)
+                is Load.Failed -> throw IllegalStateException(failureSentence(result))
                 Load.Loading -> Unit
             }
         }

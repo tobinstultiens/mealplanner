@@ -1,9 +1,12 @@
 package dev.tobins.mealplanner.app
 
+import kotlinx.io.IOException
+import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 
 class PlainReasonTest {
     @Test
@@ -36,6 +39,13 @@ class FailureSentenceTest {
         assertEquals("Could not refresh: the server could not be reached.", failureSentence(unreachable, Msg.REFRESH_FAILED))
         Strings.current = Strings.Dutch
         assertEquals("Vernieuwen is niet gelukt: de server is niet bereikbaar.", failureSentence(unreachable, Msg.REFRESH_FAILED))
+    }
+
+    @Test
+    fun aFailedEatenTapOnTodayShowsTheSentenceNotTheExceptionText() = runTest {
+        val shown = failureOf { throw IOException("unexpected end of stream on http://localhost:18081/api/today") }
+        assertEquals("The server could not be reached.", shown)
+        assertNull(failureOf { })
     }
 
     @Test
