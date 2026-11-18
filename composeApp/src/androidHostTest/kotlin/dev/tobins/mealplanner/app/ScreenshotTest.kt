@@ -144,11 +144,11 @@ private const val FOCUSED = "focused"
 
 /** The whole app as it starts for someone who is logged in: the bottom bar lives here, not in a screen. */
 @Composable
-private fun shell(settings: ServerSettings) {
+private fun shell(settings: ServerSettings, language: AppLanguage = AppLanguage.ENGLISH) {
     val storage = remember {
         MemorySettingsStorage().also {
             it.saveSession(Session("token", expiresAt = Long.MAX_VALUE))
-            it.saveAppLanguage(AppLanguage.ENGLISH)
+            it.saveAppLanguage(language)
         }
     }
     val launcher = remember {
@@ -176,6 +176,8 @@ enum class Shot(
     val dutch: Boolean = false,
     val heightDp: Int = 640,
     val profile: Profile? = null,
+    /** A font scale of its own instead of the look's, for a size a screen must survive that the looks do not cover. */
+    val fontScale: Float? = null,
     val content: @Composable (ApiClient, ServerSettings) -> Unit,
 ) {
     TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
@@ -253,6 +255,11 @@ enum class Shot(
     // What adding a recipe with an ingredient still to link says: two actions, in a snackbar.
     SNACKBAR_LINK(heightDp = 200, content = { _, _ -> addedSnackbar() }),
     SNACKBAR_LINK_NL(dutch = true, heightDp = 200, content = { _, _ -> addedSnackbar() }),
+    // In Dutch, where "Boodschappen" and "Voortgang" are the longest labels of the bottom bar (#190).
+    SHELL_NL(dutch = true, content = { _, settings -> shell(settings, AppLanguage.DUTCH) }),
+    // The week of the shopping list must stay readable at the largest font setting (#190).
+    SHOPPING_HEADER_X2(heightDp = 700, fontScale = 2.0f, content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_HEADER_X2_NL(dutch = true, heightDp = 700, fontScale = 2.0f, content = { api, _ -> shopping(api, shoppingMode = false) }),
     SHELL(content = { _, settings -> shell(settings) }),
     // The dialog's body: a dialog is a window of its own that the picture of the frame does not include.
     UPDATE_NOTES(content = { _, _ ->
@@ -381,7 +388,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         // Pictures come from a fake loader: a screenshot must never wait for, or depend on, the stores' servers.
         val pictures = remember { fakeImageLoader(RuntimeEnvironment.getApplication(), failing = { "feta" in it }) }
         CompositionLocalProvider(
-            LocalDensity provides Density(density.density, look.fontScale),
+            LocalDensity provides Density(density.density, shot.fontScale ?: look.fontScale),
             LocalStrings provides if (shot.dutch) Strings.Dutch else Strings.English,
             LocalProductImageLoader provides pictures,
             LocalRecipeImages provides RecipeImages(pictures, "http://fake", { null }),

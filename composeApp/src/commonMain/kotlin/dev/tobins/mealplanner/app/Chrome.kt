@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /*
  * The pieces every screen's top bar is built from, so that bars look and behave the same
@@ -179,10 +181,13 @@ fun MealNumbers(macros: String, cost: String?, modifier: Modifier = Modifier) {
 fun PeriodStepper(label: String, previous: String, next: String, onPrevious: () -> Unit, onNext: () -> Unit) {
     Row(Modifier.offset(x = (-12).dp), verticalAlignment = Alignment.CenterVertically) {
         BarAction(AppIcons.ChevronLeft, previous, onPrevious)
+        val style = MaterialTheme.typography.titleMedium
         Text(
             label,
-            style = MaterialTheme.typography.titleMedium,
+            style = style,
             maxLines = 1,
+            // With a large font the label shrinks to fit rather than lose the date it is there for.
+            autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = style.fontSize),
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             // Wide enough for a date, so the second chevron stays put while stepping through days.

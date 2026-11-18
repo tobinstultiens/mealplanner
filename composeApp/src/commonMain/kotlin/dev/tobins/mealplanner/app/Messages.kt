@@ -54,7 +54,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     // --- Tabs
     TAB_TODAY("Today", "Vandaag"),
     TAB_PLAN("Plan", "Weekplan"),
-    TAB_SHOPPING("Shopping", "Boodschappen"),
+    TAB_SHOPPING("Shopping", "Inkopen"),
     TAB_RECIPES("Recipes", "Recepten"),
     TAB_PROGRESS("Progress", "Voortgang"),
 
