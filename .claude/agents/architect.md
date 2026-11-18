@@ -17,6 +17,11 @@ Only on the owner's request, or when about twenty pull requests have merged sinc
 - Then the code, all of it, module by module: `shared/` (API types, parser, planner, pricing, nutrition), `server/` (Ktor routes, repositories, SQLDelight schema and migrations, offer and price sources, login), `composeApp/` (screens, shared composables, theme, API client, login), `androidApp/`, the build files and `.github/workflows/`. Read the tests as closely as the code: they show what is relied on.
 - `git log --stat` for the last months: files that change together, and files that are changed in almost every commit, point at missing seams.
 
+## Reading the code
+- Start from `scripts/code-map <module>` (files, declarations and line numbers; `--grep NAME` for one name) instead of `find` and `ls -R`.
+- Search with `grep -n` on a path with a pattern narrow enough to give a screen of lines; never `grep -r` for a bare common word (`plan`, `bank`) over the whole tree.
+- Read the lines you need (Read with offset and limit, or `sed -n 'a,bp'`), not whole files over a few hundred lines; do not read again what is already in the conversation.
+
 ## What to look for
 - **Structure:** responsibilities in the wrong module or layer; files that have grown into several things (routes, screens); dependencies pointing the wrong way; state handled differently from screen to screen; what would make two agents collide on the same file for unrelated work.
 - **Redundancy:** the same logic or the same UI pattern written more than once; near-copies that have drifted apart; code and tests nothing reaches.

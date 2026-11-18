@@ -1,0 +1,600 @@
+#!/usr/bin/env python3
+"""Prints a map of the checked-out source tree, so an agent can find code without searching for it.
+
+For every module and source set it lists the Kotlin files with their line counts and, on request,
+under each file its top-level declarations (class, interface, object, enum, typealias, fun, with
+`expect`/`actual`; for a class also its public and internal functions), each with its line number
+and the first sentence of its KDoc. For `.sq` files it lists the tables and the queries; of the
+migrations (`.sqm`) only the newest number. Test sources are left out unless asked for.
+
+    scripts/code-map                        every file with its line count, and how to ask for more
+    scripts/code-map server                 declarations of a module, or of a path inside one
+    scripts/code-map composeApp/src/commonMain/kotlin/dev/tobins/mealplanner/app/ApiClient.kt
+    scripts/code-map --files server         files and line counts only
+    scripts/code-map --grep recipeBank      only declarations whose name contains this (any case)
+    scripts/code-map --tests shared         include test sources (also when the path is one)
+    scripts/code-map --self-test            checks the script on made-up sources
+
+It reads the tree as it is, so it is never stale, and writes nothing. Declarations are found with
+regular expressions on lines whose strings and comments have been blanked, not with a parser:
+declarations inside strings or comments, private and nested ones, and `override` members are left
+out. Python 3, standard library only.
+"""
+import argparse
+import os
+import re
+import sys
+import tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SKIP_DIRS = {"build", ".gradle", ".git", "node_modules", ".kotlin", ".idea"}
+MAX_DOC = 72
+
+MODIFIERS = {
+    "public", "internal", "private", "protected", "open", "abstract", "final", "sealed", "data",
+    "enum", "annotation", "inline", "value", "inner", "const", "lateinit", "suspend", "operator",
+    "infix", "tailrec", "external", "expect", "actual", "override", "companion",
+}
+ANNOTATION = re.compile(r"@[\w.]+(?::\w+)?(?:\([^()]*\))?\s*")
+FUN_HEAD = re.compile(r"^(?:<[^()]*?>\s*)?(?:(?P<recv>[^`(]+?)\.)?(?P<name>`[^`]+`|\w+)\s*\(")
+CLASS_HEAD = re.compile(r"^(?P<kind>class|interface|object|typealias)\s+(?P<name>\w+)")
+ANY_TOP = re.compile(r"^(?:(?:%s)\s+)*(?:fun|val|var|class|interface|object|typealias)\b" % "|".join(MODIFIERS))
+
+
+class Decl:
+    """One declaration: where it is, what it is called and the first sentence of its KDoc."""
+
+    def __init__(self, line, kind, name, doc, member_of=None, tags=""):
+        self.line, self.kind, self.name, self.doc = line, kind, name, doc
+        self.member_of, self.tags = member_of, tags
+
+    def label(self):
+        return f"{self.member_of}.{self.name}" if self.member_of else self.name
+
+    def text(self, qualified=True):
+        """One line: `fun Class.name - doc`; a member's class is left out under its class's line."""
+        head = f"{self.tags}{self.kind} {self.label() if qualified else self.name}"
+        return f"{head} - {self.doc}" if self.doc else head
+
+
+# ---------------------------------------------------------------- Kotlin: blank strings and comments
+
+def blank_lines(text):
+    """Per line: (code, brackets, doc). `code` is the line with comments removed and string contents
+    emptied; `brackets` is the open brackets at the start of the line (outside strings and comments);
+    `doc` is the text of a KDoc that ended on this line, or None."""
+    out = []
+    brackets = ""
+    comment = 0          # nesting depth of /* */
+    doc_buf = None       # text of the KDoc being read
+    modes = []           # inside a string: ["str", raw] or ["tmpl", brace depth]
+    for raw_line in text.split("\n"):
+        start = brackets
+        code, doc = [], None
+        i, n, line = 0, len(raw_line), raw_line
+        while i < n:
+            c = line[i]
+            two = line[i:i + 2]
+            if comment:
+                if two == "/*":
+                    comment += 1
+                    i += 2
+                elif two == "*/":
+                    comment -= 1
+                    i += 2
+                    if not comment and doc_buf is not None:
+                        doc, doc_buf = "".join(doc_buf), None
+                else:
+                    if doc_buf is not None:
+                        doc_buf.append(c)
+                    i += 1
+                continue
+            if modes and modes[-1][0] == "str":
+                raw = modes[-1][1]
+                if c == "\\" and not raw:
+                    i += 2
+                elif raw and line[i:i + 3] == '"""':
+                    i += 3
+                    while line[i:i + 1] == '"':   # a run of quotes: the last three close
+                        i += 1
+                    modes.pop()
+                    code.append('"')
+                elif c == '"' and not raw:
+                    modes.pop()
+                    code.append('"')
+                    i += 1
+                elif two == "${":
+                    modes.append(["tmpl", 1])
+                    i += 2
+                else:
+                    i += 1
+                continue
+            if two == "//":
+                break
+            if two == "/*":
+                comment = 1
+                if line[i:i + 3] == "/**" and line[i:i + 4] != "/**/":
+                    doc_buf = []
+                    i += 3
+                else:
+                    i += 2
+                continue
+            if c == '"':
+                raw = line[i:i + 3] == '"""'
+                modes.append(["str", raw])
+                code.append('"')
+                i += 3 if raw else 1
+                continue
+            if c == "'":
+                j = i + 2 if line[i + 1:i + 2] == "\\" else i + 1
+                end = line.find("'", j + 1)
+                i = end + 1 if 0 < end - i <= 8 else i + 1
+                code.append("'")
+                continue
+            if modes and modes[-1][0] == "tmpl":
+                if c == "{":
+                    modes[-1][1] += 1
+                elif c == "}":
+                    modes[-1][1] -= 1
+                    if modes[-1][1] == 0:
+                        modes.pop()
+                i += 1
+                continue
+            if c in "({[":
+                brackets += c
+            elif c in ")}]" and brackets:
+                brackets = brackets[:-1]
+            code.append(c)
+            i += 1
+        if doc_buf is not None:
+            doc_buf.append("\n")
+        if modes and modes[-1][0] == "str" and not modes[-1][1]:
+            modes.clear()   # an ordinary string ends with its line: do not let a stray quote swallow the file
+        out.append(("".join(code), start, doc))
+    return out
+
+
+def first_sentence(doc):
+    """The first sentence of a KDoc body, without `*` margins and tags; None when it has none."""
+    lines = [re.sub(r"^\s*\*?\s?", "", l).rstrip() for l in doc.split("\n")]
+    paragraph = []
+    for l in lines:
+        if l.startswith("@") or (not l and paragraph):
+            break
+        if l:
+            paragraph.append(l)
+    text = " ".join(paragraph)
+    m = re.match(r"(.+?[.!?])(?:\s+(?=[A-Z`\[])|$)", text)
+    text = (m.group(1) if m else text).strip()
+    if len(text) > MAX_DOC:
+        text = text[:MAX_DOC - 1].rstrip() + "..."
+    return text or None
+
+
+def parse_declaration(code, in_class):
+    """The (kind, name, tags) a line declares, or None. `in_class` is the name of the class whose
+    members are being read: only `fun` counts then."""
+    s = code.strip()
+    while True:
+        m = ANNOTATION.match(s)
+        if not m:
+            break
+        s = s[m.end():]
+    mods = []
+    while True:
+        m = re.match(r"(\w+)\s+", s)
+        if m and m.group(1) in MODIFIERS:
+            mods.append(m.group(1))
+            s = s[m.end():]
+        else:
+            break
+    if {"private", "protected", "override"} & set(mods):
+        return None
+    tags = "".join(f"{t} " for t in ("expect", "actual") if t in mods)
+    fi = re.match(r"fun\s+interface\s+(\w+)", s)
+    if fi and not in_class:
+        return "interface", fi.group(1), tags
+    if s.startswith("fun ") or s.startswith("fun<"):
+        head = s[3:].strip()
+        while re.search(r"<[^<>]*>", head):    # generics out of the way, including a receiver's
+            head = re.sub(r"<[^<>]*>", "", head)
+        m = FUN_HEAD.match(head)
+        if not m:
+            return None
+        recv = (m.group("recv") or "").strip().rstrip("?")
+        name = m.group("name")
+        label = f"{recv}.{name}" if recv else name
+        return "fun", label, tags
+    if in_class:
+        return None
+    m = CLASS_HEAD.match(s)
+    if not m:
+        return None
+    kind = m.group("kind")
+    if kind == "class" and "enum" in mods:
+        kind = "enum"
+    return kind, m.group("name"), tags
+
+
+def kotlin_declarations(text):
+    """The declarations of one Kotlin file, in order."""
+    decls = []
+    pending_doc = None
+    current_class = None
+    pending_composable = False
+    for number, (code, brackets, doc) in enumerate(blank_lines(text), start=1):
+        member_level = brackets == "{" and current_class is not None
+        if doc is not None and (brackets == "" or member_level):   # not a constructor parameter's
+            pending_doc = first_sentence(doc)
+        stripped = code.strip()
+        if not stripped:
+            continue
+        if brackets != "" and not member_level:
+            continue
+        rest = stripped
+        annotated_composable = False
+        while True:
+            m = ANNOTATION.match(rest)
+            if not m:
+                break
+            annotated_composable |= m.group(0).strip().split(".")[-1].lstrip("@") == "Composable"
+            rest = rest[m.end():]
+        if not rest or rest[0] in "@(":   # an annotation whose arguments go on
+            pending_composable |= annotated_composable
+            continue    # annotations alone: the declaration is on a later line
+        composable = pending_composable or annotated_composable
+        pending_composable = False
+        if brackets == "" and ANY_TOP.match(re.sub(r"^(?:@[\w.]+(?:\([^()]*\))?\s*)+", "", stripped)):
+            current_class = None
+        found = parse_declaration(rest, current_class if member_level else None)
+        if found:
+            kind, name, tags = found
+            if kind == "fun" and composable:
+                kind = "composable"
+            if member_level:
+                decls.append(Decl(number, kind, name, pending_doc, member_of=current_class, tags=tags))
+            else:
+                decls.append(Decl(number, kind, name, pending_doc, tags=tags))
+                if kind in ("class", "interface", "object", "enum"):
+                    current_class = name
+        pending_doc = None
+    return decls
+
+
+# ---------------------------------------------------------------- SQLDelight
+
+def sq_declarations(text):
+    """The tables and labelled queries of a `.sq` file."""
+    text = re.sub(r"/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S)
+    decls = []
+    for number, line in enumerate(text.split("\n"), start=1):
+        line = line.split("--", 1)[0]
+        m = re.match(r"\s*CREATE\s+(?:VIRTUAL\s+)?(TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", line, re.I)
+        if m:
+            decls.append(Decl(number, m.group(1).lower(), m.group(2), None))
+            continue
+        m = re.match(r"(\w+):\s*$", line)
+        if m:
+            decls.append(Decl(number, "query", m.group(1), None))
+    return decls
+
+
+# ---------------------------------------------------------------- the tree
+
+class SourceFile:
+    def __init__(self, path, is_test):
+        self.path = path                      # relative to the repository root, with /
+        self.is_test = is_test
+        with open(os.path.join(ROOT, path), encoding="utf-8", errors="replace") as f:
+            self.text = f.read()
+        self.lines = self.text.count("\n") + (0 if self.text.endswith("\n") or not self.text else 1)
+        self.decls = None
+
+    def declarations(self):
+        if self.decls is None:
+            self.decls = (sq_declarations(self.text) if self.path.endswith(".sq")
+                          else kotlin_declarations(self.text))
+        return self.decls
+
+
+def is_test_set(name):
+    return name == "test" or name.endswith("Test")
+
+
+def discover(root):
+    """Every .kt, .sq and .sqm file under `<module>/src/<set>/`, in path order."""
+    found = []
+    for module in sorted(os.listdir(root)):
+        src = os.path.join(root, module, "src")
+        if not os.path.isdir(src):
+            continue
+        for source_set in sorted(os.listdir(src)):
+            top = os.path.join(src, source_set)
+            for base, dirs, names in os.walk(top):
+                dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+                for name in sorted(names):
+                    if name.endswith((".kt", ".sq", ".sqm")):
+                        rel = os.path.relpath(os.path.join(base, name), root).replace(os.sep, "/")
+                        found.append((rel, is_test_set(source_set)))
+    return found
+
+
+def select(found, paths, tests):
+    """The files under any of `paths` (all when none), tests only when asked for or named."""
+    prefixes = [os.path.relpath(os.path.abspath(p), ROOT).replace(os.sep, "/").rstrip("/") for p in paths]
+    chosen = []
+    for rel, is_test in found:
+        if prefixes:
+            hit = [p for p in prefixes if rel == p or rel.startswith(p + "/")]
+            if not hit:
+                continue
+            explicit_test = is_test and any(is_test_set(part) for p in hit for part in p.split("/")[2:3])
+            if is_test and not tests and not explicit_test:
+                continue
+        elif is_test and not tests:
+            continue
+        chosen.append((rel, is_test))
+    return chosen
+
+
+def print_files(files):
+    """Files and line counts grouped by directory; of the migrations only the newest."""
+    by_dir = {}
+    for f in files:
+        by_dir.setdefault(os.path.dirname(f.path), []).append(f)
+    for directory, members in by_dir.items():
+        print(directory)
+        migrations = []
+        for f in members:
+            if f.path.endswith(".sqm"):
+                migrations.append(int(re.sub(r"\D", "", os.path.basename(f.path)) or 0))
+            else:
+                print(f"  {os.path.basename(f.path)} {f.lines}")
+        if migrations:
+            print(f"  migrations: newest {max(migrations)}.sqm")
+
+
+def print_declarations(files, needle):
+    """Files with their declarations; with `needle`, only the matching declarations, as path:line."""
+    if needle:
+        for f in files:
+            for d in f.declarations():
+                if needle.lower() in d.name.split(".")[-1].lower():
+                    print(f"{f.path}:{d.line} {d.text()}")
+        return
+    by_dir = {}
+    for f in files:
+        by_dir.setdefault(os.path.dirname(f.path), []).append(f)
+    for directory, members in by_dir.items():
+        print(directory)
+        migrations = []
+        for f in members:
+            if f.path.endswith(".sqm"):
+                migrations.append(int(re.sub(r"\D", "", os.path.basename(f.path)) or 0))
+                continue
+            print(f"  {os.path.basename(f.path)} {f.lines}")
+            if f.path.endswith(".sq"):
+                print_sq(f)
+            else:
+                for d in f.declarations():
+                    indent = "    " if d.member_of is None else "      "
+                    print(f"{indent}{d.line} {d.text(qualified=False)}")
+        if migrations:
+            print(f"  migrations: newest {max(migrations)}.sqm")
+
+
+def print_sq(f):
+    """Tables, then the queries as `name:line` wrapped to a readable width."""
+    decls = f.declarations()
+    tables = [f"{d.name}:{d.line}" for d in decls if d.kind != "query"]
+    queries = [f"{d.name}:{d.line}" for d in decls if d.kind == "query"]
+    for title, items in (("tables", tables), ("queries", queries)):
+        line = f"    {title}"
+        for item in items:
+            if len(line) + len(item) > 110:
+                print(line)
+                line = "      "
+            line += (" " if not line.endswith(" ") else "") + item
+        if items:
+            print(line)
+
+
+def run(paths, files_only, tests, needle):
+    chosen = select(discover(ROOT), paths, tests)
+    if not chosen:
+        print("no source files match", file=sys.stderr)
+        return 1
+    files = [SourceFile(rel, is_test) for rel, is_test in chosen]
+    if needle:
+        print_declarations(files, needle)
+    elif files_only or not paths:
+        print_files(files)
+        if not paths and not files_only:
+            print("More: scripts/code-map <module or path> for declarations, --grep NAME for one name, "
+                  "--tests to include tests, --files for line counts only.")
+    else:
+        print_declarations(files, None)
+    return 0
+
+
+# ---------------------------------------------------------------- self-test
+
+SAMPLE = '''package demo
+
+import x.Y
+
+/** Keeps the recipes. Second sentence. */
+class Repo(
+    private val db: Db,
+    val price: (Int, Int) -> Int = { _, _ -> 0 },
+) {
+    /** The bank, for one account. */
+    fun bank(): List<Int> {
+        val s = "fun fakeInString() { }"
+        return emptyList()
+    }
+
+    private fun hidden() {}
+    internal fun inner() = 1
+    override fun toString() = "fun alsoFake()"
+
+    class Nested {
+        fun nestedFun() {}
+    }
+
+    companion object {
+        fun inCompanion() {}
+    }
+}
+
+/* fun inBlockComment() {} */
+// fun inLineComment() {}
+
+val text = """
+fun inRawString() {}
+class FakeInRaw
+"""
+
+val tmpl = "${ "}" } fun afterTemplate()"
+
+private fun privateTop() {}
+
+/**
+ * Extension on a list.
+ * More text.
+ */
+fun <T> List<T>.problems(): List<String> = emptyList()
+
+@Composable
+@OptIn(
+    ExperimentalFoo::class,
+)
+fun Screen(title: String) {
+    Text("fun notThis()")
+}
+
+expect fun platformName(): String
+actual fun platformName(): String = "jvm"
+
+enum class Color { RED, GREEN }
+sealed interface Shape
+fun interface Handler { fun handle() }
+object Singleton {
+    fun go() {}
+}
+typealias Names = List<String>
+'''
+
+SQ_SAMPLE = '''-- CREATE TABLE inComment (
+CREATE TABLE recipe (
+    id INTEGER PRIMARY KEY
+);
+/* byHidden:
+   hiddenQuery:
+*/
+byId:
+SELECT * FROM recipe WHERE id = ?;
+
+insertOne:
+INSERT INTO recipe(id) VALUES (?);
+'''
+
+
+def self_test():
+    failed = False
+
+    def check(got, want, what):
+        nonlocal failed
+        if got != want:
+            failed = True
+            print(f"self-test {what}: got {got!r}, wanted {want!r}", file=sys.stderr)
+
+    lines = SAMPLE.split("\n")
+
+    def line_of(snippet):
+        return next(i for i, l in enumerate(lines, start=1) if snippet in l)
+
+    got = [(d.kind, d.label(), d.line) for d in kotlin_declarations(SAMPLE)]
+    want = [
+        ("class", "Repo", line_of("class Repo")),
+        ("fun", "Repo.bank", line_of("fun bank")),
+        ("fun", "Repo.inner", line_of("fun inner")),
+        ("fun", "List.problems", line_of("List<T>.problems")),
+        ("composable", "Screen", line_of("fun Screen")),
+        ("fun", "platformName", line_of("expect fun")),
+        ("fun", "platformName", line_of("actual fun")),
+        ("enum", "Color", line_of("enum class")),
+        ("interface", "Shape", line_of("sealed interface")),
+        ("interface", "Handler", line_of("fun interface")),
+        ("object", "Singleton", line_of("object Singleton")),
+        ("fun", "Singleton.go", line_of("fun go")),
+        ("typealias", "Names", line_of("typealias")),
+    ]
+    check(got, want, "kotlin declarations")
+
+    decls = {(d.kind, d.label()): d for d in kotlin_declarations(SAMPLE)}
+    check(decls[("class", "Repo")].doc, "Keeps the recipes.", "class doc")
+    check(decls[("fun", "Repo.bank")].doc, "The bank, for one account.", "member doc")
+    check(decls[("fun", "List.problems")].doc, "Extension on a list.", "multi-line doc")
+    check(decls[("composable", "Screen")].doc, None, "annotations between doc and fun")
+    check(kotlin_declarations(SAMPLE)[5].tags, "expect ", "expect tag")
+    check(kotlin_declarations(SAMPLE)[6].tags, "actual ", "actual tag")
+    check(kotlin_declarations("fun `a test with spaces`() {}\n")[0].label(), "`a test with spaces`", "backticks")
+
+    leak = kotlin_declarations("class A(\n    /** A parameter. */\n    val x: Int,\n)\n\nclass B\n"
+                               "\n/** Dates, e.g. 2026-11-18. Then more. */\nclass C\n")
+    check([(d.name, d.doc) for d in leak], [("A", None), ("B", None), ("C", "Dates, e.g. 2026-11-18.")],
+          "parameter docs and abbreviations")
+
+    sq = [(d.kind, d.name, d.line) for d in sq_declarations(SQ_SAMPLE)]
+    check(sq, [("table", "recipe", 2), ("query", "byId", 8), ("query", "insertOne", 11)], "sq declarations")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        global ROOT
+        saved = ROOT
+        ROOT = tmp
+        try:
+            for rel, text in {
+                "mod/src/main/kotlin/A.kt": SAMPLE,
+                "mod/src/commonTest/kotlin/ATest.kt": "fun aTest() {}\n",
+                "mod/src/main/sqldelight/db/1.sqm": "x\n",
+                "mod/src/main/sqldelight/db/12.sqm": "x\n",
+                "mod/src/main/sqldelight/db/R.sq": SQ_SAMPLE,
+                "mod/build/src/main/Generated.kt": "fun generated() {}\n",
+            }.items():
+                path = os.path.join(tmp, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as f:
+                    f.write(text)
+            check([r for r, _ in discover(tmp)],
+                  ["mod/src/commonTest/kotlin/ATest.kt", "mod/src/main/kotlin/A.kt",
+                   "mod/src/main/sqldelight/db/1.sqm", "mod/src/main/sqldelight/db/12.sqm",
+                   "mod/src/main/sqldelight/db/R.sq"], "discovery")
+            found = discover(tmp)
+            check(len(select(found, [], False)), 4, "tests left out")
+            check(len(select(found, [], True)), 5, "tests included")
+            check([r for r, _ in select(found, [os.path.join(tmp, "mod/src/commonTest")], False)],
+                  ["mod/src/commonTest/kotlin/ATest.kt"], "a test path names its tests")
+            check([r for r, _ in select(found, [os.path.join(tmp, "mod")], False)][0],
+                  "mod/src/main/kotlin/A.kt", "module path")
+        finally:
+            ROOT = saved
+    print("self-test failed" if failed else "self-test passed")
+    return 1 if failed else 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description="A map of the source tree: files, declarations, queries.")
+    parser.add_argument("paths", nargs="*", help="a module or a path inside one; default: everything")
+    parser.add_argument("--files", action="store_true", help="files and line counts only")
+    parser.add_argument("--tests", action="store_true", help="include test sources")
+    parser.add_argument("--grep", metavar="NAME", help="only declarations whose name contains NAME")
+    parser.add_argument("--self-test", action="store_true", help="check the script on made-up sources")
+    args = parser.parse_args()
+    if args.self_test:
+        return self_test()
+    return run(args.paths, args.files, args.tests, args.grep)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
