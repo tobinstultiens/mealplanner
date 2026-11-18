@@ -285,7 +285,7 @@ enum class Shot(
     LOGIN_ASKS_SERVER(heightDp = 860, content = { _, _ ->
         LoginScreen(
             ServerSettings("http://10.0.2.2:8080"), serverKnown = false, reason = null,
-            error = "Could not start the login: Connection refused", busy = false, onLogin = {}, onChangeServer = {},
+            error = "Could not start the login: Connection refused", busy = false, onLogin = {}, onOpenSettings = {},
         )
     }),
     SETTINGS(heightDp = 1350, content = { _, _ ->
@@ -294,6 +294,7 @@ enum class Shot(
             account = "Anna",
             loggedIn = true,
             loginError = null,
+            loggingIn = false,
             onLogin = {},
             onLogout = {},
             updater = null,

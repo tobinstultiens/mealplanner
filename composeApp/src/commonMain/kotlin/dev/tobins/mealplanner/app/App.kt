@@ -88,7 +88,7 @@ fun App(
         if (updater != null) update = runCatching { AppUpdates.check(updater.currentVersion) }.getOrNull()
     }
     // Renewed tokens go to storage only: the client keeps using them, and the screens don't reload.
-    // When renewing fails the session is over, and the app asks to log in again.
+    // When renewing ended the session (see Login.refresh for when it does), the app asks to log in again.
     val api = remember(settings, session) {
         ApiClient(settings, session) {
             logins.renew(settings.url) ?: run {
@@ -197,11 +197,13 @@ fun App(
         loginError = null
         scope.launch {
             startingLogin = true
-            runCatching { launcher.open(logins.start(server.url, launcher.redirectUri(server.url))) }
+            // No page when the login was called off meanwhile (another server saved, or logged out).
+            runCatching { logins.start(server.url, launcher.redirectUri(server.url))?.let(launcher::open) }
                 .onFailure { loginError = strings(Msg.LOGIN_START_FAILED, it.message) }
             startingLogin = false
         }
     }
+    val loggingIn = startingLogin || progress == LoginProgress.Exchanging
 
     /** A login at a server the user typed or saved: kept as their choice, as the settings do. */
     fun logInAt(server: ServerSettings) {
@@ -263,6 +265,7 @@ fun App(
                     account = account?.let { it.displayName ?: it.username ?: strings(Msg.YOUR_ACCOUNT) }?.takeIf { session != null },
                     loggedIn = session != null,
                     loginError = shownLoginError,
+                    loggingIn = loggingIn,
                     onLogin = ::logInAt,
                     onLogout = {
                         endSession()
@@ -293,7 +296,8 @@ fun App(
                     loadShoppingAdvice = api::shoppingAdvice,
                     saveShoppingAdvice = api::saveShoppingAdvice,
                     onSave = {
-                        // Another server has its own accounts: the session doesn't carry over.
+                        // Another server has its own accounts: the session doesn't carry over, nor does a
+                        // login under way, which belongs to the old one.
                         if (it.url != settings.url) endSession()
                         storage.saveServerSettings(it)
                         settings = it
@@ -304,16 +308,19 @@ fun App(
                 return@CompositionLocalProvider
             }
             if (session == null) {
-                LoginScreen(
-                    server = settings,
-                    serverKnown = serverKnown,
-                    reason = storage.loggedOut(),
-                    error = shownLoginError,
-                    busy = startingLogin || progress == LoginProgress.Exchanging,
-                    // A known server is not saved: that would pin a built-in address a later release may change.
-                    onLogin = { if (serverKnown) startLogin(it) else logInAt(it) },
-                    onChangeServer = { serverOpen = true },
-                )
+                // Kept while the settings are in front, so that an address typed here is still there after them.
+                screenStates.SaveableStateProvider("login") {
+                    LoginScreen(
+                        server = settings,
+                        serverKnown = serverKnown,
+                        reason = storage.loggedOut(),
+                        error = shownLoginError,
+                        busy = loggingIn,
+                        // A known server is not saved: that would pin a built-in address a later release may change.
+                        onLogin = { if (serverKnown) startLogin(it) else logInAt(it) },
+                        onOpenSettings = { serverOpen = true },
+                    )
+                }
                 return@CompositionLocalProvider
             }
             // A new server means new data: every screen below starts over.

@@ -34,7 +34,8 @@ import androidx.compose.ui.unit.dp
  * What the app shows while nobody is logged in: its name, one Log in button and the server it logs in
  * to, with why the last session ended. Usually the login page opens over it by itself (see
  * [LoginExchange.claimAutoOpen]); this screen is what stays when that page is closed or the login
- * fails. Without a known server it asks for the address first; the settings stay one tap away.
+ * fails. Without a known server it asks for the address first. The settings (language, theme) stay one
+ * tap away: "Change server" opens them under a known server, "Settings" while the address is asked for.
  */
 @Composable
 fun LoginScreen(
@@ -47,7 +48,7 @@ fun LoginScreen(
     /** A login is being started or its answer swapped for tokens: the button waits. */
     busy: Boolean,
     onLogin: (ServerSettings) -> Unit,
-    onChangeServer: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val t = LocalStrings.current
     var url by rememberSaveable(server.url) { mutableStateOf(server.url) }
@@ -94,8 +95,10 @@ fun LoginScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                     )
-                    TextButton(onClick = onChangeServer) { Text(t(Msg.CHANGE_SERVER)) }
+                    TextButton(onClick = onOpenSettings) { Text(t(Msg.CHANGE_SERVER)) }
                 }
+            } else {
+                TextButton(onClick = onOpenSettings) { Text(t(Msg.SETTINGS)) }
             }
         }
     }
@@ -107,4 +110,5 @@ private val LoggedOut.message: Msg?
         LoggedOut.LOGIN_OPENED -> null
         LoggedOut.BY_USER -> Msg.LOGGED_OUT_BY_USER
         LoggedOut.EXPIRED -> Msg.LOGGED_OUT_EXPIRED
+        LoggedOut.NOT_RENEWED -> Msg.LOGGED_OUT_NOT_RENEWED
     }
