@@ -135,6 +135,7 @@ class FakeBackend(
             path == "/api/recipes/bank" -> if (olderServer) throw Refusal(400, "Recipe id must be a number") else recipesJson(bank())
             parts.size == 3 && parts[1] == "recipes" -> detailJson(parts[2].toLong())
             path == "/api/profile" -> profileJson(method, sent)
+            method == "PUT" && path.startsWith("/api/plans/") && path.endsWith("/status") -> { changes += "PUT $path $sent"; "{}" }
             path == "/api/routines" -> json.encodeToString(Routines(breakfast = 1))
             // A sync that found three new recipes (in the bank on a server that has one) and changed one.
             method == "PUT" && path == "/api/sync/cooking/repo" -> json.encodeToString(

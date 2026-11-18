@@ -67,19 +67,43 @@ import kotlinx.serialization.SerializationException
  * What the planned meal a recipe was opened from says about cooking it: [portions] of it are eaten,
  * [cookPortions] are to be cooked now (those of tomorrow's leftover lunch included, 0 for that
  * lunch itself). Opened from the recipe list there is none, and the recipe shows its own servings.
+ * [place] says where the meal is in the plan and [planned] that it is still to be eaten, which is
+ * when cook mode offers to mark it eaten; without a place there is nothing to mark.
  */
-data class MealToCook(val recipeId: Long, val portions: Double, val cookPortions: Double, val skipped: Boolean) {
+data class MealToCook(
+    val recipeId: Long,
+    val portions: Double,
+    val cookPortions: Double,
+    val skipped: Boolean,
+    val place: MealPlace? = null,
+    val planned: Boolean = false,
+) {
     companion object {
         /** Keeps the meal across a re-created screen; no meal is an empty list. */
         val Saver = listSaver<MealToCook?, Any>(
-            save = { meal -> meal?.let { listOf(it.recipeId, it.portions, it.cookPortions, it.skipped) }.orEmpty() },
-            restore = { v -> if (v.isEmpty()) null else MealToCook(v[0] as Long, v[1] as Double, v[2] as Double, v[3] as Boolean) },
+            save = { meal ->
+                meal?.let {
+                    listOf(it.recipeId, it.portions, it.cookPortions, it.skipped, it.planned, it.place?.weekStart ?: "", it.place?.day ?: 0, it.place?.slot?.name ?: "")
+                }.orEmpty()
+            },
+            restore = { v ->
+                if (v.isEmpty()) null else MealToCook(
+                    v[0] as Long, v[1] as Double, v[2] as Double, v[3] as Boolean,
+                    place = (v[5] as String).takeIf { it.isNotEmpty() }?.let { MealPlace(it, v[6] as Int, MealSlot.valueOf(v[7] as String)) },
+                    planned = v[4] as Boolean,
+                )
+            },
         )
     }
 }
 
-/** What [this] meal passes on to its recipe; null from a server that does not say how much to cook, so the recipe shows as written. */
-fun PlannedMeal.toCook(): MealToCook? = cookPortions?.let { MealToCook(recipeId, portions, it, status == MealStatus.SKIPPED) }
+/** Where a planned meal is: the plan's week (its first day), the day in it and the slot, which is what the status route takes. */
+data class MealPlace(val weekStart: String, val day: Int, val slot: MealSlot)
+
+/** What [this] meal of the week starting [weekStart] passes on to its recipe; null from a server that does not say how much to cook, so the recipe shows as written. */
+fun PlannedMeal.toCook(weekStart: String): MealToCook? = cookPortions?.let {
+    MealToCook(recipeId, portions, it, status == MealStatus.SKIPPED, MealPlace(weekStart, day, slot), planned = status == MealStatus.PLANNED)
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -91,6 +115,7 @@ fun RecipeDetailScreen(
     onEdit: () -> Unit,
     meal: MealToCook? = null,
     onOpenMapping: () -> Unit = {},
+    initiallyCooking: Boolean = false,
 ) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
@@ -105,6 +130,11 @@ fun RecipeDetailScreen(
     var pickOnAdd by rememberSaveable(recipeId) { mutableStateOf(true) }
     var acting by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
+    // Cook mode and its ticks live as long as the recipe is open (App forgets them with the screen).
+    var cookMode by rememberSaveable(recipeId) { mutableStateOf(initiallyCooking) }
+    var progress by rememberSaveable(recipeId, stateSaver = CookProgress.Saver) { mutableStateOf(CookProgress()) }
+    var eaten by rememberSaveable(recipeId) { mutableStateOf(false) }
+    BackHandler(enabled = cookMode) { cookMode = false }
     LaunchedEffect(loaded, reload, frontReturns) {
         loaded.refresh { api.recipe(recipeId) }
         (load { api.routines() } as? Load.Ready)?.value?.let { routines = it }
@@ -152,6 +182,21 @@ fun RecipeDetailScreen(
         }
     }
 
+    /** Sets the planned meal this recipe was opened from to eaten, by the route Today and the Plan use; they load it again when they come back. */
+    fun markEaten(place: MealPlace) {
+        if (acting) return
+        acting = true
+        scope.launch {
+            val result = load { api.setMealStatus(place.weekStart, place.day, place.slot, MealStatus.EATEN) }
+            acting = false
+            when (result) {
+                is Load.Ready -> eaten = true
+                is Load.Failed -> snackbar.showSnackbar(t(Msg.COOK_MARK_EATEN_FAILED, result.message))
+                Load.Loading -> Unit
+            }
+        }
+    }
+
     fun delete() {
         acting = true
         scope.launch {
@@ -176,7 +221,9 @@ fun RecipeDetailScreen(
         )
     }
 
-    SubScreen(opened?.title ?: t(Msg.RECIPE), onBack, snackbar = snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
+    KeepScreenOn(cookMode)
+    // Back from cook mode goes to the recipe, back from the recipe leaves it.
+    SubScreen(opened?.title ?: t(Msg.RECIPE), if (cookMode) ({ cookMode = false }) else onBack, snackbar = snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
         val madeHere = opened?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }
         if (madeHere) BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
         // What leaves a recipe: from the cooking site it goes back to the bank, one made in the app is deleted.
@@ -200,10 +247,26 @@ fun RecipeDetailScreen(
                 val cooking = meal?.takeIf { it.recipeId == recipeId }
                 val servings = recipe.summary.servings?.takeIf { it > 0 }
                 val factor = if (cooking != null && servings != null && cooking.cookPortions > 0 && !asWritten) cooking.cookPortions / servings else null
+                if (cookMode) {
+                    val place = cooking?.takeIf { it.planned && !eaten }?.place
+                    CookMode(
+                        recipe, factor, progress, { progress = it },
+                        onMarkEaten = place?.let { { markEaten(it) } },
+                        modifier = Modifier.padding(padding),
+                        top = {
+                            // The amounts can be changed here, without going back to the recipe.
+                            if (cooking != null && servings != null && cooking.cookPortions > 0) AsWrittenRow(servings, asWritten) { asWritten = it }
+                        },
+                    )
+                    return@SubScreen
+                }
                 Column(
                     Modifier.padding(padding).fillMaxSize().verticalScroll(scroll).padding(Spacing.ScreenEdge),
                     verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
+                    if (recipe.ingredients.isNotEmpty() || recipe.instructions.isNotBlank()) {
+                        Button(onClick = { cookMode = true }, Modifier.fillMaxWidth()) { Text(t(Msg.COOK)) }
+                    }
                     recipePicture(recipe.summary.imageUrl)?.let { RecipePhoto(it, Modifier.fillMaxWidth().aspectRatio(16f / 9f)) }
                     if (recipe.summary.tags.isNotEmpty()) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
@@ -248,10 +311,7 @@ fun RecipeDetailScreen(
                     if (cooking != null && servings != null) {
                         Text(cooking.sentence(t), style = MaterialTheme.typography.titleMedium)
                         if (cooking.cookPortions > 0) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(t(Msg.AS_WRITTEN, t.plural(Plural.SERVINGS, servings)), Modifier.weight(1f))
-                                Switch(checked = asWritten, onCheckedChange = { asWritten = it })
-                            }
+                            AsWrittenRow(servings, asWritten) { asWritten = it }
                         }
                     }
                     // The reading content can be selected and copied; the controls above stay out of it.
@@ -298,6 +358,16 @@ fun RecipeDetailScreen(
                 }
             }
         }
+    }
+}
+
+/** The switch that shows the amounts as the recipe is written ([servings] of it) instead of scaled to what is cooked now. */
+@Composable
+private fun AsWrittenRow(servings: Int, asWritten: Boolean, onChange: (Boolean) -> Unit) {
+    val t = LocalStrings.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(t(Msg.AS_WRITTEN, t.plural(Plural.SERVINGS, servings)), Modifier.weight(1f))
+        Switch(checked = asWritten, onCheckedChange = onChange)
     }
 }
 

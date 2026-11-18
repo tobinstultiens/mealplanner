@@ -391,10 +391,10 @@ fun App(
                             // Each tab keeps its own place while another tab or a screen opened from it is in front.
                             screenStates.SaveableStateProvider("tab:${tab.slug}") {
                               when (tab) {
-                                Tab.TODAY -> TodayScreen(api, onOpenRecipe = { openRecipeId = it.recipeId; openMeal = it.toCook() }, onOpenPlan = { tab = Tab.PLAN })
+                                Tab.TODAY -> TodayScreen(api, onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) }, onOpenPlan = { tab = Tab.PLAN })
                                 Tab.PLAN -> PlanScreen(
                                     api,
-                                    onOpenRecipe = { openRecipeId = it.recipeId; openMeal = it.toCook() },
+                                    onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) },
                                     onOpenProfile = { profileOpen = true },
                                     onOpenRecipes = { tab = Tab.RECIPES },
                                     onOpenBank = { tab = Tab.RECIPES; bankOpen = true },

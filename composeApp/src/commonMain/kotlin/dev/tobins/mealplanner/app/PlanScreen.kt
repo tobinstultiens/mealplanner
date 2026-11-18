@@ -55,7 +55,7 @@ import kotlin.math.roundToInt
 @Composable
 fun PlanScreen(
     api: ApiClient,
-    onOpenRecipe: (PlannedMeal) -> Unit,
+    onOpenRecipe: (PlannedMeal, String) -> Unit,
     onOpenProfile: () -> Unit,
     onOpenRecipes: () -> Unit,
     onOpenBank: () -> Unit,
@@ -229,7 +229,7 @@ fun PlanScreen(
                                 missingSlots = MealSlot.entries.filter { slot -> day.meals.none { it.slot == slot } },
                                 enabled = !busy,
                                 pictures = pictures,
-                                onOpenRecipe = onOpenRecipe,
+                                onOpenRecipe = { meal -> onOpenRecipe(meal, weekStart) },
                                 onReroll = { meal -> change { api.rerollMeal(weekStart, meal.day, meal.slot) } },
                                 onGenerate = { meal -> generatingFor = meal },
                                 onChoose = { day, slot -> choosingFor = day to slot },

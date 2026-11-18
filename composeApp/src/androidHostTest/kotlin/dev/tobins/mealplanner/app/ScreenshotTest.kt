@@ -45,6 +45,7 @@ import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
@@ -177,10 +178,10 @@ enum class Shot(
     val profile: Profile? = null,
     val content: @Composable (ApiClient, ServerSettings) -> Unit,
 ) {
-    TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, {}, {}) }),
-    PLAN(heightDp = 4400, content = { api, _ -> PlanScreen(api, {}, {}, {}, {}) }),
+    TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    PLAN(heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     // No recipe of mine is in the rotation, so the week stays empty and says why, with a way to the Recipes tab.
-    PLAN_EMPTY_ROTATION(emptyWeek = true, emptyRecipes = true, content = { api, _ -> PlanScreen(api, {}, {}, {}, {}) }),
+    PLAN_EMPTY_ROTATION(emptyWeek = true, emptyRecipes = true, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     RECIPE_PICKER(heightDp = 1300, content = { api, _ -> recipePicker(api) }),
     SHOPPING(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false) }),
     SHOPPING_MODE(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = true) }),
@@ -216,6 +217,17 @@ enum class Shot(
     RECIPE_FROM_LEFTOVERS(heightDp = 1700, content = { api, _ ->
         RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 0.0, skipped = false))
     }),
+    // Cook mode of a planned meal, the way it opens: scaled amounts, the first step current.
+    COOK_MODE(heightDp = 1400, content = { api, _ ->
+        RecipeDetailScreen(api, 4, null, {}, {}, meal = MealToCook(4, 0.75, 1.5, skipped = false), initiallyCooking = true)
+    }),
+    COOK_MODE_NL(dutch = true, heightDp = 1400, content = { api, _ ->
+        RecipeDetailScreen(api, 4, null, {}, {}, meal = MealToCook(4, 0.75, 1.5, skipped = false), initiallyCooking = true)
+    }),
+    // Two ingredients and the first step ticked, so that the dimmed rows and the moved highlight are to be seen.
+    COOK_MODE_TICKED(heightDp = 1400, content = { api, _ -> cookModeTicked(api, setOf(0, 1), setOf(0), eatable = false) }),
+    // Every step done on a planned meal: the button that marks it eaten.
+    COOK_MODE_DONE(heightDp = 1400, content = { api, _ -> cookModeTicked(api, setOf(0, 1, 2, 3, 4), setOf(0, 1, 2), eatable = true) }),
     OFFERS(heightDp = 800, content = { api, _ -> OffersScreen(api, {}, {}) }),
     OFFERS_EMPTY(emptyOffers = true, content = { api, _ -> OffersScreen(api, {}, {}) }),
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
@@ -396,6 +408,14 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
                 .map { arrayOf<Any>(shot, it) }
         }
     }
+}
+
+/** Cook mode of the fake backend's recipe 4 with [ingredients] and [steps] ticked, as it is while cooking; [eatable] for a meal still planned. */
+@Composable
+private fun cookModeTicked(api: ApiClient, ingredients: Set<Int>, steps: Set<Int>, eatable: Boolean) {
+    val recipe by produceState<RecipeDetail?>(null) { value = api.recipe(4) }
+    // The test waits for the loading text to go, so it stays until the recipe is there.
+    recipe?.let { CookMode(it, 1.5 / 2, CookProgress(ingredients, steps), {}, onMarkEaten = if (eatable) ({}) else null) } ?: LoadingState()
 }
 
 /** The recipe list as loaded from [api], then shown with a client that cannot reach the server for its refresh. */
