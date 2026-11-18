@@ -29,13 +29,14 @@ import dev.tobins.mealplanner.api.RecipeDetail
 
 /**
  * The steps of a recipe's instructions as cook mode shows them, one card each. The numbered list is
- * the steps (a paragraph right after an item belongs to it); an instruction text without one has its
- * paragraphs as the steps. A lone label such as "Steps:", headings and table rows are no step.
+ * the steps (a paragraph right after an item belongs to it); an instruction text without one has every
+ * non-empty line as a step, since steps typed in the recipe editor come one per line (the cooking
+ * site's pages do too: none has a sentence wrapped over lines). A lone label such as "Steps:", headings and table rows are no step.
  */
 fun cookSteps(instructions: String): List<String> {
     val blocks = parseMarkdown(instructions)
     val numbered = blocks.any { it is MdBlock.ListItem && it.marker != "•" }
-    if (!numbered) return blocks.filterIsInstance<MdBlock.Paragraph>().filterNot { it.isLabel() }.map { it.text }
+    if (!numbered) return linesAsParagraphs(instructions)
     val steps = mutableListOf<String>()
     var inStep = false
     for (block in blocks) {
@@ -47,6 +48,11 @@ fun cookSteps(instructions: String): List<String> {
     }
     return steps
 }
+
+/** The paragraphs of [instructions] read with a blank line between all lines, so each line is one. */
+private fun linesAsParagraphs(instructions: String): List<String> =
+    parseMarkdown(instructions.lines().filter { it.isNotBlank() }.joinToString("\n\n"))
+        .filterIsInstance<MdBlock.Paragraph>().filterNot { it.isLabel() }.map { it.text }
 
 private fun MdBlock.Paragraph.isLabel() = text.endsWith(":") && text.length < 40
 

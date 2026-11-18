@@ -18,9 +18,16 @@ class CookModeTest {
     }
 
     @Test
-    fun withoutANumberedListTheParagraphsAreTheSteps() {
+    fun withoutANumberedListEveryLineIsAStep() {
         val steps = cookSteps("## Method\n\nSteps:\n\nBrown the chicken in a pan.\nKeep the heat high.\n\nAdd the milk.\n\n- a bullet")
-        assertEquals(listOf("Brown the chicken in a pan. Keep the heat high.", "Add the milk."), steps)
+        assertEquals(listOf("Brown the chicken in a pan.", "Keep the heat high.", "Add the milk."), steps)
+    }
+
+    @Test
+    fun fourStepsTypedOnePerLineAreFourSteps() {
+        val typed = "Chop the onion\nFry it in butter\nAdd the rice and water\nSimmer for 15 minutes"
+        assertEquals(4, cookSteps(typed).size)
+        assertEquals("Add the rice and water", cookSteps(typed)[2])
     }
 
     @Test
