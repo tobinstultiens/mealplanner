@@ -61,6 +61,20 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
     )
 }
 
+/** [text] as a sentence: capitalised and with a full stop unless it ends in one already. */
+internal fun sentence(text: String): String =
+    text.replaceFirstChar { it.uppercase() }.let { if (it.last() in ".!?") it else "$it." }
+
+/**
+ * What a snackbar says about [failed], as a sentence: the server's own explanation, or for a technical
+ * failure a plain reason (never the exception's text). With [msg] the reason is filled into it ("Could not refresh: {0}").
+ * Every place that shows a failed request in a sentence goes through here, so none shows raw text.
+ */
+internal fun failureSentence(failed: Load.Failed, msg: Msg? = null): String {
+    val reason = if (failed.technical) plainReason(failed) else failed.message
+    return sentence(if (msg == null) reason else Strings.current(msg, reason))
+}
+
 @Composable
 internal fun ErrorMessage(title: String, failed: Load.Failed, onRetry: () -> Unit) {
     val t = LocalStrings.current
@@ -76,7 +90,7 @@ internal fun ErrorMessage(title: String, failed: Load.Failed, onRetry: () -> Uni
         // a plain one says what happened and the text stays behind "Details".
         if (failed.technical) {
             val plain = plainReason(failed)
-            ErrorBanner(summary = plain.replaceFirstChar { it.uppercase() } + ".", details = detail, modifier = Modifier.fillMaxWidth())
+            ErrorBanner(summary = sentence(plain), details = detail, modifier = Modifier.fillMaxWidth())
         } else if (detail.length <= 100 && '\n' !in detail) {
             Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {

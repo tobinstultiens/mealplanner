@@ -63,7 +63,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
         BarAction(AppIcons.Refresh, if (refreshing) t(Msg.FETCHING_OFFERS) else t(Msg.REFRESH_OFFERS), busy = refreshing, onClick = {
             refreshing = true
             scope.launch {
-                (load { api.refreshOffers() } as? Load.Failed)?.let { snackbar.showSnackbar(t(Msg.REFRESH_FAILED, it.message)) }
+                (load { api.refreshOffers() } as? Load.Failed)?.let { snackbar.showSnackbar(failureSentence(it, Msg.REFRESH_FAILED)) }
                 refreshing = false
                 reload++
             }

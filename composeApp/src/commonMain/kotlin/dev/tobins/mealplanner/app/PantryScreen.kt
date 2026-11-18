@@ -88,7 +88,7 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
                     scope.launch {
                         when (val result = load(action)) {
                             is Load.Ready -> state = Load.Ready(ingredients to result.value)
-                            is Load.Failed -> snackbar.showSnackbar(if (result.technical) plainReason(result) else result.message)
+                            is Load.Failed -> snackbar.showSnackbar(failureSentence(result))
                             Load.Loading -> Unit
                         }
                     }
