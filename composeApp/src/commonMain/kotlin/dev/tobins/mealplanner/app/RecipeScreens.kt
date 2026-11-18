@@ -253,6 +253,10 @@ fun RecipeDetailScreen(
                         recipe, factor, progress, { progress = it },
                         onMarkEaten = place?.let { { markEaten(it) } },
                         modifier = Modifier.padding(padding),
+                        top = {
+                            // The amounts can be changed here, without going back to the recipe.
+                            if (cooking != null && servings != null && cooking.cookPortions > 0) AsWrittenRow(servings, asWritten) { asWritten = it }
+                        },
                     )
                     return@SubScreen
                 }
@@ -307,10 +311,7 @@ fun RecipeDetailScreen(
                     if (cooking != null && servings != null) {
                         Text(cooking.sentence(t), style = MaterialTheme.typography.titleMedium)
                         if (cooking.cookPortions > 0) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(t(Msg.AS_WRITTEN, t.plural(Plural.SERVINGS, servings)), Modifier.weight(1f))
-                                Switch(checked = asWritten, onCheckedChange = { asWritten = it })
-                            }
+                            AsWrittenRow(servings, asWritten) { asWritten = it }
                         }
                     }
                     // The reading content can be selected and copied; the controls above stay out of it.
@@ -357,6 +358,16 @@ fun RecipeDetailScreen(
                 }
             }
         }
+    }
+}
+
+/** The switch that shows the amounts as the recipe is written ([servings] of it) instead of scaled to what is cooked now. */
+@Composable
+private fun AsWrittenRow(servings: Int, asWritten: Boolean, onChange: (Boolean) -> Unit) {
+    val t = LocalStrings.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(t(Msg.AS_WRITTEN, t.plural(Plural.SERVINGS, servings)), Modifier.weight(1f))
+        Switch(checked = asWritten, onCheckedChange = onChange)
     }
 }
 

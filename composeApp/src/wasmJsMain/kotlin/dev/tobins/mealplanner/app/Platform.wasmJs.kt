@@ -80,10 +80,10 @@ actual fun systemColorScheme(dark: Boolean): androidx.compose.material3.ColorSch
         " document.addEventListener('visibilitychange', again); take();" +
         " return () => { released = true; document.removeEventListener('visibilitychange', again); if (lock) lock.release().catch(() => {}); }; }",
 )
-private external fun holdWakeLock(): JsAny
+internal external fun holdWakeLock(): JsAny
 
 @JsFun("(release) => release()")
-private external fun giveUpWakeLock(release: JsAny)
+internal external fun giveUpWakeLock(release: JsAny)
 
 /** Holds the browser's wake lock while [enabled]; without the API the browser decides when to lock the screen. */
 @Composable

@@ -2,7 +2,11 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.StateRestorationTester
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -25,7 +29,7 @@ import kotlin.test.assertTrue
 @Config(sdk = [35])
 class CookModeScreenTest {
     @get:Rule
-    val compose = createComposeRule()
+    val compose = createAndroidComposeRule<ComponentActivity>()
 
     private val backend = FakeBackend(false, false, false, false)
     private val api = ApiClient(backend.settings)
@@ -94,6 +98,31 @@ class CookModeScreenTest {
         restoration.emulateSavedInstanceStateRestore()
         waitFor("Step 2 · Now")
         compose.onNodeWithText("Step 1 · Now").assertDoesNotExist()
+    }
+
+    @Test
+    fun theAsWrittenSwitchChangesTheAmountsInCookMode() {
+        show(planned)
+        waitFor("Step 1 · Now")
+        compose.onNodeWithText("525 g chicken thigh fillet", substring = true).assertExists()
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).performClick()
+        compose.onNodeWithText("700 g chicken thigh fillet", substring = true).assertExists()
+    }
+
+    @Test
+    fun theSystemBackLeavesCookModeForTheRecipe() {
+        var left = false
+        compose.setContent {
+            CompositionLocalProvider(LocalStrings provides Strings.English) {
+                RecipeDetailScreen(api, 4, null, { left = true }, {}, meal = planned, initiallyCooking = true)
+            }
+        }
+        waitFor("Step 1 · Now")
+
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        waitFor("Cook")
+        compose.onNodeWithText("Step 1 · Now").assertDoesNotExist()
+        assertEquals(false, left, "the recipe stays open")
     }
 
     @Test

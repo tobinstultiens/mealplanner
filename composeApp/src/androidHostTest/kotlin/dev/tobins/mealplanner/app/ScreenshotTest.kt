@@ -228,7 +228,7 @@ enum class Shot(
     COOK_MODE_TICKED(heightDp = 1400, content = { api, _ -> cookModeTicked(api, setOf(0, 1), setOf(0), eatable = false) }),
     // Every step done on a planned meal: the button that marks it eaten.
     COOK_MODE_DONE(heightDp = 1400, content = { api, _ -> cookModeTicked(api, setOf(0, 1, 2, 3, 4), setOf(0, 1, 2), eatable = true) }),
-    OFFERS(heightDp = 800,content = { api, _ -> OffersScreen(api, {}, {}) }),
+    OFFERS(heightDp = 800, content = { api, _ -> OffersScreen(api, {}, {}) }),
     OFFERS_EMPTY(emptyOffers = true, content = { api, _ -> OffersScreen(api, {}, {}) }),
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
