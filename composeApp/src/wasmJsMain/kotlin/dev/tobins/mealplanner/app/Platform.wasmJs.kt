@@ -68,9 +68,32 @@ actual fun systemColorsAvailable(): Boolean = false
 @Composable
 actual fun systemColorScheme(dark: Boolean): androidx.compose.material3.ColorScheme? = null
 
-/** The browser decides when to lock the screen. */
+/**
+ * Asks for the Screen Wake Lock and hands back what gives it up. The browser drops the lock when the
+ * tab is hidden, so it is asked for again when the tab shows. A browser without the API (or one that
+ * refuses) leaves the screen to its own timeout; the call then does nothing.
+ */
+@JsFun(
+    "() => { if (!navigator.wakeLock) return () => {}; let lock = null, released = false;" +
+        " const take = () => navigator.wakeLock.request('screen').then(l => { if (released) l.release(); else lock = l; }).catch(() => {});" +
+        " const again = () => { if (document.visibilityState === 'visible' && !released) take(); };" +
+        " document.addEventListener('visibilitychange', again); take();" +
+        " return () => { released = true; document.removeEventListener('visibilitychange', again); if (lock) lock.release().catch(() => {}); }; }",
+)
+private external fun holdWakeLock(): JsAny
+
+@JsFun("(release) => release()")
+private external fun giveUpWakeLock(release: JsAny)
+
+/** Holds the browser's wake lock while [enabled]; without the API the browser decides when to lock the screen. */
 @Composable
-actual fun KeepScreenOn(enabled: Boolean) {}
+actual fun KeepScreenOn(enabled: Boolean) {
+    DisposableEffect(enabled) {
+        if (!enabled) return@DisposableEffect onDispose {}
+        val release = holdWakeLock()
+        onDispose { giveUpWakeLock(release) }
+    }
+}
 
 @JsFun("() => document.visibilityState === 'visible'")
 private external fun pageVisible(): Boolean

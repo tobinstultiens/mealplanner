@@ -34,7 +34,7 @@ expect fun systemColorScheme(dark: Boolean): ColorScheme?
 /**
  * Keeps the screen from dimming and locking while [enabled] and this call is part of the
  * composition; leaving the composition (or the app) restores the normal behaviour. The browser
- * does nothing.
+ * takes the Screen Wake Lock where it has one, and otherwise does nothing.
  */
 @Composable
 expect fun KeepScreenOn(enabled: Boolean)

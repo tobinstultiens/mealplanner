@@ -516,7 +516,7 @@ class RecipeBankScreensTest {
     fun anEmptyPlanBecauseTheRotationIsEmptySaysSoAndLinksToTheRecipesTab() {
         val fake = backend(emptyWeek = true, emptyRecipes = true)
         var recipesTab = 0
-        show { PlanScreen(client(fake), onOpenRecipe = {}, onOpenProfile = {}, onOpenRecipes = { recipesTab++ }, onOpenBank = {}) }
+        show { PlanScreen(client(fake), onOpenRecipe = { _, _ -> }, onOpenProfile = {}, onOpenRecipes = { recipesTab++ }, onOpenBank = {}) }
         waitFor("Your rotation is empty", substring = true)
         compose.onNodeWithText("Open recipes").performClick()
         assertEquals(1, recipesTab)
@@ -525,7 +525,7 @@ class RecipeBankScreensTest {
     @Test
     fun aPlanWithRecipesInTheRotationKeepsItsOldWordsForEmptySlots() {
         val fake = backend(emptyWeek = true)
-        show { PlanScreen(client(fake), onOpenRecipe = {}, onOpenProfile = {}, onOpenRecipes = {}, onOpenBank = {}) }
+        show { PlanScreen(client(fake), onOpenRecipe = { _, _ -> }, onOpenProfile = {}, onOpenRecipes = {}, onOpenBank = {}) }
         waitFor("Nothing planned for this week yet.")
         waitUntilTrue { "GET /api/recipes" in fake.requests }
         compose.waitForIdle()

@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Nutrition
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeCost
@@ -75,8 +76,13 @@ class FormattingTest {
     @Test
     fun aMealPassesItsServingsToCookOnlyWhenTheServerSaysThem() {
         val meal = PlannedMeal(0, MealSlot.DINNER, 7, "Stew", 1.25, 700.0, 50.0)
-        assertNull(meal.toCook(), "an older server: the recipe shows as written")
-        assertEquals(MealToCook(7, 1.25, 2.5, skipped = false), meal.copy(cookPortions = 2.5).toCook())
+        assertNull(meal.toCook("2026-11-16"), "an older server: the recipe shows as written")
+        assertEquals(
+            MealToCook(7, 1.25, 2.5, skipped = false, place = MealPlace("2026-11-16", 0, MealSlot.DINNER), planned = true),
+            meal.copy(cookPortions = 2.5).toCook("2026-11-16"),
+        )
+        // A meal skipped or eaten is not to be marked eaten from cook mode.
+        assertEquals(false, meal.copy(cookPortions = 2.5, status = MealStatus.EATEN).toCook("2026-11-16")?.planned)
     }
 
     @Test
