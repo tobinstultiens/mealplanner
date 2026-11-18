@@ -284,6 +284,11 @@ amount it asks for again, so the two agree. How it is worked out, and how the li
 An installed app that knows nothing of adjustments shows the adjusted numbers all the same, as it reads
 the meal's `kcal` and `proteinG`; it reads a recipe with toppings as before, and a shopping row that asks for
 more again as it reads any row whose need grew.
+||||||| parent of 9c826d5 (The planner prefers recipes that use up the rest of a fresh pack the week already opened (#222))
+
+The planner also prefers a meal that uses up the rest of a fresh ingredient's pack that an earlier meal of the
+week opened (issue 222): the rest of a pack counts for meals on the day it was opened and three days after, the
+pack being that of the ingredient's regular AH price. See `docs/data-sources.md`, "Packs".
 
 ## Web client
 

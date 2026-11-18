@@ -149,6 +149,27 @@ cheap, the server keeps a regular price per kg for each ingredient (`PriceReposi
 - A price set by hand on the ingredient (`pricePerKg`) wins. Ingredients without a price are
   costed at the median price per kg and named in the recipe's cost.
 
+### Packs: the rest of an opened pack (issue 222)
+
+The pack size and pack price of the product a regular price comes from (`IngredientPrice.packSize`,
+`packPrice`) also tell the planner which recipes go well together: a fresh ingredient (one that does not keep
+until next week, by its shop section or by hand) is bought in a pack, and what a meal leaves of it is
+thrown away if no meal uses it in the days after. `PriceRepository.freshPacks` gives each such ingredient its
+pack, read by `PackSize.grams` (an ingredient whose size is no weight, or with a price by hand, has none); a
+recipe's `PlanCandidate.freshUses` lists the grams a serving takes of each, leaving out ingredients on hand.
+`WeekPlanner` replays the week's meals so far (`OpenPacks`): the rest of a pack counts for a meal on the day of the
+meal that opened it and up to three days after, the same for every ingredient; a pack of the regular AH
+price is used, an offer's different pack is ignored. A candidate is rewarded with the euros of pack price its
+portion takes from open packs, times 0.75, so that a dinner that uses up half a tub of crème fraîche the Monday
+dinner opened is preferred on Wednesday. The planner stays greedy: Monday is not chosen because Thursday
+could use its tub. Leftover lunches open nothing and the priorities do not change the term.
+
+Measured on the cooking repo's recipes with AH's prices of 2026-11-19 (`PackRestMeasurementTest`, 50 seeds, 40
+recipes, 53 fresh ingredients with a pack of the 138 the recipes use), the euros of pack rest a week left
+fell from 25.19 to 22.77 and the mean daily calorie error rose from 5.14 % to 5.54 %. A heavier weight
+lowered the rest no further and cost calories: at 2 the error was 6.45 %. Of the 49 fresh ingredients the
+recipes use, 43 have a pack in grams.
+
 With each price the lookup keeps the product's `mainCategory` and `subCategory`; they also give the
 ingredient's shop section (below).
 

@@ -438,4 +438,40 @@ class WeekPlannerTest {
         }
         assertEquals(-4364112392982162551L, checksum(sizes))
     }
+
+    /** A tub of 200 g at 6 euros of which a serving takes 50 g: a quarter of it, 1.5 euros, a serving. */
+    private val tub = FreshUse(ingredientId = 1, gramsPerServing = 50.0, pack = Pack(grams = 200.0, euros = 6.0))
+
+    private val sharingATub = pantryOfRecipes.map { if (it.recipeId == 10L || it.recipeId == 19L) it.copy(freshUses = listOf(tub)) else it }
+
+    /** The days recipe 10 and recipe 19, which share the tub, are cooked (a lunch may be cooked too) in the plan of each seed; null for one not planned. */
+    private fun tubCookDays(candidates: List<PlanCandidate>, locked: List<PlannedMeal> = emptyList()) = (0L until 20L).map { seed ->
+        val dinners = WeekPlanner.plan(PlanRequest(targets, candidates, locked = locked, seed = seed)).filter { it.slot == DINNER || (it.slot == LUNCH && !it.leftover) }
+        dinners.firstOrNull { it.recipeId == 10L }?.day to dinners.firstOrNull { it.recipeId == 19L }?.day
+    }
+
+    private fun withinATubsDays(days: Pair<Int?, Int?>) = days.first != null && days.second != null && abs(days.first!! - days.second!!) <= 3
+
+    @Test
+    fun dinnersThatShareAPackAreCookedWithinTheDaysItKeeps() {
+        // Without the tub the two are planned apart or one is left out in some weeks; with it, in none.
+        assertFalse(tubCookDays(pantryOfRecipes).all(::withinATubsDays))
+        assertTrue(tubCookDays(sharingATub).all(::withinATubsDays), tubCookDays(sharingATub).toString())
+    }
+
+    @Test
+    fun aLockedMealThatOpenedAPackCountsForTheMealsAfterIt() {
+        val locked = PlannedMeal(0, DINNER, 19, "Recipe 19", 0.75, 650.0, 40.0, locked = true)
+
+        val days = tubCookDays(sharingATub, listOf(locked))
+
+        assertTrue(days.all(::withinATubsDays), days.toString())
+    }
+
+    @Test
+    fun recipesWithoutFreshUsesPlanAsBefore() {
+        val request = PlanRequest(targets, pantryOfRecipes, seed = 5)
+
+        assertEquals(WeekPlanner.plan(request), WeekPlanner.plan(request.copy(candidates = pantryOfRecipes.map { it.copy(freshUses = emptyList()) })))
+    }
 }

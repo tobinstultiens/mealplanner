@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.api.PricesState
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.pricing.Discounts
 import dev.tobins.mealplanner.pricing.PackSize
+import dev.tobins.mealplanner.planner.Pack
 import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.history.RegularPriceSighting
@@ -65,6 +66,22 @@ class PriceRepository(
     fun perKg(ingredients: IngredientRepository): Map<Long, Double> {
         val looked = q.selectPrices().executeAsList().associate { it.name.lowercase() to it.eurosPerKg }
         return ingredients.list().mapNotNull { i -> (i.pricePerKg ?: looked[i.name.lowercase()])?.let { i.id to it } }.toMap()
+    }
+
+    /**
+     * The pack of the regular price of each of the account's ingredients that does not [keeps] until next week
+     * (fresh food, opened for a few days), by ingredient id: for the planner to prefer meals that use up what an
+     * opened pack has left. Without a pack size in grams ([PackSize.grams]) an ingredient has no pack here, as
+     * with a price set by hand: that is not a product's. A pack without a price is priced at the price per kg.
+     */
+    fun freshPacks(ingredients: IngredientRepository, keeps: Map<Long, Boolean>): Map<Long, Pack> {
+        val looked = q.selectPrices().executeAsList().associateBy { it.name.lowercase() }
+        return ingredients.list().mapNotNull { i ->
+            if (i.pricePerKg != null || keeps[i.id] != false) return@mapNotNull null
+            val row = looked[i.name.lowercase()] ?: return@mapNotNull null
+            val grams = PackSize.grams(row.packSize, i.gramsPerPiece, i.gramsPerMl)?.takeIf { it > 0 } ?: return@mapNotNull null
+            i.id to Pack(grams, row.packPrice ?: (grams * row.eurosPerKg / 1000))
+        }.toMap()
     }
 
     /**

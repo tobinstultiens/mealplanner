@@ -38,6 +38,7 @@ class UserScope(
             offersByIngredient = { from, until -> prices.offers(ingredients, from, until) },
             pricing = { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) },
             shops = shops::inUse,
+            freshPacks = { prices.freshPacks(ingredients, sections.keepsByIngredient(sections.byIngredient())) },
         )
     }
     val shopping by lazy {
