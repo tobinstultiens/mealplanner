@@ -100,7 +100,7 @@ fun ServerSettingsScreen(
                             scope.launch {
                                 val client = ApiClient(draft)
                                 result = when (val health = load { client.health() }) {
-                                    is Load.Failed -> ConnectionResult(false, health.message)
+                                    is Load.Failed -> ConnectionResult(false, failureSentence(health))
                                     is Load.Ready -> ConnectionResult(true, t(Msg.CONNECTED, health.value.version))
                                     Load.Loading -> null
                                 }
@@ -159,7 +159,7 @@ fun ServerSettingsScreen(
                     ShopsInUse(
                         accountShops.stores,
                         onChange = { chosen ->
-                            scope.launch { shopsError = (load { accountShops.choose(chosen) } as? Load.Failed)?.message }
+                            scope.launch { shopsError = (load { accountShops.choose(chosen) } as? Load.Failed)?.let { failureSentence(it) } }
                         },
                         modifier = Modifier,
                     )
@@ -195,7 +195,7 @@ private fun ShoppingAdviceSwitches(read: suspend () -> ShoppingAdvice, save: sus
                     if (advice == chosen) advice = result.value
                 }
                 is Load.Failed -> {
-                    error = result.message
+                    error = failureSentence(result)
                     if (advice == chosen) advice = before
                 }
                 Load.Loading -> Unit

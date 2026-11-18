@@ -163,7 +163,7 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
                             reload++
                             snackbar.showSnackbar(t(Msg.LINKED, unmapped.text, result.value.name))
                         }
-                        is Load.Failed -> snackbar.showSnackbar(t(Msg.LINK_FAILED, result.message))
+                        is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.LINK_FAILED))
                         Load.Loading -> Unit
                     }
                 }
@@ -325,8 +325,8 @@ internal class Placement(val saved: IngredientSection?, val failure: String? = n
     /** The snackbar line: what was saved, or only what failed. */
     fun message(t: Strings, entry: IngredientSection): String = when {
         failure == null -> t(Msg.SECTION_CHANGED, entry.name, t.sectionTitleOfKey(saved!!.section))
-        keepsFailed -> t(Msg.KEEPS_CHANGE_FAILED, entry.name, failure)
-        else -> t(Msg.SECTION_CHANGE_FAILED, failure)
+        keepsFailed -> sentence(t(Msg.KEEPS_CHANGE_FAILED, entry.name, failure))
+        else -> sentence(t(Msg.SECTION_CHANGE_FAILED, failure))
     }
 }
 
@@ -343,12 +343,12 @@ internal suspend fun place(
 ): Placement {
     val placed = when (val result = load { setSection(entry.ingredientId, section) }) {
         is Load.Ready -> result.value
-        else -> return Placement(null, (result as Load.Failed).message)
+        else -> return Placement(null, reasonOf(result as Load.Failed))
     }
     if (keeps == entry.keepsChoice()) return Placement(placed)
     return when (val result = load { setKeeps(entry.ingredientId, keeps) }) {
         is Load.Ready -> Placement(result.value)
-        else -> Placement(placed, (result as Load.Failed).message, keepsFailed = true)
+        else -> Placement(placed, reasonOf(result as Load.Failed), keepsFailed = true)
     }
 }
 

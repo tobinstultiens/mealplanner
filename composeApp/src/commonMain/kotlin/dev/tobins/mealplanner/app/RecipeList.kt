@@ -103,7 +103,7 @@ fun RecipeListScreen(
             if (result is Load.Ready) (state as? Load.Ready)?.let { show(it.value.replacing(result.value.summary)) }
             // The row is the server's again, which on a failure is as it was, before the sentence is shown: that waits until it is gone.
             pending = pending - recipe.id
-            if (result is Load.Failed) snackbar.showSnackbar(t(Msg.ROTATION_FAILED, result.message))
+            if (result is Load.Failed) snackbar.showSnackbar(failureSentence(result, Msg.ROTATION_FAILED))
         }
     }
 
@@ -120,7 +120,7 @@ fun RecipeListScreen(
                     selection.stop()
                     snackbar.showSnackbar(message(result.value))
                 }
-                is Load.Failed -> snackbar.showSnackbar(t(failed, result.message))
+                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, failed))
                 Load.Loading -> Unit
             }
         }

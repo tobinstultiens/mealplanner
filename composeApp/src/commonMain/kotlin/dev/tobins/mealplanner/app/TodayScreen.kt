@@ -84,7 +84,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal) -> Unit, onOpenPlan:
     /** Runs a change and then reloads the day, reporting a failure. */
     fun change(action: suspend () -> Unit) {
         scope.launch {
-            (load(action) as? Load.Failed)?.let { snackbar.showSnackbar(it.message) }
+            failureOf(action)?.let { snackbar.showSnackbar(it) }
             reload++
         }
     }

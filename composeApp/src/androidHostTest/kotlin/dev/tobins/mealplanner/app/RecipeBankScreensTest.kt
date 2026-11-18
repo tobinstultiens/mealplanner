@@ -138,7 +138,7 @@ class RecipeBankScreensTest {
         showList(client(fake))
         waitFor("Shakshuka")
         compose.onNodeWithContentDescription("Not in the rotation: Shakshuka").performClick()
-        waitFor("Could not change the rotation: “Shakshuka” is planned on Fri 20 Nov")
+        waitFor("Could not change the rotation: “Shakshuka” is planned on Fri 20 Nov.")
         compose.onNodeWithContentDescription("Not in the rotation: Shakshuka").assertIsOff()
         waitFor("Not in rotation (2)")
     }

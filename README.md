@@ -206,8 +206,8 @@ fails to read). So, for a response or request that an installed app uses:
   in new routes or types, and keep the old field for a release.
 
 `ReleasedAppTest` (server) enforces this. It reads every response of the API with the shared API types as
-they were at the latest release (v0.1.3 now; v0.1.2 differs from it only by additions), frozen in
-`server/src/test/kotlin/dev/tobins/mealplanner/server/released/` with a header naming the tag, and
+they were at the latest release (read the tag in the header of the files under
+`server/src/test/kotlin/dev/tobins/mealplanner/server/released/`, where they are frozen), and
 checks that no enum has a value the frozen one lacks. A pull request that breaks the rule fails `:server:test`.
 
 The app's `ApiClient` turns an unknown enum value into the field's default, so a new value is safe for an

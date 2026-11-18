@@ -59,7 +59,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                         state = started
                         reload++
                     }
-                    is Load.Failed -> snackbar.showSnackbar(t(Msg.PRICES_START_FAILED, started.message))
+                    is Load.Failed -> snackbar.showSnackbar(failureSentence(started, Msg.PRICES_START_FAILED))
                     Load.Loading -> {}
                 }
             }
