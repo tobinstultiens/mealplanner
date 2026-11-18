@@ -276,6 +276,7 @@ class ShoppingListRepository(
             val candidates = BuyAhead.provisional(
                 recipes.planCandidates(dislikes = profiles.profile()?.dislikes.orEmpty()),
                 targets,
+                profiles.portions(),
                 plannedThisWeek = thisWeek.mapTo(HashSet()) { it.recipeId },
             )
             candidates.map { PlannedRecipe(it.recipeId, it.title, it.servings.toDouble()) } to candidates.associate { it.recipeId to it.rating }

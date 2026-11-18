@@ -149,6 +149,23 @@ class AccountsTest {
     }
 
     @Test
+    fun eachAccountKeepsItsOwnPortionRange() = testApplication {
+        start()
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val body = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        suspend fun HttpClient.range() = get("/api/profile").body<ProfileState>().profile?.let { it.minPortions to it.maxPortions }
+
+        alice.put("/api/profile") { setBody(body.copy(minPortions = 1.0, maxPortions = 2.0)) }
+        assertNull(bob.range(), "Bob sees no profile, so no range of Alice's")
+        // Bob's own range, and a save without one as an older app sends it, leave Alice's as it is.
+        bob.put("/api/profile") { setBody(body.copy(minPortions = 0.5, maxPortions = 1.0)) }
+        bob.put("/api/profile") { setBody("""{"weightKg":80.0,"heightCm":180.0,"ageYears":30,"sex":"MALE","activity":"LIGHT"}""") }
+        assertEquals(0.5 to 1.0, bob.range())
+        assertEquals(1.0 to 2.0, alice.range())
+    }
+
+    @Test
     fun eachAccountChoosesItsOwnStores() = testApplication {
         start()
         val alice = clientFor("alice")

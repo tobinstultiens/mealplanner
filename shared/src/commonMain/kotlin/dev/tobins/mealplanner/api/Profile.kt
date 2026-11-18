@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.api
 
+import dev.tobins.mealplanner.planner.PortionRange
 import kotlinx.serialization.Serializable
 
 enum class Sex { MALE, FEMALE }
@@ -30,6 +31,13 @@ data class Profile(
     val likes: List<String> = emptyList(),
     /** Ingredients never to plan or use, e.g. "mushroom"; matched as words in ingredient names. */
     val dislikes: List<String> = emptyList(),
+    /**
+     * The smallest and the largest meal the planner plans, in servings of the recipe, in quarter
+     * servings ([PortionRange]). An app from before them saves a profile without them, which keeps
+     * the stored range.
+     */
+    val minPortions: Double = PortionRange.DEFAULT_MIN,
+    val maxPortions: Double = PortionRange.DEFAULT_MAX,
 )
 
 @Serializable

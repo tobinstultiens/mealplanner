@@ -37,6 +37,8 @@ data class PlanRequest(
     val recent: Set<Long> = emptySet(),
     /** Recipes to use every day for breakfast or snack, instead of the planner's choice. */
     val routines: Map<MealSlot, Long> = emptyMap(),
+    /** How large a meal may be: the profile's range. */
+    val portions: PortionRange = PortionRange(),
     /** Same seed, same plan. */
     val seed: Long = 0,
 ) {
@@ -55,15 +57,15 @@ data class PlanRequest(
  *   is used as long as it is plannable; otherwise the planner chooses.
  * - Dinner is a different recipe each day; what a dinner recipe yields beyond the
  *   portion eaten becomes the next day's lunch.
- * - Portions are adjusted in quarter servings to fit the slot's share of the calories.
+ * - Portions are adjusted in quarter servings to fit the slot's share of the calories, within
+ *   the request's [PortionRange]; a recipe too light to fill half its share at the largest
+ *   portion is not a meal there.
  * - A lunch with neither leftovers nor a lunch recipe is cooked from a dinner recipe.
  * - A breakfast or snack slot with no suitable recipe stays empty.
  * - An excluded recipe is never planned, not even as a pinned routine or as leftovers;
  *   only locked meals keep it.
  */
 object WeekPlanner {
-    private val portionSteps = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
-
     fun plan(request: PlanRequest): List<PlannedMeal> {
         val random = Random(request.seed)
         val meals = request.locked.map { it.copy(locked = true) }.toMutableList()
@@ -79,7 +81,7 @@ object WeekPlanner {
                 .maxByOrNull { score(it, slot, request, uses = 0, sameTagAsYesterday = false, jitter = random.nextDouble()) }
                 ?: continue
             for (day in 0 until request.days) {
-                if (!taken(day, slot)) meals += meal(routine, day, slot, request.targets)
+                if (!taken(day, slot)) meals += meal(routine, day, slot, request)
             }
         }
 
@@ -95,7 +97,7 @@ object WeekPlanner {
                     ?: pick(MealSlot.LUNCH, usable, meals, request, yesterdaysDinner, random)
                     ?: pick(MealSlot.DINNER, usable, meals, request, yesterdaysDinner, random, budgetSlot = MealSlot.LUNCH)
                 if (lunch != null) {
-                    meals += meal(lunch, day, MealSlot.LUNCH, request.targets, leftover = leftover != null, available = leftover?.second)
+                    meals += meal(lunch, day, MealSlot.LUNCH, request, leftover = leftover != null, available = leftover?.second)
                 }
             }
             leftoverForLunch = null
@@ -104,10 +106,9 @@ object WeekPlanner {
             val dinner = lockedDinner?.let { locked -> request.candidates.firstOrNull { it.recipeId == locked.recipeId } }
                 ?: if (lockedDinner == null) pick(MealSlot.DINNER, usable, meals, request, yesterdaysDinner, random) else null
             if (dinner != null) {
-                val eaten = lockedDinner ?: meal(dinner, day, MealSlot.DINNER, request.targets).also { meals += it }
-                // Enough left for a lunch of at least half a serving?
+                val eaten = lockedDinner ?: meal(dinner, day, MealSlot.DINNER, request).also { meals += it }
                 val remaining = dinner.servings - eaten.portions
-                if (remaining >= 0.5) leftoverForLunch = dinner to remaining
+                if (remaining >= PortionRange.LEAST_LEFTOVER) leftoverForLunch = dinner to remaining
             }
             yesterdaysDinner = dinner
         }
@@ -123,7 +124,7 @@ object WeekPlanner {
         random: Random,
         /** The slot whose calorie share applies, when a recipe of one slot fills another. */
         budgetSlot: MealSlot = slot,
-    ): PlanCandidate? = usable.filter { slot in it.slots && isAMeal(it, request.targets.kcal * budgetSlot.share) }.maxByOrNull { candidate ->
+    ): PlanCandidate? = usable.filter { slot in it.slots && isAMeal(it, budgetSlot, request.targets, request.portions) }.maxByOrNull { candidate ->
         score(
             candidate, budgetSlot, request,
             uses = meals.count { it.recipeId == candidate.recipeId && !it.leftover },
@@ -143,7 +144,7 @@ object WeekPlanner {
         jitter: Double,
     ): Double {
         val budget = request.targets.kcal * slot.share
-        val portions = portionsFor(candidate, budget)
+        val portions = portionsFor(candidate, slot, request.targets, request.portions)
         val calorieFit = 1 - (abs(candidate.kcal * portions - budget) / budget).coerceAtMost(1.0)
         val proteinFit = (candidate.proteinG * portions / (request.targets.proteinG * slot.share)).coerceAtMost(1.5)
         return 2.0 * calorieFit +
@@ -172,35 +173,37 @@ object WeekPlanner {
     }
 
     /**
-     * The portion size that comes closest to [budget] calories, without exceeding
-     * [available] servings. By default that is what one batch yields, but at least two:
-     * a single-serving recipe such as a bowl of quark is simply made larger.
+     * The portion of [candidate] that comes closest to [slot]'s share of [targets]' calories, among
+     * those [range] allows there ([PortionRange.steps]); with [available], as for leftovers, no more
+     * than that many servings. Every meal the planner or the user puts in a plan is sized here.
      */
-    fun portionsFor(candidate: PlanCandidate, budget: Double, available: Double = maxOf(candidate.servings.toDouble(), 2.0)): Double =
-        portionSteps.filter { it <= available }.ifEmpty { listOf(available) }
-            .minBy { abs(candidate.kcal * it - budget) }
+    fun portionsFor(candidate: PlanCandidate, slot: MealSlot, targets: DailyTargets, range: PortionRange, available: Double? = null): Double {
+        val budget = targets.kcal * slot.share
+        val steps = if (available == null) range.steps(slot) else range.steps(slot, available)
+        return steps.minBy { abs(candidate.kcal * it - budget) }
+    }
 
     /**
-     * False for recipes that cannot come near [budget] even at the largest portion, such
-     * as a side dish or a rub: planning them as a meal would leave the day far short.
+     * False for recipes that cannot reach half the slot's calories even at the largest portion
+     * [range] allows, such as a side dish or a rub: planning them as a meal would leave the day
+     * far short, or need a portion nobody eats.
      */
-    private fun isAMeal(candidate: PlanCandidate, budget: Double): Boolean =
-        candidate.kcal * portionsFor(candidate, budget) >= 0.5 * budget
+    private fun isAMeal(candidate: PlanCandidate, slot: MealSlot, targets: DailyTargets, range: PortionRange): Boolean =
+        candidate.kcal * portionsFor(candidate, slot, targets, range) >= 0.5 * (targets.kcal * slot.share)
 
-    /** True when the planner would take [candidate] as a [slot] meal for someone with [targets]. */
-    fun fitsAsMeal(candidate: PlanCandidate, slot: MealSlot, targets: DailyTargets): Boolean =
-        slot in candidate.slots && candidate.kcal > 0 && isAMeal(candidate, targets.kcal * slot.share)
+    /** True when the planner would take [candidate] as a [slot] meal for someone with [targets] and [range]. */
+    fun fitsAsMeal(candidate: PlanCandidate, slot: MealSlot, targets: DailyTargets, range: PortionRange): Boolean =
+        slot in candidate.slots && candidate.kcal > 0 && isAMeal(candidate, slot, targets, range)
 
     private fun meal(
         candidate: PlanCandidate,
         day: Int,
         slot: MealSlot,
-        targets: DailyTargets,
+        request: PlanRequest,
         leftover: Boolean = false,
         available: Double? = null,
     ): PlannedMeal {
-        val portions = available?.let { portionsFor(candidate, targets.kcal * slot.share, it) }
-            ?: portionsFor(candidate, targets.kcal * slot.share)
+        val portions = portionsFor(candidate, slot, request.targets, request.portions, available)
         return PlannedMeal(
             day = day,
             slot = slot,
