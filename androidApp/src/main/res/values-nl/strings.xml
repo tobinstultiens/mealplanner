@@ -1,5 +1,0 @@
-<resources>
-    <string name="update_channel_name">App-updates</string>
-    <string name="update_notification_title">Meal planner %1$s is beschikbaar</string>
-    <string name="update_notification_text">Tik om bij te werken.</string>
-</resources>

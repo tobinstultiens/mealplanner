@@ -99,4 +99,39 @@ class RoutesTest {
             assertEquals(today, parseRoute(address), address)
         }
     }
+
+    // --- Screens asked for by a tapped notification (Android, issue 225)
+
+    @Test
+    fun anOpeningReadsBackFromItsString() {
+        val dinner = MealToCook(12, 1.5, 2.25, skipped = false, MealPlace("2026-11-16", 3, MealSlot.DINNER), planned = true)
+        for (opening in listOf(Opening(Route.TabRoute(Tab.SHOPPING)), Opening(Route.Recipe(12), dinner), Opening(Route.Recipe(12)))) {
+            assertEquals(opening, parseOpening(opening.encoded), opening.encoded)
+        }
+        assertEquals("#/recipes/12|2026-11-16|3|DINNER|1.5|2.25", Opening(Route.Recipe(12), dinner).encoded)
+        // A meal that cannot be read leaves the recipe to open as written; an unknown route is Today, as an address.
+        assertEquals(Opening(Route.Recipe(12)), parseOpening("#/recipes/12|2026-11-16|3|ELEVENSES|1.5|2.25"))
+        assertEquals(Opening(today), parseOpening("#/nowhere|x"))
+    }
+
+    @Test
+    fun anOpeningKeepsWhatHoldsUnsavedTypingInFront() {
+        val shopping = Route.TabRoute(Tab.SHOPPING).openScreens()
+        assertEquals(shopping, OpenScreens(tab = Tab.RECIPES, recipeId = 4, offers = true, settings = true).opening(shopping), "the rest closes")
+        val editing = OpenScreens(tab = Tab.RECIPES, recipeId = 4, editing = 4)
+        assertEquals(OpenScreens(tab = Tab.SHOPPING, editing = 4), editing.opening(shopping))
+        assertEquals(Route.RecipeEditor(4), editing.opening(shopping).route, "the editor stays in front")
+        val profile = OpenScreens(tab = Tab.PROGRESS, profile = true)
+        assertEquals(OpenScreens(tab = Tab.TODAY, recipeId = 7, profile = true), profile.opening(Route.Recipe(7).openScreens().copy(tab = Tab.TODAY)))
+    }
+
+    @Test
+    fun theLastOpeningAskedForIsTakenOnce() {
+        val openings = Openings()
+        assertNull(openings.take())
+        openings.open(Opening(Route.TabRoute(Tab.PLAN)))
+        openings.open(Opening(Route.TabRoute(Tab.SHOPPING)))
+        assertEquals(Opening(Route.TabRoute(Tab.SHOPPING)), openings.take())
+        assertNull(openings.take())
+    }
 }

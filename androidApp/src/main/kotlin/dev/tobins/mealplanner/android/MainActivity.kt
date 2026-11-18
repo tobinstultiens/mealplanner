@@ -8,7 +8,6 @@ import android.net.Uri
 import dev.tobins.mealplanner.app.LoginLauncher
 import android.content.pm.PackageManager
 import android.os.Build
-import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,27 +15,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
 import dev.tobins.mealplanner.app.App
-import dev.tobins.mealplanner.app.LoginExchange
 import dev.tobins.mealplanner.app.ServerSettings
-import dev.tobins.mealplanner.app.SettingsStorage
-import kotlinx.coroutines.MainScope
-
-/** Settings in the app's private SharedPreferences. */
-private class PreferencesStorage(private val prefs: SharedPreferences) : SettingsStorage {
-    override fun get(key: String): String? = prefs.getString(key, null)
-
-    override fun set(key: String, value: String) {
-        prefs.edit().putString(key, value).apply()
-    }
-
-    override fun remove(key: String) {
-        prefs.edit().remove(key).apply()
-    }
-}
-
-/** One storage for the screen and the login: Android keeps one SharedPreferences per name, so both see every change at once. */
-private fun settingsStorage(context: Context): SettingsStorage =
-    PreferencesStorage(context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE))
+import dev.tobins.mealplanner.app.parseOpening
 
 /**
  * Opens Authelia's login page in a Custom Tab over the app: it shares the browser's cookies (an existing
@@ -71,44 +51,55 @@ private class CustomTabLogin(private val activity: Activity) : LoginLauncher {
 }
 
 class MainActivity : ComponentActivity() {
+    /** Registered as the screen is made, which Android requires of a permission request. */
+    private val notificationAccess = AndroidNotificationAccess(this)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val storage = settingsStorage(this)
-        val logins = logins(this)
+        val logins = AppProcess.logins(this)
         // Debug builds are signed with another key, so a release could not install over them.
         val updater = if (BuildConfig.DEBUG) null else AndroidUpdateInstaller(this)
-        if (updater != null) {
-            UpdateCheckWorker.schedule(this)
-            askForNotifications()
-        }
-        intent?.newLoginAnswer(savedInstanceState)?.let(logins::deliver)
+        // Debug builds check too, for what the server says is due; only the update check is left out there.
+        NotificationWorker.schedule(this)
+        if (updater != null) askForNotifications()
+        intent?.takeIf { it.isNew(savedInstanceState) }?.let(::take)
         setContent {
             App(
                 ServerSettings(BuildConfig.SERVER_URL), storage, CustomTabLogin(this), logins, updater,
                 defaultsBuiltIn = BuildConfig.SERVER_URL_BUILT_IN,
+                openings = AppProcess.openings,
+                notificationAccess = notificationAccess,
             )
         }
     }
 
-    /** The login comes back here: an App Link to `<server>/app/login?code=…`, or its bounce `dev.tobins.mealplanner://login?code=…`. */
+    /** The intents that reach the screen while it runs: as those that start it ([take]). */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.data?.let { logins(this).deliver(it.toString()) }
+        take(intent)
     }
 
     /**
-     * The login answer this intent brings, when it is new. The intent that started the screen comes
-     * again when Android re-creates it ([savedInstanceState] set: a rotation, a dark mode or language
-     * change, the app stopped in the background) and when the task is opened again from the recent
-     * apps; an answer it holds was handled the first time, and its code works only once.
+     * Hands on what [intent] brings: the login coming back (an App Link to `<server>/app/login?code=…`, or its
+     * bounce `dev.tobins.mealplanner://login?code=…`), or the screen a tapped notification opens.
      */
-    private fun Intent.newLoginAnswer(savedInstanceState: Bundle?): String? {
-        if (savedInstanceState != null || (flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return null
-        return data?.toString()
+    private fun take(intent: Intent) {
+        intent.data?.let { AppProcess.logins(this).deliver(it.toString()) }
+        intent.getStringExtra(EXTRA_OPENING)?.let { AppProcess.openings.open(parseOpening(it)) }
     }
 
-    /** Android 13+ needs consent for the "update available" notification; asked once. */
+    /**
+     * Whether this intent is new to the screen. The intent that started the screen comes again when Android
+     * re-creates it ([savedInstanceState] set: a rotation, a dark mode or language change, the app stopped in
+     * the background) and when the task is opened again from the recent apps; what it holds was handled the
+     * first time: a login answer's code works only once, and a notification's screen was opened.
+     */
+    private fun Intent.isNew(savedInstanceState: Bundle?): Boolean =
+        savedInstanceState == null && (flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+
+    /** Android 13+ needs consent for notifications, the update's among them, on by default; asked once. */
     private fun askForNotifications() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
@@ -116,17 +107,5 @@ class MainActivity : ComponentActivity() {
         if (prefs.getBoolean("askedForNotifications", false)) return
         prefs.edit().putBoolean("askedForNotifications", true).apply()
         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-    }
-
-    companion object {
-        /**
-         * The login for as long as the process lives rather than the screen: a token exchange under way
-         * when Android re-creates the screen finishes, once, and reaches the new one (#176). Only used on
-         * the main thread.
-         */
-        private var logins: LoginExchange? = null
-
-        private fun logins(context: Context): LoginExchange =
-            logins ?: LoginExchange(settingsStorage(context), MainScope()).also { logins = it }
     }
 }

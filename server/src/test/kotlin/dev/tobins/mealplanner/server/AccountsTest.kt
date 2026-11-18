@@ -20,6 +20,7 @@ import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.MealAdjustment
+import dev.tobins.mealplanner.api.NotificationFacts
 import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
@@ -290,6 +291,48 @@ class AccountsTest {
         bob.put("/api/shops") { setBody(ShopsSetting(null)) }
         assertEquals(listOf(Store.AH), alice.get("/api/shops").body<ShopsSetting>().stores)
         assertNull(bob.get("/api/shops").body<ShopsSetting>().stores)
+    }
+
+    @Test
+    fun whatIsDueForNotificationsIsTheAccountsOwn() = testApplication {
+        val today = serverToday()
+        val monday = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        // Ends today, so it is no offer of next week whatever day the test runs on.
+        val samphire = Offer(Store.AH, "AH Zeekraal 100 gram", "1+1 gratis", validFrom = today.toString(), validUntil = today.toString())
+        val ah = object : OfferSource {
+            override val store = Store.AH
+            override suspend fun fetch() = listOf(samphire)
+        }
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = listOf(ah), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        suspend fun HttpClient.facts() = get("/api/notifications").body<NotificationFacts>()
+
+        // Alice: an offer ending today for her dinner of today, still to eat, and a weigh-in ten days ago.
+        alice.put("/api/profile") { setBody(Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)) }
+        alice.put("/api/weights/${today.minusDays(10)}") { setBody(70.0) }
+        alice.post("/api/ingredients") { setBody(IngredientInput("Zeekraal")) }
+        alice.post("/api/offers/refresh")
+        val dinner = alice.post("/api/recipes") { setBody(RecipeInput("Samphire", 1, "100 | g | zeekraal")) }.body<RecipeDetail>().summary
+        val day = (today.toEpochDay() - monday.toEpochDay()).toInt()
+        db.planQueries.upsertMeal(db.userQueries.selectBySubject("sub-alice").executeAsOne().id, monday.toString(), day.toLong(), "DINNER", dinner.id, dinner.title, 1.0, 300.0, 10.0, 0, 0, "PLANNED")
+        val hers = alice.facts()
+        assertEquals(listOf("Zeekraal"), hers.offersEnding.map { it.name })
+        assertEquals(10, hers.weighIn?.daysAgo)
+        assertEquals(dinner.id, hers.dinner?.recipeId)
+        assertEquals(1, hers.mealsToMark)
+
+        // Bob, with an ingredient of the same name but no plan, weight or profile of his own, sees none of it.
+        bob.post("/api/ingredients") { setBody(IngredientInput("Zeekraal")) }
+        assertEquals(NotificationFacts(today.toString()), bob.facts())
+        // The route only reads: nothing Bob sends changes what Alice is told.
+        for (status in listOf(bob.post("/api/notifications").status, bob.put("/api/notifications").status, bob.delete("/api/notifications").status)) {
+            assertFalse(status.isSuccess(), "$status")
+        }
+        assertEquals(hers, alice.facts())
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/notifications").status)
     }
 
     @Test

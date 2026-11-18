@@ -639,4 +639,119 @@ class LoginTest {
         renewAt(storage, 31.minutes, HttpStatusCode.NotFound)
         assertEquals(null, storage.session())
     }
+
+    // --- The background check of the notifications (Android, issue 225): the same renewals, quietly.
+
+    private val server = ServerSettings("https://meals.example.nl")
+
+    /**
+     * The meal planner's API: what is due, for the access token [accepted] says, else 401 as the server
+     * answers an expired token; [answering] runs as it answers.
+     */
+    private fun api(accepted: () -> String?, answering: () -> Unit = {}) = MockEngine { request ->
+        if (request.headers[HttpHeaders.Authorization] != "Bearer ${accepted()}") {
+            respond("", HttpStatusCode.Unauthorized, headersOf(HttpHeaders.WWWAuthenticate, "Bearer"))
+        } else {
+            answering()
+            respond("""{"date":"2026-11-21","mealsToMark":2}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+    }
+
+    @Test
+    fun aLoggedOutAppAsksNothingInTheBackground() = runTest {
+        val storage = MemorySettingsStorage()
+        var asked = false
+        val logins = exchange(storage, fakeProvider(mutableListOf()))
+        assertEquals(null, askWhatIsDue(storage, logins, server, api({ asked = true; null })))
+        assertFalse(asked)
+    }
+
+    @Test
+    fun theBackgroundRenewsAnExpiredTokenAndKeepsTheNewOne() = runTest {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        val forms = mutableListOf<Map<String, String>>()
+        val logins = exchange(storage, fakeProvider(forms))
+        assertEquals(2, askWhatIsDue(storage, logins, server, api({ "access-1" }))?.mealsToMark)
+        assertEquals("access-1", storage.session()?.accessToken)
+        assertEquals(1, forms.size)
+    }
+
+    @Test
+    fun aRefusalInTheBackgroundEndsNoSession() = runTest {
+        for (session in listOf(Session("old", "revoked", 0), Session("old", refreshToken = null))) {
+            val storage = MemorySettingsStorage().apply { saveSession(session) }
+            val logins = exchange(storage, fakeProvider(mutableListOf(), refuseRefresh = true))
+            assertEquals(null, askWhatIsDue(storage, logins, server, api({ "access-1" })))
+            assertEquals(session, storage.session(), "the screens find out, and say why")
+            assertEquals(null, storage.loggedOut())
+        }
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        val offline = exchange(storage, fakeProvider(mutableListOf(), offline = true))
+        assertEquals(null, askWhatIsDue(storage, offline, server, api({ "access-1" })), "no answer: nothing to tell, and no error")
+        assertNotNull(storage.session())
+    }
+
+    @Test
+    fun failedRenewalsInTheBackgroundDoNotCountTowardsEndingTheSession() = runTest {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        for (at in listOf(0.minutes, 1.minutes, 2.minutes, 30.minutes)) {
+            val clock = object : Clock {
+                override fun now() = firstFailure + at
+            }
+            val logins = exchange(storage, fakeProvider(mutableListOf(), refreshStatus = HttpStatusCode.NotFound), clock)
+            assertEquals(null, askWhatIsDue(storage, logins, server, api({ "access-1" })))
+        }
+        // Had they counted, the screens' first failure after them would end the session; it takes three in a row of their own.
+        renewAt(storage, 31.minutes, HttpStatusCode.NotFound)
+        renewAt(storage, 32.minutes, HttpStatusCode.NotFound)
+        assertNotNull(storage.session())
+        assertEquals(null, storage.loggedOut())
+    }
+
+    @Test
+    fun aRenewalInTheBackgroundEndsARunOfFailuresAsAnyRenewalThatWorks() = runTest {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        for (at in listOf(0.minutes, 1.minutes)) renewAt(storage, at, HttpStatusCode.NotFound)
+        assertNotNull(askWhatIsDue(storage, exchange(storage, fakeProvider(mutableListOf())), server, api({ "access-1" })))
+        renewAt(storage, 20.minutes, HttpStatusCode.NotFound)
+        assertNotNull(storage.session(), "a new run of failures")
+    }
+
+    @Test
+    fun aTokenRefusedTwiceAtOnceIsRenewedOnce() = runTest {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        val forms = mutableListOf<Map<String, String>>()
+        val gate = CompletableDeferred<Unit>()
+        val logins = exchange(storage, fakeProvider(forms, gate = gate))
+        // The screens and the background check both had "old" refused, at the same moment.
+        val screens = async { logins.renew(server.url, refused = "old") }
+        val background = async { logins.renew(server.url, refused = "old", quietly = true) }
+        advanceUntilIdle()
+        gate.complete(Unit)
+        assertEquals("access-1", screens.await()?.accessToken)
+        assertEquals("access-1", background.await()?.accessToken)
+        assertEquals(1, forms.size, "a rotated refresh token is sent once")
+    }
+
+    @Test
+    fun theScreensTakeTheTokenTheBackgroundRenewed() = runTest {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        val forms = mutableListOf<Map<String, String>>()
+        val logins = exchange(storage, fakeProvider(forms))
+        // The screens' client was made with the session as it was when the app opened.
+        val screens = ApiClient(server, storage.session(), api({ storage.session()?.accessToken })) { logins.renew(server.url, it) }
+        assertNotNull(askWhatIsDue(storage, logins, server, api({ "access-1" })))
+        assertEquals(2, screens.notifications().mealsToMark)
+        assertEquals(1, forms.size, "renewed once, in the background")
+        screens.close()
+    }
+
+    @Test
+    fun anAnswerForASessionThatChangedMeanwhileIsDropped() = runTest {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("alice", "good", 0)) }
+        val logins = exchange(storage, fakeProvider(mutableListOf()))
+        // Logged out and in again, perhaps as someone else, while the server answered for the old session.
+        val answer = askWhatIsDue(storage, logins, server, api({ "alice" }, answering = { storage.saveSession(Session("bob", "his", 0)) }))
+        assertEquals(null, answer)
+    }
 }

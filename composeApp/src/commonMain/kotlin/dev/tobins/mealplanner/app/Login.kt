@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -222,11 +224,16 @@ class Login(
      *   known about the session, which stays, and the run of failures neither grows nor starts afresh.
      * An answer for [session] when it is no longer the stored one (logged out, or another login meanwhile)
      * is dropped: it must neither bring back a session the user ended nor end the one that replaced it.
+     *
+     * [quietly] is for the background, where nobody is there to log in again (the notifications' check): a
+     * failure there ends nothing and is not counted, so neither a refusal nor a provider down while the app
+     * is closed logs the user out behind their back; the next request in front tries again and decides. A
+     * renewal that works is saved either way, and ends a run of failures as any renewal that works does.
      */
-    suspend fun refresh(serverUrl: String, session: Session): Session? {
+    suspend fun refresh(serverUrl: String, session: Session, quietly: Boolean = false): Session? {
         val refreshToken = session.refreshToken
         if (refreshToken == null) {
-            end(LoggedOut.EXPIRED)
+            if (!quietly) end(LoggedOut.EXPIRED)
             return null
         }
         val config = runCatching { authConfig(serverUrl) }.getOrNull() ?: return null
@@ -241,7 +248,7 @@ class Login(
         val body = response.bodyAsText()
         if (storage.session() != session) return null
         if (!response.status.isSuccess()) {
-            renewalFailed(response.status.value)
+            if (!quietly) renewalFailed(response.status.value)
             return null
         }
         return toSession(json.decodeFromString(body), refreshToken).also { storage.saveSession(it) }
@@ -330,6 +337,9 @@ class LoginExchange(
     /** How often a login was called off, so that a [start] still asking the server knows it was. */
     private var calledOff = 0
 
+    /** Held while a renewal asks the provider (see [renew]). */
+    private val renewing = Mutex()
+
     init {
         // One answer at a time, in the order they came: a second delivery of the same answer finds its
         // login used up and passes unseen, as the screen's own collector did before. Each in a job of its
@@ -401,8 +411,18 @@ class LoginExchange(
      * A new access token for the stored session, or null. [Login.refresh] says when that ends the session
      * (gone from storage, with the reason for the login screen to say) and when it stays for the next
      * request to try again; a log-out meanwhile keeps its own reason.
+     *
+     * One renewal at a time, whoever asks: the screens' client and the background check of the notifications
+     * (Android) both renew through here. A provider that rotates refresh tokens takes each one once, so a
+     * second renewal sent with the same token would be refused, and end the session. A caller whose
+     * [refused] access token was replaced while it waited gets the stored session instead, without asking
+     * the provider again. [quietly]: see [Login.refresh].
      */
-    suspend fun renew(serverUrl: String): Session? = storage.session()?.let { login.refresh(serverUrl, it) }
+    suspend fun renew(serverUrl: String, refused: String? = null, quietly: Boolean = false): Session? = renewing.withLock {
+        val session = storage.session() ?: return null
+        if (refused != null && session.accessToken != refused) return session
+        login.refresh(serverUrl, session, quietly)
+    }
 
     /**
      * Ends the session on the user's word: Log out, or another server chosen, which has its own accounts.

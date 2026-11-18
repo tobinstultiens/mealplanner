@@ -30,6 +30,10 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
     fun byIngredient(from: LocalDate, until: LocalDate, terms: Map<Long, List<String>>): Map<Long, List<Offer>> =
         OfferMatcher(terms).group(q.selectOffersOverlapping(until = until.toString(), from = from.toString()).executeAsList().map { it.toOffer() })
 
+    /** The stores with an offer valid at some point between [from] and [until]: those whose offers for those days are in. */
+    fun storesWithOffers(from: LocalDate, until: LocalDate): Set<Store> =
+        q.selectOffersOverlapping(until = until.toString(), from = from.toString()).executeAsList().mapTo(HashSet()) { it.toOffer().store }
+
     /**
      * Offers valid on [date] with the store statuses. With [terms] (see [byIngredient])
      * each offer also names the ingredient it matches.

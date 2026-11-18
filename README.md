@@ -82,6 +82,14 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
   could not be renewed for a while. A renewal without an answer (a network error) or without the server's
   login settings ends nothing, and neither counts nor starts the count afresh; until the session ends, the
   next request tries again. Ending a session forgets the shopping lists stored for it, with their unsent ticks.
+- Renewals go one at a time through `LoginExchange.renew`, whoever asks: the screens and the Android app's
+  background check of the notifications (issue 225). A provider that rotates refresh tokens takes each one
+  once, so two renewals at the same moment would end the session; a caller whose refused token was replaced
+  meanwhile gets the stored session without asking the provider again. The background check renews
+  quietly: a refusal or an error there ends nothing and is not counted towards the rule above, since nobody
+  is there to log in again and a provider down overnight must not log the user out behind their back; the
+  screens find out at their next request and decide as above. A renewal there that works is kept, and ends a
+  run of failures as any renewal that works does.
 - The server accepts JWT access tokens (RS256) from that issuer issued to that client, checked against
   the provider's keys. The token's subject is the account; new accounts start with the default
   ingredient catalogue. `GET /api/me` names the caller.
@@ -322,7 +330,7 @@ The app is in English and Dutch. Progress → Settings → Appearance → Langua
 device, or the browser for the web app, is set to a `nl` language, English otherwise), English or Nederlands;
 it applies at once and is kept. Numbers, prices and dates follow the same choice (a decimal comma, `vr 13 nov`
 in Dutch); with System they follow the device. The texts are in `composeApp/.../Messages.kt`, each with its
-English and Dutch side by side, and the notification of an update in `androidApp/src/main/res/values*/strings.xml`.
+English and Dutch side by side, the notifications' texts among them, so these follow the same choice.
 Texts that come from the server (error messages, store deals, recipes) are shown as they are.
 
 Offers and shopping-list rows show the product's picture from the store (Coil 3; docs/data-sources.md, "Product pictures"), with the first letter of the product as placeholder. Progress → Settings → Appearance → "Show product pictures" turns the loading off. The web app shows no pictures for Jumbo, which sends no CORS headers. The screenshot tests use a fake loader and never touch the network.
@@ -336,6 +344,33 @@ Recipe photos (from the cooking site) show on the Recipes list, the recipe scree
 Screens keep their place. Opening a recipe (or the pantry, offers and so on) from a tab and going back leaves the tab as it was: the Plan's week and scroll, Today's day, the recipe list's scroll, search and choice, the bank's scroll and search; so does Android re-creating the activity (rotation, dark mode, language). This is kept in memory and the saved instance state, not on disk: a cold start begins on Today, this week, at the top. A screen that comes back shows what it showed at once and fetches again behind it; a failed fetch keeps what is shown and says so in a line at the bottom with a Retry (a recipe the server says is gone shows the error instead). A new client (login, logout, another server) makes every open screen fetch again. When the app returns to the front (Android: started again; browser: the tab visible again) every screen in front fetches once, and Today and the Plan read the date again: they follow the new day or week when they were showing today or this week, and stay where the user stepped to otherwise. While the app is in front the clock is read every 30 seconds to notice midnight.
 
 Cook mode: the **Cook** button on a recipe (one of mine or from the bank) opens big rows to tick the ingredients, with the amounts of the recipe screen (scaled to the servings to cook when it was opened from a meal, with its "As written" switch), and the steps one per card: the numbered list of the instructions, or, when there is none, every non-empty line (steps typed one per line in the editor). Tapping a row ticks it (dimmed, not moved); tapping a step marks it done and makes the next one the current, highlighted one. The screen stays on while it is open (Android: the window flag; browser: the Screen Wake Lock API where the browser has it, taken again when the tab shows). Ticks live in the saved instance state and go with the recipe screen; nothing is sent to the server. With the last step done, a meal that is still planned offers "Mark as eaten" (`PUT /api/plans/{week}/meals/{day}/{slot}/status`); Back leaves cook mode for the recipe.
+
+**Notifications** (Android only, issue 225). Progress → Settings → Notifications has a switch per kind, kept on
+the device; each kind is an Android notification channel of its own, so the system's settings list the same kinds:
+
+| Kind | Posted when | Tap opens | Default |
+|---|---|---|---|
+| App update | A newer release exists (release builds only), once per version | The app, which offers the update | On |
+| Offers ending | An offer at one of the account's stores ends today or tomorrow, for a row of this week's shopping list still to buy (not ticked, still needed by a meal), or a buy-ahead or stock-up row not ticked or dismissed; once per day, one notification naming them all ("3 offers for your list end today") | Shopping | On |
+| Plan next week | On Saturday and Sunday, while next week has no meals and offers valid next week at the account's stores are in; once per week | Plan | On |
+| Weigh-in | The newest weigh-in is 7 or more days old and there is a profile; once per 7 days, until one is entered | Progress | Off |
+| Dinner today | Today has a planned dinner that is neither eaten nor skipped; once per day | The recipe, from that meal (its servings to cook) | Off |
+| Mark what you ate | A meal of today is still planned; once per day | Today | Off |
+
+The server says what is due, the app decides whether to tell: `GET /api/notifications` answers, for the calling
+account and the server's today, the facts behind kinds 2 to 6 as data (`NotificationFacts`: names, dates, counts,
+the recipe), and the app words them in its language (`Messages.kt`). One WorkManager job (`NotificationWorker`)
+replaces the daily update check: every four hours on any network, as Android allows, it checks the release and,
+when logged in, asks the server. What decides (the kind, its switch, what was told already per kind and day, week
+or version, and the windows) is common code (`NotificationPlanner`): kinds 1 to 4 from 08:00, dinner from 15:00,
+"mark what you ate" from 20:00, and nothing between 22:00 and 08:00, by the device's clock; Android only schedules,
+asks and posts. A logged-out app posts nothing but the update; the check never shows an error, a failure tells
+nothing until the next run, and its renewals never end the session (see "Accounts and login"). Turning a switch on
+asks for the permission where Android needs it; while a switch is on and Android does not let the app post, the
+card says so with "Open Android settings". A tapped notification carries its screen as a route (`Opening` in
+`Routes.kt`), which `MainActivity` hands to the app from a closed app and from an open one; the recipe editor and
+the profile stay in front when they are open, so nothing typed is lost. Plan opens on this week: the Plan screen
+takes no week from outside yet.
 
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):
@@ -374,7 +409,7 @@ the test and in `git log`, not here.
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
 Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
-Settings and login screens (the login with a known server and with the address asked for), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
+Settings and login screens (the login with a known server and with the address asked for), the Notifications card (in English and Dutch, and with notifications refused by Android), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
 sample data, with the date, time zone and locale (English, UK) fixed, so a picture only changes when the
@@ -528,7 +563,7 @@ and stops when it is missing or not an `https://` address; it is kept out of thi
 `mealplanner-android-signing` and checks the copy; the note says how to restore it.
 
 Installed release builds update themselves: on start, from Settings → Check for updates, and
-once a day in the background (a notification), the app looks at the latest GitHub release. If it
+every few hours in the background (a notification, which Settings → Notifications can turn off), the app looks at the latest GitHub release. If it
 is newer, **Update** downloads the APK and Android installs it over the current app; Android asks
 once to allow installs from the app. Debug builds don't check, since a release can't replace them.
 

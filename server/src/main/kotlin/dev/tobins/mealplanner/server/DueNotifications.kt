@@ -1,0 +1,94 @@
+package dev.tobins.mealplanner.server
+
+import dev.tobins.mealplanner.api.DinnerToday
+import dev.tobins.mealplanner.api.EndingOffer
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.NotificationFacts
+import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.api.WeighInDue
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
+
+/**
+ * What one account's data says is due on the server's today, for the Android app's notifications
+ * (`GET /api/notifications`, issue 225). The conditions are tested here, once, so that every app agrees;
+ * the app words the facts in its own language and decides by its switches and the hour whether to tell.
+ * Everything comes through the account's own repositories; only the offers are shared.
+ */
+class DueNotifications(
+    private val shopping: ShoppingListRepository,
+    private val plans: PlanRepository,
+    private val tracking: TrackingRepository,
+    private val profiles: ProfileRepository,
+    /** The stores the account shops at: an offer elsewhere is no reason to hurry. */
+    private val shops: () -> Set<Store>,
+    /** The stores with an offer valid at some point between two dates, at every store. */
+    private val storesWithOffers: (LocalDate, LocalDate) -> Set<Store>,
+    private val today: () -> LocalDate = ::serverToday,
+) {
+    fun facts(): NotificationFacts {
+        val day = today()
+        val (weekStart, index, meals) = plans.mealsOn(day)
+        return NotificationFacts(
+            date = day.toString(),
+            offersEnding = offersEnding(day, weekStart),
+            planNextWeek = planNextWeek(day, weekStart)?.toString(),
+            weighIn = weighIn(day),
+            dinner = meals.firstOrNull { it.slot == MealSlot.DINNER && it.status == MealStatus.PLANNED }?.let { dinner(it, weekStart, index) },
+            mealsToMark = meals.count { it.status == MealStatus.PLANNED },
+        )
+    }
+
+    /**
+     * The rows of this week's list (the week starting [weekStart]) still to buy that have an offer at one of
+     * the account's stores ending on [day] or the next day. "Still to buy": not ticked, and for a row of the
+     * meals' needs one that a meal still to cook needs ([ShoppingItem.toComeGrams] not 0); the advice is
+     * empty when dismissed. The offer must have started: one that begins tomorrow is no reason to hurry.
+     */
+    private fun offersEnding(day: LocalDate, weekStart: LocalDate): List<EndingOffer> {
+        val list = shopping.get(weekStart.toString())
+        val inUse = shops()
+        val stillToBuy = list.items.filter { !it.checked && it.toComeGrams != 0.0 } + (list.buyAhead + list.stockUp).filter { !it.checked }
+        return stillToBuy.mapNotNull { item -> endingOn(item, day, inUse)?.let { EndingOffer(item.name, it.toString()) } }
+            .distinctBy { it.name }
+            .sortedBy { it.endsOn }
+    }
+
+    /** The earliest day, [day] or the next, that an offer of [item] at one of [inUse] valid on [day] ends; null when none does. */
+    private fun endingOn(item: ShoppingItem, day: LocalDate, inUse: Set<Store>): LocalDate? =
+        item.offers.filter { it.store in inUse && !LocalDate.parse(it.validFrom).isAfter(day) }
+            .map { LocalDate.parse(it.validUntil) }
+            .filter { it == day || it == day.plusDays(1) }
+            .minOrNull()
+
+    /**
+     * Next week's first day, on a Saturday or Sunday, while that week has no meals and offers valid in it at
+     * one of the account's stores are in: the planner has what it plans with.
+     */
+    private fun planNextWeek(day: LocalDate, weekStart: LocalDate): LocalDate? {
+        if (day.dayOfWeek != DayOfWeek.SATURDAY && day.dayOfWeek != DayOfWeek.SUNDAY) return null
+        val next = weekStart.plusWeeks(1)
+        if (plans.meals(next).isNotEmpty()) return null
+        return next.takeIf { storesWithOffers(next, next.plusDays(6)).any { it in shops() } }
+    }
+
+    /** The newest weigh-in, when it is a week old or older and there is a profile its weight goes to. */
+    private fun weighIn(day: LocalDate): WeighInDue? {
+        if (profiles.profile() == null) return null
+        val last = tracking.lastWeighed() ?: return null
+        val days = ChronoUnit.DAYS.between(last, day)
+        return if (days >= WEIGH_IN_AFTER_DAYS) WeighInDue(last.toString(), days.toInt()) else null
+    }
+
+    private fun dinner(meal: PlannedMeal, weekStart: LocalDate, index: Int) =
+        DinnerToday(meal.recipeId, meal.title, meal.portions, meal.cookPortions ?: meal.portions, weekStart.toString(), index)
+
+    companion object {
+        /** A weigh-in this many days old is due again. */
+        const val WEIGH_IN_AFTER_DAYS = 7L
+    }
+}
