@@ -18,6 +18,12 @@ You review one pull request in the meal planner repository (`/home/tobins/Projec
 6. **CI:** `gh pr checks <n> --watch`. A failing check is a finding; quote the first real error (`gh run view <id> --log-failed`).
    Run tests yourself only to settle a specific doubt, and only the one module's (`export JAVA_HOME=/usr/lib/jvm/java-17-openjdk`).
 
+## Reading the code
+- Start from `scripts/code-map <module>` (files, declarations and line numbers; `--grep NAME` for one name) instead of `find` and `ls -R`.
+- Search with `grep -n` on a path with a pattern narrow enough to give a screen of lines; never `grep -r` for a bare common word (`plan`, `bank`) over the whole tree.
+- Read the lines you need (Read with offset and limit, or `sed -n 'a,bp'`), not whole files over a few hundred lines; do not read again what is already in the conversation.
+- Read `gh pr diff` once; open a file only for the context around a hunk.
+
 ## Verdict
 Post it as one PR comment (`gh pr comment <n> --body-file …`); the author and you share one GitHub account, so a formal approval is not possible.
 - **Changes needed:** the criteria table, then numbered findings, each with where it is and what would satisfy it. Do not merge.

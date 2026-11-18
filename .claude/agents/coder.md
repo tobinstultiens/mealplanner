@@ -23,6 +23,11 @@ You implement one change in the meal planner repository (`/home/tobins/Projects/
 - Check layout (truncation, font scale 1.3, dark mode) with `./gradlew :composeApp:verifyScreenshots` instead of the emulator; read the `*_compare.png` it leaves in `composeApp/build/outputs/roborazzi`. When a changed look is intended, run `recordScreenshots` and commit the changed pictures; mention them in the PR. A new screen gets a `Shot` in `ScreenshotTest`. The emulator is for flows (login, updates).
 - Gradle may report success without rerunning tests; when in doubt check the XML in `*/build/test-results/`.
 
+## Reading the code
+- Start from `scripts/code-map <module>` (files, declarations and line numbers; `--grep NAME` for one name) instead of `find` and `ls -R`.
+- Search with the Grep tool, or `grep -n` on a path with a pattern narrow enough to give a screen of lines; never `grep -r` for a bare common word (`plan`, `bank`) over the whole tree.
+- Read the lines you need (Read with offset and limit, or `sed -n 'a,bp'`), not whole files over a few hundred lines; do not read again what is already in the conversation.
+
 ## Branch and pull request
 You work on one issue (or one slice of it) in the git worktree the caller started you in, never in the main checkout.
 - Branch: `issue-<n>-<short-slug>` (or the branch the caller names), created from the worktree's HEAD.

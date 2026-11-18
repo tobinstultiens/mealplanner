@@ -317,6 +317,25 @@ Baseline of 2026-11-16 (189 sub-agent runs of one long session, issue #172):
 Of the text the tools returned, 40% was files read or searched through the shell, 24% the Read
 tool, 12% `gh`.
 
+### A map of the code for the agents
+
+`scripts/code-map` (Python 3, nothing to install) prints a map of the checked-out tree, so it is
+never stale and never committed: per module and source set the Kotlin files with their line
+counts and, under each, its top-level declarations (and the public and internal functions of a
+class) with line number and the first sentence of the KDoc; for `.sq` files the tables and the
+queries; of the migrations only the newest number. The agents' briefs tell them to start from it
+instead of `find` and `grep -r`. Declarations are found with regular expressions, not a parser:
+those inside strings and comments, private and nested ones, and `override` members are left out.
+
+```
+scripts/code-map                        # every file with its line count (under 200 lines)
+scripts/code-map server                 # declarations of a module, or of a path inside one
+scripts/code-map --files shared         # files and line counts only
+scripts/code-map --grep recipeBank      # declarations whose name contains this, with file and line
+scripts/code-map --tests composeApp     # include the test sources, left out by default
+scripts/code-map --self-test            # on made-up sources
+```
+
 ## Releases
 
 Releases are made by hand, not on every commit: Actions → **Release** → Run workflow, on `main`.
