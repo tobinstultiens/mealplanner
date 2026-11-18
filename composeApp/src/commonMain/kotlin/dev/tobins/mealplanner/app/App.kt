@@ -40,7 +40,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.text.TextAutoSize
 
 /**
  * Root of the app: five tabs (Today, Plan, Shopping, Recipes, Progress) and the
@@ -458,11 +457,13 @@ enum class Tab(val slug: String, val label: Msg, val icon: ImageVector, val sele
 private fun NavigationLabel(text: String) {
     val density = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, MaxLabelFontScale))) {
-        val style = MaterialTheme.typography.labelSmall
-        // A longer word ("Boodschappen") shrinks to fit its tab instead of being cut off.
-        Text(text, maxLines = 1, softWrap = false, style = style, autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = style.fontSize))
+        // All five share one size, a little under the theme's, and without letter spacing, so the longest word ("Boodschappen") fits its tab whole.
+        Text(text, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall.copy(fontSize = LabelFontSize, letterSpacing = 0.sp))
     }
 }
+
+/** The size of the bottom bar labels before the font scale: "Boodschappen" in Dutch is the widest. */
+private val LabelFontSize = 10.sp
 
 /** The font scale at which "Progress" still clears its tab's edges on a 360 dp wide screen. */
 private const val MaxLabelFontScale = 1.15f
