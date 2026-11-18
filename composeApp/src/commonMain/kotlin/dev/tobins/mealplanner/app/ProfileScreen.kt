@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.Sex
@@ -47,9 +48,17 @@ private fun ActivityLevel.msg() = when (this) {
     ActivityLevel.ACTIVE -> Msg.ACTIVITY_ACTIVE
 }
 
+private fun PlanPriority.msg() = when (this) {
+    PlanPriority.BALANCED -> Msg.PRIORITY_BALANCED
+    PlanPriority.PROTEIN -> Msg.PRIORITY_PROTEIN
+    PlanPriority.FIBRE -> Msg.PRIORITY_FIBRE
+    PlanPriority.PRICE -> Msg.PRIORITY_PRICE
+}
+
 /**
  * The fields of the profile form as typed, so that they can be compared with what was loaded
- * and kept over a re-created activity. The defaults are the empty form of an account without a profile.
+ * and kept over a re-created activity. The defaults are a blank form, which is never shown: the form
+ * is filled when the profile has loaded ([of]).
  */
 private data class ProfileForm(
     val weight: String = "",
@@ -57,16 +66,21 @@ private data class ProfileForm(
     val age: String = "",
     val sex: Sex = Sex.MALE,
     val activity: ActivityLevel = ActivityLevel.LIGHT,
-    val goal: String = "0.5",
+    val goal: String = "",
     val kcalOverride: String = "",
     val proteinOverride: String = "",
     val likes: String = "",
     val dislikes: String = "",
-    val minPortions: String = "0.75",
-    val maxPortions: String = "1.5",
+    val minPortions: String = "",
+    val maxPortions: String = "",
+    val priority: PlanPriority = PlanPriority.BALANCED,
+    val fibreOverride: String = "",
 ) {
     companion object {
-        /** The form showing [profile], or the empty form for none. */
+        /**
+         * The form showing [profile]; for none, the empty form of an account without a profile, which
+         * starts from the defaults. Numbers are written as [locale] writes them: 0,75 in Dutch.
+         */
         fun of(profile: Profile?, locale: FormatLocale): ProfileForm = profile?.let {
             ProfileForm(
                 weight = formatAmount(it.weightKg, locale),
@@ -81,14 +95,24 @@ private data class ProfileForm(
                 dislikes = it.dislikes.joinToString(", "),
                 minPortions = formatAmount(it.minPortions, locale),
                 maxPortions = formatAmount(it.maxPortions, locale),
+                priority = it.priority,
+                fibreOverride = it.fibreOverrideG?.toString().orEmpty(),
             )
-        } ?: ProfileForm()
+        } ?: ProfileForm(
+            goal = formatAmount(Profile.DEFAULT_GOAL_KG_PER_WEEK, locale),
+            minPortions = formatAmount(PortionRange.DEFAULT_MIN, locale),
+            maxPortions = formatAmount(PortionRange.DEFAULT_MAX, locale),
+        )
 
-        private fun ProfileForm.fields() =
-            listOf(weight, height, age, sex.name, activity.name, goal, kcalOverride, proteinOverride, likes, dislikes, minPortions, maxPortions)
+        private fun ProfileForm.fields() = listOf(
+            weight, height, age, sex.name, activity.name, goal, kcalOverride, proteinOverride, likes, dislikes, minPortions, maxPortions,
+            priority.name, fibreOverride,
+        )
 
-        private fun fromFields(v: List<String>) =
-            ProfileForm(v[0], v[1], v[2], Sex.valueOf(v[3]), ActivityLevel.valueOf(v[4]), v[5], v[6], v[7], v[8], v[9], v[10], v[11])
+        private fun fromFields(v: List<String>) = ProfileForm(
+            v[0], v[1], v[2], Sex.valueOf(v[3]), ActivityLevel.valueOf(v[4]), v[5], v[6], v[7], v[8], v[9], v[10], v[11],
+            PlanPriority.valueOf(v[12]), v[13],
+        )
 
         val Saver = listSaver<ProfileForm, String>(save = { it.fields() }, restore = ::fromFields)
 
@@ -129,8 +153,7 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
     val leave = UnsavedChangesGuard(unsaved, onBack)
 
     fun number(text: String) = text.trim().replace(',', '.').toDoubleOrNull()
-    val overridesValid = (form.kcalOverride.isBlank() || form.kcalOverride.trim().toIntOrNull() != null) &&
-        (form.proteinOverride.isBlank() || form.proteinOverride.trim().toIntOrNull() != null)
+    val overridesValid = listOf(form.kcalOverride, form.proteinOverride, form.fibreOverride).all { it.isBlank() || it.trim().toIntOrNull() != null }
     val draft = run {
         val w = number(form.weight) ?: return@run null
         val h = number(form.height) ?: return@run null
@@ -138,7 +161,10 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
         val g = number(form.goal) ?: return@run null
         if (!overridesValid) return@run null
         fun words(text: String) = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-        Profile(w, h, a, form.sex, form.activity, g, form.kcalOverride.trim().toIntOrNull(), form.proteinOverride.trim().toIntOrNull(), words(form.likes), words(form.dislikes))
+        Profile(
+            w, h, a, form.sex, form.activity, g, form.kcalOverride.trim().toIntOrNull(), form.proteinOverride.trim().toIntOrNull(),
+            words(form.likes), words(form.dislikes), priority = form.priority, fibreOverrideG = form.fibreOverride.trim().toIntOrNull(),
+        )
     }
     val problems = draft?.let(TargetCalculator::problems)
     // Apart from the draft, so that a range being typed does not hide the targets.
@@ -182,9 +208,12 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                             !problems.isNullOrEmpty() -> Text(problems.joinToString("\n") { t.profileProblem(it) }, color = MaterialTheme.colorScheme.error)
                             else -> {
                                 val targets = TargetCalculator.targets(draft)
-                                Text(t(Msg.KCAL_PROTEIN, targets.kcal, targets.proteinG), style = MaterialTheme.typography.titleLarge.numeric())
                                 Text(
-                                    TargetCalculator.suggest(draft).let { t(Msg.MAINTENANCE, TargetCalculator.maintenanceKcal(draft), it.kcal, it.proteinG) },
+                                    macrosText(targets.kcal.toDouble(), targets.proteinG.toDouble(), targets.fibreG?.toDouble(), t),
+                                    style = MaterialTheme.typography.titleLarge.numeric(),
+                                )
+                                Text(
+                                    TargetCalculator.suggest(draft).let { t(Msg.MAINTENANCE, TargetCalculator.maintenanceKcal(draft), it.kcal, it.proteinG, it.fibreG) },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -195,6 +224,15 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                 Text(t(Msg.OWN_TARGETS), style = MaterialTheme.typography.labelLarge)
                 NumberField(t(Msg.CALORIES_PER_DAY), form.kcalOverride, decimal = false) { form = form.copy(kcalOverride = it) }
                 NumberField(t(Msg.PROTEIN_PER_DAY), form.proteinOverride, decimal = false) { form = form.copy(proteinOverride = it) }
+                NumberField(t(Msg.FIBRE_PER_DAY), form.fibreOverride, decimal = false) { form = form.copy(fibreOverride = it) }
+
+                Text(t(Msg.PRIORITY), style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                    PlanPriority.entries.forEach { priority ->
+                        FilterChip(selected = form.priority == priority, onClick = { form = form.copy(priority = priority) }, label = { Text(t(priority.msg())) })
+                    }
+                }
+                Text(t(Msg.PRIORITY_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 Text(t(Msg.PORTION_PER_MEAL), style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {

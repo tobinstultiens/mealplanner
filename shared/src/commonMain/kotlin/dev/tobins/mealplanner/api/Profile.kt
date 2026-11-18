@@ -13,6 +13,13 @@ enum class ActivityLevel(val factor: Double) {
     ACTIVE(1.725),
 }
 
+/**
+ * What the planner weighs most when it chooses between recipes that fit the day about equally well.
+ * Each raises one part of the planner's score and lowers none: protein and fibre always count at least
+ * as much as under [BALANCED], and calorie fit and variety are never changed by it.
+ */
+enum class PlanPriority { BALANCED, PROTEIN, FIBRE, PRICE }
+
 /** What the daily targets are derived from. */
 @Serializable
 data class Profile(
@@ -22,7 +29,7 @@ data class Profile(
     val sex: Sex,
     val activity: ActivityLevel,
     /** Intended weight loss per week; 0 maintains weight. */
-    val goalKgPerWeek: Double = 0.5,
+    val goalKgPerWeek: Double = DEFAULT_GOAL_KG_PER_WEEK,
     /** Set to use a fixed calorie target instead of the suggested one. */
     val kcalOverride: Int? = null,
     /** Set to use a fixed protein target instead of the suggested one. */
@@ -38,10 +45,28 @@ data class Profile(
      */
     val minPortions: Double = PortionRange.DEFAULT_MIN,
     val maxPortions: Double = PortionRange.DEFAULT_MAX,
-)
+    /**
+     * What the planner weighs most (issue 223). An app from before it saves a profile without it, which
+     * keeps the stored priority. An app that does not know a later value reads it as the default and
+     * would save that back, so a new value waits for an app release (README, "API compatibility").
+     */
+    val priority: PlanPriority = PlanPriority.BALANCED,
+    /** Set to use a fixed fibre target instead of the suggested one; kept like [priority] by an older app. */
+    val fibreOverrideG: Int? = null,
+) {
+    companion object {
+        /** The weight loss a new profile starts from, which the profile form shows before anything is saved. */
+        const val DEFAULT_GOAL_KG_PER_WEEK = 0.5
+    }
+}
 
 @Serializable
-data class DailyTargets(val kcal: Int, val proteinG: Int)
+data class DailyTargets(
+    val kcal: Int,
+    val proteinG: Int,
+    /** Grams of fibre a day; null from a server before fibre counted, and then the planner leaves fibre out. */
+    val fibreG: Int? = null,
+)
 
 /** Response of `GET /api/profile`. All fields are null until a profile is saved. */
 @Serializable

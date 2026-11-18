@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.planner
 
 import dev.tobins.mealplanner.api.DailyTargets
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.PlannedMeal
 import kotlin.math.abs
 import kotlin.random.Random
@@ -23,6 +24,8 @@ data class PlanCandidate(
     val costPerServing: Double? = null,
     /** 1 to 5, or null when not rated (counted as an average 3). */
     val rating: Int? = null,
+    /** Grams of fibre per serving. A food without a fibre value counts as none; the recipe is still planned. */
+    val fibreG: Double = 0.0,
 )
 
 data class PlanRequest(
@@ -39,6 +42,8 @@ data class PlanRequest(
     val routines: Map<MealSlot, Long> = emptyMap(),
     /** How large a meal may be: the profile's range. */
     val portions: PortionRange = PortionRange(),
+    /** What the profile has the planner weigh most ([WeekPlanner]'s score). */
+    val priority: PlanPriority = PlanPriority.BALANCED,
     /** Same seed, same plan. */
     val seed: Long = 0,
 ) {
@@ -51,7 +56,7 @@ data class PlanRequest(
 
 /**
  * Fills a week of meals so that each day lands near the calorie target and reaches
- * the protein target where the recipes allow it.
+ * the protein and fibre targets where the recipes allow it.
  *
  * - Breakfast and snack are routines: one choice, repeated all week. A pinned routine
  *   is used as long as it is plannable; otherwise the planner chooses.
@@ -134,7 +139,12 @@ object WeekPlanner {
         )
     }
 
-    /** Higher is better. The weights are judgement calls, tuned so calorie fit and variety dominate. */
+    /**
+     * Higher is better. The weights are judgement calls, tuned so calorie fit and variety dominate.
+     * The request's [PlanPriority] raises the weight of protein, fibre or price ([Weights]); calorie fit
+     * and the penalties for repeats are the same under every priority, so that none plans days far off
+     * the calorie target or the same dinner all week.
+     */
     private fun score(
         candidate: PlanCandidate,
         slot: MealSlot,
@@ -147,15 +157,46 @@ object WeekPlanner {
         val portions = portionsFor(candidate, slot, request.targets, request.portions)
         val calorieFit = 1 - (abs(candidate.kcal * portions - budget) / budget).coerceAtMost(1.0)
         val proteinFit = (candidate.proteinG * portions / (request.targets.proteinG * slot.share)).coerceAtMost(1.5)
+        val weights = Weights.of(request.priority)
         return 2.0 * calorieFit +
-            2.0 * proteinFit +
+            weights.protein * proteinFit +
+            weights.fibre * fibreFit(candidate, slot, portions, request.targets) +
             0.5 * candidate.onHandCount.coerceAtMost(3) +
-            savings(candidate, request) +
+            weights.savings * savings(candidate, request) +
             0.4 * ((candidate.rating ?: 3) - 3) -
             3.0 * uses -
             (if (sameTagAsYesterday) 0.5 else 0.0) -
             (if (candidate.recipeId in request.recent) 1.0 else 0.0) +
             0.3 * jitter
+    }
+
+    /**
+     * How far [portions] of [candidate] go towards [slot]'s share of the fibre target, as protein's fit
+     * does: capped at 1.5, so that fibre beyond one and a half times the meal's share adds nothing. Without
+     * a fibre target (targets from before fibre counted) fibre does not count.
+     */
+    private fun fibreFit(candidate: PlanCandidate, slot: MealSlot, portions: Double, targets: DailyTargets): Double {
+        val target = targets.fibreG?.takeIf { it > 0 } ?: return 0.0
+        return (candidate.fibreG * portions / (target * slot.share)).coerceAtMost(1.5)
+    }
+
+    /**
+     * How much protein fit, fibre fit and [savings] count in [score] (issue 223). A priority raises its
+     * own weight and lowers none, so that a price plan still prefers the higher-protein, higher-fibre
+     * recipe among equally cheap ones.
+     */
+    private data class Weights(val protein: Double, val fibre: Double, val savings: Double) {
+        companion object {
+            private val BALANCED = Weights(protein = 2.0, fibre = 1.0, savings = 1.0)
+
+            fun of(priority: PlanPriority): Weights = when (priority) {
+                PlanPriority.BALANCED -> BALANCED
+                PlanPriority.PROTEIN -> BALANCED.copy(protein = 3.0)
+                PlanPriority.FIBRE -> BALANCED.copy(fibre = 2.0)
+                // What a meal's price adds or takes off goes from +0.6 to -1.2 to +1.2 to -2.4.
+                PlanPriority.PRICE -> BALANCED.copy(savings = 2.0)
+            }
+        }
     }
 
     /**
@@ -213,6 +254,7 @@ object WeekPlanner {
             kcal = candidate.kcal * portions,
             proteinG = candidate.proteinG * portions,
             leftover = leftover,
+            fibreG = candidate.fibreG * portions,
         )
     }
 }

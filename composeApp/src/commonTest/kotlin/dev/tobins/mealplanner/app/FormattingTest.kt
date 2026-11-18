@@ -147,7 +147,7 @@ class FormattingTest {
         assertEquals("1,5", formatAmount(1.5, nl))
         assertEquals("1,25 kg", item(1250.0).quantityText(nl))
         assertEquals("AH: €3,49 (was €4,59)", offer("VOOR 3.49", 3.49, 4.59).shortText(germanFormats))
-        assertEquals("1,75 servings · 461 kcal · 46 g protein", meal(1.75).macrosText(germanFormats))
+        assertEquals("1,75 servings · 461 kcal · 46 g protein", meal(1.75).macrosText(germanFormats).plain())
     }
 
     @Test
@@ -165,20 +165,39 @@ class FormattingTest {
 
     @Test
     fun mealNumbersAreServingsKcalAndProtein() {
-        assertEquals("1 serving · 461 kcal · 46 g protein", meal(1.0).macrosText(Strings.English))
-        assertEquals("1.5 servings · 461 kcal · 46 g protein", meal(1.5).macrosText(Strings.English))
+        assertEquals("1 serving · 461 kcal · 46 g protein", meal(1.0).macrosText(Strings.English).plain())
+        assertEquals("1.5 servings · 461 kcal · 46 g protein", meal(1.5).macrosText(Strings.English).plain())
+    }
+
+    @Test
+    fun fibreFollowsProteinWhenItIsKnown() {
+        val withFibre = meal(1.0).copy(fibreG = 7.6)
+        assertEquals("1 serving · 461 kcal · 46 g protein · 8 g fibre", withFibre.macrosText(Strings.English).plain())
+        assertEquals("461 kcal · 46 g eiwit · 8 g vezels", withFibre.macrosText(Strings.Dutch).substringAfter(" · ").plain())
+        // A recipe row shows a serving's fibre; a recipe's page shows it with the other nutrients instead.
+        val stew = nutrition(complete = true, fibre = 9.4)
+        assertEquals("387 kcal · 43 g protein · 9 g fibre", recipe(stew).rowText(Strings.English).nutrition?.plain())
+        assertEquals("387 kcal · 43 g eiwit · 9 g vezels", recipe(stew).rowText(Strings.Dutch).nutrition?.plain())
+        assertEquals("387 kcal · 43 g protein", stew.headline(Strings.English).plain())
+    }
+
+    @Test
+    fun aNarrowScreenBreaksTheNumbersBetweenPartsOnly() {
+        val text = meal(1.75).copy(fibreG = 7.6).macrosText(Strings.Dutch)
+        assertEquals(listOf("1,75\u00A0porties", "461\u00A0kcal", "46\u00A0g\u00A0eiwit", "8\u00A0g\u00A0vezels"), text.split(" · "))
+        assertEquals("Dagdoel:\u00A02100\u00A0kcal · 130\u00A0g\u00A0eiwit", unbrokenParts("Dagdoel: 2100 kcal · 130 g eiwit"))
     }
 
     @Test
     fun aRecipeRowKeepsNutritionAndCostApart() {
         val full = recipe(nutrition = nutrition(complete = true), cost = RecipeCost(3.0, 2.1)).rowText(Strings.English)
-        assertEquals("387 kcal · 43 g protein", full.nutrition)
+        assertEquals("387 kcal · 43 g protein", full.nutrition?.plain())
         assertEquals("≈ €2.10", full.cost)
         assertEquals("4 servings · ★★★★ · vegan · quick", full.details)
         assertNull(full.warning)
 
         val missing = recipe(nutrition = nutrition(complete = true, unquantified = listOf("chicken")), cost = null).rowText(Strings.English)
-        assertEquals("387 kcal · 43 g protein", missing.nutrition)
+        assertEquals("387 kcal · 43 g protein", missing.nutrition?.plain())
         assertNull(missing.cost)
         assertEquals("Missing amounts", missing.warning)
 
@@ -191,6 +210,9 @@ class FormattingTest {
         assertEquals("1 serving", none.details)
     }
 
+    /** The text with its non-breaking spaces ([unbrokenParts]) as plain ones, to compare it with what a reader sees. */
+    private fun String.plain() = replace('\u00A0', ' ')
+
     private fun item(grams: Double) =
         dev.tobins.mealplanner.api.ShoppingItem("k", "x", grams, null, "c", emptyList(), onHand = false, checked = false)
 
@@ -199,9 +221,9 @@ class FormattingTest {
 
     private fun meal(portions: Double) = PlannedMeal(0, MealSlot.DINNER, 1, "Stew", portions, 461.2, 45.6)
 
-    private fun nutrition(complete: Boolean, uncounted: List<String> = emptyList(), unquantified: List<String> = emptyList()) =
+    private fun nutrition(complete: Boolean, uncounted: List<String> = emptyList(), unquantified: List<String> = emptyList(), fibre: Double? = null) =
         RecipeNutrition(
-            Nutrition(387.2, 42.6, null, null, null, null, null, null),
+            Nutrition(387.2, 42.6, null, null, null, null, fibre, null),
             complete = complete,
             approximate = false,
             uncounted = uncounted,

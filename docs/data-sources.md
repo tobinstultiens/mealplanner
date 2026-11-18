@@ -162,7 +162,7 @@ best offer per ingredient in the plan's week applies: the one with the lowest sh
 the amount needed, whatever the pack size); offers without a share come after those, one that states a
 price before one with only a deal text, then the server's order (`shopping/BestOffer.kt`, one rule
 for the server and the app). The planner then prefers meals whose
-calories cost less than the median (`WeekPlanner.savings`), so offers pull those meals in.
+calories cost less than the median (`WeekPlanner.savings`, twice as strongly under the profile's Price priority), so offers pull those meals in.
 
 Only offers at the stores the account shops at count ("Stores I shop at", an account setting:
 `GET`/`PUT /api/shops`; an account that never chose shops at every store). The plan's and the

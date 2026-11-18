@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.PlanDay
+import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.Store
@@ -258,7 +259,18 @@ class PlanRepository(
         val index = (date.toEpochDay() - start.toEpochDay()).toInt()
         val week = meals(start)
         val holding = holdingStock(start, week)
-        return Triple(start, index, week.filter { it.day == index }.sortedBy { it.slot.ordinal }.map { it.copy(cookPortions = cookPortions(it, week, holding)) })
+        val ofDay = week.filter { it.day == index }.sortedBy { it.slot.ordinal }.map { it.copy(cookPortions = cookPortions(it, week, holding)) }
+        return Triple(start, index, withFibre(ofDay))
+    }
+
+    /**
+     * [meals] with the fibre of their portions ([PlannedMeal.fibreG]) from their recipes' nutrition as it
+     * is now: not stored with the meal, so meals planned before fibre counted have it too. A meal whose
+     * recipe has no amounts any more has none.
+     */
+    private fun withFibre(meals: List<PlannedMeal>): List<PlannedMeal> {
+        val perServing = recipes.fibrePerServing(meals.map { it.recipeId })
+        return meals.map { meal -> meal.copy(fibreG = perServing[meal.recipeId]?.let { it * meal.portions }) }
     }
 
     /**
@@ -312,6 +324,7 @@ class PlanRepository(
         // What was planned the week before counts as recently eaten.
         recent = meals(start.minusDays(DAYS.toLong())).mapTo(HashSet()) { it.recipeId },
         portions = profiles.portions(),
+        priority = profiles.profile()?.priority ?: PlanPriority.BALANCED,
         seed = seed,
     )
 
@@ -333,7 +346,7 @@ class PlanRepository(
         val costs = HashMap<Long, dev.tobins.mealplanner.api.RecipeCost?>()
         val week = meals(start)
         val holding = holdingStock(start, week)
-        val meals = week.map { meal ->
+        val meals = withFibre(week).map { meal ->
             val cost = costs.getOrPut(meal.recipeId) { recipes.cost(meal.recipeId, prices) }
             meal.copy(cost = cost?.let { it.perServingWithOffers * meal.portions }, cookPortions = cookPortions(meal, week, holding))
         }
@@ -345,7 +358,7 @@ class PlanRepository(
             days = (0 until DAYS).map { day ->
                 val ofDay = meals.filter { it.day == day }.sortedBy { it.slot.ordinal }
                 val eaten = ofDay.filter { it.status != MealStatus.SKIPPED }
-                PlanDay(start.plusDays(day.toLong()).toString(), ofDay, eaten.sumOf { it.kcal }, eaten.sumOf { it.proteinG })
+                PlanDay(start.plusDays(day.toLong()).toString(), ofDay, eaten.sumOf { it.kcal }, eaten.sumOf { it.proteinG }, eaten.sumOf { it.fibreG ?: 0.0 })
             },
             emptySlots = MealSlot.entries.filter { slot -> meals.none { it.slot == slot } },
             cost = priced.takeIf { it.isNotEmpty() }?.sumOf { it.cost!! },

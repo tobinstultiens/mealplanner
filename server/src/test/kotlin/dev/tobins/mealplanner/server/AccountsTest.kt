@@ -23,6 +23,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Pantry
+import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RatingInput
@@ -163,6 +164,23 @@ class AccountsTest {
         bob.put("/api/profile") { setBody("""{"weightKg":80.0,"heightCm":180.0,"ageYears":30,"sex":"MALE","activity":"LIGHT"}""") }
         assertEquals(0.5 to 1.0, bob.range())
         assertEquals(1.0 to 2.0, alice.range())
+    }
+
+    @Test
+    fun eachAccountKeepsItsOwnPriorityAndFibreTarget() = testApplication {
+        start()
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val body = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        suspend fun HttpClient.choice() = get("/api/profile").body<ProfileState>().let { it.profile?.priority to it.targets?.fibreG }
+
+        alice.put("/api/profile") { setBody(body.copy(priority = PlanPriority.FIBRE, fibreOverrideG = 45)) }
+        assertEquals(null to null, bob.choice(), "Bob sees no profile, so neither Alice's priority nor her fibre target")
+        // Bob's own choice, and a save without one as an older app sends it, leave Alice's as it is.
+        bob.put("/api/profile") { setBody(body.copy(priority = PlanPriority.PRICE, fibreOverrideG = 20)) }
+        bob.put("/api/profile") { setBody("""{"weightKg":80.0,"heightCm":180.0,"ageYears":30,"sex":"MALE","activity":"LIGHT"}""") }
+        assertEquals(PlanPriority.PRICE to 20, bob.choice())
+        assertEquals(PlanPriority.FIBRE to 45, alice.choice())
     }
 
     @Test

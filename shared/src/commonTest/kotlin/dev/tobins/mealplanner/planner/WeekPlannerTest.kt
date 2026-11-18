@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.MealSlot.BREAKFAST
 import dev.tobins.mealplanner.api.MealSlot.DINNER
 import dev.tobins.mealplanner.api.MealSlot.LUNCH
 import dev.tobins.mealplanner.api.MealSlot.SNACK
+import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.PlannedMeal
 import kotlin.math.abs
 import kotlin.test.Test
@@ -13,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 class WeekPlannerTest {
     private val targets = DailyTargets(kcal = 2000, proteinG = 150)
@@ -314,6 +316,83 @@ class WeekPlannerTest {
         val recipes = listOf(candidate(2, BREAKFAST, 180.0, 12.0, servings = 1), candidate(10, DINNER, 650.0, 50.0))
         val plan = WeekPlanner.plan(PlanRequest(targets, recipes))
         assertEquals(List(7) { 2.0 }, plan.filter { it.slot == BREAKFAST }.map { it.portions })
+    }
+
+    // --- Fibre and the profile's priority (issue 223)
+
+    /** 600 kcal, 45 g protein and 9 g fibre for lunch: the share of these targets a 600 kcal serving fills exactly. */
+    private val withFibre = DailyTargets(kcal = 2000, proteinG = 150, fibreG = 30)
+
+    /** A four-serving dinner of 600 kcal a serving, by default with nothing that pulls it forward or back. */
+    private fun dish(id: Long, protein: Double = 30.0, fibre: Double = 0.0, kcal: Double = 600.0) =
+        PlanCandidate(id, "Recipe $id", setOf(DINNER), 4, kcal, protein, listOf("T$id"), fibreG = fibre)
+
+    /**
+     * The first recipe the planner picks among [recipes] under [priority], whatever the seed: the first
+     * day's lunch, cooked from a dinner recipe. Every case below wins by more than the random nudge (0.3).
+     */
+    private fun firstPick(recipes: List<PlanCandidate>, priority: PlanPriority = PlanPriority.BALANCED): Long {
+        val picks = (0L until 20L).map { seed ->
+            WeekPlanner.plan(PlanRequest(withFibre, recipes, days = 1, priority = priority, seed = seed)).at(0, LUNCH).recipeId
+        }
+        return picks.distinct().singleOrNull() ?: fail("$priority: the pick depends on the seed, $picks")
+    }
+
+    @Test
+    fun theHigherFibreOfTwoOtherwiseEqualRecipesIsPicked() {
+        assertEquals(2L, firstPick(listOf(dish(1, fibre = 2.0), dish(2, fibre = 8.0))))
+        assertEquals(2L, firstPick(listOf(dish(2, fibre = 8.0), dish(1, fibre = 2.0))), "not because of the order")
+        // A recipe whose foods have no fibre value counts as none, and is still planned.
+        assertEquals(1L, firstPick(listOf(dish(1, fibre = 0.0))))
+    }
+
+    @Test
+    fun eachPriorityChangesThePickInACaseBuiltForIt() {
+        // Rated higher and using up what is at home (+1.8) against a full share of protein (+2.0, +3.0 under Protein).
+        val protein = listOf(dish(1, protein = 45.0).copy(rating = 1), dish(2, protein = 0.0).copy(rating = 5, onHandCount = 2))
+        assertEquals(2L, firstPick(protein))
+        assertEquals(1L, firstPick(protein, PlanPriority.PROTEIN))
+
+        // The same against fibre at its cap (+1.5, +3.0 under Fibre).
+        val fibre = listOf(dish(1, fibre = 15.0), dish(2).copy(rating = 5, onHandCount = 3))
+        assertEquals(2L, firstPick(fibre))
+        assertEquals(1L, firstPick(fibre, PlanPriority.FIBRE))
+
+        // Twice the typical price (-1.2, -2.4 under Price) against +1.8; the breakfast makes the cheap price the typical one.
+        val price = listOf(
+            dish(1).copy(costPerServing = 1.0),
+            dish(2).copy(costPerServing = 2.0, rating = 5, onHandCount = 2),
+            candidate(3, BREAKFAST, 600.0, 30.0).copy(costPerServing = 1.0),
+        )
+        assertEquals(2L, firstPick(price))
+        assertEquals(1L, firstPick(price, PlanPriority.PRICE))
+    }
+
+    @Test
+    fun amongEquallyCheapRecipesTheHigherProteinAndFibreOneWinsUnderEveryPriority() {
+        val cheap = listOf(
+            dish(1, protein = 30.0, fibre = 3.0).copy(costPerServing = 1.0),
+            dish(2, protein = 45.0, fibre = 9.0).copy(costPerServing = 1.0),
+            dish(3, protein = 45.0, fibre = 9.0).copy(costPerServing = 4.0),
+        )
+        for (priority in PlanPriority.entries) assertEquals(2L, firstPick(cheap, priority), "$priority")
+    }
+
+    @Test
+    fun noPriorityChangesThePickBetweenRecipesThatDifferOnlyInCalorieFit() {
+        // Recipe 2 is too rich to fit: its smallest portion, 0.75, is 750 kcal for a 600 kcal lunch. That
+        // portion has the same protein, fibre and price per kcal as recipe 1's serving.
+        val recipes = listOf(
+            dish(1, protein = 30.0, fibre = 6.0).copy(costPerServing = 1.2),
+            dish(2, protein = 40.0, fibre = 8.0, kcal = 1000.0).copy(costPerServing = 2.0),
+        )
+        for (priority in PlanPriority.entries) assertEquals(1L, firstPick(recipes, priority), "$priority")
+    }
+
+    @Test
+    fun aPlannedMealHasTheFibreOfItsPortions() {
+        val plan = WeekPlanner.plan(PlanRequest(withFibre, listOf(dish(1, fibre = 8.0), dish(2, fibre = 4.0, kcal = 400.0)), days = 1))
+        for (meal in plan) assertEquals(if (meal.recipeId == 1L) 8.0 * meal.portions else 4.0 * meal.portions, meal.fibreG)
     }
 
     /**

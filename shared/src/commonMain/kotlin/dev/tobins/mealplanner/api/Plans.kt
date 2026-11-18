@@ -36,6 +36,13 @@ data class PlannedMeal(
      * Not stored: it follows from the week's meals, and agrees with what the shopping list counts.
      */
     val cookPortions: Double? = null,
+    /**
+     * Grams of fibre in the portions eaten; null from a server before fibre counted (issue 223), and then
+     * the app shows no fibre. Not stored with the meal as [kcal] is: it follows from the recipe's
+     * nutrition as it is now, as [cost] follows from today's prices, so meals planned before fibre
+     * counted have it too.
+     */
+    val fibreG: Double? = null,
 )
 
 /**
@@ -53,6 +60,8 @@ data class PlanDay(
     val meals: List<PlannedMeal>,
     val kcal: Double,
     val proteinG: Double,
+    /** Fibre of the meals not skipped, as [kcal]; null from a server before fibre counted. */
+    val fibreG: Double? = null,
 )
 
 @Serializable

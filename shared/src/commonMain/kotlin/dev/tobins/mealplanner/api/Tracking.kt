@@ -38,6 +38,12 @@ data class DayView(
     /** Everything planned that is not skipped, plus extras: where the day ends if the plan is followed. */
     val expectedKcal: Double,
     val expectedProteinG: Double,
+    /**
+     * Fibre eaten and expected, as the kcal; null from a server before fibre counted. Extras have no
+     * fibre: they are logged with kcal and protein only, so they add nothing here.
+     */
+    val eatenFibreG: Double? = null,
+    val expectedFibreG: Double? = null,
 )
 
 @Serializable

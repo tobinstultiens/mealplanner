@@ -61,6 +61,7 @@ class Strings private constructor(val language: Language, val locale: FormatLoca
         "goalKgPerWeek" -> Msg.GOAL
         "kcalOverride" -> Msg.CALORIES_PER_DAY
         "proteinOverrideG" -> Msg.PROTEIN_PER_DAY
+        "fibreOverrideG" -> Msg.FIBRE_PER_DAY
         "minPortions" -> Msg.SMALLEST_PORTION
         "maxPortions" -> Msg.LARGEST_PORTION
         else -> null
