@@ -164,11 +164,12 @@ portion takes from open packs, times 0.75, so that a dinner that uses up half a 
 dinner opened is preferred on Wednesday. The planner stays greedy: Monday is not chosen because Thursday
 could use its tub. Leftover lunches open nothing and the priorities do not change the term.
 
-Measured on the cooking repo's recipes with AH's prices of 2026-11-19 (`PackRestMeasurementTest`, 50 seeds, 40
-recipes, 53 fresh ingredients with a pack of the 138 the recipes use), the euros of pack rest a week left
-fell from 25.19 to 22.77 and the mean daily calorie error rose from 5.14 % to 5.54 %. A heavier weight
-lowered the rest no further and cost calories: at 2 the error was 6.45 %. Of the 49 fresh ingredients the
-recipes use, 43 have a pack in grams.
+Measured on the cooking repo's recipes with AH's prices of 2026-11-19 (`PackRestMeasurementTest`: 50 seeds, 40
+recipes in the rotation, 53 fresh ingredients with a pack), the euros of pack rest a week left fell from 25.19 to
+22.77 and the mean daily calorie error rose from 5.14 % to 5.54 %. A heavier weight lowered the rest no further
+and cost calories: at 2 the error was 6.45 %. Before the term was built, the fresh ingredients the 80 recipes of
+the cooking repo use were counted: 43 of 49 have a pack in grams, the other six (chili pepper, egg yolk, lettuce,
+spring onion, sweetcorn, Swiss chard) have no price, or no pack size.
 
 With each price the lookup keeps the product's `mainCategory` and `subCategory`; they also give the
 ingredient's shop section (below).
