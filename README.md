@@ -1,6 +1,6 @@
 # Meal planner
 
-Plans a week of cheap, healthy, high-protein meals around calorie and protein targets,
+Plans a week of cheap, healthy, high-protein meals around calorie, protein and fibre targets,
 using weekly offers from AH, Jumbo and Lidl and recipes from the cooking site.
 
 | Module | Contents |
@@ -173,6 +173,33 @@ largest; anything else is a 400. All the rules are in `PortionRange`:
 An app from before the range saves a profile without its two fields; the server keeps the stored range
 then, rather than going back to the defaults.
 
+## Fibre and what the planner weighs most
+
+Fibre counts next to protein (issue 223). The daily targets (`DailyTargets.fibreG`) suggest 14 g of fibre
+per 1000 kcal of what keeps the weight (`TargetCalculator`), not of the lower target when losing it: the
+Gezondheidsraad advises 3.0 to 3.5 g per MJ of the energy requirement (Voedingsnormen 2026, as the
+Voedingscentrum gives it), and 14 g per 1000 kcal is 3.35 g per MJ. The profile can set its own target
+(`Profile.fibreOverrideG`, 10 to 100 g). A recipe's fibre is its NEVO foods' per serving; a food without a
+fibre value counts as none, and the recipe is planned all the same. Extras logged by hand have no fibre.
+
+The planner rewards fibre as it does protein: how far a meal goes towards its slot's share of the target,
+up to 1.5 (`WeekPlanner.score`). `Profile.priority` raises one part of the score and lowers none:
+
+| Priority | Effect |
+|---|---|
+| Balanced (default) | calorie fit ×2, protein fit ×2, fibre fit ×1, price as is (+0.6 to −1.2) |
+| Protein | protein fit ×3 |
+| Fibre | fibre fit ×2 |
+| Price | price doubled (+1.2 to −2.4) |
+
+Calorie fit and the penalties for repeats and recently eaten recipes are the same under every priority.
+The fibre of planned meals (`PlannedMeal.fibreG`), of a plan's days (`PlanDay.fibreG`) and of the day view
+(`DayView.eatenFibreG`, `expectedFibreG`) is not stored: it follows from the recipes' nutrition as it is
+now, as a meal's cost follows from this week's prices, so meals planned before fibre counted have it too.
+All of them are null from a server before fibre counted, and the app then shows no fibre. An app from
+before the priority and the fibre target saves a profile without them; the server keeps the stored ones,
+as it does the portion range. A newer app sends `"fibreOverrideG": null` to take its own target away.
+
 ## Web client
 
 `composeApp` also builds for the browser (`./gradlew :composeApp:wasmJsBrowserDistribution`), and the
@@ -261,7 +288,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today, Plan (also with an empty rotation), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
+Today (also in Dutch), Plan (also in Dutch and with an empty rotation), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed

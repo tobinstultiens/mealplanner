@@ -186,6 +186,16 @@ private fun TotalsCard(day: DayView) {
                     progress = { (day.eatenProteinG / targets.proteinG).toFloat().coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // A server before fibre counted sends neither the target nor the amount: no fibre then.
+                val fibreTarget = targets.fibreG
+                val eatenFibre = day.eatenFibreG
+                if (fibreTarget != null && eatenFibre != null) {
+                    Text(t(Msg.FIBRE_OF, eatenFibre.roundToInt(), fibreTarget), style = MaterialTheme.typography.bodyLarge.numeric())
+                    LinearProgressIndicator(
+                        progress = { (eatenFibre / fibreTarget).toFloat().coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 val difference = (day.expectedKcal - targets.kcal).roundToInt()
                 Text(
                     when {
@@ -196,6 +206,14 @@ private fun TotalsCard(day: DayView) {
                     style = MaterialTheme.typography.bodySmall.numeric(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                val expectedFibre = day.expectedFibreG
+                if (fibreTarget != null && expectedFibre != null) {
+                    Text(
+                        t(Msg.FORECAST_FIBRE, expectedFibre.roundToInt(), fibreTarget),
+                        style = MaterialTheme.typography.bodySmall.numeric(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

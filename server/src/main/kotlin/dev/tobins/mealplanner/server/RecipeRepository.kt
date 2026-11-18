@@ -125,7 +125,21 @@ class RecipeRepository(
             servings = row.servings!!.toInt(),
             kcal = nutrition.perServing.kcal ?: 0.0,
             proteinG = nutrition.perServing.proteinG ?: 0.0,
+            fibreG = nutrition.perServing.fibreG ?: 0.0,
         )
+    }
+
+    /**
+     * Grams of fibre in a serving of each of [recipeIds] as the recipe's nutrition is now, by id; recipes
+     * that are gone or have no amounts are left out. For the fibre of planned meals ([dev.tobins.mealplanner.api.PlannedMeal.fibreG]).
+     */
+    fun fibrePerServing(recipeIds: Collection<Long>): Map<Long, Double> {
+        val resolve = ingredients.resolver()
+        return recipeIds.distinct().mapNotNull { id ->
+            val row = q.selectById(userId, id).executeAsOneOrNull() ?: return@mapNotNull null
+            val nutrition = nutritionOf(row, linesOf(id), resolve) ?: return@mapNotNull null
+            id to (nutrition.perServing.fibreG ?: 0.0)
+        }.toMap()
     }
 
     /**
@@ -161,6 +175,7 @@ class RecipeRepository(
                 servings = row.servings!!.toInt(),
                 kcal = nutrition.perServing.kcal ?: 0.0,
                 proteinG = nutrition.perServing.proteinG ?: 0.0,
+                fibreG = nutrition.perServing.fibreG ?: 0.0,
                 tags = Json.decodeFromString(row.tagsJson),
                 onHandCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onHand },
                 offerCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onOffer },
@@ -402,7 +417,6 @@ class RecipeRepository(
         )
     }
 
-    /** Null when the recipe has no amounts to compute from. */
     /** Cost per serving of one recipe with [prices]; null when it cannot be priced. */
     fun cost(recipeId: Long, prices: Pricing): RecipeCost? {
         val row = q.selectById(userId, recipeId).executeAsOneOrNull() ?: return null
@@ -414,6 +428,7 @@ class RecipeRepository(
         return prices.cost(lines.map { it to resolve(it) }, servings)
     }
 
+    /** Null when the recipe has no amounts to compute from. */
     private fun nutritionOf(row: Recipe, lines: List<IngredientLine>, resolve: (IngredientLine) -> Ingredient?): RecipeNutrition? {
         val servings = row.servings?.toInt() ?: return null
         if (lines.none { it.amount != null }) return null

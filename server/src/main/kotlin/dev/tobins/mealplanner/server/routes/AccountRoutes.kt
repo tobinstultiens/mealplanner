@@ -32,7 +32,7 @@ fun Route.accountRoutes(cooking: CookingSync) {
 
     get("/api/profile") { call.respond(call.user.profiles.state()) }
 
-    // Read as JSON first, to see which fields were sent: an older app's profile has no portion range.
+    // Read as JSON first, to see which fields were sent: an older app's profile has no portion range, priority or fibre target.
     put("/api/profile") {
         val sent = call.receive<JsonObject>()
         call.respond(call.user.profiles.save(DefaultJson.decodeFromJsonElement<Profile>(sent), sent.keys))

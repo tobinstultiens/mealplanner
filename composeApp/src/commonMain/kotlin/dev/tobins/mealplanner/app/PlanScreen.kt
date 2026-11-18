@@ -185,7 +185,12 @@ fun PlanScreen(
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                             Text(
-                                t(Msg.DAILY_TARGET, plan.targets.kcal, plan.targets.proteinG),
+                                plan.targets.let { targets ->
+                                    unbrokenParts(
+                                        targets.fibreG?.let { t(Msg.DAILY_TARGET_FIBRE, targets.kcal, targets.proteinG, it) }
+                                            ?: t(Msg.DAILY_TARGET, targets.kcal, targets.proteinG),
+                                    )
+                                },
                                 style = MaterialTheme.typography.bodyMedium.numeric(),
                             )
                             plan.cost?.let { cost ->
@@ -269,10 +274,7 @@ private fun DayCard(
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             Text(dayLabel(day.date, t.locale), style = MaterialTheme.typography.titleMedium)
-            Text(
-                t(Msg.DAY_TOTALS, day.kcal.roundToInt(), targets.kcal, day.proteinG.roundToInt(), targets.proteinG),
-                style = MaterialTheme.typography.bodyMedium.numeric(),
-            )
+            Text(dayTotals(day, targets, t), style = MaterialTheme.typography.bodyMedium.numeric())
             LinearProgressIndicator(
                 progress = { (day.kcal / targets.kcal).toFloat().coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
@@ -342,4 +344,16 @@ private fun DayCard(
             }
         }
     }
+}
+
+/** A day's kcal and protein against the targets, and its fibre when the server sends fibre and its target. */
+private fun dayTotals(day: PlanDay, targets: DailyTargets, t: Strings): String {
+    val kcal = day.kcal.roundToInt()
+    val protein = day.proteinG.roundToInt()
+    val fibre = day.fibreG
+    val fibreTarget = targets.fibreG
+    return unbrokenParts(
+        if (fibre == null || fibreTarget == null) t(Msg.DAY_TOTALS, kcal, targets.kcal, protein, targets.proteinG)
+        else t(Msg.DAY_TOTALS_FIBRE, kcal, targets.kcal, protein, targets.proteinG, fibre.roundToInt(), fibreTarget),
+    )
 }

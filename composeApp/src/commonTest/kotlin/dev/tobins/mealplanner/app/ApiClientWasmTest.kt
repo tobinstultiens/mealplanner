@@ -155,7 +155,7 @@ class ApiClientWasmTest {
                 """PUT /api/mappings {"text":"ui","ingredientId":1,"nevoCode":null,"name":null,"gramsPerPiece":null,"gramsPerMl":null}""",
                 """PUT /api/ingredients/1/section {"section":"Veg"}""",
                 """PUT /api/ingredients/1/keeps {"keeps":true}""",
-                """PUT /api/profile {"weightKg":80.0,"heightCm":180.0,"ageYears":30,"sex":"MALE","activity":"LIGHT","goalKgPerWeek":0.5,"kcalOverride":null,"proteinOverrideG":null,"likes":[],"dislikes":[],"minPortions":0.75,"maxPortions":1.5}""",
+                """PUT /api/profile {"weightKg":80.0,"heightCm":180.0,"ageYears":30,"sex":"MALE","activity":"LIGHT","goalKgPerWeek":0.5,"kcalOverride":null,"proteinOverrideG":null,"likes":[],"dislikes":[],"minPortions":0.75,"maxPortions":1.5,"priority":"BALANCED","fibreOverrideG":null}""",
                 """PUT /api/shops {"stores":["AH"]}""",
                 """PUT /api/plans/2026-11-16/meals/1/DINNER {"recipeId":12}""",
             ),

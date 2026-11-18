@@ -259,12 +259,12 @@ class CatalogueTest {
 
         val profile = Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, goalKgPerWeek = 0.5)
         val saved = http.put("/api/profile") { setBody(profile) }.body<ProfileState>()
-        assertEquals(DailyTargets(2040, 160), saved.targets)
+        assertEquals(DailyTargets(2040, 160, 36), saved.targets)
         assertEquals(2585, saved.maintenanceKcal)
 
         val overridden = http.put("/api/profile") { setBody(profile.copy(kcalOverride = 1900)) }.body<ProfileState>()
-        assertEquals(DailyTargets(1900, 160), overridden.targets)
-        assertEquals(DailyTargets(2040, 160), overridden.suggested)
+        assertEquals(DailyTargets(1900, 160, 36), overridden.targets, "fibre follows what keeps the weight, not the calorie target")
+        assertEquals(DailyTargets(2040, 160, 36), overridden.suggested)
         assertEquals(overridden, http.get("/api/profile").body<ProfileState>())
 
         assertEquals(HttpStatusCode.BadRequest, http.put("/api/profile") { setBody(profile.copy(weightKg = 5.0)) }.status)

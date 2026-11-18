@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.planner.PortionRange
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.targets.TargetCalculator
 import kotlinx.serialization.json.Json
+import kotlin.reflect.KProperty1
 
 /** One account's profile, stored as one JSON value. */
 class ProfileRepository(private val db: Database, private val userId: Long) {
@@ -39,15 +40,20 @@ class ProfileRepository(private val db: Database, private val userId: Long) {
 
     /**
      * Saves [profile] as `PUT /api/profile` sent it, [sent] being the fields its body had. An app from
-     * before the portion range (issue 227) sends neither of the range's fields: the stored range is kept
-     * rather than reset to the defaults, as such an app neither shows the range nor means to change it.
+     * before a field sends a profile without it: the stored value is kept rather than reset to the
+     * default, as such an app neither shows the field nor means to change it. So are the portion range
+     * (issue 227), the priority and the fibre target (issue 223). An app that knows the fibre target
+     * sends it as null to have none.
      */
     fun save(profile: Profile, sent: Set<String>): ProfileState = db.writing {
         val stored = profile()
+        fun <T> kept(field: KProperty1<Profile, T>): T = field.get(if (field.name in sent || stored == null) profile else stored)
         save(
             profile.copy(
-                minPortions = if (Profile::minPortions.name in sent) profile.minPortions else stored?.minPortions ?: profile.minPortions,
-                maxPortions = if (Profile::maxPortions.name in sent) profile.maxPortions else stored?.maxPortions ?: profile.maxPortions,
+                minPortions = kept(Profile::minPortions),
+                maxPortions = kept(Profile::maxPortions),
+                priority = kept(Profile::priority),
+                fibreOverrideG = kept(Profile::fibreOverrideG),
             ),
         )
     }

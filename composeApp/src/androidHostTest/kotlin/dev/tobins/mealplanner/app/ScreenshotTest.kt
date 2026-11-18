@@ -44,6 +44,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -89,10 +90,10 @@ private fun shopping(api: ApiClient, shoppingMode: Boolean, view: ShoppingView =
     ShoppingScreen(session, storage, remember { AccountShops(storage, { shops?.let { ShopsSetting(it.toList()) } ?: api.shops() }, { it }) }, {}, {})
 }
 
-/** A saved profile with a portion range other than the defaults, for the profile screen. */
+/** A saved profile with a portion range, a priority and a fibre target other than the defaults, for the profile screen. */
 private val sampleProfile = Profile(
     82.5, 180.0, 40, Sex.MALE, ActivityLevel.LIGHT, likes = listOf("Korean", "spicy"), dislikes = listOf("mushroom"),
-    minPortions = 1.0, maxPortions = 1.75,
+    minPortions = 1.0, maxPortions = 1.75, priority = PlanPriority.FIBRE, fibreOverrideG = 35,
 )
 
 /** Controls of three kinds; the test gives the one tagged [FOCUSED] keyboard focus, to see the ring on each. */
@@ -182,6 +183,9 @@ enum class Shot(
 ) {
     TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     PLAN(heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // Fibre next to kcal and protein in Dutch, where the totals are longest (#223).
+    TODAY_NL(dutch = true, heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    PLAN_NL(dutch = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     // No recipe of mine is in the rotation, so the week stays empty and says why, with a way to the Recipes tab.
     PLAN_EMPTY_ROTATION(emptyWeek = true, emptyRecipes = true, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     RECIPE_PICKER(heightDp = 1300, content = { api, _ -> recipePicker(api) }),
@@ -235,7 +239,7 @@ enum class Shot(
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
-    // The profile with a portion range of its own, in both languages: the range's fields side by side.
+    // The profile with a portion range, a priority and a fibre target of its own, in both languages: the range's fields side by side.
     PROFILE(heightDp = 1800, profile = sampleProfile, content = { api, _ -> ProfileScreen(api, {}) }),
     PROFILE_NL(dutch = true, heightDp = 1800, profile = sampleProfile, content = { api, _ -> ProfileScreen(api, {}) }),
     // Going back from the profile or the recipe editor with unsaved changes: the dialog's body, as a dialog is a window of its own.

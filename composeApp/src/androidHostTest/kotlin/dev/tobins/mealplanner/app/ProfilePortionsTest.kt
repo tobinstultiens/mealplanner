@@ -59,6 +59,15 @@ class ProfilePortionsTest {
     }
 
     @Test
+    fun anAccountWithoutAProfileStartsFromTheDefaultsInTheAppsLanguage() {
+        show(Strings.Dutch)
+        waitFor("Portie per maaltijd")
+        compose.onNodeWithText("Van (porties)").assertTextContains("0,75")
+        compose.onNodeWithText("Tot (porties)").assertTextContains("1,5")
+        compose.onNodeWithText("Afvallen per week (kg, 0–1)").assertTextContains("0,5")
+    }
+
+    @Test
     fun aRangeNotInQuartersOrUpsideDownIsExplainedAndNotSaved() {
         backend.profile = stored
         show()

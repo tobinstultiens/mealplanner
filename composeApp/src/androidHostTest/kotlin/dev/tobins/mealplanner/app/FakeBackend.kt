@@ -169,7 +169,7 @@ class FakeBackend(
         }
     }
 
-    private val targets = DailyTargets(2100, 130)
+    private val targets = DailyTargets(2100, 130, 30)
 
     /** The profile the server holds; null for an account that has not saved one. A test may set it before the screen loads. */
     @Volatile
@@ -205,22 +205,22 @@ class FakeBackend(
         onHandWeeks = mapOf(1L to listOf("2026-11-09"), 3L to listOf("2026-11-16", "2026-11-23"), 4L to listOf("2026-11-23"), 6L to listOf("2026-11-16")),
     )
 
-    private fun meal(day: Int, slot: MealSlot, id: Long, title: String, kcal: Double, protein: Double, cost: Double = 2.4) =
-        PlannedMeal(day, slot, id, title, 1.0, kcal, protein, cost = cost)
+    private fun meal(day: Int, slot: MealSlot, id: Long, title: String, kcal: Double, protein: Double, fibre: Double, cost: Double = 2.4) =
+        PlannedMeal(day, slot, id, title, 1.0, kcal, protein, cost = cost, fibreG = fibre)
 
     /** Three meals a day; a title is long on purpose, to show how rows cope. */
     private fun planDay(index: Int): PlanDay {
         val meals = listOf(
-            meal(index, MealSlot.BREAKFAST, 1, "Overnight oats with blueberries", 460.0, 24.0, cost = 1.1)
+            meal(index, MealSlot.BREAKFAST, 1, "Overnight oats with blueberries", 460.0, 24.0, 8.2, cost = 1.1)
                 .let { if (index == 2) it.copy(status = MealStatus.EATEN) else it },
-            meal(index, MealSlot.LUNCH, 2L + index % 2, if (index % 2 == 0) "Chickpea salad with feta and roasted peppers" else "Tuna pasta salad", 640.0, 42.0),
-            meal(index, MealSlot.DINNER, 4, "Slow-cooked chicken thighs with coconut, lemon and spinach", 810.0, 55.0, cost = 3.9),
+            meal(index, MealSlot.LUNCH, 2L + index % 2, if (index % 2 == 0) "Chickpea salad with feta and roasted peppers" else "Tuna pasta salad", 640.0, 42.0, if (index % 2 == 0) 11.4 else 4.1),
+            meal(index, MealSlot.DINNER, 4, "Slow-cooked chicken thighs with coconut, lemon and spinach", 810.0, 55.0, 5.3, cost = 3.9),
         ).map { meal ->
             when {
                 // Thursday's dinner is left out; Friday's was chosen by the user, with Saturday's lunch its leftovers.
                 index == 3 && meal.slot == MealSlot.DINNER -> meal.copy(status = MealStatus.SKIPPED)
-                index == 4 && meal.slot == MealSlot.DINNER -> meal.copy(recipeId = 5, title = "Lentil soup", locked = true)
-                index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true)
+                index == 4 && meal.slot == MealSlot.DINNER -> meal.copy(recipeId = 5, title = "Lentil soup", locked = true, fibreG = 12.6)
+                index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true, fibreG = 12.6)
                 else -> meal
             }
         }.map { meal ->
@@ -232,13 +232,13 @@ class FakeBackend(
             })
         }
         val counted = meals.filter { it.status != MealStatus.SKIPPED }
-        return PlanDay(plusDays(WEEK_START, index), meals, counted.sumOf { it.kcal }, counted.sumOf { it.proteinG })
+        return PlanDay(plusDays(WEEK_START, index), meals, counted.sumOf { it.kcal }, counted.sumOf { it.proteinG }, counted.sumOf { it.fibreG!! })
     }
 
     private fun plan(weekStart: String) = WeekPlan(
         weekStart = weekStart,
         targets = targets,
-        days = (0..6).map { if (emptyWeek) PlanDay(plusDays(weekStart, it), emptyList(), 0.0, 0.0) else planDay(it) },
+        days = (0..6).map { if (emptyWeek) PlanDay(plusDays(weekStart, it), emptyList(), 0.0, 0.0, 0.0) else planDay(it) },
         emptySlots = if (emptyWeek) MealSlot.entries else emptyList(),
         cost = if (emptyWeek) null else 61.40,
         costWithoutOffers = if (emptyWeek) null else 68.95,
@@ -258,6 +258,9 @@ class FakeBackend(
             eatenProteinG = 29.0,
             expectedKcal = planned.kcal + 210.0,
             expectedProteinG = planned.proteinG + 5.0,
+            // The breakfast was eaten; the extra has no fibre.
+            eatenFibreG = 8.2,
+            expectedFibreG = planned.fibreG,
         )
     }
 

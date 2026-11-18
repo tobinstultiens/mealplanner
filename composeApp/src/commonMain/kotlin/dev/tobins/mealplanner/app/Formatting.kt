@@ -52,11 +52,25 @@ fun IngredientLine.scaled(factor: Double): IngredientLine {
     return copy(amount = rounded, baseAmount = baseAmount?.let { it * rounded / value })
 }
 
-/** `512 kcal · 38 g protein`, prefixed with `~` when a density was assumed. */
-fun RecipeNutrition.headline(strings: Strings): String {
-    val kcal = perServing.kcal?.roundToLong() ?: 0
-    val protein = perServing.proteinG?.roundToLong() ?: 0
-    return (if (approximate) "~" else "") + strings(Msg.KCAL_PROTEIN, kcal, protein)
+/**
+ * Keeps each part of a line of `·`-separated numbers together (non-breaking spaces), so that a narrow
+ * screen breaks the line between parts and never between a number and its unit (`24` / `g protein`).
+ */
+fun unbrokenParts(text: String): String = text.split(" · ").joinToString(" · ") { it.replace(' ', ' ') }
+
+/** `512 kcal · 38 g protein · 9 g fibre` in whole numbers ([unbrokenParts]); without the fibre when it is not known (null). */
+fun macrosText(kcal: Double, proteinG: Double, fibreG: Double?, strings: Strings): String = unbrokenParts(
+    if (fibreG == null) strings(Msg.KCAL_PROTEIN, kcal.roundToLong(), proteinG.roundToLong())
+    else strings(Msg.KCAL_PROTEIN_FIBRE, kcal.roundToLong(), proteinG.roundToLong(), fibreG.roundToLong()),
+)
+
+/**
+ * `512 kcal · 38 g protein`, prefixed with `~` when a density was assumed; [withFibre] adds the fibre,
+ * as recipe rows show it. A recipe's page shows its fibre with the other nutrients instead.
+ */
+fun RecipeNutrition.headline(strings: Strings, withFibre: Boolean = false): String {
+    val fibre = perServing.fibreG.takeIf { withFibre }
+    return (if (approximate) "~" else "") + macrosText(perServing.kcal ?: 0.0, perServing.proteinG ?: 0.0, fibre, strings)
 }
 
 /** Whole grams (`28 g`); below 10 g one decimal (`4.6 g`). A missing value shows as `0 g`. */
@@ -88,9 +102,12 @@ private fun singlePriceDeal(deal: String): Boolean = Regex("(?i)^voor\\s+\\d+[.,
 fun servingsText(portions: Double, strings: Strings): String =
     strings.plural(Plural.SERVINGS_AMOUNT, if (portions == 1.0) 1 else 2, formatAmount(portions, strings.locale))
 
-/** What a planned meal gives, e.g. `1.75 servings · 461 kcal · 46 g protein`; its cost is shown apart. */
+/**
+ * What a planned meal gives, e.g. `1.75 servings · 461 kcal · 46 g protein · 8 g fibre`; its cost is
+ * shown apart. From a server before fibre counted, without the fibre.
+ */
 fun PlannedMeal.macrosText(strings: Strings): String =
-    "${servingsText(portions, strings)} · ${strings(Msg.KCAL_PROTEIN, kcal.roundToLong(), proteinG.roundToLong())}"
+    "${unbrokenParts(servingsText(portions, strings))} · ${macrosText(kcal, proteinG, fibreG, strings)}"
 
 /**
  * What a planned meal tells the recipe opened from it, in a sentence: how much to cook now and for
@@ -121,7 +138,7 @@ fun RecipeSummary.rowText(strings: Strings): RecipeRowText {
     val locale = strings.locale
     val nutrition = nutrition
     return RecipeRowText(
-        nutrition = nutrition?.takeIf { plannable && it.complete }?.headline(strings),
+        nutrition = nutrition?.takeIf { plannable && it.complete }?.headline(strings, withFibre = true),
         cost = cost?.let { "≈ ${formatEuro(it.perServingWithOffers, locale)}" },
         details = listOfNotNull(
             servings?.let { strings.plural(Plural.SERVINGS, it) },

@@ -37,6 +37,9 @@ class TrackingRepository(
             eatenProteinG = eaten.sumOf { it.proteinG } + extras.sumOf { it.proteinG },
             expectedKcal = expected.sumOf { it.kcal } + extras.sumOf { it.kcal },
             expectedProteinG = expected.sumOf { it.proteinG } + extras.sumOf { it.proteinG },
+            // Extras are logged without fibre (issue 223 leaves them at none).
+            eatenFibreG = eaten.sumOf { it.fibreG ?: 0.0 },
+            expectedFibreG = expected.sumOf { it.fibreG ?: 0.0 },
         )
     }
 
