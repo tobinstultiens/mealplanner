@@ -38,7 +38,6 @@ import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
-import dev.tobins.mealplanner.shopping.bestOffer
 import kotlinx.coroutines.launch
 
 /**
@@ -240,7 +239,7 @@ internal fun ShoppingScreen(
             is Load.Ready -> {
                 val list = current.value
                 @Composable
-                fun row(item: ShoppingItem, offer: Offer? = item.bestOffer(shops, today), suggested: Boolean = false) = ShoppingRow(
+                fun row(item: ShoppingItem, offer: Offer? = item.chipOffer(shops, today), suggested: Boolean = false) = ShoppingRow(
                     item,
                     offer,
                     shops,
@@ -319,7 +318,7 @@ internal fun ShoppingScreen(
                                     val hint = group.saving?.let { t(Msg.STORE_SAVING_HINT, formatEuro(it, t.locale)) } ?: t(Msg.TAP_TO_SHOP)
                                     GroupHeader(group.title(t), hint, onClick = { chooseStore(group.store) })
                                 }
-                                groupItems(group.store.name, group.items) { row(it, it.bestOffer(shops, today)) }
+                                groupItems(group.store.name, group.items) { row(it, it.chipOffer(shops, today)) }
                             }
                             if (overview.anyStore.isNotEmpty()) {
                                 item(key = "s:any") {
@@ -329,20 +328,20 @@ internal fun ShoppingScreen(
                                         onClick = null,
                                     )
                                 }
-                                groupItems("any", overview.anyStore) { row(it, it.bestOffer(shops, today)) }
+                                groupItems("any", overview.anyStore) { row(it, it.chipOffer(shops, today)) }
                             }
                             // Last, under a count of their own: the headers above count what the progress line counts.
                             if (overview.covered.isNotEmpty()) {
                                 item(key = "s:covered") {
                                     GroupHeader(t.plural(Plural.NOTHING_LEFT_ITEMS, overview.covered.size), t(Msg.NOTHING_LEFT_HINT), onClick = null)
                                 }
-                                groupItems("covered", overview.covered) { row(it, it.bestOffer(shops, today)) }
+                                groupItems("covered", overview.covered) { row(it, it.chipOffer(shops, today)) }
                             }
                         }
                         else -> {
                             val visit = storeVisit(list.items, store, shops, today, shoppingMode)
                             item(key = "visit") { ShopIAmIn(store, visit.saving) { chooseStore(null) } }
-                            sectionItems(visit.sections) { row(it, it.bestOffer(shops, today)) }
+                            sectionItems(visit.sections) { row(it, it.chipOffer(shops, today)) }
                             if (visit.elsewhere.isNotEmpty()) {
                                 val open = "elsewhere" in expanded
                                 item(key = "elsewhere") {
