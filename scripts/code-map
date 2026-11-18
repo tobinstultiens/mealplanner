@@ -164,7 +164,7 @@ def first_sentence(doc):
         if l:
             paragraph.append(l)
     text = " ".join(paragraph)
-    m = re.match(r"(.+?[.!?])(?:\s+(?=[A-Z`\[])|$)", text)
+    m = re.match(r"(.+?(?<!e\.g)(?<!i\.e)(?<!etc)(?<!vs)[.!?])(?:\s+(?=[A-Z`\[])|$)", text)
     text = (m.group(1) if m else text).strip()
     if len(text) > MAX_DOC:
         text = text[:MAX_DOC - 1].rstrip() + "..."
@@ -195,9 +195,10 @@ def parse_declaration(code, in_class):
     if fi and not in_class:
         return "interface", fi.group(1), tags
     if s.startswith("fun ") or s.startswith("fun<"):
-        head = s[3:].strip()
+        head = s[3:]
         while re.search(r"<[^<>]*>", head):    # generics out of the way, including a receiver's
             head = re.sub(r"<[^<>]*>", "", head)
+        head = head.strip()
         m = FUN_HEAD.match(head)
         if not m:
             return None
@@ -541,6 +542,10 @@ def self_test():
     check(kotlin_declarations(SAMPLE)[6].tags, "actual ", "actual tag")
     check(kotlin_declarations("fun `a test with spaces`() {}\n")[0].label(), "`a test with spaces`", "backticks")
 
+    generic = kotlin_declarations("fun <T> a(x: T) {}\nsuspend fun <T> b() {}\n"
+                                  "inline fun <reified T> c() {}\nfun <T : Any> List<T>.d() {}\n")
+    check([d.name for d in generic], ["a", "b", "c", "List.d"], "generic functions")
+    check(first_sentence("Opens it at [url], e.g. `jdbc:x`. More."), "Opens it at [url], e.g. `jdbc:x`.", "abbreviation")
     leak = kotlin_declarations("class A(\n    /** A parameter. */\n    val x: Int,\n)\n\nclass B\n"
                                "\n/** Dates, e.g. 2026-11-18. Then more. */\nclass C\n")
     check([(d.name, d.doc) for d in leak], [("A", None), ("B", None), ("C", "Dates, e.g. 2026-11-18.")],
