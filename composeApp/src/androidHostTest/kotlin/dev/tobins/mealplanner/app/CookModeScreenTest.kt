@@ -101,6 +101,20 @@ class CookModeScreenTest {
     }
 
     @Test
+    fun aRecipeWithIngredientsButNoStepsStillOffersMarkEaten() {
+        val recipe = kotlinx.coroutines.runBlocking { api.recipe(4) }.copy(instructions = "")
+        var eaten = 0
+        compose.setContent {
+            CompositionLocalProvider(LocalStrings provides Strings.English) {
+                CookMode(recipe, null, CookProgress(), {}, onMarkEaten = { eaten++ })
+            }
+        }
+        compose.onNodeWithText("Steps").assertDoesNotExist()
+        compose.onNodeWithText("Mark as eaten").performScrollTo().performClick()
+        assertEquals(1, eaten)
+    }
+
+    @Test
     fun theAsWrittenSwitchChangesTheAmountsInCookMode() {
         show(planned)
         waitFor("Step 1 · Now")

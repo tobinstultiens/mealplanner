@@ -108,6 +108,8 @@ fun CookMode(recipe: RecipeDetail, factor: Double?, progress: CookProgress, onPr
         }
         if (steps.isEmpty()) {
             if (recipe.ingredients.isEmpty()) Text(t(Msg.COOK_NO_INSTRUCTIONS), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Nothing to step through: the meal can be marked eaten from the end of the ingredients.
+            else if (onMarkEaten != null) Button(onClick = onMarkEaten, Modifier.fillMaxWidth()) { Text(t(Msg.COOK_MARK_EATEN)) }
         } else {
             Text(t(Msg.COOK_STEPS), style = MaterialTheme.typography.titleLarge)
             val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
