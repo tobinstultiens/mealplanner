@@ -269,10 +269,13 @@ class CookingRepoTest {
         }
     }
 
-    /** A server's accounts and their cooking sites, without HTTP: [accounts] logged in, the first of them the owner. */
-    private class Accounts(site: CookingRepo?, shared: Boolean = true, accounts: Int = 2) {
+    /**
+     * A server's accounts and their cooking sites, without HTTP: [accounts] logged in, the first of them the owner;
+     * in the database at [databaseUrl].
+     */
+    private class Accounts(site: CookingRepo?, shared: Boolean = true, accounts: Int = 2, databaseUrl: String = "jdbc:sqlite::memory:") {
         val clock = TestClock()
-        private val db = openDatabase("jdbc:sqlite::memory:").second
+        private val db = openDatabase(databaseUrl).second
         private val foods = FoodRepository(db)
         private val offers = OfferRepository(db, emptyList())
         private val prices = PriceRepository(db, null, foods, offers)
@@ -443,6 +446,30 @@ class CookingRepoTest {
         (waiting + running).joinAll()
         assertEquals(1, site.fetches.get())
         for (id in accounts.ids) assertEquals(listOf("Stew"), accounts.bank(id), "account $id")
+    }
+
+    /**
+     * After a fetch every account on the server's site imports it at once, into a database file as the server's
+     * (issue 246): the imports write one after another, none fails, and every account ends with every recipe.
+     */
+    @Test
+    fun accountsImportingAtOnceIntoADatabaseFileEachGetEveryRecipe() = runBlocking {
+        val titles = (1..20).map { "Dish $it" }
+        val upstream = Upstream().apply { commit(titles.associate { "content/recipes/${it.replace(' ', '-')}.md" to page(it) }) }
+        val gate = CountDownLatch(1)
+        val site = CountingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url, gate)
+        val database = File(createTempDirectory("database").toFile(), "mealplanner.db")
+        val accounts = Accounts(site, accounts = 6, databaseUrl = "jdbc:sqlite:${database.path}")
+
+        val syncs = accounts.ids.map { id -> launch(Dispatchers.IO) { accounts.cooking.sync(id) } }
+        assertTrue(site.fetching.await(30, TimeUnit.SECONDS))
+        gate.countDown()
+        syncs.joinAll()
+        assertEquals(1, site.fetches.get())
+        for (id in accounts.ids) {
+            assertEquals(titles.sorted(), accounts.bank(id), "account $id")
+            assertNull(accounts.cooking.status(id).error, "account $id")
+        }
     }
 
     /**

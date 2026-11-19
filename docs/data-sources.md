@@ -672,6 +672,14 @@ the same names writes nothing and does not wait for the lock. None of them holds
 network call: the cooking-site fetch, the store and price lookups and Claude's recipe writing all happen
 before or outside them.
 
+Within the server they also take turns before their transaction begins (issue 246): one at a time per
+database, waiting without the busy timeout's limit; one called inside another on the same thread (eating a
+meal changes the stock) joins it. On the database file each thread has a connection of its own, and
+SQLite kept them apart already; the in-memory database of the tests has one connection that every thread
+shares, where two at once began a second transaction on it ("cannot start a transaction within a
+transaction") or ran one inside the other's. Writes outside `Database.writing` (a single statement, or a
+transaction that writes first, such as the offer refresh) still go by SQLite's lock and its busy timeout.
+
 Marking an item on hand in the pantry makes it one set by hand, even if ticks put it there (its stock
 goes, and it keeps its place in the pantry's list): those stay until removed by hand, whatever is
 ticked or eaten, and ticks add no stock to them.

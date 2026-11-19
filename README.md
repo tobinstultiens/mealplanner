@@ -105,7 +105,9 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
   account's imports wait while it is fetched. A sync within five minutes of the last fetch (by any account, the
   schedule, or one that failed) imports the clone as it is, without an error, and `fetchedAt` in
   `GET /api/sync/cooking` says when the server's site was last fetched. Without a clone yet (the first fetch
-  failed) such a sync fails at once rather than trying again.
+  failed) such a sync fails at once rather than trying again. The accounts that waited for a fetch then import
+  at once; their imports write one after another, each in a transaction of its own, so one account's failure
+  takes back nothing of another's (issue 246).
 - Choosing another site leaves the old one at once: its bank-only recipes leave the bank, those the account added
   stay among its recipes as no longer on the site (until the new site has them), and its pictures go; the new site
   is imported by the sync the app asks for next (or, for the server's site, the next visit to the bank). A
