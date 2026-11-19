@@ -28,7 +28,11 @@ import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeSettings
+import dev.tobins.mealplanner.api.SparePortion
+import dev.tobins.mealplanner.api.SpareMove
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.SectionChoice
@@ -441,6 +445,30 @@ class ApiClient(
         val path = "api/plans/$weekStart/meals/$day/${slot.name}/lock"
         return if (locked) http.put(path).body() else http.delete(path).body()
     }
+
+    /** Sets how many days recipe [id] keeps once made, in a box and vacuum sealed (issue 234); null for a way it is not prepped. */
+    suspend fun setRecipeKeeps(id: Long, keeps: RecipeKeeps): RecipeDetail = http.put("api/recipes/$id/keeps") {
+        contentType(ContentType.Application.Json)
+        setBody(keeps)
+    }.body()
+
+    /** Makes a prep ([PrepInput]) and answers the week starting [weekStart], the one shown. */
+    suspend fun createPrep(weekStart: String, input: PrepInput): WeekPlan = http.post("api/plans/$weekStart/preps") {
+        contentType(ContentType.Application.Json)
+        setBody(input)
+    }.body()
+
+    /** Takes prep [id] out of the plan with all its meals, in every week; answers the week starting [weekStart]. */
+    suspend fun removePrep(weekStart: String, id: Long): WeekPlan = http.delete("api/plans/$weekStart/preps/$id").body()
+
+    /** The shares of skipped prepped meals still in the box on [date]; none from a server from before preps. */
+    suspend fun spareShares(date: String): List<SparePortion> = unlessUnknown { http.get("api/preps/spare/$date").body<List<SparePortion>>() }.orEmpty()
+
+    /** Eats the share of the skipped meal [SpareMove.from] of prep [id] in [SpareMove.to]; answers the week starting [weekStart]. */
+    suspend fun eatSpare(weekStart: String, id: Long, move: SpareMove): WeekPlan = http.post("api/plans/$weekStart/preps/$id/spare") {
+        contentType(ContentType.Application.Json)
+        setBody(move)
+    }.body()
 
     fun close() = http.close()
 }

@@ -235,6 +235,17 @@ Only by hand: the planner never starts a prep, it plans around one.
   it has a role (`MEAL` now) and its own portions, so step 2 can add a side taken from a batch without another
   migration.
 
+**In the app.** A recipe's settings have "Keeps once made": in a box and vacuum sealed, each "not prepped" or 1 to 7
+days. On the Plan, "Prep a recipe…" under the replan button, or "Prep this recipe…" in the menu of a lunch or dinner
+whose recipe keeps (that day and meal already chosen), opens the Prep dialog: the recipe, the day it is made (a day of
+the week shown), in a box or vacuum sealed, and per day up to the last day it keeps its lunch and dinner; it says why
+it can't be made yet (no meal on the made-on day, fewer than two meals). A prepped meal is labelled "Dinner · prep day"
+where it is made and "Lunch · prepped Mon 16 Nov" after; its lock can't be undone, and its menu has "Remove the
+prep…", which names every meal that goes before it removes them. The recipe opened from the prep day says "Cook 4
+servings: 1 now, 3 for the prep's later meals", from a later day "Prepped on Mon 16 Nov: nothing to cook". A skipped
+meal's share still in the box today is a card above the days: when it was skipped and until when it keeps (on its last
+day "eat it today or throw it away"), and "Eat it on…" with the lunches and dinners that have room.
+
 An installed app that knows nothing of preps shows the later meals as locked leftovers with nothing to cook and
 the made-on day's meal as cooking for the leftovers; it marks them eaten or skipped as any meal, and a refusal to
 remove the made-on day's meal comes as a sentence.
@@ -478,7 +489,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
+Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch), the Prep dialog (also in Dutch and at font scale 2) and the question that removes a prep (also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for), the Notifications card (in English and Dutch, and with notifications refused by Android), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed

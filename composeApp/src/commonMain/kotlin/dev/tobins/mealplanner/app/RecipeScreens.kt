@@ -17,6 +17,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -47,6 +50,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeDetail
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeCost
 import dev.tobins.mealplanner.api.RecipeNutrition
@@ -68,7 +72,8 @@ import kotlinx.serialization.SerializationException
  * [cookPortions] are to be cooked now (those of tomorrow's leftover lunch included, 0 for that
  * lunch itself). Opened from the recipe list there is none, and the recipe shows its own servings.
  * [place] says where the meal is in the plan and [planned] that it is still to be eaten, which is
- * when cook mode offers to mark it eaten; without a place there is nothing to mark.
+ * when cook mode offers to mark it eaten; without a place there is nothing to mark. [prepMadeOn] is the ISO date a
+ * prepped batch the meal is of is made (issue 234): its cooking is for the prep's later meals, not tomorrow's lunch.
  */
 data class MealToCook(
     val recipeId: Long,
@@ -77,13 +82,17 @@ data class MealToCook(
     val skipped: Boolean,
     val place: MealPlace? = null,
     val planned: Boolean = false,
+    val prepMadeOn: String? = null,
 ) {
     companion object {
         /** Keeps the meal across a re-created screen; no meal is an empty list. */
         val Saver = listSaver<MealToCook?, Any>(
             save = { meal ->
                 meal?.let {
-                    listOf(it.recipeId, it.portions, it.cookPortions, it.skipped, it.planned, it.place?.weekStart ?: "", it.place?.day ?: 0, it.place?.slot?.name ?: "")
+                    listOf(
+                        it.recipeId, it.portions, it.cookPortions, it.skipped, it.planned, it.place?.weekStart ?: "", it.place?.day ?: 0,
+                        it.place?.slot?.name ?: "", it.prepMadeOn ?: "",
+                    )
                 }.orEmpty()
             },
             restore = { v ->
@@ -91,6 +100,7 @@ data class MealToCook(
                     v[0] as Long, v[1] as Double, v[2] as Double, v[3] as Boolean,
                     place = (v[5] as String).takeIf { it.isNotEmpty() }?.let { MealPlace(it, v[6] as Int, MealSlot.valueOf(v[7] as String)) },
                     planned = v[4] as Boolean,
+                    prepMadeOn = (v.getOrNull(8) as? String)?.takeIf { it.isNotEmpty() },
                 )
             },
         )
@@ -110,7 +120,7 @@ data class MealPlace(val weekStart: String, val day: Int, val slot: MealSlot) {
 
 /** What [this] meal of the week starting [weekStart] passes on to its recipe; null from a server that does not say how much to cook, so the recipe shows as written. */
 fun PlannedMeal.toCook(weekStart: String): MealToCook? = cookPortions?.let {
-    MealToCook(recipeId, portions, it, status == MealStatus.SKIPPED, MealPlace(weekStart, day, slot), planned = status == MealStatus.PLANNED)
+    MealToCook(recipeId, portions, it, status == MealStatus.SKIPPED, MealPlace(weekStart, day, slot), planned = status == MealStatus.PLANNED, prepMadeOn = prep?.madeOn)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -310,6 +320,9 @@ fun RecipeDetailScreen(
                                 (load { api.updateRecipeSettings(recipeId, settings) } as? Load.Ready)?.let { state = it }
                             }
                         }
+                        KeepsSettings(recipe.summary, enabled = !acting) { keeps ->
+                            scope.launch { settle(load { api.setRecipeKeeps(recipeId, keeps) }, Msg.KEEPS_FAILED) }
+                        }
                         ToppingsSettings(api, recipe) { settle(it, Msg.TOPPINGS_FAILED) }
                         routines?.let { current ->
                             RoutineButtons(recipe.summary, current) { updated ->
@@ -485,6 +498,40 @@ private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * How many days the recipe keeps once made, in a box and vacuum sealed (issue 234): what a prep of it may span. Each a
+ * button that opens the choices, "not prepped" and 1 to [RecipeKeeps.MAX_DAYS] days; a server from before preps has
+ * neither, and then both read "not prepped".
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun KeepsSettings(summary: RecipeSummary, enabled: Boolean, onChange: (RecipeKeeps) -> Unit) {
+    val t = LocalStrings.current
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
+        Text(t(Msg.KEEPS_ONCE_MADE), style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+            KeepsChoice(Msg.KEEPS_IN_A_BOX, summary.keepsDays, enabled) { onChange(RecipeKeeps(it, summary.keepsVacuumDays)) }
+            KeepsChoice(Msg.KEEPS_VACUUM, summary.keepsVacuumDays, enabled) { onChange(RecipeKeeps(summary.keepsDays, it)) }
+        }
+    }
+}
+
+/** One of [KeepsSettings]' two numbers: a button saying it ([label]), with a menu of the days to choose from. */
+@Composable
+private fun KeepsChoice(label: Msg, days: Int?, enabled: Boolean, onChoose: (Int?) -> Unit) {
+    val t = LocalStrings.current
+    fun text(days: Int?) = days?.let { t.plural(Plural.DAYS, it) } ?: t(Msg.KEEPS_NOT)
+    Box {
+        var open by remember { mutableStateOf(false) }
+        OutlinedButton(onClick = { open = true }, enabled = enabled) { Text(t(label, text(days))) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            (listOf(null) + (1..RecipeKeeps.MAX_DAYS)).forEach { choice ->
+                DropdownMenuItem(text = { Text(text(choice)) }, onClick = { open = false; if (choice != days) onChoose(choice) })
+            }
         }
     }
 }
