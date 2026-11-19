@@ -4,9 +4,6 @@ import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.Sex
-import dev.tobins.mealplanner.released.api.ActivityLevel as ReleasedActivityLevel
-import dev.tobins.mealplanner.released.api.Profile as ReleasedProfile
-import dev.tobins.mealplanner.released.api.Sex as ReleasedSex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -75,10 +72,9 @@ class PortionRangeApiTest {
         val http = start()
         http.put("/api/profile") { setBody(profile.copy(minPortions = 1.0, maxPortions = 2.0)) }
 
-        // The released app's own Profile, with its JSON settings: it has no range to send.
-        val released = ReleasedProfile(85.0, 180.0, 30, ReleasedSex.MALE, ReleasedActivityLevel.LIGHT, kcalOverride = 2200)
-        val body = releasedJson.encodeToString(released)
-        assertTrue("Portions" !in body, body)
+        // What an app that never knew the range sends: written by hand, so it stays true whichever
+        // released version is frozen.
+        val body = """{"weightKg":85.0,"heightCm":180.0,"ageYears":30,"sex":"MALE","activity":"LIGHT","kcalOverride":2200}"""
         assertEquals(HttpStatusCode.OK, http.put("/api/profile") { setBody(body) }.status)
 
         assertEquals(profile.copy(weightKg = 85.0, minPortions = 1.0, maxPortions = 2.0), http.stored(), "the weight changed, the range stayed")

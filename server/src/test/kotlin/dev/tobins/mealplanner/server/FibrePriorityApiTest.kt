@@ -11,9 +11,6 @@ import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.WeekPlan
-import dev.tobins.mealplanner.released.api.ActivityLevel as ReleasedActivityLevel
-import dev.tobins.mealplanner.released.api.Profile as ReleasedProfile
-import dev.tobins.mealplanner.released.api.Sex as ReleasedSex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -101,10 +98,9 @@ class FibrePriorityApiTest {
         val http = start()
         http.put("/api/profile") { setBody(profile.copy(priority = PlanPriority.FIBRE)) }
 
-        // The released app's own Profile, with its JSON settings: it has neither to send.
-        val released = ReleasedProfile(85.0, 180.0, 30, ReleasedSex.MALE, ReleasedActivityLevel.LIGHT, kcalOverride = 2000, proteinOverrideG = 150)
-        val body = releasedJson.encodeToString(released)
-        assertTrue("priority" !in body && "fibre" !in body, body)
+        // What an app that never knew the priority or the fibre target sends: written by hand, so it
+        // stays true whichever released version is frozen.
+        val body = """{"weightKg":85.0,"heightCm":180.0,"ageYears":30,"sex":"MALE","activity":"LIGHT","kcalOverride":2000,"proteinOverrideG":150}"""
         assertEquals(HttpStatusCode.OK, http.put("/api/profile") { setBody(body) }.status)
 
         assertEquals(profile.copy(weightKg = 85.0, priority = PlanPriority.FIBRE), http.state().profile, "the weight changed, the rest stayed")
