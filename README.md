@@ -417,7 +417,10 @@ The app's `ApiClient` turns an unknown enum value into the field's default, so a
 app from the first release after v0.1.3 on, for a field that has a default; a list of enums is not covered.
 Give enum fields added from now on a default, or make them nullable. The rule above holds until then.
 
-After an app release: `scripts/freeze-api.sh vX.Y.Z`, commit the result. The history of single fields is in
+After an app release: `scripts/freeze-api.sh vX.Y.Z`, commit the result. The script copies `api/*.kt`,
+`Health.kt` and what they import from elsewhere (`recipes/ParsedRecipe.kt`, `units/UnitTable.kt`,
+`planner/PortionRange.kt`), and fails when a frozen file imports something it did not copy; add that file to
+the list in the script. The history of single fields is in
 the test and in `git log`, not here.
 
 ## Screenshot tests
