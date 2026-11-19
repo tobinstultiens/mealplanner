@@ -361,14 +361,18 @@ The server says what is due, the app decides whether to tell: `GET /api/notifica
 account and the server's today, the facts behind kinds 2 to 6 as data (`NotificationFacts`: names, dates, counts,
 the recipe), and the app words them in its language (`Messages.kt`). One WorkManager job (`NotificationWorker`)
 replaces the daily update check: every four hours on any network, as Android allows, it checks the release and,
-when logged in, asks the server. What decides (the kind, its switch, what was told already per kind and day, week
+when logged in, asks the server. The schedule outlives the app being swiped away and a reboot (WorkManager keeps it
+in JobScheduler and sets it again at boot); a force stop (Settings → Apps → Force stop, or a phone maker's battery
+saver that force-stops on a swipe) cancels it until the app is next opened, which schedules it again. What decides (the kind, its switch, what was told already per kind and day, week
 or version, and the windows) is common code (`NotificationPlanner`): kinds 1 to 4 from 08:00, dinner from 15:00,
 "mark what you ate" from 20:00, and nothing between 22:00 and 08:00, by the device's clock; Android only schedules,
 asks and posts. A logged-out app posts nothing but the update; the check never shows an error, a failure tells
 nothing until the next run, and its renewals never end the session (see "Accounts and login"). Turning a switch on
 asks for the permission where Android needs it; while a switch is on and Android does not let the app post, the
-card says so with "Open Android settings". A tapped notification carries its screen as a route (`Opening` in
-`Routes.kt`), which `MainActivity` hands to the app from a closed app and from an open one; the recipe editor and
+card says so with "Open Android settings", read again each time the app resumes. A tapped notification carries its
+screen as a route (`Opening` in `Routes.kt`) with an id of its own, which `MainActivity` hands to the app once
+(`NotificationInbox`): from a closed app, from an open one, and after Android killed the process with the task still
+in Recents, when the tap arrives with the screens' saved state and opens its screen over them; the recipe editor and
 the profile stay in front when they are open, so nothing typed is lost. "Plan next week" opens the Plan on next
 week (the `Opening` carries the week, `PlanScreen` starts on it), afresh each time it is tapped.
 

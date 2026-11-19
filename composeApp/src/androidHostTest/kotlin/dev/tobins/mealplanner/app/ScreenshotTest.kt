@@ -52,6 +52,7 @@ import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -341,9 +342,9 @@ enum class Shot(
 private fun notificationsCard(allowed: Boolean) {
     val storage = remember { MemorySettingsStorage().also { it.saveNotificationOn(NotificationKind.WEIGH_IN, true) } }
     val access = object : NotificationAccess {
-        override fun allowed() = allowed
+        override val allowed = MutableStateFlow(allowed)
 
-        override fun ask(answer: (Boolean) -> Unit) = answer(allowed)
+        override fun ask() = Unit
 
         override fun openSettings() = Unit
     }

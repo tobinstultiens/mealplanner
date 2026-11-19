@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -30,7 +31,10 @@ class NotificationOpeningsTest {
     val compose = createComposeRule()
 
     private val backend = FakeBackend()
-    private val openings = Openings()
+    private val restoration by lazy { StateRestorationTester(compose) }
+
+    /** The process's openings: replaced by a test that lets Android kill the process. */
+    private var openings = Openings()
 
     /** "Plan next week": the fake server's today is in the week of 16 November. */
     private val nextWeek = Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-23")
@@ -56,7 +60,8 @@ class NotificationOpeningsTest {
             override fun redirectUri(serverUrl: String) = "$serverUrl/app/login"
             override fun open(url: String) = Unit
         }
-        compose.setContent { App(backend.settings, storage, launcher, LoginExchange(storage, MainScope()), openings = openings) }
+        val logins = LoginExchange(storage, MainScope())
+        restoration.setContent { App(backend.settings, storage, launcher, logins, openings = openings) }
     }
 
     private fun waitFor(text: String) =
@@ -97,6 +102,20 @@ class NotificationOpeningsTest {
         openings.open(Opening(Route.TabRoute(Tab.TODAY)))
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Week of 23 Nov").fetchSemanticsNodes().isEmpty() }
         compose.onAllNodesWithText("Plan").onFirst().performClick()
+        waitFor("Week of 23 Nov")
+    }
+
+    @Test
+    fun aTapAfterTheProcessWasKilledOpensItsScreenOverTheRestoredOnes() {
+        startApp()
+        waitFor("Today")
+        compose.onAllNodesWithText("Progress").onFirst().performClick()
+        waitFor("Weight")
+
+        // Android killed the process with the task in Recents; a notification tapped then starts a new process,
+        // whose openings hold the tap, and re-creates the screen with the saved state of Progress.
+        openings = Openings().apply { open(nextWeek) }
+        restoration.emulateSavedInstanceStateRestore()
         waitFor("Week of 23 Nov")
     }
 }

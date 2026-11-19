@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.app
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.NotificationFacts
 import io.ktor.client.engine.HttpClientEngine
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.coroutines.cancellation.CancellationException
@@ -149,11 +150,14 @@ suspend fun askWhatIsDue(storage: SettingsStorage, logins: LoginExchange, settin
 
 /** What the Notifications card needs of the platform (Android only): whether the app may post, and asking for it. */
 interface NotificationAccess {
-    /** Whether the system lets the app post notifications now. */
-    fun allowed(): Boolean
+    /**
+     * Whether the system lets the app post notifications. Read again whenever the app comes back to the front
+     * and when an [ask] is answered, so that a permission given or taken in the system's settings shows at once.
+     */
+    val allowed: StateFlow<Boolean>
 
-    /** Asks for the permission where the system needs asking; [answer] is told whether the app may post now. */
-    fun ask(answer: (Boolean) -> Unit)
+    /** Asks for the permission where the system needs asking; [allowed] follows the answer. */
+    fun ask()
 
     /** Opens the system's notification settings of the app, where a refusal is undone. */
     fun openSettings()

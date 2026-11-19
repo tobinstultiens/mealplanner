@@ -208,7 +208,12 @@ fun App(
         bankOpen = now.bank
         adjusting = now.adjusting
     }
-    LaunchedEffect(openings) { openings?.requests?.collect(::openFromOutside) }
+    LaunchedEffect(openings) {
+        // The one taken at the start is applied once more: where Android restored the screens' saved state (its
+        // process was killed with the task in Recents), that state, not [start], says what is open.
+        opened?.let(::openFromOutside)
+        openings?.requests?.collect(::openFromOutside)
+    }
     LaunchedEffect(open, session != null) { addressFor(open, loggedIn = session != null)?.let(routes::write) }
     // Leaving the Plan tab the plan may have changed: the current week's list is fetched for the shop.
     var previousTab by remember { mutableStateOf(tab) }

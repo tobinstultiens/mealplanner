@@ -16,7 +16,8 @@ import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
 import dev.tobins.mealplanner.app.App
 import dev.tobins.mealplanner.app.ServerSettings
-import dev.tobins.mealplanner.app.parseOpening
+import dev.tobins.mealplanner.app.AndroidNotificationAccess
+import dev.tobins.mealplanner.app.NotificationInbox
 
 /**
  * Opens Authelia's login page in a Custom Tab over the app: it shares the browser's cookies (an existing
@@ -54,8 +55,12 @@ class MainActivity : ComponentActivity() {
     /** Registered as the screen is made, which Android requires of a permission request. */
     private val notificationAccess = AndroidNotificationAccess(this)
 
+    /** The taps on notifications this screen has handed on; made from the saved state in [onCreate]. */
+    private lateinit var inbox: NotificationInbox
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        inbox = NotificationInbox(savedInstanceState)
         enableEdgeToEdge()
         val storage = settingsStorage(this)
         val logins = AppProcess.logins(this)
@@ -64,7 +69,11 @@ class MainActivity : ComponentActivity() {
         // Debug builds check too, for what the server says is due; only the update check is left out there.
         NotificationWorker.schedule(this)
         if (updater != null) askForNotifications()
-        intent?.takeIf { it.isNew(savedInstanceState) }?.let(::take)
+        intent?.let { started ->
+            if (started.isNew(savedInstanceState)) deliverLogin(started)
+            // Decided by the tap's own id, not by whether there is saved state: see NotificationInbox.
+            takeOpening(started)
+        }
         setContent {
             App(
                 ServerSettings(BuildConfig.SERVER_URL), storage, CustomTabLogin(this), logins, updater,
@@ -75,26 +84,33 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** The intents that reach the screen while it runs: as those that start it ([take]). */
+    /** The intents that reach the screen while it runs: the login coming back, or a tapped notification. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        take(intent)
+        deliverLogin(intent)
+        takeOpening(intent)
     }
 
-    /**
-     * Hands on what [intent] brings: the login coming back (an App Link to `<server>/app/login?code=…`, or its
-     * bounce `dev.tobins.mealplanner://login?code=…`), or the screen a tapped notification opens.
-     */
-    private fun take(intent: Intent) {
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        inbox.save(outState)
+    }
+
+    /** The login coming back: an App Link to `<server>/app/login?code=…`, or its bounce `dev.tobins.mealplanner://login?code=…`. */
+    private fun deliverLogin(intent: Intent) {
         intent.data?.let { AppProcess.logins(this).deliver(it.toString()) }
-        intent.getStringExtra(EXTRA_OPENING)?.let { AppProcess.openings.open(parseOpening(it)) }
+    }
+
+    /** The screen a tapped notification asks for, handed to the app once per tap. */
+    private fun takeOpening(intent: Intent) {
+        inbox.take(intent)?.let(AppProcess.openings::open)
     }
 
     /**
-     * Whether this intent is new to the screen. The intent that started the screen comes again when Android
-     * re-creates it ([savedInstanceState] set: a rotation, a dark mode or language change, the app stopped in
-     * the background) and when the task is opened again from the recent apps; what it holds was handled the
-     * first time: a login answer's code works only once, and a notification's screen was opened.
+     * Whether this intent's login answer is new to the screen. The intent that started the screen comes again
+     * when Android re-creates it ([savedInstanceState] set: a rotation, a dark mode or language change, the app
+     * stopped in the background) and when the task is opened again from the recent apps; an answer it holds was
+     * handled the first time, and its code works only once.
      */
     private fun Intent.isNew(savedInstanceState: Bundle?): Boolean =
         savedInstanceState == null && (flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0

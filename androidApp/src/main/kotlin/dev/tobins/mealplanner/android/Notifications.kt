@@ -1,17 +1,11 @@
 package dev.tobins.mealplanner.android
 
-import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
-import android.provider.Settings
-import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -21,7 +15,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dev.tobins.mealplanner.app.AppUpdates
 import dev.tobins.mealplanner.app.DueNotification
-import dev.tobins.mealplanner.app.NotificationAccess
 import dev.tobins.mealplanner.app.NotificationKind
 import dev.tobins.mealplanner.app.NotificationPlanner
 import dev.tobins.mealplanner.app.ServerSettings
@@ -29,13 +22,12 @@ import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.appLanguage
 import dev.tobins.mealplanner.app.askWhatIsDue
 import dev.tobins.mealplanner.app.deviceLocaleTag
+import dev.tobins.mealplanner.app.notificationsAllowed
+import dev.tobins.mealplanner.app.putOpening
 import dev.tobins.mealplanner.app.serverSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
-
-/** The extra of a notification's intent that names the screen to open, as [dev.tobins.mealplanner.app.Opening.encoded]. */
-internal const val EXTRA_OPENING = "dev.tobins.mealplanner.opening"
 
 /**
  * The one background check (issue 225), every four hours on any network, as often as Android allows: the
@@ -88,14 +80,6 @@ class NotificationWorker(context: Context, params: WorkerParameters) : Coroutine
     }
 }
 
-/** Whether the system lets the app post: the permission (Android 13+), and the app's notifications not turned off in its settings. */
-internal fun notificationsAllowed(context: Context): Boolean {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-    ) return false
-    return context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
-}
-
 /**
  * Posts [due] on its kind's channel; tapping it opens its screen (see [MainActivity]). False when the system
  * does not let the app post. The channel is made again each time, which renames it into the app's language
@@ -106,7 +90,7 @@ private fun post(context: Context, due: DueNotification, strings: Strings): Bool
     val manager = context.getSystemService(NotificationManager::class.java)
     manager.createNotificationChannel(NotificationChannel(due.kind.channel, strings(due.kind.title), NotificationManager.IMPORTANCE_DEFAULT))
     val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-    due.opening?.let { intent.putExtra(EXTRA_OPENING, it.encoded) }
+    due.opening?.let(intent::putOpening)
     // One request code per kind: Android would otherwise hand every notification the extras of the last one.
     val open = PendingIntent.getActivity(context, due.kind.ordinal, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     val notification = Notification.Builder(context, due.kind.channel)
@@ -120,30 +104,4 @@ private fun post(context: Context, due: DueNotification, strings: Strings): Bool
     // One notification per kind, the update's with the id it always had: a newer one of a kind replaces the older.
     manager.notify(due.kind.ordinal + 1, notification)
     return true
-}
-
-/**
- * The Notifications card's way to the permission. Registered when [activity] is made, as Android requires;
- * [ask] shows the system's question where Android 13+ still asks, and otherwise answers at once.
- */
-internal class AndroidNotificationAccess(private val activity: ComponentActivity) : NotificationAccess {
-    private var answer: ((Boolean) -> Unit)? = null
-    private val request = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        answer?.invoke(allowed())
-        answer = null
-    }
-
-    override fun allowed(): Boolean = notificationsAllowed(activity)
-
-    override fun ask(answer: (Boolean) -> Unit) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        ) return answer(allowed())
-        this.answer = answer
-        request.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-
-    override fun openSettings() {
-        activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName))
-    }
 }

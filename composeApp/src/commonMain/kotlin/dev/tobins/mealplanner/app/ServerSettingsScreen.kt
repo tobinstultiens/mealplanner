@@ -24,7 +24,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -220,15 +220,13 @@ private fun ShoppingAdviceSwitches(read: suspend () -> ShoppingAdvice, save: sus
 /**
  * One switch per kind of notification, kept on this device. Turning one on asks for the system's permission
  * where it needs asking; while a switch is on and the system does not let the app post, the card says so,
- * with the way to the system's settings. That is read again when the app comes back from them.
+ * with the way to the system's settings, until the platform reports otherwise ([NotificationAccess.allowed]).
  */
 @Composable
 internal fun NotificationsCard(settings: NotificationSettings) {
     val t = LocalStrings.current
     var on by remember { mutableStateOf(NotificationKind.entries.associateWith(settings.storage::notificationOn)) }
-    var answers by remember { mutableIntStateOf(0) }
-    val frontReturns = rememberFrontReturns()
-    val allowed = remember(frontReturns, answers) { settings.access.allowed() }
+    val allowed by settings.access.allowed.collectAsState()
     SettingsCard(t(Msg.CARD_NOTIFICATIONS)) {
         Text(t(Msg.NOTIFICATIONS_INTRO), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (!allowed && on.values.any { it }) {
@@ -239,7 +237,7 @@ internal fun NotificationsCard(settings: NotificationSettings) {
             SwitchRow(t(kind.title), t(kind.hint), on.getValue(kind)) { checked ->
                 settings.storage.saveNotificationOn(kind, checked)
                 on = on + (kind to checked)
-                if (checked && !allowed) settings.access.ask { answers++ }
+                if (checked && !allowed) settings.access.ask()
             }
         }
     }
