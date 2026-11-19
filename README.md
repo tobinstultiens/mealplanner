@@ -187,6 +187,58 @@ largest; anything else is a 400. All the rules are in `PortionRange`:
 An app from before the range saves a profile without its two fields; the server keeps the stored range
 then, rather than going back to the defaults.
 
+## Prepped meals
+
+A recipe can be made once and eaten over several days (issue 234, step 1; a side taken from a batch is step 2).
+Only by hand: the planner never starts a prep, it plans around one.
+
+- **How long it keeps.** A recipe's settings hold two numbers of days, per account: in a normal box and vacuum
+  sealed, each 1 to 7 (a cooked meal keeps a week at most, so a batch reaches into the next plan week, never
+  further). Empty means not for prepping that way. `PUT /api/recipes/{id}/keeps` with `{"days": 3, "vacuumDays":
+  6}` (null for a way it is not prepped) answers the recipe; `RecipeSummary.keepsDays` and `keepsVacuumDays` show
+  them. Its own route, so a released app saving `PUT .../settings` leaves them alone. 400 outside 1 to 7, 404 for
+  another account's recipe.
+- **Making a prep.** `POST /api/plans/{weekStart}/preps` with `{"recipeId": 12, "madeOn": "2026-11-17", "vacuum":
+  false, "meals": [{"date": "2026-11-17", "slot": "DINNER"}, {"date": "2026-11-18", "slot": "LUNCH"}]}` answers the
+  week `{weekStart}`. The made-on day is also the first meal; the meals are lunches and dinners, mixed, up to the
+  made-on day plus the days it keeps (the last day, `MealPrep.lastDay`). Each meal gets the portion the planner
+  would give that slot within the profile's range ("Portion per meal"); the batch is their sum. A slot may be empty
+  or hold a meal that may be replaced; a dinner's leftover lunch goes with it. 400 for fewer than two meals, a
+  breakfast or snack, a first meal on another day; 409 when the recipe does not keep that way, a meal is past the
+  last day, a slot's meal was eaten or is of another prep; 404 for another account's recipe.
+- **In the plan.** Every meal of a prep has `PlannedMeal.prep` (`MealPrep`: the made-on day, the last day, normal
+  or vacuum, and every meal of the batch with its share and status, also those of the next week) and is locked.
+  The made-on day's meal cooks the whole batch (`cookPortions`, so the recipe and cook mode show the batch's
+  amounts), also when that meal itself was skipped; the later ones are `leftover` with nothing to cook. Each day
+  counts its own portion, on the Plan and on Today. Generating or replanning keeps them and plans around them: a
+  prepped dinner leaves no leftover lunch, and only the meal that makes the batch counts as a use of its recipe.
+  The made-on day's meal can be neither replaced nor removed on its own (409, naming the later meals: `DELETE
+  /api/plans/{weekStart}/preps/{id}` removes the prep with all its meals, in every week, after the app named
+  them); a later meal can, which makes the batch smaller, until the batch is made. Unlocking a prepped meal is a 409.
+- **Bought and taken once.** The shopping list of the made-on day's week buys the whole batch, also for meals the
+  week after, which buys nothing for them; the planner's pack rest counts it as one purchase. The batch is made
+  when the first of its meals is eaten, whichever: each meal's share is then taken from the stock of the made-on
+  week, and un-eating the last eaten meal gives all of it back (`docs/data-sources.md`, "Un-eating"). Once made,
+  the batch and its meals stay (409 for removing): a meal not eaten is skipped.
+- **A skipped meal's share** stays in the batch. `GET /api/preps/spare/{date}` lists the shares still in the box on
+  that date (`SparePortion`), each with the later lunches and dinners up to its last day that have room (empty, or
+  a meal still to eat that is not locked and of no prep). On its last day it is to eat that day or throw away; from
+  the day after, it is not listed, and it is never planned on its own. `POST
+  /api/plans/{weekStart}/preps/{id}/spare` with `{"from": {"date": ..., "slot": ...}, "to": {...}}` eats it there:
+  the meal there goes, the skipped meal keeps a share of 0 (and can no longer be marked eaten), and what the stock
+  gave for it goes along, so the batch, the list and the stock stay as they were.
+- **Into the next week.** A prep may run over the week's end. Its meals are in the next week before that week is
+  planned, and generating it keeps them; a week with only those counts as not planned yet (the "Plan next week"
+  notification, buying ahead). Today's "Dinner today" notification is only for a dinner with something to cook: not
+  for a prepped later dinner.
+- Kept in `prep` and `prepPortion` (version 20 of the database). A `prepPortion` row is a meal's share of a batch;
+  it has a role (`MEAL` now) and its own portions, so step 2 can add a side taken from a batch without another
+  migration.
+
+An installed app that knows nothing of preps shows the later meals as locked leftovers with nothing to cook and
+the made-on day's meal as cooking for the leftovers; it marks them eaten or skipped as any meal, and a refusal to
+remove the made-on day's meal comes as a sentence.
+
 ## Fibre and what the planner weighs most
 
 Fibre counts next to protein (issue 223). The daily targets (`DailyTargets.fibreG`) suggest 14 g of fibre
@@ -638,7 +690,8 @@ no meal needs on hand, see "What the app shows of it" there,
 and per meal `reroll`, `lock`, `status` and delete; `PUT meals/{day}/{slot}` with `{"recipeId": 12}` puts the account's recipe there,
 locked, and a skipped meal leaves the day's and the week's totals; a meal that was eaten, or the leftover lunch of an eaten
 dinner, keeps its recipe and its place: `reroll`, `PUT` and delete answer 409, `POST meals/{day}/{slot}/generate` 422, and
-`generate` keeps it; see `docs/data-sources.md`, "Un-eating"), `/api/days/{date}` and `/api/log` (what was eaten)
+`generate` keeps it; see `docs/data-sources.md`, "Un-eating"; `preps` and `preps/{id}` with `preps/{id}/spare` for prepped
+meals, and `GET /api/preps/spare/{date}`, see "Prepped meals"), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion; the newest weighing is the profile's weight, so the targets follow it:
 a weighing for an earlier day leaves the profile alone, and removing the newest one gives the profile the weight of the newest
 one left. Removing the only one keeps the profile's weight, as what it was before is not stored; plans already made keep their

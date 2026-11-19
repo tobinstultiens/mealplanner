@@ -29,10 +29,13 @@ import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.PlanPriority
+import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SectionChoice
@@ -43,6 +46,8 @@ import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.ShopsSetting
+import dev.tobins.mealplanner.api.SparePortion
+import dev.tobins.mealplanner.api.SpareMove
 import dev.tobins.mealplanner.api.ToppingInput
 import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.api.Store
@@ -258,6 +263,42 @@ class AccountsTest {
 
         assertEquals(alicesAddOns, alice.get("/api/recipes/${stew.id}/add-ons").body<List<AddOn>>())
         assertEquals(listOf(egg.id to 60.0), alice.get("/api/recipes/${stew.id}").body<RecipeDetail>().toppings.map { it.ingredientId to it.grams })
+    }
+
+    @Test
+    fun anotherAccountsPrepsAndKeepsCanNeitherBeReadNorChanged() = testApplication {
+        start()
+        val week = "2026-11-16"
+        val profile = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        // Each has a stew that keeps; Alice preps hers from Tuesday to Thursday and skips Wednesday's.
+        val (alice, bob) = listOf("alice", "bob").map { name -> clientFor(name).also { it.put("/api/profile") { setBody(profile) } } }
+        val stew = alice.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+        val bobsStew = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's stew")) }.body<RecipeDetail>().summary
+        alice.put("/api/recipes/${stew.id}/keeps") { setBody(RecipeKeeps(days = 3)) }
+        bob.put("/api/recipes/${bobsStew.id}/keeps") { setBody(RecipeKeeps(days = 3)) }
+        val meals = listOf(PrepSlot("2026-11-17", MealSlot.DINNER), PrepSlot("2026-11-18", MealSlot.LUNCH), PrepSlot("2026-11-19", MealSlot.DINNER))
+        val plan = alice.post("/api/plans/$week/preps") { setBody(PrepInput(stew.id, "2026-11-17", meals = meals)) }.body<WeekPlan>()
+        val prep = plan.days.flatMap { it.meals }.mapNotNull { it.prep }.first()
+        alice.put("/api/plans/$week/meals/2/LUNCH/status") { setBody(MealStatus.SKIPPED) }
+        val alicesWeek = alice.get("/api/plans/$week").body<WeekPlan>()
+        val alicesSpare = alice.get("/api/preps/spare/2026-11-18").body<List<SparePortion>>()
+        assertEquals(1, alicesSpare.size)
+
+        // Bob can neither set the keeps of Alice's stew nor prep it, and sees nothing of her prep.
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/${stew.id}/keeps") { setBody(RecipeKeeps(days = 7)) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/plans/$week/preps") { setBody(PrepInput(stew.id, "2026-11-17", meals = meals)) }.status)
+        assertTrue(bob.get("/api/plans/$week").body<WeekPlan>().days.all { it.meals.isEmpty() })
+        assertEquals(emptyList(), bob.get("/api/preps/spare/2026-11-18").body<List<SparePortion>>())
+        // Nor remove it or eat its spare share: her prep is a 404 to him, also with a prep of his own.
+        bob.post("/api/plans/$week/preps") { setBody(PrepInput(bobsStew.id, "2026-11-17", meals = meals)) }
+        assertEquals(HttpStatusCode.NotFound, bob.delete("/api/plans/$week/preps/${prep.id}").status)
+        val move = SpareMove(PrepSlot("2026-11-18", MealSlot.LUNCH), PrepSlot("2026-11-20", MealSlot.LUNCH))
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/plans/$week/preps/${prep.id}/spare") { setBody(move) }.status)
+        assertTrue(bob.get("/api/plans/$week").body<WeekPlan>().days.flatMap { it.meals }.all { it.recipeId == bobsStew.id && it.prep!!.id != prep.id })
+
+        assertEquals(alicesWeek, alice.get("/api/plans/$week").body<WeekPlan>())
+        assertEquals(alicesSpare, alice.get("/api/preps/spare/2026-11-18").body<List<SparePortion>>())
+        assertEquals(3, alice.get("/api/recipes/${stew.id}").body<RecipeDetail>().summary.keepsDays)
     }
 
     @Test

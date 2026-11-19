@@ -41,6 +41,7 @@ class UserScope(
             freshPacks = { prices.freshPacks(ingredients, sections.keepsByIngredient(sections.byIngredient())) },
         )
     }
+    val preps by lazy { PrepRepository(db, accountId, plans, recipes, profiles) }
     val shopping by lazy {
         ShoppingListRepository(
             db, accountId, plans, recipes, profiles, ingredients, stock,

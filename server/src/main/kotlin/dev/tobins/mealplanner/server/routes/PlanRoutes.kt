@@ -5,6 +5,8 @@ import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.SpareMove
 import dev.tobins.mealplanner.server.ConflictException
 import dev.tobins.mealplanner.server.generation.GenerationException
 import dev.tobins.mealplanner.server.user
@@ -48,6 +50,16 @@ fun Route.planRoutes() {
         // Replans every meal that is not locked.
         post("/generate") { call.respond(call.user.plans.generate(call.week())) }
 
+        // Prepped meals (issue 234), each answering this week's plan: make a batch, body PrepInput; remove one with all its
+        // meals; eat the share of one of its skipped meals in a later meal, body {"from": {...}, "to": {"date": ..., "slot": ...}}.
+        route("/preps") {
+            post { call.respond(call.user.preps.create(call.week(), call.receive<PrepInput>())) }
+            route("/{id}") {
+                delete { call.respond(call.user.preps.remove(call.week(), call.prepId())) }
+                post("/spare") { call.respond(call.user.preps.eatSpare(call.week(), call.prepId(), call.receive<SpareMove>())) }
+            }
+        }
+
         route("/meals/{day}/{slot}") {
             post("/reroll") { call.respond(call.user.plans.reroll(call.week(), call.day(), call.slot())) }
             put("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
@@ -87,4 +99,9 @@ fun Route.planRoutes() {
             }
         }
     }
+
+    // The shares of skipped prepped meals still in the box on a date, with where each can still be eaten.
+    get("/api/preps/spare/{date}") { call.respond(call.user.preps.spare(call.parameters["date"]!!)) }
 }
+
+private fun RoutingCall.prepId() = parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Prep id must be a number")

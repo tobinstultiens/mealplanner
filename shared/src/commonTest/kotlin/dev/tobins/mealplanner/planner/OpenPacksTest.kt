@@ -1,7 +1,10 @@
 package dev.tobins.mealplanner.planner
 
+import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.PrepMeal
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -114,5 +117,15 @@ class OpenPacksTest {
         // Two tubs, a quarter used each: 150 g of 200 g left in both.
         assertClose(2 * 2.25, OpenPacks.restOf(twice, candidates))
         assertClose(0.0, OpenPacks.restOf(emptyList(), candidates))
+    }
+
+    @Test
+    fun theMealThatMakesABatchBuysForAllOfItAndItsLaterMealsForNothing() {
+        // Four servings made on day 0's lunch and eaten on days 0 to 3: one tub, all of it used.
+        val prep = MealPrep(1, "2026-11-16", "2026-11-20", false, (0..3).map { PrepMeal("2026-11-${16 + it}", MealSlot.LUNCH, 1.0, MealStatus.PLANNED) })
+        val batch = (0..3).map { meal(it, MealSlot.LUNCH, 1, leftover = it > 0).copy(prep = prep) }
+
+        assertClose(0.0, OpenPacks.restOf(batch, candidates))
+        assertClose(0.0, OpenPacks.before(batch, candidates, 1, MealSlot.DINNER).reusable(1, uses, 1.0))
     }
 }

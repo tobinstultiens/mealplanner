@@ -71,6 +71,83 @@ JOIN planMeal ON planMeal.userId = mealLine.userId AND planMeal.weekStart = meal
     AND planMeal.day = mealLine.day AND planMeal.slot = mealLine.slot
 WHERE mealLine.userId = :userId AND planMeal.recipeId = :recipeId AND mealLine.grams > 0;
 
+-- A prepped batch (issue 234): one recipe cooked once, on madeOn, and eaten in the meals of prepPortion
+-- until lastDay. Started by hand only. recipeId has no reference, as planMeal's has none: a meal stays
+-- in the plan's history with its stored title when the recipe goes.
+CREATE TABLE prep (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    recipeId INTEGER NOT NULL,
+    madeOn TEXT NOT NULL,              -- ISO date it is made; its first meal is that day
+    lastDay TEXT NOT NULL,             -- ISO date of the last day it keeps, from the recipe's keeps when it was made
+    vacuum INTEGER NOT NULL            -- 1: vacuum sealed
+);
+
+CREATE INDEX prep_user ON prep(userId, lastDay);
+
+-- A meal's share of a prepped batch. role is MEAL: the slot's meal is eaten from the batch, and portions is
+-- NULL for the meal's own portions, or 0 once it was skipped and its share is eaten in another meal. (Room
+-- for a side taken from a batch next to a slot's meal, with its own portions, without another migration.)
+-- A row goes with its meal, so replacing or removing the meal takes it out of the batch.
+CREATE TABLE prepPortion (
+    userId INTEGER NOT NULL,
+    weekStart TEXT NOT NULL,
+    day INTEGER NOT NULL,
+    slot TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'MEAL',
+    prepId INTEGER NOT NULL REFERENCES prep(id) ON DELETE CASCADE,
+    portions REAL,
+    PRIMARY KEY (userId, weekStart, day, slot, role),
+    FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE
+);
+
+CREATE INDEX prepPortion_prep ON prepPortion(prepId);
+
+insertPrep:
+INSERT INTO prep (userId, recipeId, madeOn, lastDay, vacuum) VALUES (?, ?, ?, ?, ?);
+
+lastPrepId:
+SELECT last_insert_rowid();
+
+selectPrep:
+SELECT * FROM prep WHERE userId = :userId AND id = :id;
+
+-- The account's batches still keeping on :date or later.
+selectPrepsKeeping:
+SELECT * FROM prep WHERE userId = :userId AND lastDay >= :date ORDER BY madeOn, id;
+
+deletePrep:
+DELETE FROM prep WHERE userId = :userId AND id = :id;
+
+insertPrepPortion:
+INSERT INTO prepPortion (userId, weekStart, day, slot, role, prepId, portions) VALUES (?, ?, ?, ?, 'MEAL', ?, NULL);
+
+-- Which batch each meal of one week is eaten from.
+selectWeekPrepIds:
+SELECT day, slot, prepId FROM prepPortion WHERE userId = :userId AND weekStart = :weekStart AND role = 'MEAL';
+
+-- The meals of batches, in every week, with their share.
+selectPrepMeals:
+SELECT prepPortion.prepId, prepPortion.portions AS share, planMeal.*
+FROM prepPortion
+JOIN planMeal ON planMeal.userId = prepPortion.userId AND planMeal.weekStart = prepPortion.weekStart
+    AND planMeal.day = prepPortion.day AND planMeal.slot = prepPortion.slot
+WHERE prepPortion.userId = :userId AND prepPortion.role = 'MEAL' AND prepPortion.prepId IN :prepIds;
+
+-- The skipped meal's share is eaten in another meal.
+clearPrepShare:
+UPDATE prepPortion SET portions = 0
+WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'MEAL';
+
+-- What a meal took from the stock and what was in it go with its share to another meal of the batch.
+moveStockUses:
+UPDATE stockUse SET weekStart = :toWeek, day = :toDay, slot = :toSlot
+WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
+
+moveMealLines:
+UPDATE mealLine SET weekStart = :toWeek, day = :toDay, slot = :toSlot
+WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
+
 -- The latest offers per store, replaced as a whole by each successful fetch.
 CREATE TABLE offer (
     store TEXT NOT NULL,

@@ -651,6 +651,16 @@ Nothing comes back once the owner has said otherwise: after the tick of that ent
 (not bought), or the ingredient was put on hand or removed by hand in the pantry. Meals eaten before
 version 11 of the database have nothing kept to give back.
 
+**A prepped batch** (issue 234, README "Prepped meals") is made once, whichever of its meals is eaten first:
+then every meal's share (its portions as adjusted; a skipped meal's too, as it is in the box) is taken, each
+kept under its own meal, from the stock that counts from the week the batch is made, also for a meal of the
+next week: what was bought ahead for that week is not used for it. Eating more of its meals takes nothing; the
+last eaten one un-eaten gives every share back. A skipped meal's share eaten in a later meal moves what it took
+along. The shopping list counts the batch as one meal of all its portions on its made-on day, still to cook
+until it is made. What was at home for a week's shortfalls (`atHome`, below) counts what each meal of the week
+took; for a batch made in one week and eaten in the next, the later meals' shares are counted in the next week,
+so a shortfall warning about such a batch may be off by them.
+
 **An adjusted meal** (issue 226, README "What was in a meal") takes what was in it: its recipe's grams for
 its portions with its own changes (an amount changed, a line left out at 0 g, an ingredient added), by the
 rules above; an added ingredient that is in stock is eaten from it like any other. A leftover lunch's share,

@@ -36,7 +36,9 @@ class DueNotifications(
             offersEnding = offersEnding(day, weekStart),
             planNextWeek = planNextWeek(day, weekStart)?.toString(),
             weighIn = weighIn(day),
-            dinner = meals.firstOrNull { it.slot == MealSlot.DINNER && it.status == MealStatus.PLANNED }?.let { dinner(it, weekStart, index) },
+            // Only a dinner with something to cook: not a later meal of a prepped batch, which was made on an earlier day.
+            dinner = meals.firstOrNull { it.slot == MealSlot.DINNER && it.status == MealStatus.PLANNED && (it.cookPortions ?: it.portions) > 0.0 }
+                ?.let { dinner(it, weekStart, index) },
             mealsToMark = meals.count { it.status == MealStatus.PLANNED },
         )
     }
@@ -76,14 +78,15 @@ class DueNotifications(
             .minOrNull()
 
     /**
-     * Next week's first day, on a Saturday or Sunday, while that week has no meals. Whatever the offers: the
+     * Next week's first day, on a Saturday or Sunday, while that week has no meals of its own (those of a prepped
+     * batch made this week are there already, [PlanRepository.isPlanned]). Whatever the offers: the
      * owner plans on Saturday, and only Jumbo lists next week's offers before the week starts (AH and Lidl are
      * fetched once it has), so tying the reminder to offers would leave AH and Lidl shoppers without it.
      */
     private fun planNextWeek(day: LocalDate, weekStart: LocalDate): LocalDate? {
         if (day.dayOfWeek != DayOfWeek.SATURDAY && day.dayOfWeek != DayOfWeek.SUNDAY) return null
         val next = weekStart.plusWeeks(1)
-        return next.takeIf { plans.meals(next).isEmpty() }
+        return next.takeIf { !plans.isPlanned(next) }
     }
 
     /** The newest weigh-in, when it is a week old or older and there is a profile its weight goes to. */

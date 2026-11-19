@@ -94,13 +94,14 @@ class OpenPacks {
         const val WINDOW_DAYS = 3
 
         /**
-         * The packs the meals of [meals] that [counts] opened. Leftovers open nothing, they are the same pot.
+         * The packs the meals of [meals] that [counts] opened. Leftovers open nothing, they are the same pot; so do
+         * the later meals of a prepped batch, while the meal that makes it cooks the whole batch: one purchase.
          */
         fun opened(meals: List<PlannedMeal>, candidates: Map<Long, PlanCandidate>, counts: (PlannedMeal) -> Boolean = { true }): OpenPacks {
             val packs = OpenPacks()
             meals.filter { !it.leftover && counts(it) }
                 .sortedWith(compareBy({ it.day }, { it.slot.ordinal }))
-                .forEach { meal -> candidates[meal.recipeId]?.let { packs.cook(meal.day, it.freshUses, meal.portions) } }
+                .forEach { meal -> candidates[meal.recipeId]?.let { packs.cook(meal.day, it.freshUses, meal.prep?.portions ?: meal.portions) } }
             return packs
         }
 
