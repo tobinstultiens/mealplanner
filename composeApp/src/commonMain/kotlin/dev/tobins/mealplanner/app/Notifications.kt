@@ -84,6 +84,15 @@ class NotificationPlanner(
     /** Remembers that [posted] was posted, so that [due] does not offer it again. */
     fun told(posted: DueNotification) = storage.set("notified.${posted.kind.key}", posted.toldAs)
 
+    /**
+     * Takes over what was told of [kind] before this planner kept it ([toldAs], as [DueNotification.toldAs]), unless
+     * something was told since: the daily update check this replaces kept the version it told elsewhere, and an
+     * update told then must not be told again after the upgrade.
+     */
+    fun toldBefore(kind: NotificationKind, toldAs: String) {
+        if (storage.told(kind) == null) storage.set("notified.${kind.key}", toldAs)
+    }
+
     private fun alreadyTold(due: DueNotification): Boolean {
         val last = storage.told(due.kind) ?: return false
         if (due.kind != NotificationKind.WEIGH_IN) return last == due.toldAs

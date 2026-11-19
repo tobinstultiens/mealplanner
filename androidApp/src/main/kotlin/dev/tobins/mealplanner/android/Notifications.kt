@@ -42,6 +42,7 @@ class NotificationWorker(context: Context, params: WorkerParameters) : Coroutine
         if (!notificationsAllowed(app)) return Result.success()
         val storage = settingsStorage(app)
         val planner = NotificationPlanner(storage)
+        takeOverUpdateCheck(app, planner)
         val update = if (!BuildConfig.DEBUG && planner.wanted(NotificationKind.UPDATE)) {
             runCatching { AppUpdates.check(BuildConfig.VERSION_NAME) }.getOrNull()
         } else {
@@ -62,8 +63,23 @@ class NotificationWorker(context: Context, params: WorkerParameters) : Coroutine
         return Result.success()
     }
 
+    /**
+     * The version the daily update check told, kept in its own preferences before this worker replaced it: taken
+     * over once, so that an update told before the upgrade is not told again.
+     */
+    private fun takeOverUpdateCheck(context: Context, planner: NotificationPlanner) {
+        val old = context.getSharedPreferences(UPDATE_CHECK_PREFERENCES, Context.MODE_PRIVATE)
+        val version = old.getString(UPDATE_CHECK_TOLD_KEY, null) ?: return
+        planner.toldBefore(NotificationKind.UPDATE, version)
+        old.edit().remove(UPDATE_CHECK_TOLD_KEY).apply()
+    }
+
     companion object {
         private const val WORK_NAME = "notifications"
+
+        /** Where the daily update check kept the version it told, and under which key. */
+        private const val UPDATE_CHECK_PREFERENCES = "updates"
+        private const val UPDATE_CHECK_TOLD_KEY = "notifiedVersion"
 
         /** The daily update check's schedule, which this one replaces. */
         private const val UPDATE_CHECK_WORK_NAME = "update-check"

@@ -754,4 +754,73 @@ class LoginTest {
         val answer = askWhatIsDue(storage, logins, server, api({ "alice" }, answering = { storage.saveSession(Session("bob", "his", 0)) }))
         assertEquals(null, answer)
     }
+
+    // --- Two holders of a token, the screens' client and the background's: a token taken from the other only while it works.
+
+    /** A clock the test moves on. */
+    private class MovingClock(var now: Instant) : Clock {
+        override fun now() = now
+    }
+
+    /** The API as the server answers it at [clock]'s time: the stored token only, and only until it runs out. */
+    private fun liveApi(storage: SettingsStorage, clock: MovingClock) =
+        api({ storage.session()?.takeIf { it.expiresAt > clock.now.epochSeconds }?.accessToken })
+
+    /**
+     * The background renews "old" at [firstFailure] (the provider gives an hour); the screens' client, made with
+     * "old", asks [later]. Answers what the screens got and how often the provider was asked.
+     */
+    private suspend fun TestScope.screensAfterABackgroundRenewal(later: Duration): Pair<Result<Int>, Int> {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        val forms = mutableListOf<Map<String, String>>()
+        val clock = MovingClock(firstFailure)
+        val logins = exchange(storage, fakeProvider(forms), clock)
+        val screens = ApiClient(server, storage.session(), liveApi(storage, clock)) { logins.renew(server.url, it) }
+        assertNotNull(askWhatIsDue(storage, logins, server, liveApi(storage, clock)))
+        assertEquals(1, forms.size, "renewed in the background")
+        clock.now = firstFailure + later
+        val answer = runCatching { screens.notifications().mealsToMark }
+        screens.close()
+        return answer to forms.size
+    }
+
+    @Test
+    fun theScreensRenewWhenTheTokenTheBackgroundRenewedHasRunOutToo() = runTest {
+        // Two hours on, the background's token has run out as well: handing it over would fail the request.
+        val (answer, renewals) = screensAfterABackgroundRenewal(2.hours)
+        assertEquals(2, answer.getOrThrow(), "the first request in front works")
+        assertEquals(2, renewals, "renewed for real")
+    }
+
+    @Test
+    fun aTokenAboutToRunOutIsRenewedRatherThanHandedOver() = runTest {
+        // Within the margin before it runs out the request it is retried with may not make it in time.
+        val (inMargin, renewedThen) = screensAfterABackgroundRenewal(1.hours - 2.minutes)
+        assertEquals(2, inMargin.getOrThrow())
+        assertEquals(2, renewedThen)
+        // Well before, it is taken as it is.
+        val (early, renewedEarly) = screensAfterABackgroundRenewal(30.minutes)
+        assertEquals(2, early.getOrThrow())
+        assertEquals(1, renewedEarly, "no second renewal")
+    }
+
+    @Test
+    fun aStoredSessionThatDoesNotSayWhenItRunsOutIsRenewed() = runTest {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("new", "good", expiresAt = 0)) }
+        val forms = mutableListOf<Map<String, String>>()
+        val logins = exchange(storage, fakeProvider(forms))
+        assertEquals("access-1", logins.renew(server.url, refused = "old")?.accessToken)
+        assertEquals(1, forms.size)
+    }
+
+    @Test
+    fun theStoredTokenRefusedIsRenewedHoweverLongItLooksValid() = runTest {
+        // The server's clock ahead of the device's, or the token revoked: the device's view of its expiry says nothing then.
+        val clock = MovingClock(firstFailure)
+        val storage = MemorySettingsStorage().apply { saveSession(Session("stored", "good", expiresAt = (firstFailure + 1.hours).epochSeconds)) }
+        val forms = mutableListOf<Map<String, String>>()
+        val logins = exchange(storage, fakeProvider(forms), clock)
+        assertEquals("access-1", logins.renew(server.url, refused = "stored")?.accessToken)
+        assertEquals(1, forms.size)
+    }
 }

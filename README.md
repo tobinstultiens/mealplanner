@@ -86,7 +86,10 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
 - Renewals go one at a time through `LoginExchange.renew`, whoever asks: the screens and the Android app's
   background check of the notifications (issue 225). A provider that rotates refresh tokens takes each one
   once, so two renewals at the same moment would end the session; a caller whose refused token was replaced
-  meanwhile gets the stored session without asking the provider again. The background check renews
+  meanwhile gets the stored session without asking the provider again, but only while that session's token
+  runs out more than 5 minutes from now by the device's clock (the client retries a request once, so a token
+  that has run out too would fail it; the margin covers the retry and a server clock ahead of the device's).
+  Otherwise, and whenever the refused token is the stored one, the stored session is renewed. The background check renews
   quietly: a refusal or an error there ends nothing and is not counted towards the rule above, since nobody
   is there to log in again and a provider down overnight must not log the user out behind their back; the
   screens find out at their next request and decide as above. A renewal there that works is kept, and ends a

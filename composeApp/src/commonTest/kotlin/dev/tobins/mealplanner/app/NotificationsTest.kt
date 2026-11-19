@@ -117,6 +117,16 @@ class NotificationsTest {
     }
 
     @Test
+    fun theVersionTheOldUpdateCheckToldIsNotToldAgain() {
+        at("09:00").toldBefore(NotificationKind.UPDATE, "0.1.9")
+        assertEquals(emptyList(), postAt("09:00", "2026-11-21", NotificationFacts("2026-11-21"), update), "0.1.9 was told before the upgrade")
+        assertEquals(listOf(NotificationKind.UPDATE), postAt("09:00", "2026-11-22", NotificationFacts("2026-11-22"), AppUpdate("0.2.0", "", "", "")))
+        // Taken over only while nothing was told since: an older version from the old check changes nothing.
+        at("09:00").toldBefore(NotificationKind.UPDATE, "0.1.9")
+        assertEquals(emptyList(), postAt("10:00", "2026-11-22", NotificationFacts("2026-11-22"), AppUpdate("0.2.0", "", "", "")))
+    }
+
+    @Test
     fun aSwitchedOffKindIsNeitherPostedNorRememberedAsTold() {
         allOn()
         storage.saveNotificationOn(NotificationKind.MEALS_TO_MARK, false)
