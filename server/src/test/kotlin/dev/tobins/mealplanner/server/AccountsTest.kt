@@ -416,6 +416,43 @@ class AccountsTest {
     }
 
     @Test
+    fun aBatchPastItsLastDayIsToldOnlyToItsOwnAccount() = testApplication {
+        start()
+        // On the server's today, so that the batch's last day was yesterday whatever day the test runs on.
+        val madeOn = serverToday().minusDays(3)
+        fun mealPath(date: java.time.LocalDate) =
+            "/api/plans/${Batch.mondayOf(date)}/meals/${date.toEpochDay() - Batch.mondayOf(date).toEpochDay()}/DINNER"
+        val profile = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        val (alice, bob) = listOf("alice", "bob").map { name -> clientFor(name).also { it.put("/api/profile") { setBody(profile) } } }
+        suspend fun HttpClient.facts() = get("/api/notifications").body<NotificationFacts>()
+        // Alice's stew, made three days ago and kept two: the first dinner eaten, the second skipped, the third never marked.
+        val stew = alice.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+        alice.put("/api/recipes/${stew.id}/keeps") { setBody(RecipeKeeps(days = 2)) }
+        val dates = (0L..2L).map { madeOn.plusDays(it) }
+        val made = alice.post("/api/plans/${Batch.mondayOf(madeOn)}/preps") {
+            setBody(PrepInput(stew.id, madeOn.toString(), meals = dates.map { PrepSlot(it.toString(), MealSlot.DINNER) }))
+        }
+        assertEquals(HttpStatusCode.OK, made.status, made.bodyAsText())
+        alice.put("${mealPath(dates[0])}/status") { setBody(MealStatus.EATEN) }
+        alice.put("${mealPath(dates[1])}/status") { setBody(MealStatus.SKIPPED) }
+        val hers = alice.facts().prepsPastLastDay
+        assertEquals(listOf(Triple(stew.id, 1, 1)), hers.map { Triple(it.recipeId, it.left, it.unmarked) })
+
+        // Bob is told nothing of it and can neither mark her meals (his own slot has none) nor remove her batch.
+        assertEquals(emptyList(), bob.facts().prepsPastLastDay)
+        bob.put("${mealPath(dates[2])}/status") { setBody(MealStatus.EATEN) }
+        assertEquals(hers, alice.facts().prepsPastLastDay)
+        assertEquals(HttpStatusCode.NotFound, bob.delete("/api/plans/${Batch.mondayOf(madeOn)}/preps/${hers.single().prepId}").status)
+        // His own batch in the same dinners, eaten completely, leaves hers as it is and tells him nothing.
+        val bobsStew = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's stew")) }.body<RecipeDetail>().summary
+        bob.put("/api/recipes/${bobsStew.id}/keeps") { setBody(RecipeKeeps(days = 2)) }
+        bob.post("/api/plans/${Batch.mondayOf(madeOn)}/preps") { setBody(PrepInput(bobsStew.id, madeOn.toString(), meals = dates.map { PrepSlot(it.toString(), MealSlot.DINNER) })) }
+        for (date in dates) assertEquals(HttpStatusCode.OK, bob.put("${mealPath(date)}/status") { setBody(MealStatus.EATEN) }.status)
+        assertEquals(emptyList(), bob.facts().prepsPastLastDay)
+        assertEquals(hers, alice.facts().prepsPastLastDay)
+    }
+
+    @Test
     fun theVerdictsOnOffersGoByTheAccountsOwnIngredientsAndStores() = testApplication {
         val today = serverToday()
         val samphire = Offer(Store.AH, "AH Zeekraal 100 gram", "1+1 gratis", category = "Groente, aardappelen", validFrom = today.toString(), validUntil = today.plusDays(6).toString())

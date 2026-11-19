@@ -876,6 +876,11 @@ enum class Msg(private val english: String, private val dutch: String) {
     NOTIFY_DINNER_TODAY_HINT("In the afternoon: what to cook tonight", "'s Middags: wat je vanavond kookt"),
     NOTIFY_MEALS_TO_MARK("Mark what you ate", "Aangeven wat je at"),
     NOTIFY_MEALS_TO_MARK_HINT("In the evening, while meals of today are not marked", "'s Avonds, als maaltijden van vandaag nog openstaan"),
+    NOTIFY_THROW_AWAY("Prepped food to throw away", "Geprept eten om weg te gooien"),
+    NOTIFY_THROW_AWAY_HINT(
+        "The morning after a prep's last day, for portions still in the box or not marked",
+        "De ochtend na de laatste dag van een prep, voor porties die nog in het bakje zitten of openstaan",
+    ),
     UPDATE_NOTIFICATION_TITLE("Meal planner {0} is available", "Meal planner {0} is beschikbaar"),
     UPDATE_NOTIFICATION_TEXT("Tap to update.", "Tik om bij te werken."),
     PLAN_NOTIFICATION_TITLE("Next week has no plan yet", "Volgende week heeft nog geen plan"),
@@ -984,6 +989,19 @@ enum class Plural(
         "{0} meal of today is not marked yet", "{0} meals of today are not marked yet",
         "{0} maaltijd van vandaag staat nog open", "{0} maaltijden van vandaag staan nog open",
     ),
+    THROW_AWAY_PORTIONS("Throw away {0} portion of {1}", "Throw away {0} portions of {1}", "Gooi {0} portie {1} weg", "Gooi {0} porties {1} weg"),
+    THROW_AWAY_SIDES("Throw away {0} side of {1}", "Throw away {0} sides of {1}", "Gooi {0} bijgerecht {1} weg", "Gooi {0} bijgerechten {1} weg"),
+    UNMARKED_PORTIONS(
+        "{0} portion of {1} was not marked: eaten, or to throw away?", "{0} portions of {1} were not marked: eaten, or to throw away?",
+        "{0} portie {1} staat nog open: gegeten, of weggooien?", "{0} porties {1} staan nog open: gegeten, of weggooien?",
+    ),
+    UNMARKED_SIDES(
+        "{0} side of {1} was not marked: eaten, or to throw away?", "{0} sides of {1} were not marked: eaten, or to throw away?",
+        "{0} bijgerecht {1} staat nog open: gegeten, of weggooien?", "{0} bijgerechten {1} staan nog open: gegeten, of weggooien?",
+    ),
+
+    /** The count is that of the batches; `{1}` is their last day. */
+    KEPT_UNTIL("It kept until {1}.", "They kept until {1}.", "Het was goed tot {1}.", "Ze waren goed tot {1}."),
     // --- end of plurals
     ;
 

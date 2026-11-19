@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepMeal
+import dev.tobins.mealplanner.api.PrepPastLastDay
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.server.db.Database
 import java.time.DayOfWeek
@@ -92,6 +93,31 @@ class Batch(
         vacuum = vacuum,
         meals = meals.map { PrepMeal(it.date.toString(), it.meal.slot, it.share, it.meal.status, side = it.side) },
     )
+
+    /**
+     * What may still be in a box once the batch's last day is over (issue 264): the shares of skipped meals not eaten
+     * elsewhere (a moved share is 0 where it was skipped, and its meal's where it went), and the meals still planned,
+     * which may have been eaten without being marked. Null when nothing may be: every share eaten, or the batch never
+     * made, as nothing of a batch that was never cooked is in a box.
+     */
+    fun pastLastDay(): PrepPastLastDay? {
+        if (!made) return null
+        val inBox = meals.filter { it.share > 0.0 }
+        val left = inBox.count { it.meal.status == MealStatus.SKIPPED }
+        val unmarked = inBox.filter { it.meal.status == MealStatus.PLANNED }
+        if (left == 0 && unmarked.isEmpty()) return null
+        return PrepPastLastDay(
+            prepId = id,
+            recipeId = recipeId,
+            title = title,
+            madeOn = madeOn.toString(),
+            lastDay = lastDay.toString(),
+            side = meals.all { it.side },
+            left = left,
+            unmarked = unmarked.size,
+            firstUnmarked = unmarked.firstOrNull()?.date?.toString(),
+        )
+    }
 
     /** The meals after the first, as a sentence names them: `Tuesday lunch, Wednesday dinner (a side)`. */
     fun laterMealsText(): String = meals.drop(1).joinToString(", ") { slotName(it.date, it.meal.slot) + if (it.side) " (a side)" else "" }

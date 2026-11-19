@@ -121,6 +121,10 @@ WHERE prep.userId = :userId AND prep.id = :id;
 selectPrepsKeeping:
 SELECT * FROM prep WHERE userId = :userId AND lastDay >= :date ORDER BY madeOn, id;
 
+-- The account's batches whose last day is :lastDay.
+selectPrepsEndingOn:
+SELECT id FROM prep WHERE userId = :userId AND lastDay = :lastDay ORDER BY madeOn, id;
+
 deletePrep:
 DELETE FROM prep WHERE userId = :userId AND id = :id;
 

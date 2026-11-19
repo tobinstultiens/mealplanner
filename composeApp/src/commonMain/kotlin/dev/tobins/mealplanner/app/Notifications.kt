@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.NotificationFacts
+import dev.tobins.mealplanner.api.PrepPastLastDay
 import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.datetime.DateTimeUnit
@@ -37,6 +38,9 @@ enum class NotificationKind(val key: String, val channel: String, val defaultOn:
     WEIGH_IN("weighIn", "weighIn", false, 8, Msg.NOTIFY_WEIGH_IN, Msg.NOTIFY_WEIGH_IN_HINT),
     DINNER_TODAY("dinnerToday", "dinnerToday", false, 15, Msg.NOTIFY_DINNER_TODAY, Msg.NOTIFY_DINNER_TODAY_HINT),
     MEALS_TO_MARK("mealsToMark", "mealsToMark", false, 20, Msg.NOTIFY_MEALS_TO_MARK, Msg.NOTIFY_MEALS_TO_MARK_HINT),
+
+    // On: an account that never made a prep has no batch to tell of, so in effect it is on for those that have (issue 264).
+    THROW_AWAY("throwAway", "throwAway", true, 8, Msg.NOTIFY_THROW_AWAY, Msg.NOTIFY_THROW_AWAY_HINT),
     ;
 
     companion object {
@@ -91,7 +95,8 @@ private fun SettingsStorage.told(kind: NotificationKind): String? = get("notifie
 /**
  * A notification to post: its [kind], its [title] and [text] in the app's language, what tapping it opens
  * (null: the app as it is), and what is remembered of it once it is posted, so it is told once: the version,
- * the server's day, or for "plan next week" the week.
+ * the server's day, for "plan next week" the week, or for prepped food to throw away the server's day with every
+ * batch told of on it ([toldBatches]).
  */
 data class DueNotification(val kind: NotificationKind, val title: String, val text: String, val opening: Opening?, val toldAs: String)
 
@@ -117,7 +122,8 @@ class NotificationPlanner(
 
     /** The notifications to post now, for the newer release [update] and the server's [facts] (each null when unknown), in [strings]. */
     fun due(facts: NotificationFacts?, update: AppUpdate?, strings: Strings): List<DueNotification> {
-        val candidates = listOfNotNull(update?.let { updateNotification(it, strings) }) + facts?.let { dueNotifications(it, strings) }.orEmpty()
+        val candidates = listOfNotNull(update?.let { updateNotification(it, strings) }) +
+            facts?.let { dueNotifications(it, toldBatches(storage.told(NotificationKind.THROW_AWAY), it.date), strings) }.orEmpty()
         return candidates.filter { wanted(it.kind) && !alreadyTold(it) }
     }
 
@@ -148,8 +154,11 @@ class NotificationPlanner(
 private fun updateNotification(update: AppUpdate, t: Strings) =
     DueNotification(NotificationKind.UPDATE, t(Msg.UPDATE_NOTIFICATION_TITLE, update.version), t(Msg.UPDATE_NOTIFICATION_TEXT), null, update.version)
 
-/** The server's [facts] as notifications, one for each kind that is due; whether to post them is [NotificationPlanner.due]'s. */
-private fun dueNotifications(facts: NotificationFacts, t: Strings): List<DueNotification> = listOfNotNull(
+/**
+ * The server's [facts] as notifications, one for each kind that is due, leaving out the batches past their last day
+ * told of already ([told]); whether to post them is [NotificationPlanner.due]'s.
+ */
+private fun dueNotifications(facts: NotificationFacts, told: Set<Long>, t: Strings): List<DueNotification> = listOfNotNull(
     facts.offersEnding.takeIf { it.isNotEmpty() }?.let { offers ->
         val ending = when {
             offers.all { it.endsOn == facts.date } -> Plural.OFFERS_END_TODAY
@@ -174,7 +183,49 @@ private fun dueNotifications(facts: NotificationFacts, t: Strings): List<DueNoti
     facts.mealsToMark.takeIf { it > 0 }?.let { count ->
         DueNotification(NotificationKind.MEALS_TO_MARK, t.plural(Plural.MEALS_TO_MARK, count), t(Msg.MEALS_TO_MARK_NOTIFICATION_TEXT), Opening(Route.TabRoute(Tab.TODAY)), facts.date)
     },
+    throwAwayNotification(facts, told, t),
 )
+
+/**
+ * The batches of [facts] whose last day was the day before and that were not told of yet ([told]), as one notification
+ * (issue 264): one batch with portions left says to throw them away in its title; otherwise the title is the kind's and
+ * the text says it of each. A batch past its day for longer is left out, whatever the server says: the box was to go
+ * the morning after. Tapping it opens the Plan on the week of the first meal not marked, where it can be marked, or
+ * else on the week the first batch was made.
+ */
+private fun throwAwayNotification(facts: NotificationFacts, told: Set<Long>, t: Strings): DueNotification? {
+    val batches = facts.prepsPastLastDay.filter { it.prepId !in told && daysBetween(it.lastDay, facts.date) == 1 }
+    val first = batches.firstOrNull() ?: return null
+    val kept = t.plural(Plural.KEPT_UNTIL, batches.size, dayLabel(first.lastDay, t.locale))
+    val throwAway = first.throwAwayText(t)
+    val (title, text) = if (batches.size == 1 && throwAway != null) {
+        throwAway to listOfNotNull(kept, first.unmarkedText(t)).joinToString(" ")
+    } else {
+        val sentences = batches.flatMap { listOfNotNull(it.throwAwayText(t)?.let { line -> "$line." }, it.unmarkedText(t)) }
+        t(Msg.NOTIFY_THROW_AWAY) to (sentences + kept).joinToString(" ")
+    }
+    val day = batches.firstNotNullOfOrNull { it.firstUnmarked } ?: first.madeOn
+    val toldAs = facts.date + ":" + (told + batches.map { it.prepId }).sorted().joinToString(",")
+    return DueNotification(NotificationKind.THROW_AWAY, title, text, Opening(Route.TabRoute(Tab.PLAN), week = mondayOf(day)), toldAs)
+}
+
+/** `Throw away 1 portion of Chili con carne`, or of a side; null when nothing of the batch was left in the box. */
+private fun PrepPastLastDay.throwAwayText(t: Strings): String? =
+    left.takeIf { it > 0 }?.let { t.plural(if (side) Plural.THROW_AWAY_SIDES else Plural.THROW_AWAY_PORTIONS, it, title) }
+
+/** `1 portion of Chili con carne was not marked: eaten, or to throw away?`; null when every meal of it was marked. */
+private fun PrepPastLastDay.unmarkedText(t: Strings): String? =
+    unmarked.takeIf { it > 0 }?.let { t.plural(if (side) Plural.UNMARKED_SIDES else Plural.UNMARKED_PORTIONS, it, title) }
+
+/**
+ * The batches told of on the server's day [date], from what was remembered of the kind ([told], as
+ * [DueNotification.toldAs] has it: `2026-11-21:12,14`). A batch is past its last day on one day only, so those told
+ * of on another day are of no concern.
+ */
+private fun toldBatches(told: String?, date: String): Set<Long> {
+    if (told == null || told.substringBefore(':') != date) return emptySet()
+    return told.substringAfter(':').split(',').mapNotNullTo(HashSet()) { it.toLongOrNull() }
+}
 
 /**
  * What the server says is due today, asked in the background with the stored login; null when logged out,

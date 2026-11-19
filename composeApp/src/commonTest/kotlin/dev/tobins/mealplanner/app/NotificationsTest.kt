@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.DinnerToday
 import dev.tobins.mealplanner.api.EndingOffer
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.NotificationFacts
+import dev.tobins.mealplanner.api.PrepPastLastDay
 import dev.tobins.mealplanner.api.WeighInDue
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
@@ -40,6 +41,7 @@ class NotificationsTest {
         weighIn = WeighInDue("2026-11-12", 9),
         dinner = DinnerToday(12, "Chicken tikka", 1.5, 2.25, "2026-11-16", 5),
         mealsToMark = 2,
+        prepsPastLastDay = listOf(PrepPastLastDay(7, 14, "Chili con carne", "2026-11-17", "2026-11-20", left = 1)),
     )
     private val update = AppUpdate("0.1.9", "", "", "")
 
@@ -48,15 +50,16 @@ class NotificationsTest {
     private fun NotificationPlanner.kinds(facts: NotificationFacts? = all, newer: AppUpdate? = update) = due(facts, newer, en).map { it.kind }
 
     @Test
-    fun theFirstThreeKindsAreOnUntilSwitched() {
-        assertEquals(
-            listOf(NotificationKind.UPDATE, NotificationKind.OFFERS_ENDING, NotificationKind.PLAN_NEXT_WEEK),
-            NotificationKind.entries.filter(storage::notificationOn),
-        )
-        assertEquals(listOf(NotificationKind.UPDATE, NotificationKind.OFFERS_ENDING, NotificationKind.PLAN_NEXT_WEEK), at("21:00").kinds())
+    fun theFirstThreeKindsAndPreppedFoodToThrowAwayAreOnUntilSwitched() {
+        val on = listOf(NotificationKind.UPDATE, NotificationKind.OFFERS_ENDING, NotificationKind.PLAN_NEXT_WEEK, NotificationKind.THROW_AWAY)
+        assertEquals(on, NotificationKind.entries.filter(storage::notificationOn))
+        assertEquals(on, at("21:00").kinds())
         storage.saveNotificationOn(NotificationKind.OFFERS_ENDING, false)
         storage.saveNotificationOn(NotificationKind.MEALS_TO_MARK, true)
-        assertEquals(listOf(NotificationKind.UPDATE, NotificationKind.PLAN_NEXT_WEEK, NotificationKind.MEALS_TO_MARK), at("21:00").kinds())
+        assertEquals(
+            listOf(NotificationKind.UPDATE, NotificationKind.PLAN_NEXT_WEEK, NotificationKind.MEALS_TO_MARK, NotificationKind.THROW_AWAY),
+            at("21:00").kinds(),
+        )
     }
 
     @Test
@@ -64,9 +67,9 @@ class NotificationsTest {
         allOn()
         assertEquals(emptyList(), at("07:59").kinds())
         val morning = listOf(NotificationKind.UPDATE, NotificationKind.OFFERS_ENDING, NotificationKind.PLAN_NEXT_WEEK, NotificationKind.WEIGH_IN)
-        assertEquals(morning, at("08:00").kinds())
-        assertEquals(morning, at("14:59").kinds())
-        assertEquals(morning + NotificationKind.DINNER_TODAY, at("15:00").kinds())
+        assertEquals(morning + NotificationKind.THROW_AWAY, at("08:00").kinds())
+        assertEquals(morning + NotificationKind.THROW_AWAY, at("14:59").kinds())
+        assertEquals(morning + NotificationKind.DINNER_TODAY + NotificationKind.THROW_AWAY, at("15:00").kinds())
         assertEquals(NotificationKind.entries, at("20:00").kinds())
         assertEquals(NotificationKind.entries, at("21:59").kinds())
         assertEquals(emptyList(), at("22:00").kinds())
@@ -79,6 +82,8 @@ class NotificationsTest {
         assertFalse(at("23:00").wantsFacts())
         storage.saveNotificationOn(NotificationKind.OFFERS_ENDING, false)
         storage.saveNotificationOn(NotificationKind.PLAN_NEXT_WEEK, false)
+        assertTrue(at("09:00").wantsFacts(), "prepped food to throw away is on")
+        storage.saveNotificationOn(NotificationKind.THROW_AWAY, false)
         assertFalse(at("09:00").wantsFacts(), "only the update is on, which GitHub tells")
         storage.saveNotificationOn(NotificationKind.MEALS_TO_MARK, true)
         assertFalse(at("19:59").wantsFacts())
@@ -105,7 +110,8 @@ class NotificationsTest {
         assertEquals(NotificationKind.entries, postAt("21:00", "2026-11-21", all))
         assertEquals(emptyList(), postAt("21:30", "2026-11-21", all), "all told today")
 
-        // Sunday: the day's kinds again; the week to plan and the version were told; the weigh-in waits a week.
+        // Sunday: the day's kinds again; the week to plan and the version were told; the weigh-in waits a week; Friday's
+        // batch is past its last day for longer than a day.
         val sunday = all.copy(date = "2026-11-22", weighIn = WeighInDue("2026-11-12", 10))
         assertEquals(listOf(NotificationKind.OFFERS_ENDING, NotificationKind.DINNER_TODAY, NotificationKind.MEALS_TO_MARK), postAt("21:00", "2026-11-22", sunday))
         assertEquals(listOf(NotificationKind.UPDATE), postAt("21:30", "2026-11-22", sunday, AppUpdate("0.2.0", "", "", "")), "a newer version")
@@ -176,6 +182,90 @@ class NotificationsTest {
         // The recipe from that meal, with its servings to cook and the way to mark it eaten.
         val meal = MealToCook(12, 1.5, 2.25, skipped = false, MealPlace("2026-11-16", 5, MealSlot.DINNER), planned = true)
         assertEquals(Opening(Route.Recipe(12), meal), notice(NotificationKind.DINNER_TODAY).opening)
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-16"), notice(NotificationKind.THROW_AWAY).opening, "the Plan, on the week it was made")
+    }
+
+    // --- Prepped food to throw away (issue 264)
+
+    private val chili = PrepPastLastDay(7, 14, "Chili con carne", "2026-11-17", "2026-11-20", left = 1)
+    private val salad = PrepPastLastDay(9, 15, "Lentil salad", "2026-11-18", "2026-11-20", side = true, left = 1, unmarked = 1, firstUnmarked = "2026-11-19")
+
+    /** Saturday 21 November's facts with nothing due but [batches] past their last day. */
+    private fun pastLastDay(vararg batches: PrepPastLastDay, date: String = "2026-11-21") = NotificationFacts(date, prepsPastLastDay = batches.toList())
+
+    private fun throwAway(vararg batches: PrepPastLastDay, strings: Strings = en): Pair<String, String> =
+        notice(NotificationKind.THROW_AWAY, pastLastDay(*batches), strings).let { it.title to it.text }
+
+    @Test
+    fun preppedFoodToThrowAwaySaysWhatWasLeftAndWhatWasNotMarked() {
+        assertEquals("Throw away 1 portion of Chili con carne" to "It kept until Fri 20 Nov.", throwAway(chili))
+        assertEquals("Gooi 1 portie Chili con carne weg" to "Het was goed tot vr 20 nov.", throwAway(chili, strings = Strings.Dutch))
+        assertEquals(
+            "Throw away 2 portions of Chili con carne" to "It kept until Fri 20 Nov. 1 portion of Chili con carne was not marked: eaten, or to throw away?",
+            throwAway(chili.copy(left = 2, unmarked = 1, firstUnmarked = "2026-11-19")),
+        )
+        // Only meals not marked: the app cannot tell whether they were eaten, so it asks.
+        assertEquals(
+            "Prepped food to throw away" to "2 portions of Chili con carne were not marked: eaten, or to throw away? It kept until Fri 20 Nov.",
+            throwAway(chili.copy(left = 0, unmarked = 2, firstUnmarked = "2026-11-18")),
+        )
+        assertEquals(
+            "Geprept eten om weg te gooien" to "2 porties Chili con carne staan nog open: gegeten, of weggooien? Het was goed tot vr 20 nov.",
+            throwAway(chili.copy(left = 0, unmarked = 2, firstUnmarked = "2026-11-18"), strings = Strings.Dutch),
+        )
+        // A side taken from a batch is a side in the box, and several batches go into one notification.
+        assertEquals(
+            "Throw away 1 side of Lentil salad" to "It kept until Fri 20 Nov. 1 side of Lentil salad was not marked: eaten, or to throw away?",
+            throwAway(salad),
+        )
+        assertEquals(
+            "Prepped food to throw away" to
+                "Throw away 1 portion of Chili con carne. Throw away 1 side of Lentil salad. 1 side of Lentil salad was not marked: eaten, or to throw away? " +
+                "They kept until Fri 20 Nov.",
+            throwAway(chili, salad),
+        )
+        assertEquals(
+            "Geprept eten om weg te gooien" to
+                "Gooi 1 portie Chili con carne weg. Gooi 1 bijgerecht Lentil salad weg. 1 bijgerecht Lentil salad staat nog open: gegeten, of weggooien? " +
+                "Ze waren goed tot vr 20 nov.",
+            throwAway(chili, salad, strings = Strings.Dutch),
+        )
+    }
+
+    @Test
+    fun aTapOpensThePlanWhereAMealIsToMarkOrElseWhereTheBatchWasMade() {
+        val madeLastWeek = chili.copy(madeOn = "2026-11-15")
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-09"), notice(NotificationKind.THROW_AWAY, pastLastDay(madeLastWeek)).opening)
+        val unmarked = madeLastWeek.copy(prepId = 8, unmarked = 1, firstUnmarked = "2026-11-17")
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-16"), notice(NotificationKind.THROW_AWAY, pastLastDay(madeLastWeek, unmarked)).opening, "the day to mark")
+    }
+
+    @Test
+    fun aBatchIsToldInTheMorningAfterItsLastDayAndOnlyOnce() {
+        val facts = pastLastDay(chili)
+        assertEquals(emptyList(), postAt("07:59", "2026-11-21", facts, newer = null), "the morning window opens at 08:00")
+        assertEquals(listOf(NotificationKind.THROW_AWAY), postAt("08:05", "2026-11-21", facts, newer = null))
+        assertEquals(emptyList(), postAt("15:05", "2026-11-21", facts, newer = null), "told once")
+
+        // Another batch the same day is told of alone; the one told before is not told again.
+        val both = pastLastDay(chili, salad)
+        val later = at("20:05").due(both, null, en).single()
+        assertEquals("Throw away 1 side of Lentil salad", later.title)
+        at("20:05").told(later)
+        assertEquals(emptyList(), postAt("21:00", "2026-11-21", both, newer = null))
+
+        // A batch whose last day was more than a day before is not told, whatever the server says.
+        assertEquals(emptyList(), postAt("08:05", "2026-11-22", pastLastDay(chili.copy(prepId = 8), date = "2026-11-22"), newer = null))
+        assertEquals(listOf(NotificationKind.THROW_AWAY), postAt("08:05", "2026-11-22", pastLastDay(chili.copy(prepId = 8, lastDay = "2026-11-21"), date = "2026-11-22"), newer = null))
+    }
+
+    @Test
+    fun switchedOffNoBatchIsToldNorRemembered() {
+        storage.saveNotificationOn(NotificationKind.THROW_AWAY, false)
+        assertFalse(at("09:00").wanted(NotificationKind.THROW_AWAY))
+        assertEquals(emptyList(), postAt("09:00", "2026-11-21", pastLastDay(chili), newer = null))
+        storage.saveNotificationOn(NotificationKind.THROW_AWAY, true)
+        assertEquals(listOf(NotificationKind.THROW_AWAY), postAt("09:30", "2026-11-21", pastLastDay(chili), newer = null), "turned on the same morning: told then")
     }
 
     @Test

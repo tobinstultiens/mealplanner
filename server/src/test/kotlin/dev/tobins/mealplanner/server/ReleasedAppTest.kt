@@ -338,6 +338,39 @@ class ReleasedAppTest {
     }
 
     /**
+     * A batch whose last day was yesterday with a share skipped and a meal never marked (issue 264), prepped in a newer
+     * app: the installed app reads what is due, of which it does not know this, and marks the meal it shows. On a server
+     * of its own, as the batch must end on the server's yesterday, which falls on any day of the main test's week.
+     */
+    @Test
+    fun theInstalledAppReadsWhatIsDueWithABatchPastItsLastDay() = testApplication {
+        val http = start()
+        http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }.read<ProfileState>()
+        val stew = http.post("/api/recipes") { setBody(RecipeInput("My stew", 2, "400 | g | chicken fillet", "Stew.")) }.read<RecipeDetail>().summary
+        val keeps = http.put("/api/recipes/${stew.id}/keeps") { setBody("""{"days":2}""") }
+        assertTrue(keeps.status.isSuccess(), keeps.bodyAsText())
+        val madeOn = serverToday().minusDays(3)
+        val dates = (0L..2L).map { madeOn.plusDays(it) }
+        fun dayOf(date: java.time.LocalDate) = (date.toEpochDay() - Batch.mondayOf(date).toEpochDay()).toInt()
+        fun mealPath(date: java.time.LocalDate) = "/api/plans/${Batch.mondayOf(date)}/meals/${dayOf(date)}/DINNER"
+        val meals = dates.joinToString(",", "[", "]") { """{"date":"$it","slot":"DINNER"}""" }
+        http.post("/api/plans/${Batch.mondayOf(madeOn)}/preps") { setBody("""{"recipeId":${stew.id},"madeOn":"$madeOn","meals":$meals}""") }.read<WeekPlan>()
+        http.put("${mealPath(dates[0])}/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>()
+        http.put("${mealPath(dates[1])}/status") { setBody(MealStatus.SKIPPED) }.read<WeekPlan>()
+
+        suspend fun readsWhatIsDue() {
+            val due = http.get("/api/notifications")
+            assertTrue(due.bodyAsText().contains("\"prepsPastLastDay\":[{"), "a newer app is told: ${due.bodyAsText()}")
+            due.read<NotificationFacts>()
+        }
+        readsWhatIsDue()
+        // The last dinner, which a newer app asks about, marked eaten in the installed app; the skipped share is still told.
+        val week = http.put("${mealPath(dates[2])}/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>()
+        assertEquals(MealStatus.EATEN, week.days[dayOf(dates[2])].meals.single { it.slot == MealSlot.DINNER }.status)
+        readsWhatIsDue()
+    }
+
+    /**
      * No enum of the frozen types may have a value the current one lacks: an installed app fails to
      * read a response with a value it does not know, whatever else the response holds. The check
      * covers every enum under `released/` by itself, so a new frozen enum is covered after a freeze.

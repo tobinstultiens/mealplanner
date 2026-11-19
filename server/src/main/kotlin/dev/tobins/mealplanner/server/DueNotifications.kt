@@ -22,6 +22,7 @@ import java.time.temporal.ChronoUnit
 class DueNotifications(
     private val shopping: ShoppingListRepository,
     private val plans: PlanRepository,
+    private val preps: PrepRepository,
     private val tracking: TrackingRepository,
     private val profiles: ProfileRepository,
     /** The stores the account shops at: an offer elsewhere is no reason to hurry. */
@@ -40,6 +41,7 @@ class DueNotifications(
             dinner = meals.firstOrNull { it.slot == MealSlot.DINNER && it.status == MealStatus.PLANNED && (it.cookPortions ?: it.portions) > 0.0 }
                 ?.let { dinner(it, weekStart, index) },
             mealsToMark = meals.count { it.status == MealStatus.PLANNED },
+            prepsPastLastDay = preps.pastLastDay(day),
         )
     }
 
