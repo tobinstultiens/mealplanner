@@ -25,6 +25,8 @@ class PrepRepository(
     private val plans: PlanRepository,
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
+    /** Today as the household sees it: a batch is never made on a day that has passed. */
+    private val today: () -> LocalDate = ::serverToday,
 ) {
     private val q = db.planQueries
 
@@ -34,7 +36,8 @@ class PrepRepository(
      * one of mine, a meal, with amounts, and keep for the chosen way ([RecipeKeeps]): the meals are lunches and
      * dinners from the made-on day (the first of them is that day) to the last day it keeps. A slot may be
      * empty or hold a meal that may be replaced ([PlanRepository.whyKeepsItsRecipe]) and is of no other batch;
-     * a dinner's leftover lunch goes with it. Answers the week starting [weekStart], the one the app shows.
+     * a dinner's leftover lunch goes with it. The made-on day is today or later: a batch can't be cooked in the past, and
+     * the app offers no such day (issue 263). Answers the week starting [weekStart], the one the app shows.
      *
      * With [PrepInput.side] the batch is eaten as a side of that many servings (a quarter or half) next to the meal
      * in each slot instead ([requireRoomForSide]): the meal keeps its main and its portion, and the batch is the
@@ -50,6 +53,7 @@ class PrepRepository(
         require(input.side == null || input.side in SIDE_PORTIONS) { "a side is a quarter or half a serving" }
         val dates = input.meals.map { Batch.parseDate(it.date) }
         require(dates.min() == madeOn) { "the first meal is on the day it is made" }
+        if (madeOn < today()) throw ConflictException("${Batch.dayName(madeOn)} has passed: a prep is made today or later")
         val recipe = recipes.requireMine(input.recipeId)
         if (recipe.kind == RecipeKind.COMPONENT.name) throw ConflictException("This recipe is a building block, not a meal")
         val keeps = (if (input.vacuum) recipe.keepsVacuumDays else recipe.keepsDays)

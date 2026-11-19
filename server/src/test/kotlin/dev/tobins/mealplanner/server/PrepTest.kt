@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealLineChange
+import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealSlot.DINNER
 import dev.tobins.mealplanner.api.MealSlot.LUNCH
@@ -72,13 +73,19 @@ class PrepTest {
     private val nextWeek = "2026-11-23"
     private lateinit var db: Database
 
+    /**
+     * The server's today: the Monday of [week] unless a test moves it, so that no prep of the tests is made on a day that
+     * has passed, whenever they run.
+     */
+    private var today: LocalDate = LocalDate.parse(week)
+
     private fun ApplicationTestBuilder.start(): HttpClient {
         val config = ServerConfig(
             port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null,
             nevoFile = createTempFile("nevo", ".csv").toFile().apply { writeText(nevo) },
         )
         db = openDatabase(config.databaseUrl).second
-        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens, today = { today }) }
         return createClient {
             install(ContentNegotiation) { json() }
             defaultRequest {
@@ -205,6 +212,25 @@ class PrepTest {
     }
 
     @Test
+    fun aPrepIsNeverMadeOnADayThatHasPassed() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        http.planned()
+        today = LocalDate.parse("2026-11-18")
+        val before = http.plan()
+
+        for (side in listOf(null, 0.5)) {
+            val past = http.prep(k.salad.id, "2026-11-17", "2026-11-17" to DINNER, "2026-11-18" to LUNCH, side = side)
+            assertEquals(HttpStatusCode.Conflict, past.status, "eaten as a side: ${side != null}")
+            assertTrue(past.bodyAsText().contains("Tuesday 17 November has passed"), past.bodyAsText())
+        }
+        assertEquals(before, http.plan(), "nothing refused was planned")
+
+        // Today is not past: a batch made tonight is fine.
+        assertEquals(HttpStatusCode.OK, http.prep(k.salad.id, "2026-11-18", "2026-11-18" to DINNER, "2026-11-19" to LUNCH).status)
+    }
+
+    @Test
     fun theDayItIsMadeCooksTheBatchAndTheLaterDaysAreLockedLeftoversThatCookNothing() = testApplication {
         val http = start()
         val k = http.kitchen()
@@ -319,6 +345,38 @@ class PrepTest {
         assertEquals(1000.0 - 2.75 * 300, k.stockOf(k.chicken), 1e-9, "the chicken stays as it was taken")
         http.mark("2026-11-17", DINNER, MealStatus.PLANNED)
         assertEquals(1000.0 to 100.0, k.stockOf(k.chicken) to k.stockOf(k.cheese))
+    }
+
+    /**
+     * Issue 263: a batch made in one week and eaten in the next is cooked from the stock of the first, so a later meal of
+     * either week is short of what an adjusted meal took as the stock was then, not as the meals' weeks would have it.
+     */
+    @Test
+    fun aBatchEatenAcrossTwoWeeksCountsInTheShortfallsOfTheWeekItIsMadeIn() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        val bowl = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title.startsWith("Rice bowl") }
+        suspend fun eatBowlWithChicken(date: String, grams: Double) {
+            http.put(mealPath(date, DINNER)) { setBody(MealChoice(bowl.id)) }
+            http.put(mealPath(date, DINNER, "/lines")) { setBody(MealAdjustment(listOf(MealLineChange(k.chicken.id, grams)))) }
+            http.mark(date, DINNER, MealStatus.EATEN)
+        }
+        suspend fun shortfallsAfter(date: String) = http.get(mealPath(date, DINNER, "/lines")).body<MealLines>().shortfalls.map { it.day to it.grams }
+
+        // 1.5 kg of chicken; a batch of 2.75 servings (825 g) made on Thursday and eaten then and on Monday after.
+        k.stockUp(k.chicken, 1500.0)
+        http.prep(k.salad.id, "2026-11-19", "2026-11-19" to DINNER, "2026-11-23" to LUNCH, vacuum = true)
+        http.mark("2026-11-19", DINNER, MealStatus.EATEN)
+        // Friday's bowl had 100 g of chicken added; Saturday's dinner of the salad still needs its 450 g, and 575 g is left.
+        eatBowlWithChicken("2026-11-20", 100.0)
+        http.put(mealPath("2026-11-21", DINNER)) { setBody(MealChoice(k.salad.id)) }
+        assertEquals(575.0, k.stockOf(k.chicken), 1e-9)
+        assertEquals(emptyList(), shortfallsAfter("2026-11-20"), "Monday's share was taken from this week's chicken: nothing is short")
+
+        // The next week: Tuesday's bowl had 300 g added, which leaves 275 g for Wednesday's 450 g; Monday's share was never there.
+        eatBowlWithChicken("2026-11-24", 300.0)
+        http.put(mealPath("2026-11-25", DINNER)) { setBody(MealChoice(k.salad.id)) }
+        assertEquals(listOf(2 to 175.0), shortfallsAfter("2026-11-24"))
     }
 
     // --- A skipped meal's share
@@ -473,6 +531,27 @@ class PrepTest {
         val removed = http.delete("/api/plans/$week/preps/${prep.id}").body<WeekPlan>()
         assertEquals(meals[0].copy(side = null), removed.at("2026-11-17", DINNER))
         assertTrue(removed.days.flatMap { it.meals }.none { it.side != null })
+    }
+
+    @Test
+    fun aRerolledMainIsNeverTheRecipeOfItsSide() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        // The planner may pick the salad and one rice bowl, and nothing else.
+        val bowls = http.get("/api/recipes").body<List<RecipeSummary>>().filter { it.title.startsWith("Rice bowl") }
+        http.put("/api/recipes/${k.salad.id}/rotation") { setBody(RotationInput(true)) }
+        for (bowl in bowls.drop(1)) http.put("/api/recipes/${bowl.id}/rotation") { setBody(RotationInput(false)) }
+        for (date in listOf("2026-11-18", "2026-11-19")) http.put(mealPath(date, DINNER)) { setBody(MealChoice(bowls[0].id)) }
+        http.prep(k.salad.id, "2026-11-18", "2026-11-18" to DINNER, "2026-11-19" to DINNER, side = 0.5)
+
+        // The only other recipe is the side's own: no recipe fits, rather than the salad twice on one plate.
+        val refused = http.post(mealPath("2026-11-19", DINNER, "/reroll"))
+        assertEquals(HttpStatusCode.Conflict, refused.status)
+        assertTrue(refused.bodyAsText().contains("No other recipe fits this meal"), refused.bodyAsText())
+
+        http.put("/api/recipes/${bowls[1].id}/rotation") { setBody(RotationInput(true)) }
+        val rerolled = http.post(mealPath("2026-11-19", DINNER, "/reroll")).body<WeekPlan>().at("2026-11-19", DINNER)!!
+        assertEquals(bowls[1].id to k.salad.id, rerolled.recipeId to rerolled.side?.recipeId)
     }
 
     @Test

@@ -112,9 +112,9 @@ selectStockUses:
 SELECT ingredientId, fromWeek, source, addedAt, grams FROM stockUse
 WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = :role;
 
--- What the meals of one week took from the stock, by ingredient.
+-- What the meals of one week took from the stock, by ingredient, each under its meal.
 selectWeekStockUses:
-SELECT ingredientId, grams FROM stockUse WHERE userId = :userId AND weekStart = :weekStart;
+SELECT ingredientId, grams, day, slot, role FROM stockUse WHERE userId = :userId AND weekStart = :weekStart;
 
 insertStockUse:
 INSERT INTO stockUse (userId, weekStart, day, slot, role, ingredientId, fromWeek, source, addedAt, grams) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);

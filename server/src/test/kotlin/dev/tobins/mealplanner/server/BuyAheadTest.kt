@@ -11,7 +11,11 @@ import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.RecipeKeeps
+import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
@@ -109,7 +113,8 @@ class BuyAheadTest {
             ) + extraOffers,
         )
         db = openDatabase(config.databaseUrl).second
-        application { module(config, db, listOf(jumbo), priceSource = null, generator = null, verifier = TestTokens) }
+        // The plan week's Monday, so that a prep of the tests is made on a day still to come whenever they run.
+        application { module(config, db, listOf(jumbo), priceSource = null, generator = null, verifier = TestTokens, today = { LocalDate.parse(week) }) }
         return createClient {
             install(ContentNegotiation) { json() }
             defaultRequest {
@@ -205,6 +210,31 @@ class BuyAheadTest {
         http.post("/api/plans/$nextWeek/generate")
         assertFalse(http.list().buyAheadProvisional, "next week is planned: the meals are its own")
 
+    }
+
+    /** Issue 263: next week's meals of a batch made this week leave fewer dinners to suggest, and none when they fill them all. */
+    @Test
+    fun aNextWeekWithOnlyABatchsMealsGetsDinnersOnlyForTheDaysItLeavesFree() = testApplication {
+        val http = start().ready()
+        val filler = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Filler 0" }
+        http.put("/api/recipes/${filler.id}/keeps") { setBody(RecipeKeeps(days = 7)) }
+        // Made on Sunday's dinner and eaten at the next week's dinners from Monday to Saturday: Sunday's is the only one free.
+        val dinners = (22..28).map { PrepSlot("2026-11-$it", MealSlot.DINNER) }
+        val made = http.post("/api/plans/$week/preps") { setBody(PrepInput(filler.id, "2026-11-22", meals = dinners)) }
+        assertEquals(HttpStatusCode.OK, made.status, made.bodyAsText())
+
+        val list = http.list()
+        assertTrue(list.buyAheadProvisional, "next week has no meals of its own yet")
+        val chicken = list.buyAhead.single()
+        assertEquals(1, chicken.recipes.size, "one dinner for the one day the batch leaves free: ${chicken.recipes}")
+        assertEquals(1200.0, assertNotNull(chicken.grams), 1e-9)
+
+        // With Sunday's dinner too the batch fills every dinner of next week: nothing to buy ahead for.
+        val prep = http.get("/api/plans/$week").body<WeekPlan>().days.flatMap { it.meals }.firstNotNullOf { it.prep }
+        http.delete("/api/plans/$week/preps/${prep.id}")
+        val all = http.post("/api/plans/$week/preps") { setBody(PrepInput(filler.id, "2026-11-22", meals = dinners + PrepSlot("2026-11-29", MealSlot.DINNER))) }
+        assertEquals(HttpStatusCode.OK, all.status, all.bodyAsText())
+        assertEquals(emptyList(), http.list().buyAhead)
     }
 
     @Test

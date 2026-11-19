@@ -92,7 +92,8 @@ class PlanRepository(
      * Picks a different recipe for one meal and keeps the rest of the week. When a dinner
      * changes, the next day's lunch made of its leftovers changes with it ([leftoversToReplace]).
      * When no other recipe fits the meal, it is kept and a [ConflictException] says so; so it is
-     * when the meal was cooked ([requireNotCooked]). A side stays next to the new main ([save]).
+     * when the meal was cooked ([requireNotCooked]). A side stays next to the new main ([save]), so the new main is
+     * never the side's recipe: that would be one recipe twice on one plate.
      */
     fun reroll(weekStart: String, day: Int, slot: MealSlot, seed: Long = Random.nextLong()): WeekPlan {
         val start = parseWeekStart(weekStart)
@@ -103,7 +104,8 @@ class PlanRepository(
                 ?: throw NotFoundException("No meal planned for day $day $slot")
             requireNotCooked(start, target, current)
             val replaced = listOfNotNull(target, leftoversToReplace(start, current, day, slot))
-            val planned = plan(request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = setOf(target.recipeId)))
+            val excluded = setOfNotNull(target.recipeId, target.side?.recipeId)
+            val planned = plan(request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = excluded))
             val replacement = planned.firstOrNull { it.day == day && it.slot == slot }
             if (replacement == null || replacement.recipeId == target.recipeId) throw ConflictException("No other recipe fits this meal")
             for (old in replaced) {
@@ -366,7 +368,20 @@ class PlanRepository(
         val cooked = week.filter { it in toCook || shareTaken(start, it, week) }.sortedBy { cookingOrder(it, week) }
         val noRow = lines.values.flatMapTo(HashSet(), ::withoutWeighedRow)
         val changesOf = { meal: PlannedMeal -> if (isCookedAsSide(start, meal)) null else changes[meal.day to meal.slot] }
-        return shortfalls(adjustments.demands(cooked, lines, changesOf, toCook), stock.atHome(start) + noRow.associateWith { null })
+        val (elsewhere, here) = cookedAcrossWeeks(start)
+        return shortfalls(adjustments.demands(cooked, lines, changesOf, toCook), stock.atHome(start, elsewhere, here) + noRow.associateWith { null })
+    }
+
+    /**
+     * The meals and sides of batches eaten across two weeks, for what was at home for the meals of the week starting
+     * [start] ([StockRepository.atHome]): first those of this week of a batch made in the week before, then those of the
+     * next week of a batch made in this one. A batch is cooked from the stock of the week it is made in ([cookBatch]).
+     */
+    private fun cookedAcrossWeeks(start: LocalDate): Pair<Set<MealRef>, List<MealRef>> {
+        val batches = Batch.load(db, userId, meals(start).flatMap { listOfNotNull(it.prep?.id, it.side?.prep?.id) }).values
+        val elsewhere = batches.filter { it.week != start }.flatMap { batch -> batch.meals.filter { it.week == start }.map { it.ref } }
+        val here = batches.filter { it.week == start }.flatMap { batch -> batch.meals.filter { it.week != start }.map { it.ref } }
+        return elsewhere.toSet() to here
     }
 
     /**
@@ -600,7 +615,7 @@ class PlanRepository(
     /**
      * The meals stored for the week starting [start], by day. A meal of a prepped batch has the batch
      * ([PlannedMeal.prep]), is locked, and is a leftover unless it is the meal that makes the batch
-     * ([Batch.cook]): what an app that does not know preps shows, and what the planner counts as a use.
+     * ([Batch.cook]): what an app that does not know preps shows.
      * A meal with a side taken from a batch has it ([PlannedMeal.side], [sideOf]).
      */
     fun meals(start: LocalDate): List<PlannedMeal> {

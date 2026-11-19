@@ -72,7 +72,8 @@ class NotificationsTest {
         val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
         db = openDatabase(config.databaseUrl).second
         val sources = offers.groupBy { it.store }.map { (store, theirs) -> Offers(store, theirs) }
-        application { module(config, db, sources, priceSource = null, generator = null, verifier = TestTokens) }
+        // The plan week's Monday, so that the preps of the tests are made on days still to come whenever they run.
+        application { module(config, db, sources, priceSource = null, generator = null, verifier = TestTokens, today = { LocalDate.parse(week) }) }
     }
 
     private fun ApplicationTestBuilder.clientFor(token: String): HttpClient = createClient {

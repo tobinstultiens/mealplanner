@@ -6,6 +6,7 @@ import io.ktor.server.application.log
 import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.statuspages.StatusPagesConfig
 import io.ktor.server.response.respond
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Thrown for requests that refer to something that does not exist; mapped to 404. */
 class NotFoundException(message: String) : RuntimeException(message)
@@ -27,6 +28,10 @@ fun StatusPagesConfig.errorMapping() {
     exception<BadRequestException> { call, cause ->
         call.respond(HttpStatusCode.BadRequest, mapOf("error" to (cause.message ?: "bad request")))
     }
+    // A call cancelled, most often because the app went away while it loaded ("Response was cancelled"): nobody waits
+    // for an answer and nothing failed. Ktor's engine logs it at debug level, as it does when no handler is installed;
+    // caught below, it would be logged as an error and answered with a 500 (issue 263).
+    exception<CancellationException> { _, cause -> throw cause }
     exception<Exception> { call, cause ->
         call.application.log.error("Request ${call.request.local.uri} failed", cause)
         call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (cause.message ?: cause::class.simpleName ?: "internal error")))
