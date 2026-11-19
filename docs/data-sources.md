@@ -149,6 +149,51 @@ cheap, the server keeps a regular price per kg for each ingredient (`PriceReposi
 - A price set by hand on the ingredient (`pricePerKg`) wins. Ingredients without a price are
   costed at the median price per kg and named in the recipe's cost.
 
+### Packs: the rest of an opened pack (issue 222)
+
+The pack size and pack price of the product a regular price comes from (`IngredientPrice.packSize`,
+`packPrice`) also tell the planner which recipes go well together: a fresh ingredient (one that does not keep
+until next week, by its shop section or by hand) is bought in a pack, and what a meal leaves of it is
+thrown away if no meal uses it in the days after. `PriceRepository.freshPacks` gives each such ingredient its
+pack, read by `PackSize.grams` (an ingredient whose size is no weight, or with a price by hand, has none); a
+recipe's `PlanCandidate.freshUses` lists the grams a serving takes of each, leaving out ingredients on hand.
+`WeekPlanner` replays the week's meals so far (`OpenPacks`): the rest of a pack counts for a meal on the day of the
+meal that opened it and up to three days after, the same for every ingredient; a pack of the regular AH
+price is used, an offer's different pack is ignored. The term has two sides, in euros of pack price
+(`PackWeights`, a request can set others): a reward of 0.75 for what the candidate's portion takes from open
+packs (so a dinner that uses up half a tub of crème fraîche the Monday dinner opened is preferred on Wednesday),
+and a penalty of 0.2 for the rest it leaves by opening a new pack for what the open ones cannot give (a dinner that
+opens a 500 g pack for 10 g is wary: 9.8 euros of rest, 1.96 off its score). The planner stays greedy: Monday is
+not chosen because Thursday could use its tub, only the penalty guesses that the rest may not be finished.
+Leftover lunches open nothing and the priorities do not change the term.
+
+A pack written in pieces ("3 stuks", "per stuk") is counted through the ingredient's weight per piece
+(`gramsPerPiece`), which the issue had left out of scope; 10 of the 43 covered ingredients depend on it (bell pepper,
+cucumber, egg, lime, mango, onion, red onion, romaine lettuce, baguette, bread roll). Three more (yoghurt, milk,
+whipping cream) are packs in litres, counted at the ingredient's density or 1 g/ml.
+
+Measured on the cooking repo's recipes with AH's prices of 2026-11-19 (`PackRestMeasurementTest`: 50 seeds, 40
+recipes in the rotation, 53 fresh ingredients with a pack; protein and fibre are the mean share of the daily target):
+
+| reuse | waste | rest EUR/week | calorie error % | protein % | fibre % |
+|---|---|---|---|---|---|
+| 0 | 0 (without the term) | 25.19 | 5.14 | 89.82 | 40.02 |
+| 0.75 | 0 (reward only) | 22.77 | 5.54 | 90.04 | 39.87 |
+| 0.75 | 0.1 | 23.42 | 4.89 | 88.52 | 39.15 |
+| **0.75** | **0.2 (shipped)** | **20.75** | **4.89** | **87.97** | **38.14** |
+| 0.75 | 0.25 | 16.59 | 5.77 | 87.08 | 36.47 |
+| 0.75 | 0.5 | 13.59 | 7.19 | 87.01 | 35.72 |
+| 1.5 | 0.2 | 19.52 | 5.49 | 87.79 | 37.74 |
+
+The reward alone cuts the rest by 2.42 euros a week; with the penalty at 0.2 by 4.44 (18 %), with the calorie
+error 0.25 points lower than without the term. The price is in the nutrition: the penalty steers away from recipes
+with fresh vegetables, so protein falls 1.9 points and fibre 1.9 points of the daily target. A stronger penalty
+lowers the rest more and the calories and fibre much more (at 0.5 the error is 7.19 %), and the rest has a floor of
+13.59 euros that the breakfast and snack routines and the few recipes that must open a pack account for.
+Before the term was built, the fresh ingredients the 80 recipes of
+the cooking repo use were counted: 43 of 49 have a pack in grams, the other six (chili pepper, egg yolk, lettuce,
+spring onion, sweetcorn, Swiss chard) have no price, or no pack size.
+
 With each price the lookup keeps the product's `mainCategory` and `subCategory`; they also give the
 ingredient's shop section (below).
 

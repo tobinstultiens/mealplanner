@@ -12,6 +12,7 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.planner.Pack
 import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.planner.PlanRequest
 import dev.tobins.mealplanner.planner.PortionRange
@@ -41,6 +42,8 @@ class PlanRepository(
     private val pricing: (LocalDate, LocalDate) -> Pricing = { _, _ -> Pricing.NONE },
     /** The stores the account shops at: only their offers make the planner prefer a meal. */
     private val shops: () -> Set<Store> = { Store.entries.toSet() },
+    /** The packs of the account's fresh ingredients, by ingredient id: the planner uses up the rest of an opened one. */
+    private val freshPacks: () -> Map<Long, Pack> = { emptyMap() },
 ) {
     private val q = db.planQueries
     private val adjustments = MealAdjustments(db, userId, recipes, recipes.ingredients)
@@ -403,6 +406,7 @@ class PlanRepository(
             dislikes = profiles.profile()?.dislikes.orEmpty(),
             prices = pricing(start, start.plusDays(DAYS - 1L)),
             onHand = stock.onHandFor(start),
+            freshPacks = freshPacks(),
         ),
         routines = recipes.routines().let { r ->
             listOfNotNull(r.breakfast?.let { MealSlot.BREAKFAST to it }, r.snack?.let { MealSlot.SNACK to it }).toMap()

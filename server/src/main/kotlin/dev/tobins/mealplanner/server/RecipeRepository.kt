@@ -21,6 +21,8 @@ import dev.tobins.mealplanner.api.RecipeTopping
 import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.planner.FreshUse
+import dev.tobins.mealplanner.planner.Pack
 import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.recipes.IngredientLine
@@ -162,12 +164,15 @@ class RecipeRepository(
      * @param dislikes words for ingredients never to plan; a recipe with a line whose text
      *   or linked ingredient name contains one of them as a word (or its plural) is left out.
      * @param onHand the ingredients on hand in the week being planned ([StockRepository.onHandFor]).
+     * @param freshPacks the packs of the fresh ingredients ([PriceRepository.freshPacks]); a recipe's
+     *   [PlanCandidate.freshUses] are those of its ingredients that have one and are not on hand.
      */
     fun planCandidates(
         onOffer: Set<Long> = emptySet(),
         dislikes: List<String> = emptyList(),
         prices: Pricing = Pricing.NONE,
         onHand: Set<Long> = emptySet(),
+        freshPacks: Map<Long, Pack> = emptyMap(),
     ): List<PlanCandidate> {
         val resolve = ingredients.resolver()
         val disliked = dislikes.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
@@ -194,9 +199,22 @@ class RecipeRepository(
                 offerCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onOffer },
                 costPerServing = costOf(row, lines, resolve, prices)?.perServingWithOffers,
                 rating = row.rating?.toInt(),
+                freshUses = if (freshPacks.isEmpty()) emptyList() else freshUsesOf(row.servings!!.toInt(), lines, resolve, freshPacks, onHand),
             )
         }
     }
+
+    /** What a serving of the recipe takes of each of its fresh ingredients that is not on hand, in grams. */
+    private fun freshUsesOf(
+        servings: Int,
+        lines: List<IngredientLine>,
+        resolve: (IngredientLine) -> Ingredient?,
+        freshPacks: Map<Long, Pack>,
+        onHand: Set<Long>,
+    ): List<FreshUse> = lines.mapNotNull { line ->
+        val ingredient = resolve(line)?.takeIf { it.id in freshPacks && it.id !in onHand && !it.negligible } ?: return@mapNotNull null
+        NutritionCalculator.quantityOf(line, ingredient)?.grams?.let { ingredient.id to it }
+    }.groupBy({ it.first }, { it.second }).map { (id, grams) -> FreshUse(id, grams.sum() / servings, freshPacks.getValue(id)) }
 
     /**
      * Each recipe's base yield and its lines with the ingredient each one means, by recipe id; recipes

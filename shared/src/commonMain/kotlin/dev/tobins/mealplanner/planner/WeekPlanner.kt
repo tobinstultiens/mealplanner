@@ -26,6 +26,12 @@ data class PlanCandidate(
     val rating: Int? = null,
     /** Grams of fibre per serving. A food without a fibre value counts as none; the recipe is still planned. */
     val fibreG: Double = 0.0,
+    /**
+     * The fresh ingredients it uses that are not on hand and whose pack is known, for [WeekPlanner] to prefer a
+     * recipe that uses up the rest of a pack another meal of the week opened. Empty: the recipe counts as
+     * opening no packs.
+     */
+    val freshUses: List<FreshUse> = emptyList(),
 )
 
 data class PlanRequest(
@@ -42,6 +48,8 @@ data class PlanRequest(
     val routines: Map<MealSlot, Long> = emptyMap(),
     /** How large a meal may be: the profile's range. */
     val portions: PortionRange = PortionRange(),
+    /** How much the planner makes of the rest of fresh packs ([PackWeights]). */
+    val packWeights: PackWeights = PackWeights(),
     /** What the profile has the planner weigh most ([WeekPlanner]'s score). */
     val priority: PlanPriority = PlanPriority.BALANCED,
     /** Same seed, same plan. */
@@ -90,6 +98,7 @@ object WeekPlanner {
             }
         }
 
+        val byId = request.candidates.associateBy { it.recipeId }
         var yesterdaysDinner: PlanCandidate? = null
         // What yesterday's dinner left over: the recipe and how many servings remain.
         var leftoverForLunch: Pair<PlanCandidate, Double>? = null
@@ -99,8 +108,8 @@ object WeekPlanner {
                 val leftover = leftoverForLunch?.takeIf { it.first.recipeId !in request.excluded }
                 // Without leftovers or a lunch recipe, cook a dinner recipe for lunch rather than skip the meal.
                 val lunch = leftover?.first
-                    ?: pick(MealSlot.LUNCH, usable, meals, request, yesterdaysDinner, random)
-                    ?: pick(MealSlot.DINNER, usable, meals, request, yesterdaysDinner, random, budgetSlot = MealSlot.LUNCH)
+                    ?: pick(MealSlot.LUNCH, day, usable, meals, byId, request, yesterdaysDinner, random)
+                    ?: pick(MealSlot.DINNER, day, usable, meals, byId, request, yesterdaysDinner, random, budgetSlot = MealSlot.LUNCH)
                 if (lunch != null) {
                     meals += meal(lunch, day, MealSlot.LUNCH, request, leftover = leftover != null, available = leftover?.second)
                 }
@@ -109,7 +118,7 @@ object WeekPlanner {
 
             val lockedDinner = meals.firstOrNull { it.day == day && it.slot == MealSlot.DINNER }
             val dinner = lockedDinner?.let { locked -> request.candidates.firstOrNull { it.recipeId == locked.recipeId } }
-                ?: if (lockedDinner == null) pick(MealSlot.DINNER, usable, meals, request, yesterdaysDinner, random) else null
+                ?: if (lockedDinner == null) pick(MealSlot.DINNER, day, usable, meals, byId, request, yesterdaysDinner, random) else null
             if (dinner != null) {
                 val eaten = lockedDinner ?: meal(dinner, day, MealSlot.DINNER, request).also { meals += it }
                 val remaining = dinner.servings - eaten.portions
@@ -122,21 +131,32 @@ object WeekPlanner {
 
     private fun pick(
         slot: MealSlot,
+        day: Int,
         usable: List<PlanCandidate>,
         meals: List<PlannedMeal>,
+        byId: Map<Long, PlanCandidate>,
         request: PlanRequest,
         yesterdaysDinner: PlanCandidate?,
         random: Random,
-        /** The slot whose calorie share applies, when a recipe of one slot fills another. */
+        /** The slot whose calorie share applies, when a recipe of one slot fills another: the slot being filled. */
         budgetSlot: MealSlot = slot,
-    ): PlanCandidate? = usable.filter { slot in it.slots && isAMeal(it, budgetSlot, request.targets, request.portions) }.maxByOrNull { candidate ->
-        score(
-            candidate, budgetSlot, request,
-            uses = meals.count { it.recipeId == candidate.recipeId && !it.leftover },
-            sameTagAsYesterday = yesterdaysDinner != null && candidate.tags.firstOrNull() == yesterdaysDinner.tags.firstOrNull() &&
-                candidate.tags.isNotEmpty(),
-            jitter = random.nextDouble(),
-        )
+    ): PlanCandidate? {
+        // The packs the meals before this one opened; none to look at when no recipe says what it uses.
+        val packs = if (request.candidates.any { it.freshUses.isNotEmpty() }) OpenPacks.before(meals, byId, day, budgetSlot) else null
+        return usable.filter { slot in it.slots && isAMeal(it, budgetSlot, request.targets, request.portions) }.maxByOrNull { candidate ->
+            score(
+                candidate, budgetSlot, request,
+                uses = meals.count { it.recipeId == candidate.recipeId && !it.leftover },
+                sameTagAsYesterday = yesterdaysDinner != null && candidate.tags.firstOrNull() == yesterdaysDinner.tags.firstOrNull() &&
+                    candidate.tags.isNotEmpty(),
+                jitter = random.nextDouble(),
+                packs = packs?.let { open ->
+                    val servings = portionsFor(candidate, budgetSlot, request.targets, request.portions)
+                    request.packWeights.reuse * open.reusable(day, candidate.freshUses, servings) -
+                        request.packWeights.waste * open.wasted(day, candidate.freshUses, servings)
+                } ?: 0.0,
+            )
+        }
     }
 
     /**
@@ -152,6 +172,8 @@ object WeekPlanner {
         uses: Int,
         sameTagAsYesterday: Boolean,
         jitter: Double,
+        /** The pack term ([PackWeights]): euros of open packs the recipe uses up, less euros of rest it leaves by opening new ones. */
+        packs: Double = 0.0,
     ): Double {
         val budget = request.targets.kcal * slot.share
         val portions = portionsFor(candidate, slot, request.targets, request.portions)
@@ -163,6 +185,7 @@ object WeekPlanner {
             weights.fibre * fibreFit(candidate, slot, portions, request.targets) +
             0.5 * candidate.onHandCount.coerceAtMost(3) +
             weights.savings * savings(candidate, request) +
+            packs +
             0.4 * ((candidate.rating ?: 3) - 3) -
             3.0 * uses -
             (if (sameTagAsYesterday) 0.5 else 0.0) -
