@@ -273,14 +273,19 @@ class PlanRepository(
      * What the adjustments of the week starting [start] leave its meals still to cook short of (issue 226,
      * [dev.tobins.mealplanner.server.shortfalls]), from what was at home for them ([StockRepository.atHome]).
      * The meals walked are those cooked ([shareTaken]) or still to cook ([stillToCook]), in the order they
-     * are cooked ([cookingOrder]). Nothing without an adjusted meal in the week.
+     * are cooked ([cookingOrder]). An ingredient the week's list has no weighed row for ([withoutWeighedRow]:
+     * a staple, one to taste, one some line of the week can't weigh) counts as not known at home, so it is
+     * never short: there would be no row to ask for it again, and the warning would say what the list doesn't.
+     * Nothing without an adjusted meal in the week.
      */
     fun shortfallsIn(start: LocalDate, week: List<PlannedMeal>): Shortfalls {
         val changes = adjustments.changesIn(start)
         if (changes.isEmpty()) return Shortfalls.NONE
+        val lines = recipes.linesWithIngredients(week.map { it.recipeId })
         val toCook = stillToCook(start, week).mapTo(HashSet()) { it.day to it.slot }
         val cooked = week.filter { (it.day to it.slot) in toCook || shareTaken(start, it, week) }.sortedBy { cookingOrder(it, week) }
-        return shortfalls(adjustments.demands(cooked, changes, toCook), stock.atHome(start))
+        val noRow = lines.values.flatMapTo(HashSet(), ::withoutWeighedRow)
+        return shortfalls(adjustments.demands(cooked, lines, changes, toCook), stock.atHome(start) + noRow.associateWith { null })
     }
 
     /**

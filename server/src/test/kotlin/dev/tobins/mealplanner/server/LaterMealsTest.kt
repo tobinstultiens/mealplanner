@@ -119,6 +119,99 @@ class LaterMealsTest {
 
     private fun Kitchen.curryShort(grams: Double) = listOf(LaterShortfall(3, MealSlot.DINNER, "Spinach curry", spinach.id, "Later spinach", grams))
 
+    /**
+     * What [row] asks for, as the app works it out (`moreNeeded`, without its rounding step of 25 g and 5 %): a
+     * ticked row the need beyond what was bought, but no more than the meals to come need beyond the stock; a row
+     * not ticked what the meals to come need beyond the stock.
+     */
+    private fun asksFor(row: ShoppingItem): Double {
+        val beyondStock = row.leftToBuyGrams() ?: Double.MAX_VALUE
+        return if (row.checked) minOf(row.grams!! - row.boughtGrams!!, beyondStock).coerceAtLeast(0.0) else beyondStock
+    }
+
+    /** The spinach row asks for nothing yet: what is at home covers the week, as each case starts. */
+    private suspend fun HttpClient.covered() = assertEquals(0.0, asksFor(row("Later spinach")), 1e-9)
+
+    /** The warning names [grams] in all, and the spinach row asks for exactly that: one number for both. */
+    private suspend fun HttpClient.agree(lines: MealLines, grams: Double) {
+        assertEquals(grams, lines.shortfalls.sumOf { it.grams }, 1e-9, "the card")
+        assertEquals(grams, asksFor(row("Later spinach")), 1e-9, "the row")
+    }
+
+    @Test
+    fun withStockOnlyTheCardAndTheRowAgree() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        k.planWeek()
+        k.stockUp(k.spinach, 250.0)
+        http.covered()
+        http.agree(http.adjust(0, k.spinach to 100.0), 50.0)
+    }
+
+    @Test
+    fun withATickOnlyTheCardAndTheRowAgree() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        k.planWeek()
+        http.tick(k.spinach)
+        http.covered()
+        http.agree(http.adjust(0, k.spinach to 100.0), 100.0)
+    }
+
+    @Test
+    fun withStockAndATickTheStockIsCountedOnce() = testApplication {
+        // 100 g in stock: the row said "buy 100 g", and ticking it remembers the week's 200 g, the stock in it.
+        // At home are 200 g, not 300 g: the bowl's 100 g leaves the curry 100 g short.
+        val http = start()
+        val k = http.kitchen()
+        k.planWeek()
+        k.stockUp(k.spinach, 100.0)
+        assertEquals(100.0, asksFor(http.row("Later spinach")), 1e-9)
+        http.tick(k.spinach)
+        http.covered()
+        http.agree(http.adjust(0, k.spinach to 100.0), 100.0)
+    }
+
+    @Test
+    fun withStockAndATickAnAdditionWithinTheSurplusAsksForNothing() = testApplication {
+        // 300 g in stock for a 200 g curry, and the row ticked all the same: 100 g to spare.
+        val http = start()
+        val k = http.kitchen()
+        k.planWeek()
+        k.stockUp(k.spinach, 300.0)
+        http.tick(k.spinach)
+        http.covered()
+        val before = http.row("Later spinach")
+        http.agree(http.adjust(0, k.spinach to 60.0), 0.0)
+        assertEquals(before, http.row("Later spinach"), "the row as it was")
+        http.agree(http.adjust(0, k.spinach to 150.0), 50.0)
+    }
+
+    @Test
+    fun withStockAndATickAnAdditionAfterEatingIsAskedForOnce() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        k.planWeek()
+        k.stockUp(k.spinach, 100.0)
+        http.tick(k.spinach)
+        http.mark(0, MealStatus.EATEN)
+        http.covered()
+        // Said after eating: the bowl takes the 100 g of stock; the 100 g bought is the curry's half.
+        http.agree(http.adjust(0, k.spinach to 100.0), 100.0)
+        assertEquals(emptyList(), db.pantryQueries.selectStockOfAccount(k.userId).executeAsList(), "the stock went to the bowl")
+    }
+
+    @Test
+    fun aStapleHasNoRowSoNothingIsSaidOfIt() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        k.planWeek()
+        k.stockUp(k.spinach, 200.0)
+        assertEquals(HttpStatusCode.OK, http.put("/api/pantry/staples/${k.spinach.id}").status)
+        assertEquals(emptyList(), http.adjust(0, k.spinach to 100.0).shortfalls)
+        assertTrue(http.list().items.none { it.name == "Later spinach" })
+    }
+
     @Test
     fun spinachBoughtForALaterMealAndAddedToABowlIsAskedForAgain() = testApplication {
         val http = start()

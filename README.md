@@ -267,8 +267,10 @@ them. They are not part of the recipe's nutrition, cost or shopping until one is
 **A later meal left short.** When an adjusted meal has more of an ingredient than its recipe, and that takes
 what was at home for a meal still to cook that week, the Adjust screen says so ("Not enough left for a later
 meal": `Spinach: 100 g short for Spinach curry, dinner Thu 19 Nov`) and the shopping list asks for the amount
-short again. What is at home is what the server knows of: the stock, and what was ticked as bought on the
-week's list. With enough left (overstocked, or the later meal adjusted to use less) there is no warning and the
+short again. What is at home is what the server knows of: the larger of the stock the week had and what the
+ingredient's ticked row on the week's list covered (not their sum, as a tick covers the week's whole need, the
+stock included). A staple, an ingredient used to taste, and one whose need can't be weighed have no row to ask
+on, so nothing is said of them. With enough left (overstocked, or the later meal adjusted to use less) there is no warning and the
 list stays as it was; an addition beyond what was at home came from the fridge and asks for nothing. The same
 holds when the adjusted meal was eaten already. An ingredient set "On hand" by hand in the pantry has no amount,
 so nothing is said about it: the owner says it is at home, and the server cannot tell how much is left. The card

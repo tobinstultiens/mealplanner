@@ -626,12 +626,23 @@ pantry; the one exception is below.
 **A later meal left short** (issue 226). An adjusted meal that has more of an ingredient than its recipe may
 eat what was at home for a meal still to cook later that week. Then the Adjust screen names that meal and the
 amount it is short (`MealLines.shortfalls`), and the shopping list asks for that amount again. What was at
-home for the week's meals is what the server knows of (`StockRepository.atHome`): the stock that counts from
-the week (`onHandGramsFor`), what the week's eaten meals took of it already (it was there for them), and the
-grams each tick of a row of what the meals need remembers was bought on the week's list. An ingredient on
+home for the week's meals is what the server knows of (`StockRepository.atHome`): the larger of what the stock
+gave the week (the stock that counts from the week, `onHandGramsFor`, with what the week's eaten meals took of
+it already, as it was there for them) and the grams the tick of its row on the week's list remembers. Not their
+sum: a tick remembers what the row said then, the week's whole need, and the row asked to buy only what the
+stock did not cover, so the stock is in the tick already (100 g in stock, "buy 100 g" of a 200 g need, ticked:
+200 g at home, not 300 g). The larger of the two is also what the list counts on for a ticked row: its "more"
+is the need beyond the tick, but no more than the meals to come need beyond the stock. So the card and the row
+come from the same number. That number is what was really at home when the owner bought what the row said and
+no stock for the week came after the tick. Stock put at home for the week after its row was ticked (an item used
+up on the list, a second stock-up) is not counted, by the card nor by the row: both then say more is short than
+is, by up to that stock. An ingredient on
 hand by hand, or with stock, a use or a tick of an unknown amount, claims nothing, as nobody knows how much
 there is: an ingredient set "On hand" in the pantry gives no warning and no row, by design, until it is taken
-off again. The walk (`shortfalls` in `Shortfalls.kt`) goes through the meals cooked or still to cook in the
+off again. So does one the week's list has no row with a known weight for (`withoutWeighedRow`): a staple
+(always at home, never on the list), one that counts for nothing (to taste), and one some line of the week
+can't weigh ("1 bunch" without a weight per piece), as there is no row to ask for it on. The walk (`shortfalls`
+in `Shortfalls.kt`) goes through the meals cooked or still to cook in the
 order they are cooked (by day and slot, a leftover lunch with the dinner it was cooked with), twice at once:
 as adjusted, each meal taking what it eats while something is left, and as planned, each taking its recipe's.
 A meal still to cook needs its recipe's amount, or less when it was itself adjusted to less (more than its
@@ -640,7 +651,10 @@ least a gram, is what adjustments left it short. So:
 
 - 200 g of spinach ticked as bought for Thursday's curry, and 100 g of it added to Monday's bowl: the curry
   is 100 g short, and the list asks for 100 g more.
-- 300 g at home (overstocked): nothing is short, and nothing changes.
+- 100 g in stock and the row ticked after buying the other 100 g, then 100 g added to the bowl: 200 g was at
+  home, so the curry is 100 g short, and the list asks for 100 g more. Also when the bowl was eaten first.
+- 300 g at home (overstocked, ticked or not): 60 g added is within the 100 g to spare, nothing is short and
+  nothing changes; 150 g added leaves the curry 50 g short.
 - Nothing known at home: the bowl's spinach came from the fridge, and the curry was short of all of it
   anyway, which the list buys already: nothing more.
 - The curry itself adjusted to 100 g: nothing is short.
@@ -650,10 +664,12 @@ least a gram, is what adjustments left it short. So:
 The same holds when the bowl was eaten before the spinach was added: its share comes off the stock then
 (above), and the walk counts it back as at home for the week's meals. The Adjust screen shows a later meal
 cooked after the one being adjusted, of an ingredient that one took more of than its recipe from what was at
-home, with one amount per ingredient: the meals' shortfalls added up and rounded once. When what was bought
-covered the week before the adjustment, that sum is exactly what the row then asks for beyond it, which the app
-rounds the same way, so the card's `93 g` and the row's `93 g more` agree (two meals rounded each, 37 g and
-57 g, would have said 94 g). When less was bought than the week needed, the row asks for that too.
+home, with one amount per ingredient: the meals' shortfalls added up and rounded once. When what was at home
+covered the week before the adjustment, that sum is exactly what the row then asks for, with stock, a tick or
+both (tested for each, and after eating), and the app rounds it the same way, so the card's `93 g` and the row's
+`93 g more` agree (two meals rounded each, 37 g and 57 g, would have said 94 g). When the row asked for some
+already, it asks for that and the card's amount. A ticked row says "… more" only from the usual step (5 % and at
+least 25 g); a smaller amount is on the card alone.
 
 On the list (`ShoppingListRepository.countTaken`), only for an ingredient that leaves a later meal short, the
 grams each adjusted meal took of what was at home beyond its recipe count as part of that meal's need: in the
