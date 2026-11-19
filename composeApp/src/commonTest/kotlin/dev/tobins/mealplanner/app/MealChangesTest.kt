@@ -1,15 +1,19 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.LaterShortfall
 import dev.tobins.mealplanner.api.MealLine
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.RecipeTopping
+import dev.tobins.mealplanner.api.ToppingInput
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** What the Adjust screen sends for each edit, and how it shows amounts (issue 226). */
+/** What the Adjust screen sends for each edit, how it shows amounts, its quick add-ons and its warning, and the recipe's toppings (issue 226). */
 class MealChangesTest {
     private val rice = MealLine(1, "Rice", 150.0, recipeGrams = 100.0, changed = true)
     private val beef = MealLine(2, "Beef", 150.0, recipeGrams = 150.0)
@@ -100,7 +104,34 @@ class MealChangesTest {
     fun theIngredientsToAddLeaveOutWhatTheMealHasAndPutNamesThatStartWithTheSearchFirst() {
         fun ingredient(id: Long, name: String) = Ingredient(id, name, null, null, null, null, null, isStaple = false)
         val all = listOf(ingredient(1, "Rice"), ingredient(5, "Brown rice"), ingredient(6, "Rice vinegar"), ingredient(7, "Avocado"))
-        assertEquals(listOf("Rice vinegar", "Brown rice"), ingredientsMatching(all, "RICE ", inMeal = setOf(1)).map { it.name })
-        assertEquals(listOf("Avocado", "Brown rice", "Rice vinegar"), ingredientsMatching(all, "", inMeal = setOf(1)).map { it.name })
+        assertEquals(listOf("Rice vinegar", "Brown rice"), ingredientsMatching(all, "RICE ", left = setOf(1)).map { it.name })
+        assertEquals(listOf("Avocado", "Brown rice", "Rice vinegar"), ingredientsMatching(all, "", left = setOf(1)).map { it.name })
+    }
+
+    @Test
+    fun theQuickAddOnsLeaveOutWhatTheMealHasAndSayTheirAmount() {
+        val avocado = AddOn(8, "Avocado", 70.0, 140.0, topping = true)
+        val feta = AddOn(5, "Feta", 40.0, times = 2)
+        // The egg is in the meal already (changed on its line), and so is the rice.
+        val offered = meal.quickAddOns(listOf(avocado, AddOn(4, "Egg", 60.0, 60.0, topping = true), feta, AddOn(1, "Rice", 50.0)))
+        assertEquals(listOf(avocado, feta), offered)
+        assertEquals(listOf("Avocado · 0.5 pieces", "Feta · 40 g"), offered.map { it.chipText(Strings.English) })
+        assertEquals("Avocado · 0,5 stuks", avocado.chipText(Strings.Dutch))
+        assertEquals("Egg · 1 piece", AddOn(4, "Egg", 60.0, 60.0).chipText(Strings.English))
+    }
+
+    @Test
+    fun aLaterMealLeftShortIsNamedWithItsDayAndTheAmount() {
+        val short = LaterShortfall(3, MealSlot.DINNER, "Spinach curry", 8, "Spinach", 100.0)
+        assertEquals("Spinach: 100 g short for Spinach curry, dinner Thu 19 Nov", short.text("2026-11-16", Strings.English))
+        assertEquals("Spinach: 100 g te weinig voor Spinach curry, avondeten do 19 nov", short.text("2026-11-16", Strings.Dutch))
+    }
+
+    @Test
+    fun aToppingIsChangedWhereItIsAddedAtTheEndOrRemoved() {
+        val toppings = listOf(RecipeTopping(4, "Egg", 60.0, 60.0), RecipeTopping(5, "Feta", 30.0))
+        assertEquals(listOf(ToppingInput(4, 120.0), ToppingInput(5, 30.0)), toppings.withTopping(4, 120.0))
+        assertEquals(listOf(ToppingInput(4, 60.0), ToppingInput(5, 30.0), ToppingInput(8, 70.0)), toppings.withTopping(8, 70.0))
+        assertEquals(listOf(ToppingInput(5, 30.0)), toppings.withoutTopping(4))
     }
 }

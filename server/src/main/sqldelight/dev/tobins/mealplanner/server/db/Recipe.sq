@@ -40,6 +40,20 @@ CREATE TABLE recipeIngredient (
 
 CREATE INDEX recipeIngredient_recipe ON recipeIngredient(recipeId, position);
 
+-- An optional topping of a recipe (issue 226): an ingredient of the account's catalogue and the grams one
+-- meal usually gets of it. App-owned and kept apart from the recipe's lines, so a sync never changes it and
+-- it is not in the recipe's nutrition, cost or shopping until a meal has it added (mealLine).
+CREATE TABLE recipeTopping (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    recipeId INTEGER NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    grams REAL NOT NULL,
+    PRIMARY KEY (userId, recipeId, ingredientId)
+);
+
+CREATE INDEX recipeTopping_ingredient ON recipeTopping(ingredientId);
+
 -- My recipes: those the account added, also one whose file has since left the cooking site.
 selectMine:
 SELECT * FROM recipe WHERE userId = ? AND addedAt IS NOT NULL ORDER BY title COLLATE NOCASE;
@@ -115,3 +129,12 @@ DELETE FROM recipeIngredient WHERE recipeId = ?;
 insertIngredient:
 INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item, groupName)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectToppings:
+SELECT ingredientId, grams FROM recipeTopping WHERE userId = :userId AND recipeId = :recipeId ORDER BY position;
+
+deleteToppings:
+DELETE FROM recipeTopping WHERE userId = :userId AND recipeId = :recipeId;
+
+insertTopping:
+INSERT INTO recipeTopping (userId, recipeId, ingredientId, position, grams) VALUES (?, ?, ?, ?, ?);

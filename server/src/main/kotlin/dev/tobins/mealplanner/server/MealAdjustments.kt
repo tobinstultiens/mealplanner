@@ -31,6 +31,25 @@ class MealAdjustments(
     fun changesOf(start: LocalDate, meal: PlannedMeal): Map<Long, Double> =
         q.selectMealLines(userId, start.toString(), meal.day.toLong(), meal.slot.name).executeAsList().associate { it.ingredientId to it.grams }
 
+    /** The changes of every adjusted meal of the week starting [start], by day and slot; grams eaten by ingredient id. */
+    fun changesIn(start: LocalDate): Map<Pair<Int, MealSlot>, Map<Long, Double>> =
+        q.selectWeekLines(userId, start.toString()).executeAsList()
+            .groupBy({ it.day.toInt() to MealSlot.valueOf(it.slot) }, { it.ingredientId to it.grams })
+            .mapValues { (_, lines) -> lines.toMap() }
+
+    /**
+     * [meals] of one week as [shortfalls] walks them: what each one's recipe gives it and what
+     * it eats with [changes] ([changesIn]); those in [toCook], by day and slot, are still to cook.
+     */
+    fun demands(meals: List<PlannedMeal>, changes: Map<Pair<Int, MealSlot>, Map<Long, Double>>, toCook: Set<Pair<Int, MealSlot>>): List<MealDemand> {
+        val recipeLines = recipes.linesWithIngredients(meals.map { it.recipeId })
+        return meals.map { meal ->
+            val recipe = recipeLines[meal.recipeId]?.let { gramsUsed(it, meal.portions) }.orEmpty()
+            val eaten = (recipe + changes[meal.day to meal.slot].orEmpty()).filterValues { it > 0.0 }
+            MealDemand(meal, recipe, eaten, toCook = (meal.day to meal.slot) in toCook)
+        }
+    }
+
     /** Grams of each ingredient that eating [meal] uses: its portions of [recipe] ([gramsUsed]) with its changes. */
     fun gramsEaten(start: LocalDate, meal: PlannedMeal, recipe: RecipeLines): Map<Long, Double> =
         (gramsUsed(recipe, meal.portions) + changesOf(start, meal)).filterValues { it > 0.0 }
@@ -45,9 +64,7 @@ class MealAdjustments(
      */
     fun withNutrition(start: LocalDate, meals: List<PlannedMeal>): List<PlannedMeal> {
         val fibre = recipes.fibrePerServing(meals.map { it.recipeId })
-        val changes = q.selectWeekLines(userId, start.toString()).executeAsList()
-            .groupBy({ it.day.toInt() to MealSlot.valueOf(it.slot) }, { it.ingredientId to it.grams })
-            .mapValues { (_, lines) -> lines.toMap() }
+        val changes = changesIn(start)
         val adjusted = meals.filter { (it.day to it.slot) in changes }
         if (adjusted.isEmpty()) return meals.map { it.copy(fibreG = fibre[it.recipeId]?.let { perServing -> perServing * it.portions }) }
         val recipeLines = recipes.linesWithIngredients(adjusted.map { it.recipeId })

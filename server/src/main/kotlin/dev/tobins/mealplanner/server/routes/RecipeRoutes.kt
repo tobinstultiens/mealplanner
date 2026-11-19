@@ -9,6 +9,7 @@ import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.Routines
+import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.server.CookingSync
 import dev.tobins.mealplanner.server.NotFoundException
 import dev.tobins.mealplanner.server.accountId
@@ -84,6 +85,10 @@ fun Route.recipeRoutes(cooking: CookingSync) {
         put("/rating") { call.respond(call.user.recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
         put("/added") { call.respond(call.user.recipes.setAdded(call.id(), call.receive<AddedInput>())) }
         put("/rotation") { call.respond(call.user.recipes.setRotation(call.id(), call.receive<RotationInput>())) }
+        // Optional toppings (issue 226), body {"toppings": [{"ingredientId": 7, "grams": 60}]}: all of them, replacing those before.
+        put("/toppings") { call.respond(call.user.toppings.set(call.id(), call.receive<ToppingsInput>())) }
+        // What a meal of the recipe can have added with one tap: its toppings, then what its meals had added before.
+        get("/add-ons") { call.respond(call.user.toppings.addOns(call.id())) }
         // The recipe's picture, at the URL in its summary. That URL changes with the picture, so
         // clients may keep it for good; private, since it is this account's.
         get("/image") {

@@ -1,6 +1,8 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.LaterShortfall
 import dev.tobins.mealplanner.api.MealLine
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
@@ -59,10 +61,32 @@ val MealLine.leftOut: Boolean get() = fromRecipe && changed && grams == 0.0
 fun amountText(grams: Double?, gramsPerPiece: Double?, strings: Strings): String? {
     grams ?: return null
     val weight = formatGrams(grams, strings.locale)
-    if (gramsPerPiece == null || gramsPerPiece <= 0.0) return weight
-    val pieces = grams / gramsPerPiece
-    return "${strings.plural(Plural.PIECES_AMOUNT, if (abs(pieces - 1.0) < 1e-9) 1 else 2, formatAmount(pieces, strings.locale))} · $weight"
+    return piecesText(grams, gramsPerPiece, strings)?.let { "$it · $weight" } ?: weight
 }
+
+/** `1 piece`, `1.5 pieces`: [grams] in pieces of [gramsPerPiece] g; null for an ingredient that is weighed. */
+fun piecesText(grams: Double, gramsPerPiece: Double?, strings: Strings): String? {
+    if (gramsPerPiece == null || gramsPerPiece <= 0.0) return null
+    val pieces = grams / gramsPerPiece
+    return strings.plural(Plural.PIECES_AMOUNT, if (abs(pieces - 1.0) < 1e-9) 1 else 2, formatAmount(pieces, strings.locale))
+}
+
+/**
+ * The quick add-ons to offer for this meal: [addOns] in the server's order (the recipe's toppings, then what its
+ * meals had added before), without what the meal has already, which is changed on its own line.
+ */
+fun MealLines.quickAddOns(addOns: List<AddOn>): List<AddOn> {
+    val inMeal = lines.mapNotNullTo(HashSet()) { it.ingredientId }
+    return addOns.filter { it.ingredientId !in inMeal }
+}
+
+/** `Egg · 1 piece`, `Feta · 40 g`: a quick add-on as its chip says it, in pieces where the catalogue counts them. */
+fun AddOn.chipText(strings: Strings): String =
+    "$name · ${piecesText(grams, gramsPerPiece, strings) ?: formatGrams(grams, strings.locale)}"
+
+/** `Spinach: 100 g short for Spinach curry, dinner Thu 19 Nov`: a later meal this one left short, in the week starting [weekStart]. */
+fun LaterShortfall.text(weekStart: String, strings: Strings): String =
+    strings(Msg.ADJUST_SHORT, name, formatGrams(grams, strings.locale), title, strings.slot(slot), dayLabel(plusDays(weekStart, day), strings.locale))
 
 /** What a line says under its name: its amount, and how it differs from the recipe. */
 fun MealLine.note(strings: Strings): String {
@@ -96,10 +120,11 @@ fun amountFieldText(grams: Double?, inPieces: Boolean, gramsPerPiece: Double?): 
 
 /**
  * The catalogue's ingredients to add, for [query]: those whose name has it, names that start with it
- * first, then by name. What the meal has already is left out: it is changed on its own line.
+ * first, then by name. Those in [left] are left out, as what the meal (or the recipe's toppings) has
+ * already is changed on its own line.
  */
-fun ingredientsMatching(all: List<Ingredient>, query: String, inMeal: Set<Long>): List<Ingredient> {
+fun ingredientsMatching(all: List<Ingredient>, query: String, left: Set<Long>): List<Ingredient> {
     val words = query.trim().lowercase()
-    return all.filter { it.id !in inMeal && (words.isEmpty() || words in it.name.lowercase()) }
+    return all.filter { it.id !in left && (words.isEmpty() || words in it.name.lowercase()) }
         .sortedWith(compareBy({ !it.name.lowercase().startsWith(words) }, { it.name.lowercase() }))
 }

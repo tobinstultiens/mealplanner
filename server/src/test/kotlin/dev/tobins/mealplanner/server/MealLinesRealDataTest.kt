@@ -10,9 +10,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Migrates a copy of a real database across adjusted meals (17.sqm) and checks that every table keeps its
- * rows and every planned meal what it had, with no line of its own yet. Prints row counts and integrity
- * checks. Runs only when MEALS_DB names a database file; that file is copied first and never opened itself:
+ * Migrates a copy of a real database across adjusted meals (17.sqm) and a recipe's toppings (18.sqm), and
+ * checks that every table keeps its rows and every planned meal what it had, with no line or topping of its
+ * own yet. Prints row counts and integrity checks. Runs only when MEALS_DB names a database file; that file is copied first and never opened itself:
  * `MEALS_DB=/path/to/mealplanner.db ./gradlew :server:test --tests '*MealLinesRealDataTest*' -i`
  */
 class MealLinesRealDataTest {
@@ -70,8 +70,34 @@ class MealLinesRealDataTest {
         assertEquals(Database.Schema.version, version(url))
     }
 
+    @Test
+    fun aCopyOfARealDatabaseKeepsEveryRowWhenRecipesGetToppings() {
+        val original = System.getenv("MEALS_DB")?.let(::File) ?: return
+        val copy = File(createTempDirectory("toppings").toFile(), "copy.db")
+        original.copyTo(copy)
+        val url = "jdbc:sqlite:${copy.path}"
+        migrate(url, TOPPINGS_VERSION - 1)
+        val before = counts(url)
+        val meals = meals(url)
+        val lines = query(url, "SELECT count(*) FROM mealLine")
+        println("Before toppings: version ${version(url)}, checks ${checks(url)}, rows $before")
+
+        migrate(url, TOPPINGS_VERSION)
+        val after = counts(url)
+        println("After: version ${version(url)}, checks ${checks(url)}, rows $after")
+        assertEquals(listOf("ok") to emptyList(), checks(url))
+        assertEquals(before + ("recipeTopping" to 0L), after, "every table keeps its rows, and the new one starts empty")
+        assertEquals(meals to lines, meals(url) to query(url, "SELECT count(*) FROM mealLine"), "every meal and its lines as they were")
+
+        openDatabase(url).first.close()
+        assertEquals(Database.Schema.version, version(url))
+    }
+
     private companion object {
         /** The version that has adjusted meals (17.sqm). */
         const val LINES_VERSION = 18L
+
+        /** The version that has a recipe's toppings (18.sqm). */
+        const val TOPPINGS_VERSION = 19L
     }
 }

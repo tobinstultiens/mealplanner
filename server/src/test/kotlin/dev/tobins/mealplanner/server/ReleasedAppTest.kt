@@ -204,6 +204,7 @@ class ReleasedAppTest {
         http.put("/api/mappings") { setBody(MappingRequest("dragon fruit", nevoCode = 305, name = "Dragon fruit", gramsPerPiece = 300.0)) }.read<Ingredient>()
         assertTrue(http.read<FoodDataset>("/api/foods/dataset").foodCount > 0)
         assertTrue(http.read<List<Food>>("/api/foods?q=chicken").isNotEmpty())
+        http.readsARecipeWithAToppingOf(mine.summary.id, chicken.id)
 
         // Offers and prices; the weekly lookup of regular prices fills the table for every account.
         db.priceQueries.upsertPrice("chicken fillet", "AH", "AH Kipfilet", "500 g", 6.0, 12.0, "2026-11-15T00:00:00Z", "Vlees", null, null)
@@ -233,6 +234,7 @@ class ReleasedAppTest {
         val list = http.read<ShoppingList>("/api/plans/$week/shopping")
         assertTrue(list.items.isNotEmpty())
         assertTrue(http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(list.items.first().key, true)) }.read<ShoppingList>().items.first().checked)
+        http.readsARowAskedForAgain(chicken.id)
 
         // The day, a log entry and weights.
         val date = "2026-11-17"
@@ -242,6 +244,27 @@ class ReleasedAppTest {
         http.put("/api/weights/$date") { setBody(90.5) }.read<WeightLog>()
         assertTrue(http.read<WeightLog>("/api/weights").entries.isNotEmpty())
         http.delete("/api/weights/$date").read<WeightLog>()
+    }
+
+    /** A topping of ingredient [ingredientId] set on recipe [recipeId] in a newer app (issue 226): the installed app reads the recipe as before. */
+    private suspend fun HttpClient.readsARecipeWithAToppingOf(recipeId: Long, ingredientId: Long) {
+        val topped = put("/api/recipes/$recipeId/toppings") { setBody("""{"toppings":[{"ingredientId":$ingredientId,"grams":50.0}]}""") }
+        assertTrue(topped.status.isSuccess(), topped.bodyAsText())
+        read<RecipeDetail>("/api/recipes/$recipeId")
+    }
+
+    /**
+     * Ingredient [ingredientId] ticked as bought for the week, then added in a newer app to the first meal still to
+     * cook out of what the meals after it need (issue 226): the installed app reads the row, which needs more.
+     */
+    private suspend fun HttpClient.readsARowAskedForAgain(ingredientId: Long) {
+        val key = "i$ingredientId"
+        val bought = put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, true)) }.read<ShoppingList>().items.single { it.key == key }
+        val next = read<WeekPlan>("/api/plans/$week").days.flatMap { it.meals }.filter { it.status == MealStatus.PLANNED }.minBy { it.day * 4 + it.slot.ordinal }
+        val more = put("/api/plans/$week/meals/${next.day}/${next.slot}/lines") { setBody("""{"lines":[{"ingredientId":$ingredientId,"grams":1500.0}]}""") }
+        assertTrue(more.status.isSuccess(), more.bodyAsText())
+        val asked = read<ShoppingList>("/api/plans/$week/shopping").items.single { it.key == key }
+        assertTrue(asked.checked && asked.grams!! > bought.grams!!, "${asked.grams} after ${bought.grams}")
     }
 
     /**

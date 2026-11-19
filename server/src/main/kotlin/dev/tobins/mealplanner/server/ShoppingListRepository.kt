@@ -78,6 +78,7 @@ class ShoppingListRepository(
         val week = needsOf(meals, sectionOf, lines)
         // The stock went down for the meals eaten, so what is still needed goes by the meals still to cook.
         val toCook = needsOf(plans.stillToCook(start, meals), sectionOf, lines).needs.associateBy { it.key }
+        countTaken(plans.shortfallsIn(start, meals), week.needs.associateBy { it.key }, toCook)
         val ownRows = q.selectExtrasForWeek(userId, start.toString()).executeAsList()
         val own = ownNeeds(ownRows, sectionOf)
         val ticks = ticks(start)
@@ -143,6 +144,28 @@ class ShoppingListRepository(
      */
     private fun needsOf(meals: List<PlannedMeal>, sectionOf: Map<Long, ShopSection>, lines: Map<Long, RecipeLines>): ShoppingNeeds =
         shoppingNeeds(planned(meals), lines, sectionOf)
+
+    /**
+     * Counts what adjusted meals took of what was at home beyond their recipes as their need (issue 226), on
+     * the rows of the ingredients that leaves a meal still to cook short of ([PlanRepository.shortfallsIn]): in
+     * the week's need ([week]), and for a meal still to cook in that of the meals to come ([toCook]), with the
+     * meal named among the row's. So a ticked row needs more than was bought, and one not ticked more than is on
+     * hand, by what the later meal is short. Every other row stays as the recipes have it, as an adjustment buys
+     * nothing itself, and so does a row whose weight is not known in full, as there is nothing to add it to.
+     */
+    private fun countTaken(shortfalls: Shortfalls, week: Map<ShoppingKey, ShoppingNeed>, toCook: Map<ShoppingKey, ShoppingNeed>) {
+        for ((id, taken) in shortfalls.taken) {
+            val key = ShoppingKey.Ingredient(id)
+            val need = week[key]?.takeIf { it.totalGrams != null } ?: continue
+            for (took in taken) {
+                val rows = listOfNotNull(need, toCook[key]?.takeIf { took.demand.toCook })
+                for (row in rows) {
+                    row.grams += took.grams
+                    row.recipes += took.demand.meal.title
+                }
+            }
+        }
+    }
 
     /**
      * This row with what the meals still to cook need of it ([toComeGrams]), their pieces and the

@@ -12,6 +12,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import dev.tobins.mealplanner.api.MealLineChange
@@ -27,8 +28,9 @@ import kotlin.test.assertEquals
 
 /**
  * The Adjust screen as it is used (issue 226): every edit sends the meal's whole list of changes, an undo
- * sends the list from before, amounts go in pieces or grams, and an ingredient of the catalogue is added.
- * The fake's dinner starts with more chicken (250 g), the spinach left out and an egg (60 g) added.
+ * sends the list from before, amounts go in pieces or grams, an ingredient of the catalogue is added, a quick
+ * add-on with one tap, and a later meal left short is named. The fake's dinner starts with more chicken (250 g,
+ * 50 g of Saturday's), the spinach left out and an egg (60 g) added.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -67,6 +69,9 @@ class AdjustMealScreenTest {
 
     private fun scrollTo(text: String) = scrollTo(hasText(text))
 
+    /** The spinach's line at the top of the list and the olive oil's just below it, so that both show whether they are left out. */
+    private fun showSpinachAndOliveOil() = compose.onNode(hasScrollToNodeAction()).performScrollToKey("8:Spinach")
+
     /** Waits until the server holds [changes], in any order. */
     private fun waitForChanges(vararg changes: MealLineChange) =
         compose.waitUntil(timeoutMillis = 10_000) { backend.lineChanges.toSet() == changes.toSet() }
@@ -84,7 +89,8 @@ class AdjustMealScreenTest {
         waitFor("Olive oil left out")
         compose.onNodeWithText("Undo").performClick()
         waitForChanges(*start.toTypedArray())
-        // The olive oil's line shows it back once the answer to the undo is in.
+        // The olive oil's line shows it back once the answer to the undo is in; the spinach's stays left out.
+        showSpinachAndOliveOil()
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Put back").fetchSemanticsNodes().size == 1 }
 
         scrollTo("Put back").performClick()
@@ -98,8 +104,8 @@ class AdjustMealScreenTest {
         waitForChanges(*start.toTypedArray(), MealLineChange(5, 0.0))
         waitFor("Olive oil left out")
         // While that snackbar shows, the spinach is put back; then the olive oil's Undo is tapped.
+        showSpinachAndOliveOil()
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Put back").fetchSemanticsNodes().size == 2 }
-        scrollTo(hasText("Spinach")).assertExists()
         compose.onAllNodesWithText("Put back")[0].performClick()
         waitForChanges(MealLineChange(1, 250.0), MealLineChange(9, 60.0), MealLineChange(5, 0.0))
         compose.onNodeWithText("Undo").performClick()
@@ -134,5 +140,32 @@ class AdjustMealScreenTest {
         scrollTo("Reset to recipe").performClick()
         waitForChanges()
         assertEquals("PUT lines {\"lines\":[]}", backend.changes.last())
+    }
+
+    @Test
+    fun aQuickAddOnIsAddedWithOneTapAndCanBeUndone() {
+        show()
+        // The recipe's toppings first (its egg is in the meal already, so not offered), then what was added before.
+        // They load after the meal.
+        compose.waitUntil(timeoutMillis = 10_000) { runCatching { scrollTo("Greek yoghurt · 50 g") }.isSuccess }
+        assertEquals(0, compose.onAllNodesWithText("Egg · 1 piece").fetchSemanticsNodes().size)
+        scrollTo("Feta · 30 g").performClick()
+        waitForChanges(*start.toTypedArray(), MealLineChange(2, 30.0))
+        waitFor("Feta added")
+        compose.onNodeWithText("Undo").performClick()
+        waitForChanges(*start.toTypedArray())
+    }
+
+    @Test
+    fun theLaterMealLeftShortIsNamedUntilEnoughIsLeft() {
+        show()
+        val warning = "Chicken thigh fillet: 50 g short for Slow-cooked chicken thighs with coconut, lemon and spinach, dinner Sat 21 Nov"
+        scrollTo(warning).assertExists()
+        compose.onNodeWithText("This meal used what was at home for it, so the shopping list asks for it again.").assertExists()
+
+        // Back to the recipe's 200 g of chicken, the later dinner has its share again.
+        scrollTo("Chicken thigh fillet").performClick()
+        typeAmount("200")
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Not enough left for a later meal").fetchSemanticsNodes().isEmpty() }
     }
 }

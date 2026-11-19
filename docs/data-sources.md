@@ -615,8 +615,51 @@ stock by the difference: for each ingredient whose amount changed, what the meal
 the entries it came from and the new amount is taken as eating it would take it (`StockRepository.retake`);
 what it took of the others stays. What the meal holds is then kept under it as before, so un-eating it
 gives back exactly that and the pantry is as it was before the meal was eaten. Adjusting a meal still to
-eat changes nothing in the stock until it is eaten. The shopping list does not change for an adjustment:
-what was added came from the fridge or the pantry.
+eat changes nothing in the stock until it is eaten. The new amount of an eaten meal is taken from the stock
+as it is when the adjustment is made, not as it was when the meal was eaten: nothing records what was at
+home then. So an egg added to Monday's dinner on Wednesday, after eggs were bought on Tuesday, is taken
+from Tuesday's eggs although they were not there on Monday; and a meal eaten before version 11, which kept
+no uses, has its changed ingredients taken in full. Un-eating gives back exactly what was taken either way.
+The shopping list does not change for an adjustment by itself: what was added came from the fridge or the
+pantry; the one exception is below.
+
+**A later meal left short** (issue 226). An adjusted meal that has more of an ingredient than its recipe may
+eat what was at home for a meal still to cook later that week. Then the Adjust screen names that meal and the
+amount it is short (`MealLines.shortfalls`), and the shopping list asks for that amount again. What was at
+home for the week's meals is what the server knows of (`StockRepository.atHome`): the stock that counts from
+the week (`onHandGramsFor`), what the week's eaten meals took of it already (it was there for them), and the
+grams each tick of a row of what the meals need remembers was bought on the week's list. An ingredient on
+hand by hand, or with stock, a use or a tick of an unknown amount, claims nothing, as nobody knows how much
+there is. The walk (`shortfalls` in `Shortfalls.kt`) goes through the meals cooked or still to cook in the
+order they are cooked (by day and slot, a leftover lunch with the dinner it was cooked with), twice at once:
+as adjusted, each meal taking what it eats while something is left, and as planned, each taking its recipe's.
+A meal still to cook needs its recipe's amount, or less when it was itself adjusted to less (more than its
+recipe is from the fridge too). What it is short as adjusted beyond what it would be short as planned, at
+least a gram, is what adjustments left it short. So:
+
+- 200 g of spinach ticked as bought for Thursday's curry, and 100 g of it added to Monday's bowl: the curry
+  is 100 g short, and the list asks for 100 g more.
+- 300 g at home (overstocked): nothing is short, and nothing changes.
+- Nothing known at home: the bowl's spinach came from the fridge, and the curry was short of all of it
+  anyway, which the list buys already: nothing more.
+- The curry itself adjusted to 100 g: nothing is short.
+- The spinach added to Friday's bowl, after the curry is cooked: the curry had its share first, nothing is
+  short.
+
+The same holds when the bowl was eaten before the spinach was added: its share comes off the stock then
+(above), and the walk counts it back as at home for the week's meals. The Adjust screen shows a later meal
+cooked after the one being adjusted, of an ingredient that one took more of than its recipe from what was at
+home.
+
+On the list (`ShoppingListRepository.countTaken`), only for an ingredient that leaves a later meal short, the
+grams each adjusted meal took of what was at home beyond its recipe count as part of that meal's need: in the
+row's `grams` (the week's need), and while that meal is still to cook in `toComeGrams`, with the meal among the
+row's `recipes`. The row is then read as any row whose need grew: a ticked row needs more than it remembers
+was bought and the app shows it open with `100 g more (200 g bought)` (from the usual step, 5 % and at least 25
+g; "What the app shows of it" below), and a row not ticked says the stock no longer covers it (`150 g on hand,
+buy 50 g`). Ticking it again remembers the new amount, after which the walk finds enough at home. Every other
+row stays as the recipes have it, as does a row whose weight is not known in full. An installed app reads it as
+before, as only the numbers of fields it knows change.
 
 What a meal took is kept under its day and slot and goes with the meal, so a meal the stock went down
 for keeps its recipe and its place: it was eaten, it is the leftover lunch of an eaten dinner, or what
@@ -645,6 +688,7 @@ or its dinner, is un-eaten:
 | Adjusting what was in it (`PUT meals/{day}/{slot}/lines`) | skipped | 409, nothing changes |
 | Adjusting what was in it | its share taken (as the first row) | the meal keeps its recipe; the stock moves by the difference |
 | Adjusting what was in it | any other meal | only its lines change; the stock waits until it is eaten |
+| Adjusting what was in it | it takes what was at home for a later meal | as above; that meal is named on the Adjust screen and the list asks for the amount short ("A later meal left short") |
 
 Removing the leftover lunch of an eaten dinner is refused rather than giving its share back: the
 dinner was cooked with it, so that share is used whether the lunch is eaten or not. Skipping it says
@@ -726,7 +770,8 @@ server has it when the tick arrives, so a tick an app sends late (offline first)
 that moment.
 
 **What the app shows of it.** A ticked row whose need grew since it was bought (the weight by more
-than 5 % and at least 25 g, or at least one more piece) is shown open, with `600 g more (800 g
+than 5 % and at least 25 g, or at least one more piece; also when an adjusted meal ate what was bought for
+a later one, "A later meal left short" above) is shown open, with `600 g more (800 g
 bought)`, and counts as not ticked in the progress line, the sections and shopping mode's Done
 groups; tapping it ticks it again (`PUT /api/plans/{weekStart}/shopping/again` with `{"key":
 "i12"}`), so the server remembers the new amount. That is one step in one transaction, so a failed
