@@ -15,6 +15,7 @@ import dev.tobins.mealplanner.api.MealLine
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.Me
+import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Nutrition
@@ -24,6 +25,8 @@ import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.PrepMeal
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.PricesState
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
@@ -38,6 +41,7 @@ import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
+import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.LaterShortfall
@@ -79,6 +83,8 @@ class FakeBackend(
     private val emptyRecipes: Boolean = false,
     /** A server from before the recipe bank: no bank route, and recipes without the flags of mine and the rotation. */
     private val olderServer: Boolean = false,
+    /** The week with a prep of the chicken thighs (issue 234), whose Wednesday lunch was skipped and is still in the box. */
+    private val prepped: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -162,6 +168,7 @@ class FakeBackend(
                 ),
             )
             parts.size == 3 && parts[1] == "days" -> json.encodeToString(day(parts[2]))
+            parts.size == 4 && parts[1] == "preps" && parts[2] == "spare" -> json.encodeToString(if (prepped) listOf(spare) else emptyList())
             parts.size == 3 && parts[1] == "plans" -> json.encodeToString(plan(parts[2]))
             // What was in a meal; every meal of the week is Wednesday's dinner here.
             parts.size == 7 && parts[1] == "plans" && parts[6] == "lines" -> json.encodeToString(mealLines(method, sent))
@@ -236,9 +243,10 @@ class FakeBackend(
                 index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true, fibreG = 12.6)
                 else -> meal
             }
-        }.map { meal ->
-            // What the server says to cook: Friday's lentil soup also feeds Saturday's lunch, which cooks nothing.
+        }.map { meal -> if (prepped) prepped(meal) else meal }.map { meal ->
+            // What the server says to cook: Friday's lentil soup also feeds Saturday's lunch, which cooks nothing; the prep's Monday dinner cooks the batch.
             meal.copy(cookPortions = when {
+                meal.prep != null -> if (meal.leftover) 0.0 else meal.prep!!.portions
                 meal.status == MealStatus.SKIPPED || meal.leftover -> 0.0
                 index == 4 && meal.slot == MealSlot.DINNER -> 2.0
                 else -> meal.portions
@@ -246,6 +254,30 @@ class FakeBackend(
         }
         val counted = meals.filter { it.status != MealStatus.SKIPPED }
         return PlanDay(plusDays(WEEK_START, index), meals, counted.sumOf { it.kcal }, counted.sumOf { it.proteinG }, counted.sumOf { it.fibreG!! })
+    }
+
+    /**
+     * The chicken thighs prepped: made on Monday's dinner and eaten on Tuesday's and Wednesday's lunches and Thursday's
+     * dinner, in a box for three days. Wednesday's lunch was skipped, so its share is in the box ([spare]).
+     */
+    private val prep = MealPrep(
+        id = 1, madeOn = WEEK_START, lastDay = plusDays(WEEK_START, 3), vacuum = false,
+        meals = listOf(0 to MealSlot.DINNER, 1 to MealSlot.LUNCH, 2 to MealSlot.LUNCH, 3 to MealSlot.DINNER).map { (day, slot) ->
+            PrepMeal(plusDays(WEEK_START, day), slot, 1.0, if (day == 2) MealStatus.SKIPPED else MealStatus.PLANNED)
+        },
+    )
+
+    private val spare = SparePortion(
+        prepId = 1, recipeId = 4, title = "Slow-cooked chicken thighs with coconut, lemon and spinach", portions = 1.0,
+        skipped = PrepSlot(plusDays(WEEK_START, 2), MealSlot.LUNCH), lastDay = prep.lastDay,
+        room = listOf(PrepSlot(plusDays(WEEK_START, 2), MealSlot.DINNER), PrepSlot(plusDays(WEEK_START, 3), MealSlot.LUNCH)),
+    )
+
+    /** [meal] as the week of [prepped] has it: one of the prep's, or as it was. */
+    private fun prepped(meal: PlannedMeal): PlannedMeal {
+        val ofPrep = prep.meals.firstOrNull { it.date == plusDays(WEEK_START, meal.day) && it.slot == meal.slot } ?: return meal
+        val chicken = meal(meal.day, meal.slot, 4, "Slow-cooked chicken thighs with coconut, lemon and spinach", 810.0, 55.0, 5.3, cost = 3.9)
+        return chicken.copy(status = ofPrep.status, leftover = meal.day > 0, locked = true, prep = prep)
     }
 
     private fun plan(weekStart: String) = WeekPlan(
@@ -412,6 +444,8 @@ class FakeBackend(
         uncounted: List<String> = emptyList(),
         source: RecipeSource = RecipeSource.COOKING_SITE,
         kind: RecipeKind = RecipeKind.MEAL,
+        /** Days it keeps once made, in a box and vacuum sealed (issue 234). */
+        keeps: Pair<Int?, Int?> = null to null,
     ) = RecipeSummary(
         id = id,
         title = title,
@@ -432,6 +466,8 @@ class FakeBackend(
         added = added,
         inRotation = inRotation,
         removedFromSite = removedFromSite,
+        keepsDays = keeps.first,
+        keepsVacuumDays = keeps.second,
     )
 
     /**
@@ -444,7 +480,7 @@ class FakeBackend(
         summary(1, "Overnight oats with blueberries", "Breakfast", 460.0, 24.0, 4, listOf("quick", "vegetarian"), photo = true),
         summary(2, "Chickpea salad with feta and roasted peppers", "Lunch", 640.0, 42.0, 5, listOf("vegetarian")),
         summary(3, "Tuna pasta salad", "Lunch", 610.0, 38.0, null, inRotation = false),
-        summary(4, "Slow-cooked chicken thighs with coconut, lemon and spinach", "Dinner", 810.0, 55.0, 5, listOf("meal prep", "gluten free"), photo = true),
+        summary(4, "Slow-cooked chicken thighs with coconut, lemon and spinach", "Dinner", 810.0, 55.0, 5, listOf("meal prep", "gluten free"), photo = true, keeps = 3 to 6),
         summary(5, "Lentil soup", "Dinner", 520.0, 31.0, 3, uncounted = listOf("red lentils")),
         summary(6, "Shakshuka", "Dinner", 560.0, 29.0, 4, listOf("vegetarian", "eggs"), inRotation = false, removedFromSite = true),
         summary(7, "Peanut sauce", "", 180.0, 6.0, null, source = RecipeSource.MANUAL, kind = RecipeKind.COMPONENT),

@@ -34,10 +34,21 @@ class Strings private constructor(val language: Language, val locale: FormatLoca
     fun slot(slot: MealSlot, capitalised: Boolean = false): String =
         this(slot.msg()).let { if (capitalised) it.replaceFirstChar { c -> c.uppercase() } else it }
 
-    /** A planned meal's slot as a small heading: `Dinner`, `Dinner · leftovers`, `Lunch · leftovers · adjusted`. */
+    /**
+     * A planned meal's slot as a small heading: `Dinner`, `Dinner · leftovers`, `Lunch · leftovers · adjusted`; of a
+     * prepped batch (issue 234) `Dinner · prep day` where it is made and `Lunch · prepped Tue 17 Nov` after.
+     */
     fun mealLabel(meal: PlannedMeal): String =
         slot(meal.slot, capitalised = true)
-            .let { if (meal.leftover) this(Msg.MEAL_LEFTOVERS, it) else it }
+            .let { name ->
+                val prep = meal.prep
+                when {
+                    prep != null && meal.leftover -> this(Msg.MEAL_PREPPED, name, dayLabel(prep.madeOn, locale))
+                    prep != null -> this(Msg.MEAL_PREP_DAY, name)
+                    meal.leftover -> this(Msg.MEAL_LEFTOVERS, name)
+                    else -> name
+                }
+            }
             .let { if (meal.adjusted) this(Msg.MEAL_ADJUSTED, it) else it }
 
     /**
