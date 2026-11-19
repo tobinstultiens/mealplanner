@@ -61,13 +61,15 @@ fun PlanScreen(
     onOpenBank: () -> Unit,
     /** Opens what was in a meal, to adjust it (issue 226). */
     onAdjust: (MealPlace) -> Unit = {},
+    /** The week (its Monday) to show first instead of this week: the one a tapped notification asks for. */
+    startWeek: String? = null,
 ) {
     val t = LocalStrings.current
     val now = mondayOf(rememberToday())
     val frontReturns = rememberFrontReturns()
     // The week that was this week when the screen last looked; the shown week follows it when it moves on (see followedDate).
     var thisWeek by rememberSaveable { mutableStateOf(now) }
-    var weekStart by rememberSaveable { mutableStateOf(thisWeek) }
+    var weekStart by rememberSaveable { mutableStateOf(startWeek ?: thisWeek) }
     val loaded = rememberLoad<WeekPlan>("plan:$weekStart")
     var state by loaded
     var reload by remember { mutableIntStateOf(0) }

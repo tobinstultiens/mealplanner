@@ -792,6 +792,41 @@ enum class Msg(private val english: String, private val dutch: String) {
     DOWNLOADING_VERSION("Downloading version {0}…", "Versie {0} wordt gedownload…"),
     DOWNLOAD_FAILED("The download failed; try again from Settings.", "Het downloaden is mislukt; probeer het opnieuw via Instellingen."),
 
+    // --- Android: the notifications, their switches in Settings and the texts they post (issue 225)
+    CARD_NOTIFICATIONS("Notifications", "Meldingen"),
+    NOTIFICATIONS_INTRO(
+        "Checked every few hours, as often as Android allows; nothing comes between 22:00 and 08:00.",
+        "Een paar keer per dag bekeken, zo vaak als Android toestaat; tussen 22:00 en 08:00 komt er niets.",
+    ),
+    NOTIFICATIONS_BLOCKED("Android does not let the app post notifications.", "Android laat de app geen meldingen tonen."),
+    NOTIFICATIONS_OPEN_SETTINGS("Open Android settings", "Android-instellingen openen"),
+    NOTIFY_UPDATE("App update", "App-update"),
+    NOTIFY_UPDATE_HINT("When a new version is out", "Als er een nieuwe versie is"),
+    NOTIFY_OFFERS_ENDING("Offers ending", "Aanbiedingen die aflopen"),
+    NOTIFY_OFFERS_ENDING_HINT(
+        "On the last day of an offer and the day before, for what is still on your list",
+        "Op de laatste dag van een aanbieding en de dag ervoor, voor wat nog op je lijst staat",
+    ),
+    NOTIFY_PLAN_NEXT_WEEK("Plan next week", "Volgende week plannen"),
+    NOTIFY_PLAN_NEXT_WEEK_HINT(
+        "From Saturday, once next week's offers are in and the week has no meals",
+        "Vanaf zaterdag, als de aanbiedingen van volgende week er zijn en de week nog leeg is",
+    ),
+    NOTIFY_WEIGH_IN("Weigh-in", "Wegen"),
+    NOTIFY_WEIGH_IN_HINT("When the last weigh-in is a week old", "Als je laatste meting een week oud is"),
+    NOTIFY_DINNER_TODAY("Dinner today", "Avondeten vandaag"),
+    NOTIFY_DINNER_TODAY_HINT("In the afternoon: what to cook tonight", "'s Middags: wat je vanavond kookt"),
+    NOTIFY_MEALS_TO_MARK("Mark what you ate", "Aangeven wat je at"),
+    NOTIFY_MEALS_TO_MARK_HINT("In the evening, while meals of today are not marked", "'s Avonds, als maaltijden van vandaag nog openstaan"),
+    UPDATE_NOTIFICATION_TITLE("Meal planner {0} is available", "Meal planner {0} is beschikbaar"),
+    UPDATE_NOTIFICATION_TEXT("Tap to update.", "Tik om bij te werken."),
+    PLAN_NOTIFICATION_TITLE("Next week's offers are in", "De aanbiedingen van volgende week zijn er"),
+    PLAN_NOTIFICATION_TEXT("Plan the week.", "Plan de week."),
+    WEIGH_IN_NOTIFICATION_TITLE("Time for a weigh-in", "Tijd om te wegen"),
+    DINNER_NOTIFICATION_TITLE("Tonight: {0}", "Vanavond: {0}"),
+    DINNER_NOTIFICATION_TEXT("{0} to cook", "{0} om te koken"),
+    MEALS_TO_MARK_NOTIFICATION_TEXT("Mark what you ate.", "Geef aan wat je hebt gegeten."),
+
     // --- end of messages
     ;
 
@@ -872,6 +907,23 @@ enum class Plural(
     KEPT_MADE_IN_APP(
         "{0} recipe made in the app stays: delete it from its own screen.", "{0} recipes made in the app stay: delete them from their own screens.",
         "{0} zelfgemaakt recept blijft: verwijder het op zijn eigen scherm.", "{0} zelfgemaakte recepten blijven: verwijder ze op hun eigen scherm.",
+    ),
+    OFFERS_END_TODAY(
+        "{0} offer for your list ends today", "{0} offers for your list end today",
+        "{0} aanbieding voor je lijst eindigt vandaag", "{0} aanbiedingen voor je lijst eindigen vandaag",
+    ),
+    OFFERS_END_TOMORROW(
+        "{0} offer for your list ends tomorrow", "{0} offers for your list end tomorrow",
+        "{0} aanbieding voor je lijst eindigt morgen", "{0} aanbiedingen voor je lijst eindigen morgen",
+    ),
+    OFFERS_END_TODAY_OR_TOMORROW(
+        "{0} offer for your list ends today or tomorrow", "{0} offers for your list end today or tomorrow",
+        "{0} aanbieding voor je lijst eindigt vandaag of morgen", "{0} aanbiedingen voor je lijst eindigen vandaag of morgen",
+    ),
+    LAST_WEIGH_IN("The last one was {0} day ago", "The last one was {0} days ago", "De vorige was {0} dag geleden", "De vorige was {0} dagen geleden"),
+    MEALS_TO_MARK(
+        "{0} meal of today is not marked yet", "{0} meals of today are not marked yet",
+        "{0} maaltijd van vandaag staat nog open", "{0} maaltijden van vandaag staan nog open",
     ),
     // --- end of plurals
     ;

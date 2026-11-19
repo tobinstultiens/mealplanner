@@ -1,32 +1,19 @@
 package dev.tobins.mealplanner.android
 
 import android.app.DownloadManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.widget.Toast
-import androidx.work.Constraints
-import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.WorkerParameters
 import dev.tobins.mealplanner.app.AppUpdate
-import dev.tobins.mealplanner.app.AppUpdates
 import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.UpdateInstaller
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 private const val APK_MIME = "application/vnd.android.package-archive"
 
@@ -74,58 +61,6 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             app.registerReceiver(receiver, filter)
-        }
-    }
-}
-
-/**
- * Checks GitHub for a new release once a day and posts a notification when there is one,
- * once per version. Tapping it opens the app, which offers the update on start.
- */
-class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result {
-        val update = runCatching { AppUpdates.check(BuildConfig.VERSION_NAME) }.getOrElse { return Result.retry() }
-            ?: return Result.success()
-        val prefs = applicationContext.getSharedPreferences("updates", Context.MODE_PRIVATE)
-        if (prefs.getString(NOTIFIED_KEY, null) == update.version) return Result.success()
-        if (notify(applicationContext, update)) prefs.edit().putString(NOTIFIED_KEY, update.version).apply()
-        return Result.success()
-    }
-
-    companion object {
-        private const val WORK_NAME = "update-check"
-        private const val NOTIFIED_KEY = "notifiedVersion"
-        private const val CHANNEL = "updates"
-
-        /** Schedules the daily check; keeps an existing schedule. */
-        fun schedule(context: Context) {
-            val request = PeriodicWorkRequestBuilder<UpdateCheckWorker>(1, TimeUnit.DAYS)
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
-        }
-
-        /** Posts the "update available" notification; false when notifications are not allowed. */
-        private fun notify(context: Context, update: AppUpdate): Boolean {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-            ) return false
-            val manager = context.getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.update_channel_name), NotificationManager.IMPORTANCE_DEFAULT))
-            val open = PendingIntent.getActivity(
-                context, 0,
-                Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-            val notification = android.app.Notification.Builder(context, CHANNEL)
-                .setSmallIcon(R.drawable.ic_stat_update)
-                .setContentTitle(context.getString(R.string.update_notification_title, update.version))
-                .setContentText(context.getString(R.string.update_notification_text))
-                .setContentIntent(open)
-                .setAutoCancel(true)
-                .build()
-            manager.notify(1, notification)
-            return true
         }
     }
 }

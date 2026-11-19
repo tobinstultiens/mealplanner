@@ -97,6 +97,9 @@ class TrackingRepository(
         return weights()
     }
 
+    /** The day of the newest weighing; null when there is none. */
+    fun lastWeighed(): LocalDate? = q.selectWeights(userId).executeAsList().lastOrNull()?.let { LocalDate.parse(it.date) }
+
     /** Whether there is a weighing on [day] and none after it. */
     private fun isNewest(day: LocalDate): Boolean =
         q.selectWeights(userId).executeAsList().lastOrNull()?.date == day.toString()

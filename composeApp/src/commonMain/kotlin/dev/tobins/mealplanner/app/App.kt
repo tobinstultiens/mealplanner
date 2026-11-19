@@ -22,6 +22,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
@@ -61,6 +62,10 @@ fun App(
      * built with one), which the login may use without asking; false where it is only a suggestion.
      */
     defaultsBuiltIn: Boolean = true,
+    /** Screens asked for from outside the app, by a tapped notification (Android); none on the web. */
+    openings: Openings? = null,
+    /** Whether the system lets the app post notifications, for the Notifications card; null where the app posts none (the web). */
+    notificationAccess: NotificationAccess? = null,
 ) {
     var settings by remember { mutableStateOf(storage.serverSettings(defaults)) }
     val serverKnown = remember(settings) { (defaultsBuiltIn || storage.hasSavedServer()) && settings.isAddress() }
@@ -89,8 +94,8 @@ fun App(
     // Renewed tokens go to storage only: the client keeps using them, and the screens don't reload.
     // When renewing ended the session (see Login.refresh for when it does), the app asks to log in again.
     val api = remember(settings, session) {
-        ApiClient(settings, session) {
-            logins.renew(settings.url) ?: run {
+        ApiClient(settings, session) { refused ->
+            logins.renew(settings.url, refused) ?: run {
                 // Whoever logs in next may be someone else: what was the account's goes, as on logging out.
                 // The shopping session of this client is closed when the client is replaced; until then
                 // its requests fail for want of a login, and one answered anyway stores nothing, as its
@@ -133,12 +138,17 @@ fun App(
     LaunchedEffect(accountShops) { if (session != null) load { accountShops.sync() } }
     DisposableEffect(api) { onDispose { api.close() } }
 
-    // What was open when the page was loaded (a reload or a shared link); Today where nothing says.
-    val start = remember { parseRoute(routes.read()).openScreens() }
+    // What a tapped notification asked for when it started the app; else what was open when the page was
+    // loaded (a reload or a shared link); Today where nothing says.
+    val opened = remember { openings?.take() }
+    val start = remember { opened?.route?.openScreens() ?: parseRoute(routes.read()).openScreens() }
     var tab by rememberSaveable { mutableStateOf(start.tab) }
     var openRecipeId by rememberSaveable { mutableStateOf(start.recipeId) }
     // The planned meal the open recipe was opened from, for how much to cook; none from the recipe list.
-    var openMeal by rememberSaveable(stateSaver = MealToCook.Saver) { mutableStateOf<MealToCook?>(null) }
+    var openMeal by rememberSaveable(stateSaver = MealToCook.Saver) { mutableStateOf(opened?.meal) }
+    // The week a tapped notification asked the Plan to show, and how often one asked: each asking shows it afresh.
+    var planWeek by rememberSaveable { mutableStateOf(opened?.week) }
+    var planAsked by rememberSaveable { mutableIntStateOf(0) }
     // Null: no editor open. -1: a new recipe. Otherwise the id of the recipe being edited.
     var editing by rememberSaveable { mutableStateOf(start.editing) }
     var mapping by rememberSaveable { mutableStateOf(start.mapping) }
@@ -176,6 +186,34 @@ fun App(
     }
     // The address follows the open screen, so that a reload comes back to it.
     val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen, bankOpen, adjusting)
+
+    /** Opens what a notification tapped while the app runs asks for, keeping what holds unsaved typing (see [OpenScreens.opening]). */
+    fun openFromOutside(opening: Opening) {
+        val now = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen, bankOpen, adjusting)
+            .opening(opening.route.openScreens())
+        tab = now.tab
+        openRecipeId = now.recipeId
+        openMeal = opening.meal
+        opening.week?.let {
+            planWeek = it
+            planAsked++
+        }
+        editing = now.editing
+        mapping = now.mapping
+        profileOpen = now.profile
+        pantryOpen = now.pantry
+        offersOpen = now.offers
+        pricesOpen = now.prices
+        serverOpen = now.settings
+        bankOpen = now.bank
+        adjusting = now.adjusting
+    }
+    LaunchedEffect(openings) {
+        // The one taken at the start is applied once more: where Android restored the screens' saved state (its
+        // process was killed with the task in Recents), that state, not [start], says what is open.
+        opened?.let(::openFromOutside)
+        openings?.requests?.collect(::openFromOutside)
+    }
     LaunchedEffect(open, session != null) { addressFor(open, loggedIn = session != null)?.let(routes::write) }
     // Leaving the Plan tab the plan may have changed: the current week's list is fetched for the shop.
     var previousTab by remember { mutableStateOf(tab) }
@@ -306,6 +344,7 @@ fun App(
                         serverOpen = false
                     },
                     onBack = { serverOpen = false },
+                    notifications = notificationAccess?.let { NotificationSettings(storage, it) },
                 )
                 return@CompositionLocalProvider
             }
@@ -411,14 +450,18 @@ fun App(
                                     onOpenPlan = { tab = Tab.PLAN },
                                     onAdjust = { adjusting = it },
                                 )
-                                Tab.PLAN -> PlanScreen(
-                                    api,
-                                    onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) },
-                                    onOpenProfile = { profileOpen = true },
-                                    onOpenRecipes = { tab = Tab.RECIPES },
-                                    onOpenBank = { tab = Tab.RECIPES; bankOpen = true },
-                                    onAdjust = { adjusting = it },
-                                )
+                                // A week asked for by a notification starts the Plan afresh on it; otherwise it keeps its place.
+                                Tab.PLAN -> key(planAsked) {
+                                    PlanScreen(
+                                        api,
+                                        onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) },
+                                        onOpenProfile = { profileOpen = true },
+                                        onOpenRecipes = { tab = Tab.RECIPES },
+                                        onOpenBank = { tab = Tab.RECIPES; bankOpen = true },
+                                        onAdjust = { adjusting = it },
+                                        startWeek = planWeek,
+                                    )
+                                }
                                 Tab.SHOPPING -> ShoppingScreen(shopping, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
                                 Tab.RECIPES -> RecipeListScreen(
                                     api,

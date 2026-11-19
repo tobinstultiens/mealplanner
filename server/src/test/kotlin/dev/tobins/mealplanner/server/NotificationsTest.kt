@@ -1,0 +1,306 @@
+package dev.tobins.mealplanner.server
+
+import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.DinnerToday
+import dev.tobins.mealplanner.api.EndingOffer
+import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.NotificationFacts
+import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.RecipeDetail
+import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.SectionChoice
+import dev.tobins.mealplanner.api.Sex
+import dev.tobins.mealplanner.api.ShoppingAdviceGroup
+import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.ShopsSetting
+import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.api.WeighInDue
+import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.offers.OfferSource
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.testing.ApplicationTestBuilder
+import io.ktor.server.testing.testApplication
+import java.time.LocalDate
+import kotlin.io.path.createTempDirectory
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+/**
+ * What `GET /api/notifications` says is due (issue 225): each condition of the table in the issue, on the
+ * server's day, which a test sets through [UserScope]'s today.
+ */
+class NotificationsTest {
+    private class Offers(override val store: Store, val offers: List<Offer>) : OfferSource {
+        override suspend fun fetch() = offers
+    }
+
+    /** The week of the plan: Monday 16 to Sunday 22 November 2026. */
+    private val week = "2026-11-16"
+    private val nextWeek = "2026-11-23"
+
+    /** Chicken at Jumbo on Monday and Tuesday only. */
+    private val chickenOffer = Offer(Store.JUMBO, "Jumbo Kipfilet 1 kg", "25% korting", packSize = "1 kg", validFrom = week, validUntil = "2026-11-17")
+
+    private lateinit var db: Database
+
+    private fun ApplicationTestBuilder.start(vararg offers: Offer) {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        db = openDatabase(config.databaseUrl).second
+        val sources = offers.groupBy { it.store }.map { (store, theirs) -> Offers(store, theirs) }
+        application { module(config, db, sources, priceSource = null, generator = null, verifier = TestTokens) }
+    }
+
+    private fun ApplicationTestBuilder.clientFor(token: String): HttpClient = createClient {
+        install(ContentNegotiation) { json() }
+        defaultRequest {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+        }
+    }
+
+    private fun accountId(token: String) = db.userQueries.selectBySubject("sub-$token").executeAsOne().id
+
+    /** What is due for the account of [token] when the server's today is [day]. */
+    private fun facts(day: String, token: String = "t"): NotificationFacts {
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val prices = PriceRepository(db, null, foods, offers)
+        return UserScope(accountId(token), db, foods, offers, prices, null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(day) })
+            .notifications.facts()
+    }
+
+    /** A profile, which marking meals and the weigh-in need, and the offers stored. */
+    private suspend fun HttpClient.ready(): HttpClient = apply {
+        put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
+        post("/api/offers/refresh")
+    }
+
+    /** Plans [title], a recipe of 500 g of chicken, in [slot] of [day] of the week starting [weekStart], for [token]'s account. */
+    private suspend fun HttpClient.plan(token: String, day: Int, slot: String = "DINNER", title: String = "Chicken", weekStart: String = week): Long {
+        val recipe = post("/api/recipes") { setBody(RecipeInput(title, 1, "500 | g | kipfilet")) }.body<RecipeDetail>().summary
+        db.planQueries.upsertMeal(accountId(token), weekStart, day.toLong(), slot, recipe.id, recipe.title, 1.0, 500.0, 30.0, 0, 0, MealStatus.PLANNED.name)
+        return recipe.id
+    }
+
+    private suspend fun HttpClient.mark(day: Int, slot: String, status: MealStatus) =
+        assertEquals(HttpStatusCode.OK, put("/api/plans/$week/meals/$day/$slot/status") { setBody(status) }.status)
+
+    // --- Offers ending
+
+    @Test
+    fun anOfferForARowStillToBuyIsDueOnItsLastDayAndTheDayBefore() = testApplication {
+        start(chickenOffer)
+        val http = clientFor("t").ready()
+        val chicken = http.post("/api/ingredients") { setBody(IngredientInput("Kipfilet", pricePerKg = 10.0)) }.body<Ingredient>()
+        http.plan("t", day = 3)
+
+        val endsTuesday = listOf(EndingOffer("Kipfilet", "2026-11-17"))
+        assertEquals(endsTuesday, facts("2026-11-16").offersEnding, "the day before: it ends tomorrow")
+        assertEquals(endsTuesday, facts("2026-11-17").offersEnding, "the last day")
+        assertEquals(emptyList(), facts("2026-11-18").offersEnding, "ended")
+        assertEquals(emptyList(), facts("2026-11-15").offersEnding, "not started yet, and last week's list")
+
+        http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck("i${chicken.id}", true)) }
+        assertEquals(emptyList(), facts("2026-11-17").offersEnding, "ticked off: bought")
+    }
+
+    @Test
+    fun anOfferElsewhereOrForARowNoMealNeedsAnyMoreIsNotDue() = testApplication {
+        start(chickenOffer)
+        val http = clientFor("t").ready()
+        http.post("/api/ingredients") { setBody(IngredientInput("Kipfilet", pricePerKg = 10.0)) }
+        http.plan("t", day = 0)
+
+        http.put("/api/shops") { setBody(ShopsSetting(listOf(Store.AH, Store.LIDL))) }
+        assertEquals(emptyList(), facts("2026-11-17").offersEnding, "not a store the account shops at")
+        http.put("/api/shops") { setBody(ShopsSetting(null)) }
+        assertEquals(listOf("Kipfilet"), facts("2026-11-17").offersEnding.map { it.name })
+
+        // Monday's dinner eaten without the row being ticked: nothing is left to buy for it.
+        http.mark(0, "DINNER", MealStatus.EATEN)
+        assertEquals(emptyList(), facts("2026-11-17").offersEnding)
+    }
+
+    @Test
+    fun aRowCoveredByWhatIsAtHomeIsNotDue() = testApplication {
+        start(chickenOffer)
+        val http = clientFor("t").ready()
+        val chicken = http.post("/api/ingredients") { setBody(IngredientInput("Kipfilet", pricePerKg = 10.0)) }.body<Ingredient>()
+        http.plan("t", day = 3)
+        suspend fun stockUp(grams: Double) =
+            assertEquals(HttpStatusCode.OK, http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck("stock:i${chicken.id}", true, grams)) }.status)
+
+        // 200 g at home of the 500 g Thursday's dinner needs: still to buy.
+        stockUp(200.0)
+        val row = http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Kipfilet" }
+        assertEquals(true to 200.0, row.onHand to row.onHandGrams)
+        assertEquals(listOf("Kipfilet"), facts("2026-11-17").offersEnding.map { it.name })
+
+        // A kilo at home: nothing to buy, so the offer ending is no reason to hurry.
+        http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck("stock:i${chicken.id}", false)) }
+        stockUp(1000.0)
+        assertEquals(1000.0, http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Kipfilet" }.onHandGrams)
+        assertEquals(emptyList(), facts("2026-11-17").offersEnding)
+    }
+
+    @Test
+    fun stockingUpCountsUntilItIsDismissed() = testApplication {
+        start(Offer(Store.JUMBO, "Jumbo Rijst 1 kg", "40% korting", packSize = "1 kg", validFrom = week, validUntil = "2026-11-18"))
+        val http = clientFor("t").ready()
+        val rice = http.post("/api/ingredients") { setBody(IngredientInput("Rijst", pricePerKg = 3.0)) }.body<Ingredient>()
+        http.put("/api/ingredients/${rice.id}/section") { setBody(SectionChoice("WORLD")) }
+        http.put("/api/pantry/staples/${rice.id}")
+        assertEquals(listOf("stock:i${rice.id}"), http.get("/api/plans/$week/shopping").body<ShoppingList>().stockUp.map { it.key })
+
+        assertEquals(listOf(EndingOffer("Rijst", "2026-11-18")), facts("2026-11-17").offersEnding)
+        http.put("/api/plans/$week/shopping/dismissed/${ShoppingAdviceGroup.STOCK_UP.path}")
+        assertEquals(emptyList(), facts("2026-11-17").offersEnding)
+    }
+
+    @Test
+    fun theRowsEndingTodayComeFirst() = testApplication {
+        start(chickenOffer, Offer(Store.AH, "AH Broccoli", "1+1 gratis", validFrom = week, validUntil = "2026-11-18"))
+        val http = clientFor("t").ready()
+        http.post("/api/ingredients") { setBody(IngredientInput("Broccoli", pricePerKg = 3.0)) }
+        http.post("/api/ingredients") { setBody(IngredientInput("Kipfilet", pricePerKg = 10.0)) }
+        val recipe = http.post("/api/recipes") { setBody(RecipeInput("Chicken and broccoli", 1, "300 | g | broccoli\n500 | g | kipfilet")) }.body<RecipeDetail>().summary
+        db.planQueries.upsertMeal(accountId("t"), week, 4, "DINNER", recipe.id, recipe.title, 1.0, 500.0, 30.0, 0, 0, MealStatus.PLANNED.name)
+
+        assertEquals(listOf(EndingOffer("Kipfilet", "2026-11-17"), EndingOffer("Broccoli", "2026-11-18")), facts("2026-11-17").offersEnding)
+    }
+
+    // --- Plan next week
+
+    @Test
+    fun nextWeekIsDueFromSaturdayWhileItHasNoMealsAndItsOffersAreIn() = testApplication {
+        start(chickenOffer, Offer(Store.JUMBO, "Jumbo Rijst 1 kg", "40% korting", validFrom = nextWeek, validUntil = "2026-11-29"))
+        val alice = clientFor("t").ready()
+        val bob = clientFor("bob").ready()
+        bob.get("/api/me")
+
+        assertNull(facts("2026-11-20").planNextWeek, "Friday")
+        assertEquals(nextWeek, facts("2026-11-21").planNextWeek, "Saturday")
+        assertEquals(nextWeek, facts("2026-11-22").planNextWeek, "Sunday")
+        assertNull(facts("2026-11-23").planNextWeek, "Monday: that week is this week now, and its Saturday is to come")
+
+        // A meal next week: planned already. Only the account's own plan counts.
+        alice.plan("t", day = 0, weekStart = nextWeek)
+        assertNull(facts("2026-11-21").planNextWeek)
+        assertEquals(nextWeek, facts("2026-11-21", "bob").planNextWeek)
+
+        // Next week's offers are at a store Bob doesn't shop at.
+        bob.put("/api/shops") { setBody(ShopsSetting(listOf(Store.AH))) }
+        assertNull(facts("2026-11-21", "bob").planNextWeek)
+    }
+
+    @Test
+    fun nextWeekIsNotDueBeforeItsOffersAreIn() = testApplication {
+        start(chickenOffer)
+        clientFor("t").ready()
+        assertNull(facts("2026-11-21").planNextWeek)
+    }
+
+    @Test
+    fun offersRunningOnIntoNextWeekAreNotNextWeeksOffers() = testApplication {
+        start(
+            // Jumbo's week of this Wednesday to next Tuesday, and an offer Jumbo dates over most of the year.
+            Offer(Store.JUMBO, "Jumbo Rijst 1 kg", "40% korting", validFrom = "2026-11-18", validUntil = "2026-11-24"),
+            Offer(Store.JUMBO, "Jumbo Oosterse maaltijden", "2 voor 5,50", validFrom = "2026-01-07", validUntil = "2026-12-08"),
+            // AH's week, ending on Sunday.
+            Offer(Store.AH, "AH Broccoli", "1+1 gratis", validFrom = week, validUntil = "2026-11-22"),
+        )
+        clientFor("t").ready()
+        assertNull(facts("2026-11-21").planNextWeek, "Saturday, with only this week's offers and a long-dated one")
+    }
+
+    @Test
+    fun anOfferStartingMidNextWeekBringsItsOffersIn() = testApplication {
+        // Jumbo lists its week from Wednesday 25 November before it starts.
+        start(chickenOffer, Offer(Store.JUMBO, "Jumbo Rijst 1 kg", "40% korting", validFrom = "2026-11-25", validUntil = "2026-12-01"))
+        clientFor("t").ready()
+        assertEquals(nextWeek, facts("2026-11-22").planNextWeek)
+    }
+
+    // --- Weigh-in
+
+    @Test
+    fun aWeighInIsDueOnceTheNewestIsAWeekOld() = testApplication {
+        start()
+        val http = clientFor("t").ready()
+        assertNull(facts("2026-11-17").weighIn, "never weighed")
+        http.put("/api/weights/2026-11-03") { setBody(91.0) }
+        http.put("/api/weights/2026-11-10") { setBody(90.0) }
+
+        assertNull(facts("2026-11-16").weighIn, "six days")
+        assertEquals(WeighInDue("2026-11-10", 7), facts("2026-11-17").weighIn)
+        assertEquals(WeighInDue("2026-11-10", 9), facts("2026-11-19").weighIn)
+        http.put("/api/weights/2026-11-18") { setBody(89.5) }
+        assertNull(facts("2026-11-19").weighIn, "entered")
+
+        // Without a profile there is nothing the weight is for.
+        val bob = clientFor("bob")
+        bob.put("/api/weights/2026-11-01") { setBody(80.0) }
+        assertNull(facts("2026-11-19", "bob").weighIn)
+    }
+
+    // --- Today's dinner and the meals to mark
+
+    @Test
+    fun todaysDinnerIsDueUntilItIsEatenOrSkipped() = testApplication {
+        start()
+        val http = clientFor("t").ready()
+        http.plan("t", day = 3, slot = "LUNCH", title = "Chicken salad")
+        assertNull(facts("2026-11-19").dinner, "a lunch only")
+        val id = http.plan("t", day = 3)
+
+        assertEquals(DinnerToday(id, "Chicken", 1.0, 1.0, week, 3), facts("2026-11-19").dinner)
+        assertNull(facts("2026-11-18").dinner, "another day")
+        http.mark(3, "DINNER", MealStatus.SKIPPED)
+        assertNull(facts("2026-11-19").dinner)
+        http.mark(3, "DINNER", MealStatus.PLANNED)
+        http.mark(3, "DINNER", MealStatus.EATEN)
+        assertNull(facts("2026-11-19").dinner)
+    }
+
+    @Test
+    fun theMealsToMarkAreThoseOfTodayStillPlanned() = testApplication {
+        start()
+        val http = clientFor("t").ready()
+        http.plan("t", day = 3, slot = "BREAKFAST", title = "Chicken toast")
+        http.plan("t", day = 3, slot = "LUNCH", title = "Chicken salad")
+        http.plan("t", day = 3)
+        http.plan("t", day = 4)
+
+        assertEquals(3, facts("2026-11-19").mealsToMark)
+        http.mark(3, "BREAKFAST", MealStatus.EATEN)
+        http.mark(3, "LUNCH", MealStatus.SKIPPED)
+        assertEquals(1, facts("2026-11-19").mealsToMark)
+        http.mark(3, "DINNER", MealStatus.EATEN)
+        assertEquals(0, facts("2026-11-19").mealsToMark)
+        assertEquals(1, facts("2026-11-20").mealsToMark)
+    }
+
+    @Test
+    fun anAccountWithNothingDueHasEmptyFacts() = testApplication {
+        start(chickenOffer)
+        clientFor("t").ready()
+        assertEquals(NotificationFacts("2026-11-17"), facts("2026-11-17"))
+    }
+}

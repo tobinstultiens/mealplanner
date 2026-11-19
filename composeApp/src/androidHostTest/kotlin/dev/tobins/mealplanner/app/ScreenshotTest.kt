@@ -52,6 +52,7 @@ import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -330,6 +331,24 @@ enum class Shot(
             onBack = {},
         )
     }),
+    // The Notifications card (Android only): the defaults with weigh-in turned on, in both languages, and with notifications refused by Android.
+    NOTIFICATIONS(heightDp = 760, content = { _, _ -> notificationsCard(allowed = true) }),
+    NOTIFICATIONS_NL(dutch = true, heightDp = 800, content = { _, _ -> notificationsCard(allowed = true) }),
+    NOTIFICATIONS_REFUSED(heightDp = 860, content = { _, _ -> notificationsCard(allowed = false) }),
+}
+
+/** The Notifications card with the default switches and the weigh-in on; [allowed] is whether Android lets the app post. */
+@Composable
+private fun notificationsCard(allowed: Boolean) {
+    val storage = remember { MemorySettingsStorage().also { it.saveNotificationOn(NotificationKind.WEIGH_IN, true) } }
+    val access = object : NotificationAccess {
+        override val allowed = MutableStateFlow(allowed)
+
+        override fun ask() = Unit
+
+        override fun openSettings() = Unit
+    }
+    Column(Modifier.padding(16.dp)) { NotificationsCard(NotificationSettings(storage, access)) }
 }
 
 /**

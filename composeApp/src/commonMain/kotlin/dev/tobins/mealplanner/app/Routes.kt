@@ -1,11 +1,14 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 
 /**
  * Which screen is open, as the address of the page (`#/recipes/12`), so that a reload or a
  * shared link lands on the same screen. Only the browser keeps it (see [RouteStore]); Android
- * navigates as before and never reads or writes a route.
+ * navigates as before and never writes a route, but opens one a tapped notification brings ([Opening]).
  */
 sealed interface Route {
     /** A tab of the bottom bar, with nothing opened over it. */
@@ -153,4 +156,67 @@ object NoRoutes : RouteStore {
     override fun read(): String = ""
 
     override fun write(hash: String) = Unit
+}
+
+/**
+ * A screen asked for from outside the app: a tapped notification (Android). [meal] is the planned meal a
+ * recipe is opened from, so that it shows the servings to cook, as when it is opened from Today; [week] is
+ * the week (its Monday) the Plan shows.
+ */
+data class Opening(val route: Route, val meal: MealToCook? = null, val week: String? = null) {
+    /**
+     * As one string, for an Android intent's extra: the route's address, and after it a [meal]'s place and
+     * servings (`#/recipes/12|2026-11-16|3|DINNER|1.5|2.25`) or the [week] (`#/plan|2026-11-23`).
+     * [parseOpening] reads it back.
+     */
+    val encoded: String
+        get() = route.hash +
+            (meal?.place?.let { "|${it.weekStart}|${it.day}|${it.slot.name}|${meal.portions}|${meal.cookPortions}" } ?: "") +
+            (week?.let { "|$it" } ?: "")
+}
+
+/**
+ * The [Opening] of an [Opening.encoded] string; a meal or week that cannot be read is left out, so the recipe
+ * opens as written and the Plan on this week.
+ */
+fun parseOpening(text: String): Opening {
+    val parts = text.split('|')
+    val route = parseRoute(parts.first())
+    if (route == Route.TabRoute(Tab.PLAN) && parts.size == 2) {
+        return Opening(route, week = parts[1].takeIf { runCatching { mondayOf(it) == it }.getOrDefault(false) })
+    }
+    val recipe = route as? Route.Recipe ?: return Opening(route)
+    if (parts.size != 6) return Opening(route)
+    val meal = runCatching {
+        val place = MealPlace(parts[1], parts[2].toInt(), MealSlot.valueOf(parts[3]))
+        MealToCook(recipe.id, parts[4].toDouble(), parts[5].toDouble(), skipped = false, place = place, planned = true)
+    }.getOrNull()
+    return Opening(route, meal)
+}
+
+/**
+ * What is open once [target] was asked for from outside the app: its screens, with the recipe editor and
+ * the profile kept in front where they were open, since they hold what was typed and not saved yet; leaving
+ * them shows [target]. The settings close, as on any route.
+ */
+fun OpenScreens.opening(target: OpenScreens): OpenScreens = target.copy(editing = editing ?: target.editing, profile = profile || target.profile)
+
+/**
+ * Screens asked for from outside the app while it starts or runs: a tapped notification on Android. The
+ * platform keeps one as long as its process and hands it each; [App] takes the one waiting when it starts,
+ * so that the first screen drawn is the one asked for, and the later ones as they come. Only the last
+ * one asked for counts.
+ */
+class Openings {
+    private val asked = Channel<Opening>(Channel.CONFLATED)
+
+    fun open(opening: Opening) {
+        asked.trySend(opening)
+    }
+
+    /** The one waiting, taken; null when none is. */
+    fun take(): Opening? = asked.tryReceive().getOrNull()
+
+    /** Each one from now on, taken as it comes. */
+    val requests: Flow<Opening> = asked.receiveAsFlow()
 }

@@ -16,6 +16,7 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import dev.tobins.mealplanner.server.routes.accountRoutes
 import dev.tobins.mealplanner.server.routes.ingredientRoutes
+import dev.tobins.mealplanner.server.routes.notificationRoutes
 import dev.tobins.mealplanner.server.routes.offerRoutes
 import dev.tobins.mealplanner.server.routes.planRoutes
 import dev.tobins.mealplanner.server.routes.publicRoutes
@@ -210,6 +211,7 @@ fun Application.module(
             planRoutes()
             shoppingRoutes()
             trackingRoutes()
+            notificationRoutes()
             offerRoutes(offers, prices)
         }
     }

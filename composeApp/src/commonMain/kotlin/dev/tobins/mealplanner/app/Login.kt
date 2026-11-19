@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -88,6 +90,13 @@ private val REFUSING_FOR = 15.minutes
 
 /** How long a token endpoint may answer renewals as a provider in trouble (5xx, 408, 429): an outage is waited out for a day. */
 private val IN_TROUBLE_FOR = 24.hours
+
+/**
+ * How long before it runs out a stored access token is no longer handed to a caller as it is (see
+ * [LoginExchange.renew]): time for the request it is retried with to reach the server, and room for the
+ * server's clock being ahead of the device's.
+ */
+private val STILL_WORKS_MARGIN = 5.minutes
 
 fun SettingsStorage.session(): Session? = get(SESSION_KEY)?.takeIf { it.isNotBlank() }?.let { runCatching { json.decodeFromString<Session>(it) }.getOrNull() }
 
@@ -222,11 +231,16 @@ class Login(
      *   known about the session, which stays, and the run of failures neither grows nor starts afresh.
      * An answer for [session] when it is no longer the stored one (logged out, or another login meanwhile)
      * is dropped: it must neither bring back a session the user ended nor end the one that replaced it.
+     *
+     * [quietly] is for the background, where nobody is there to log in again (the notifications' check): a
+     * failure there ends nothing and is not counted, so neither a refusal nor a provider down while the app
+     * is closed logs the user out behind their back; the next request in front tries again and decides. A
+     * renewal that works is saved either way, and ends a run of failures as any renewal that works does.
      */
-    suspend fun refresh(serverUrl: String, session: Session): Session? {
+    suspend fun refresh(serverUrl: String, session: Session, quietly: Boolean = false): Session? {
         val refreshToken = session.refreshToken
         if (refreshToken == null) {
-            end(LoggedOut.EXPIRED)
+            if (!quietly) end(LoggedOut.EXPIRED)
             return null
         }
         val config = runCatching { authConfig(serverUrl) }.getOrNull() ?: return null
@@ -241,11 +255,18 @@ class Login(
         val body = response.bodyAsText()
         if (storage.session() != session) return null
         if (!response.status.isSuccess()) {
-            renewalFailed(response.status.value)
+            if (!quietly) renewalFailed(response.status.value)
             return null
         }
         return toSession(json.decodeFromString(body), refreshToken).also { storage.saveSession(it) }
     }
+
+    /**
+     * Whether [session]'s access token can still be sent as it is: it runs out ([Session.expiresAt], by this
+     * device's clock when it was received) more than [STILL_WORKS_MARGIN] from now. A session that does not
+     * say when (0) cannot.
+     */
+    fun stillWorks(session: Session): Boolean = session.expiresAt - clock.now().epochSeconds > STILL_WORKS_MARGIN.inWholeSeconds
 
     /** Counts a renewal the token endpoint answered with [status], and ends the session when [refresh] says so. */
     private fun renewalFailed(status: Int) {
@@ -330,6 +351,9 @@ class LoginExchange(
     /** How often a login was called off, so that a [start] still asking the server knows it was. */
     private var calledOff = 0
 
+    /** Held while a renewal asks the provider (see [renew]). */
+    private val renewing = Mutex()
+
     init {
         // One answer at a time, in the order they came: a second delivery of the same answer finds its
         // login used up and passes unseen, as the screen's own collector did before. Each in a job of its
@@ -401,8 +425,21 @@ class LoginExchange(
      * A new access token for the stored session, or null. [Login.refresh] says when that ends the session
      * (gone from storage, with the reason for the login screen to say) and when it stays for the next
      * request to try again; a log-out meanwhile keeps its own reason.
+     *
+     * One renewal at a time, whoever asks: the screens' client and the background check of the notifications
+     * (Android) both renew through here, each with the access token it holds. A provider that rotates refresh
+     * tokens takes each one once, so a second renewal sent with the same token would be refused, and end the
+     * session. A caller whose [refused] access token was replaced meanwhile, by a renewal of the other or one it
+     * waited for, gets the stored session instead, without asking the provider again, but only while that
+     * session still works ([Login.stillWorks]): the client retries a request once, so a token that has run out
+     * too would fail it. Otherwise, and when the refused token is the stored one, the stored session is renewed.
+     * [quietly]: see [Login.refresh].
      */
-    suspend fun renew(serverUrl: String): Session? = storage.session()?.let { login.refresh(serverUrl, it) }
+    suspend fun renew(serverUrl: String, refused: String? = null, quietly: Boolean = false): Session? = renewing.withLock {
+        val session = storage.session() ?: return null
+        if (refused != null && session.accessToken != refused && login.stillWorks(session)) return session
+        login.refresh(serverUrl, session, quietly)
+    }
 
     /**
      * Ends the session on the user's word: Log out, or another server chosen, which has its own accounts.

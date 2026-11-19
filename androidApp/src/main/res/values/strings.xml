@@ -1,6 +1,3 @@
 <resources>
     <string name="app_name" translatable="false">Meal planner</string>
-    <string name="update_channel_name">App updates</string>
-    <string name="update_notification_title">Meal planner %1$s is available</string>
-    <string name="update_notification_text">Tap to update.</string>
 </resources>

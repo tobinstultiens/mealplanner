@@ -49,6 +49,7 @@ import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.Me
+import dev.tobins.mealplanner.api.NotificationFacts
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngine
@@ -102,13 +103,13 @@ private val lenientJson = Json {
 /**
  * Talks to the meal planner server as the logged-in account. Calls throw on network errors (an
  * IOException on every platform) and non-2xx responses. An expired access token is renewed with
- * [refresh] and the call retried.
+ * [refresh], which is told the access token the server refused, and the call retried.
  */
 class ApiClient(
     settings: ServerSettings,
     session: Session? = null,
     engine: HttpClientEngine? = null,
-    refresh: suspend () -> Session? = { null },
+    refresh: suspend (refused: String?) -> Session? = { null },
 ) {
     private val setUp: HttpClientConfig<*>.() -> Unit = {
         expectSuccess = true
@@ -123,7 +124,7 @@ class ApiClient(
             install(Auth) {
                 bearer {
                     loadTokens { BearerTokens(session.accessToken, session.refreshToken) }
-                    refreshTokens { refresh()?.let { BearerTokens(it.accessToken, it.refreshToken) } }
+                    refreshTokens { refresh(oldTokens?.accessToken)?.let { BearerTokens(it.accessToken, it.refreshToken) } }
                     sendWithoutRequest { true }
                 }
             }
@@ -134,6 +135,9 @@ class ApiClient(
     private val http = if (engine == null) HttpClient(setUp) else HttpClient(engine, setUp)
 
     suspend fun me(): Me = http.get("api/me").body()
+
+    /** What the account's data says is due today, for the notifications (Android's background check). */
+    suspend fun notifications(): NotificationFacts = http.get("api/notifications").body()
 
     /** Where the account's bank comes from: its own repository, the server's site, or none. */
     suspend fun setCookingRepo(setting: CookingRepoSetting): CookingSyncStatus = http.put("api/sync/cooking/repo") {

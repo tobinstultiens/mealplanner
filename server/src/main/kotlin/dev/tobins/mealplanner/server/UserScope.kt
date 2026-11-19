@@ -54,5 +54,6 @@ class UserScope(
         )
     }
     val tracking by lazy { TrackingRepository(db, accountId, plans, profiles) }
+    val notifications by lazy { DueNotifications(shopping, plans, tracking, profiles, shops::inUse, offers::storesWithOffersStarting, today) }
     val generation by lazy { generator?.let { GenerationService(it, recipes, ingredients, stock, profiles, plans, offers, shops::inUse) } }
 }
