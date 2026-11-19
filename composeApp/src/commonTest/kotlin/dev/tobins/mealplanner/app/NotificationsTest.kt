@@ -11,6 +11,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -150,7 +153,7 @@ class NotificationsTest {
         assertEquals("1 offer for your list ends tomorrow", notice(NotificationKind.OFFERS_ENDING, tomorrow).title)
         val both = all.copy(offersEnding = listOf(EndingOffer("Quark", "2026-11-21"), EndingOffer("Feta", "2026-11-22")))
         assertEquals("2 offers for your list end today or tomorrow", notice(NotificationKind.OFFERS_ENDING, both).title)
-        assertEquals("Next week's offers are in" to "Plan the week.", notice(NotificationKind.PLAN_NEXT_WEEK).let { it.title to it.text })
+        assertEquals("Next week has no plan yet" to "Plan the week.", notice(NotificationKind.PLAN_NEXT_WEEK).let { it.title to it.text })
         assertEquals("Time for a weigh-in" to "The last one was 9 days ago", notice(NotificationKind.WEIGH_IN).let { it.title to it.text })
         assertEquals("Tonight: Chicken tikka" to "2.25 servings to cook", notice(NotificationKind.DINNER_TODAY).let { it.title to it.text })
         assertEquals("2 meals of today are not marked yet", notice(NotificationKind.MEALS_TO_MARK).title)
@@ -160,6 +163,7 @@ class NotificationsTest {
         assertEquals("1 aanbieding voor je lijst eindigt morgen", notice(NotificationKind.OFFERS_ENDING, tomorrow, nl).title)
         assertEquals("Vanavond: Chicken tikka" to "2,25 porties om te koken", notice(NotificationKind.DINNER_TODAY, strings = nl).let { it.title to it.text })
         assertEquals("Meal planner 0.1.9 is beschikbaar", notice(NotificationKind.UPDATE, strings = nl).title)
+        assertEquals("Volgende week heeft nog geen plan" to "Plan de week.", notice(NotificationKind.PLAN_NEXT_WEEK, strings = nl).let { it.title to it.text })
     }
 
     @Test
@@ -172,5 +176,37 @@ class NotificationsTest {
         // The recipe from that meal, with its servings to cook and the way to mark it eaten.
         val meal = MealToCook(12, 1.5, 2.25, skipped = false, MealPlace("2026-11-16", 5, MealSlot.DINNER), planned = true)
         assertEquals(Opening(Route.Recipe(12), meal), notice(NotificationKind.DINNER_TODAY).opening)
+    }
+
+    @Test
+    fun everyWindowGetsARunWhateverThePhaseOfThePeriodicOne() {
+        assertEquals(listOf(8, 15, 20), NotificationWindows.openingHours)
+        // Starting at any minute of a day, the chain of runs (each asking for the next) has one just after every opening, on the days after too.
+        val start = Instant.parse("2026-11-21T00:00:00Z")
+        for (minute in 0 until 24 * 60) {
+            var now = start + minute.minutes
+            val runs = mutableListOf<Instant>()
+            while (now < start + 3.days) {
+                now = NotificationWindows.nextRun(now, TimeZone.UTC).second
+                runs += now
+            }
+            for (day in 1..2) {
+                for (hour in NotificationWindows.openingHours) {
+                    val open = Instant.parse("2026-11-2${1 + day}T${hour.toString().padStart(2, '0')}:00:00Z")
+                    assertTrue(runs.any { it >= open && it < open + 1.hours }, "a run just after $open when starting at minute $minute")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun aRunJustAfterAWindowOpensIsInsideItsWindow() {
+        for (hour in NotificationWindows.openingHours) {
+            val run = NotificationWindows.nextRun(Instant.parse("2026-11-21T${hour.toString().padStart(2, '0')}:00:00Z") - 1.minutes, TimeZone.UTC)
+            assertEquals(hour, run.first)
+            val planner = at(run.second.toString().substring(11, 16))
+            NotificationKind.entries.filter { it.fromHour == hour }.forEach { storage.saveNotificationOn(it, true) }
+            assertTrue(NotificationKind.entries.filter { it.fromHour == hour }.all(planner::wanted), "the window of $hour is open at its run")
+        }
     }
 }

@@ -9,7 +9,9 @@ import android.content.Intent
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -17,6 +19,7 @@ import dev.tobins.mealplanner.app.AppUpdates
 import dev.tobins.mealplanner.app.DueNotification
 import dev.tobins.mealplanner.app.NotificationKind
 import dev.tobins.mealplanner.app.NotificationPlanner
+import dev.tobins.mealplanner.app.NotificationWindows
 import dev.tobins.mealplanner.app.ServerSettings
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.appLanguage
@@ -30,7 +33,9 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
- * The one background check (issue 225), every four hours on any network, as often as Android allows: the
+ * The one background check (issue 225), every four hours on any network, as often as Android allows, and
+ * once just after each window opens ([NotificationWindows]), since the periodic run's times are Android's
+ * and may never fall inside a window: the
  * latest release, as the daily update check did before (not in a debug build, which a release cannot
  * replace), and, while logged in, what the server says is due. [NotificationPlanner] decides what to post;
  * this only asks and posts. Without the system's permission it asks nothing; a failure tells nothing, shows
@@ -39,6 +44,7 @@ import java.util.concurrent.TimeUnit
 class NotificationWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val app = applicationContext
+        scheduleNextWindowRun(app)
         if (!notificationsAllowed(app)) return Result.success()
         val storage = settingsStorage(app)
         val planner = NotificationPlanner(storage)
@@ -84,8 +90,30 @@ class NotificationWorker(context: Context, params: WorkerParameters) : Coroutine
         /** The daily update check's schedule, which this one replaces. */
         private const val UPDATE_CHECK_WORK_NAME = "update-check"
 
-        /** Schedules the check every four hours, which reaches the afternoon's and evening's windows; keeps an existing schedule. */
+        /** The unique work of the run for the window opening at [hour]: one name per window, so a run never replaces itself. */
+        private fun windowWorkName(hour: Int) = "$WORK_NAME-window-$hour"
+
+        /**
+         * Enqueues the one-off run just after the next window opens, as [NotificationWindows] says, replacing a
+         * waiting one of that window. Each run does this first, so the chain goes on; the periodic check and the
+         * app's start restart it should it ever break.
+         */
+        private fun scheduleNextWindowRun(context: Context) {
+            val (hour, wait) = NotificationWindows.untilNextRun()
+            val request = OneTimeWorkRequestBuilder<NotificationWorker>()
+                .setInitialDelay(wait.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(windowWorkName(hour), ExistingWorkPolicy.REPLACE, request)
+        }
+
+        /**
+         * Schedules the check every four hours and the run after the next window opening; keeps an existing
+         * periodic schedule. The window runs are what make sure every window, the afternoon's and the evening's
+         * too, is reached whatever the phase of the periodic check.
+         */
         fun schedule(context: Context) {
+            scheduleNextWindowRun(context)
             val work = WorkManager.getInstance(context)
             work.cancelUniqueWork(UPDATE_CHECK_WORK_NAME)
             val request = PeriodicWorkRequestBuilder<NotificationWorker>(4, TimeUnit.HOURS)

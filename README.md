@@ -360,7 +360,7 @@ the device; each kind is an Android notification channel of its own, so the syst
 |---|---|---|---|
 | App update | A newer release exists (release builds only), once per version | The app, which offers the update | On |
 | Offers ending | An offer at one of the account's stores ends today or tomorrow, for a row of this week's shopping list still to buy (not ticked, still needed by a meal, not covered by a known amount at home), or a buy-ahead or stock-up row not ticked or dismissed; once per day, one notification naming them all ("3 offers for your list end today") | Shopping | On |
-| Plan next week | On Saturday and Sunday, while next week has no meals and next week's offers are in: an offer at one of the account's stores that starts next week (this week's running on and Jumbo's offers dated over months do not count; AH and Lidl are only fetched once their week has started, so in practice Jumbo, which lists its next week early, brings it in); once per week | Plan, on next week | On |
+| Plan next week | On Saturday and Sunday, while next week has no meals, whatever the offers ("Next week has no plan yet"; it works for every store, since only Jumbo lists next week's offers early); once per week | Plan, on next week | On |
 | Weigh-in | The newest weigh-in is 7 or more days old and there is a profile; once per 7 days, until one is entered | Progress | Off |
 | Dinner today | Today has a planned dinner that is neither eaten nor skipped; once per day | The recipe, from that meal (its servings to cook) | Off |
 | Mark what you ate | A meal of today is still planned; once per day | Today | Off |
@@ -369,7 +369,10 @@ The server says what is due, the app decides whether to tell: `GET /api/notifica
 account and the server's today, the facts behind kinds 2 to 6 as data (`NotificationFacts`: names, dates, counts,
 the recipe), and the app words them in its language (`Messages.kt`). One WorkManager job (`NotificationWorker`)
 replaces the daily update check: every four hours on any network, as Android allows, it checks the release and,
-when logged in, asks the server. The schedule outlives the app being swiped away and a reboot (WorkManager keeps it
+when logged in, asks the server. Android decides when the periodic run happens, so it may never fall inside the two
+hours of "Mark what you ate"; therefore every run also schedules a one-off run five minutes after the next window
+opens (08:00, 15:00 or 20:00 by the device's clock), and the app's start does too, so each window gets a run
+whatever the phase of the periodic one (`NotificationWindows`). The schedule outlives the app being swiped away and a reboot (WorkManager keeps it
 in JobScheduler and sets it again at boot); a force stop (Settings → Apps → Force stop, or a phone maker's battery
 saver that force-stops on a swipe) cancels it until the app is next opened, which schedules it again. What decides (the kind, its switch, what was told already per kind and day, week
 or version, and the windows) is common code (`NotificationPlanner`): kinds 1 to 4 from 08:00, dinner from 15:00,

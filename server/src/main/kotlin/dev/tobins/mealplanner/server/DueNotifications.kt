@@ -26,8 +26,6 @@ class DueNotifications(
     private val profiles: ProfileRepository,
     /** The stores the account shops at: an offer elsewhere is no reason to hurry. */
     private val shops: () -> Set<Store>,
-    /** The stores with an offer that starts between two dates, both included. */
-    private val storesWithOffersStarting: (LocalDate, LocalDate) -> Set<Store>,
     private val today: () -> LocalDate = ::serverToday,
 ) {
     fun facts(): NotificationFacts {
@@ -78,17 +76,14 @@ class DueNotifications(
             .minOrNull()
 
     /**
-     * Next week's first day, on a Saturday or Sunday, while that week has no meals and next week's offers are in:
-     * an offer at one of the account's stores that *starts* next week (Monday to Sunday). An offer that only runs
-     * on into next week says nothing about next week's folder: this week's run on (Jumbo's weeks go from
-     * Wednesday to Tuesday), and Jumbo dates some offers over months. AH and Lidl start their weeks on Monday
-     * (Lidl's second batch on Thursday), Jumbo on Wednesday, and Jumbo lists next week's offers before they start.
+     * Next week's first day, on a Saturday or Sunday, while that week has no meals. Whatever the offers: the
+     * owner plans on Saturday, and only Jumbo lists next week's offers before the week starts (AH and Lidl are
+     * fetched once it has), so tying the reminder to offers would leave AH and Lidl shoppers without it.
      */
     private fun planNextWeek(day: LocalDate, weekStart: LocalDate): LocalDate? {
         if (day.dayOfWeek != DayOfWeek.SATURDAY && day.dayOfWeek != DayOfWeek.SUNDAY) return null
         val next = weekStart.plusWeeks(1)
-        if (plans.meals(next).isNotEmpty()) return null
-        return next.takeIf { storesWithOffersStarting(next, next.plusDays(6)).any { it in shops() } }
+        return next.takeIf { plans.meals(next).isEmpty() }
     }
 
     /** The newest weigh-in, when it is a week old or older and there is a profile its weight goes to. */
