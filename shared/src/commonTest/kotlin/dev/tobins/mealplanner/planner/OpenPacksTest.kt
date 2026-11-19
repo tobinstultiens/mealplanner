@@ -68,6 +68,23 @@ class OpenPacksTest {
         assertClose(4.5, packs.restEuros)
     }
 
+    @Test
+    fun aMealThatOpensANewPackWastesTheRestOfItAndOneThatUsesTheRestWastesNothing() {
+        val packs = OpenPacks()
+
+        // One serving of 50 g from a new 200 g tub leaves 150 g, 2.25 euros; four servings use all of it.
+        assertClose(2.25, packs.wasted(day = 0, uses = uses, servings = 1.0))
+        assertClose(0.0, packs.wasted(day = 0, uses = uses, servings = 4.0))
+
+        packs.cook(day = 0, uses = uses, servings = 1.0)
+
+        // The 150 g left cover a serving of 50 g or three; five servings need 250 g: 100 g of a second tub, 100 g left of it.
+        assertClose(0.0, packs.wasted(day = 1, uses = uses, servings = 1.0))
+        assertClose(1.5, packs.wasted(day = 1, uses = uses, servings = 5.0))
+        // A tub past its days is no rest: a serving opens a new one.
+        assertClose(2.25, packs.wasted(day = 5, uses = uses, servings = 1.0))
+    }
+
     private fun meal(day: Int, slot: MealSlot, recipeId: Long, leftover: Boolean = false) =
         PlannedMeal(day, slot, recipeId, "Recipe $recipeId", portions = 1.0, kcal = 600.0, proteinG = 40.0, leftover = leftover)
 

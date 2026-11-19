@@ -48,6 +48,8 @@ data class PlanRequest(
     val routines: Map<MealSlot, Long> = emptyMap(),
     /** How large a meal may be: the profile's range. */
     val portions: PortionRange = PortionRange(),
+    /** How much the planner makes of the rest of fresh packs ([PackWeights]). */
+    val packWeights: PackWeights = PackWeights(),
     /** What the profile has the planner weigh most ([WeekPlanner]'s score). */
     val priority: PlanPriority = PlanPriority.BALANCED,
     /** Same seed, same plan. */
@@ -77,9 +79,6 @@ data class PlanRequest(
  *   only locked meals keep it.
  */
 object WeekPlanner {
-    /** What each euro of pack rest reused counts in the score; chosen with PackRestMeasurementTest. */
-    const val PACK_WEIGHT = 0.75
-
     fun plan(request: PlanRequest): List<PlannedMeal> {
         val random = Random(request.seed)
         val meals = request.locked.map { it.copy(locked = true) }.toMutableList()
@@ -151,7 +150,11 @@ object WeekPlanner {
                 sameTagAsYesterday = yesterdaysDinner != null && candidate.tags.firstOrNull() == yesterdaysDinner.tags.firstOrNull() &&
                     candidate.tags.isNotEmpty(),
                 jitter = random.nextDouble(),
-                packEuros = packs?.reusable(day, candidate.freshUses, portionsFor(candidate, budgetSlot, request.targets, request.portions)) ?: 0.0,
+                packs = packs?.let { open ->
+                    val servings = portionsFor(candidate, budgetSlot, request.targets, request.portions)
+                    request.packWeights.reuse * open.reusable(day, candidate.freshUses, servings) -
+                        request.packWeights.waste * open.wasted(day, candidate.freshUses, servings)
+                } ?: 0.0,
             )
         }
     }
@@ -169,8 +172,8 @@ object WeekPlanner {
         uses: Int,
         sameTagAsYesterday: Boolean,
         jitter: Double,
-        /** Euros of pack the recipe takes from packs already open, where the plan would otherwise open a new one. */
-        packEuros: Double = 0.0,
+        /** The pack term ([PackWeights]): euros of open packs the recipe uses up, less euros of rest it leaves by opening new ones. */
+        packs: Double = 0.0,
     ): Double {
         val budget = request.targets.kcal * slot.share
         val portions = portionsFor(candidate, slot, request.targets, request.portions)
@@ -182,7 +185,7 @@ object WeekPlanner {
             weights.fibre * fibreFit(candidate, slot, portions, request.targets) +
             0.5 * candidate.onHandCount.coerceAtMost(3) +
             weights.savings * savings(candidate, request) +
-            weights.packs * packEuros +
+            packs +
             0.4 * ((candidate.rating ?: 3) - 3) -
             3.0 * uses -
             (if (sameTagAsYesterday) 0.5 else 0.0) -
@@ -205,9 +208,9 @@ object WeekPlanner {
      * own weight and lowers none, so that a price plan still prefers the higher-protein, higher-fibre
      * recipe among equally cheap ones.
      */
-    private data class Weights(val protein: Double, val fibre: Double, val savings: Double, val packs: Double) {
+    private data class Weights(val protein: Double, val fibre: Double, val savings: Double) {
         companion object {
-            private val BALANCED = Weights(protein = 2.0, fibre = 1.0, savings = 1.0, packs = PACK_WEIGHT)
+            private val BALANCED = Weights(protein = 2.0, fibre = 1.0, savings = 1.0)
 
             fun of(priority: PlanPriority): Weights = when (priority) {
                 PlanPriority.BALANCED -> BALANCED

@@ -15,6 +15,13 @@ data class Pack(val grams: Double, val euros: Double)
 data class FreshUse(val ingredientId: Long, val gramsPerServing: Double, val pack: Pack)
 
 /**
+ * What the planner's pack term counts, per euro of pack price (issue 222): the [reuse] reward for the rest of an
+ * opened pack a recipe uses up, and the [waste] penalty for the rest a recipe leaves by opening a new pack, which the
+ * week may not finish. Chosen with the measurement of PackRestMeasurementTest; a request may set others, as that does.
+ */
+data class PackWeights(val reuse: Double = 0.75, val waste: Double = 0.2)
+
+/**
  * The packs of fresh ingredients a plan has opened so far, and what is left in them: the planner prefers
  * a recipe that uses up the rest of a pack the week already buys over one that opens another (issue 222).
  *
@@ -38,6 +45,15 @@ class OpenPacks {
     fun reusable(day: Int, uses: List<FreshUse>, servings: Double): Double = uses.sumOf { use ->
         val rest = openOn(day, use.ingredientId)?.restGrams ?: return@sumOf 0.0
         min(rest, use.gramsPerServing * servings) / use.pack.grams * use.pack.euros
+    }
+
+    /**
+     * The euros of pack rest that [servings] of a recipe would leave on [day] by opening new packs for what the
+     * open ones cannot give: the rest the plan would then be likely to throw away.
+     */
+    fun wasted(day: Int, uses: List<FreshUse>, servings: Double): Double = uses.sumOf { use ->
+        val need = use.gramsPerServing * servings - (openOn(day, use.ingredientId)?.restGrams ?: 0.0).coerceAtLeast(0.0)
+        if (need <= 0) 0.0 else (ceil(need / use.pack.grams) * use.pack.grams - need) / use.pack.grams * use.pack.euros
     }
 
     /** Cooks [servings] of a recipe on [day]: takes from the rest of open packs and opens new ones for the remainder. */

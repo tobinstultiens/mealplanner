@@ -446,7 +446,7 @@ class WeekPlannerTest {
 
     /** The days recipe 10 and recipe 19, which share the tub, are cooked (a lunch may be cooked too) in the plan of each seed; null for one not planned. */
     private fun tubCookDays(candidates: List<PlanCandidate>, locked: List<PlannedMeal> = emptyList()) = (0L until 20L).map { seed ->
-        val dinners = WeekPlanner.plan(PlanRequest(targets, candidates, locked = locked, seed = seed)).filter { it.slot == DINNER || (it.slot == LUNCH && !it.leftover) }
+        val dinners = WeekPlanner.plan(PlanRequest(targets, candidates, locked = locked, packWeights = PackWeights(waste = 0.0), seed = seed)).filter { it.slot == DINNER || (it.slot == LUNCH && !it.leftover) }
         dinners.firstOrNull { it.recipeId == 10L }?.day to dinners.firstOrNull { it.recipeId == 19L }?.day
     }
 
@@ -466,6 +466,24 @@ class WeekPlannerTest {
         val days = tubCookDays(sharingATub, listOf(locked))
 
         assertTrue(days.all(::withinATubsDays), days.toString())
+    }
+
+    @Test
+    fun aRecipeThatOpensANewPackForASmallAmountLosesToAnEqualOne() {
+        fun weeksCooked(candidates: List<PlanCandidate>, id: Long, weights: PackWeights) = (0L until 20L).count { seed ->
+            WeekPlanner.plan(PlanRequest(targets, candidates, packWeights = weights, seed = seed)).any { it.recipeId == id && !it.leftover }
+        }
+        // The dinner most weeks cook, given 10 g of a 500 g pack of 10 euros: 9.80 euros of rest left in the cupboard.
+        val none = PackWeights(reuse = 0.75, waste = 0.0)
+        val favourite = pantryOfRecipes.filter { DINNER in it.slots }.maxBy { weeksCooked(pantryOfRecipes, it.recipeId, none) }
+        val smallAmount = FreshUse(3, gramsPerServing = 2.5, pack = Pack(grams = 500.0, euros = 10.0))
+        val withSmallAmount = pantryOfRecipes.map { if (it.recipeId == favourite.recipeId) it.copy(freshUses = listOf(smallAmount)) else it }
+
+        val without = weeksCooked(withSmallAmount, favourite.recipeId, none)
+        val with = weeksCooked(withSmallAmount, favourite.recipeId, PackWeights(reuse = 0.75, waste = 0.2))
+
+        assertEquals(weeksCooked(pantryOfRecipes, favourite.recipeId, none), without, "without a penalty a pack opened alone changes nothing")
+        assertTrue(with < without, "it is cooked in $with weeks with the penalty and $without without it")
     }
 
     @Test

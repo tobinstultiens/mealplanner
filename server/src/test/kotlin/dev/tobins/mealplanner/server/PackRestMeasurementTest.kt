@@ -6,7 +6,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.Sex
-import dev.tobins.mealplanner.planner.Pack
+import dev.tobins.mealplanner.planner.PackWeights
 import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.planner.PlanRequest
 import dev.tobins.mealplanner.planner.WeekPlanner
@@ -34,18 +34,27 @@ class PackRestMeasurementTest {
     private val cooking = File(System.getProperty("cookingRepo"))
     private val nevo = File(System.getProperty("nevoCsv"))
 
-    /** What one plan was measured as. */
-    private data class Measure(val restEuros: Double, val calorieErrorPercent: Double, val repeats: Int)
+    /** What one plan was measured as; protein and fibre as the mean share of the daily target the days reach. */
+    private data class Measure(val restEuros: Double, val calorieErrorPercent: Double, val proteinPercent: Double, val fibrePercent: Double, val repeats: Int)
 
-    private fun measure(meals: List<PlannedMeal>, real: Map<Long, PlanCandidate>, kcalTarget: Int): Measure {
-        val dayErrors = (0 until 7).map { day -> abs(meals.filter { it.day == day }.sumOf { it.kcal } - kcalTarget) / kcalTarget * 100 }
+    private val profile = Profile(75.0, 180.0, 35, Sex.MALE, ActivityLevel.MODERATE)
+    private val targets = TargetCalculator.targets(profile)
+
+    private fun measure(meals: List<PlannedMeal>, real: Map<Long, PlanCandidate>): Measure {
+        fun perDay(of: (List<PlannedMeal>) -> Double) = (0 until 7).map { day -> of(meals.filter { it.day == day }) }.average()
         // A recipe cooked again in the week; breakfast and snack are routines and a leftover is no new cooking.
         val cooked = meals.filter { !it.leftover && (it.slot == MealSlot.LUNCH || it.slot == MealSlot.DINNER) }.groupingBy { it.recipeId }.eachCount()
-        return Measure(OpenPacks.restOf(meals, real), dayErrors.average(), cooked.values.sumOf { it - 1 })
+        return Measure(
+            OpenPacks.restOf(meals, real),
+            perDay { abs(it.sumOf { m -> m.kcal } - targets.kcal) / targets.kcal * 100 },
+            perDay { it.sumOf { m -> m.proteinG } / targets.proteinG * 100 },
+            perDay { it.sumOf { m -> m.fibreG ?: 0.0 } / checkNotNull(targets.fibreG) * 100 },
+            cooked.values.sumOf { it - 1 },
+        )
     }
 
-    /** The recipes as candidates with their fresh uses, and the calories a day the targets ask. */
-    private fun fixture(): Pair<List<PlanCandidate>, Int>? {
+    /** The recipes as candidates with their fresh uses. */
+    private fun fixture(): List<PlanCandidate>? {
         if (!File(cooking, "content").isDirectory || !nevo.isFile) {
             println("Cooking repo at ${cooking.absolutePath} or NEVO file at ${nevo.absolutePath} not found; skipping")
             return null
@@ -75,40 +84,37 @@ class PackRestMeasurementTest {
         val pricing = prices.pricing(ingredients, week, week.plusDays(6))
         val candidates = recipes.planCandidates(prices = pricing, freshPacks = packs)
         println("${candidates.size} candidates, ${candidates.count { it.freshUses.isNotEmpty() }} with fresh uses, ${packs.size} fresh ingredients with a pack")
-        return candidates to TargetCalculator.targets(profile).kcal
+        return candidates
     }
 
-    /** Plans 50 seeds with the pack euros of each recipe scaled so that the planner's effective weight is [weight] (the term is linear in them: they are divided by [WeekPlanner.PACK_WEIGHT], which it multiplies in again), measured at the real euros. */
-    private val profile = Profile(75.0, 180.0, 35, Sex.MALE, ActivityLevel.MODERATE)
-
-    private fun fifty(candidates: List<PlanCandidate>, weight: Double, kcal: Int): List<Measure> {
+    /** Plans 50 seeds with the pack term at [weights], measuring the rest at the real euros. */
+    private fun fifty(candidates: List<PlanCandidate>, weights: PackWeights): List<Measure> {
         val real = candidates.associateBy { it.recipeId }
-        val scaled = candidates.map { c -> c.copy(freshUses = c.freshUses.map { it.copy(pack = Pack(it.pack.grams, it.pack.euros * weight / WeekPlanner.PACK_WEIGHT)) }) }
-        val targets = TargetCalculator.targets(profile)
-        return (0L until 50L).map { seed -> measure(WeekPlanner.plan(PlanRequest(targets, scaled, seed = seed)), real, kcal) }
+        return (0L until 50L).map { seed -> measure(WeekPlanner.plan(PlanRequest(targets, candidates, packWeights = weights, seed = seed)), real) }
     }
+
+    private fun List<Measure>.mean(of: (Measure) -> Double) = map(of).average()
 
     @Test
     fun theTermLowersTheRestWithoutCostingMoreThanAPointOfCalorieError() {
-        val (candidates, kcal) = fixture() ?: return
-        // Weight 0 is the planner without the term: the same recipes, no preference for packs.
-        val baseline = fifty(candidates, 0.0, kcal)
-        println("weight | rest euros/week | calorie error % | repeats/week")
-        fun row(label: String, runs: List<Measure>) =
-            println("%-6s | %6.2f | %5.2f | %5.2f".format(label, runs.map { it.restEuros }.average(), runs.map { it.calorieErrorPercent }.average(), runs.map { it.repeats }.average()))
-        row("0", baseline)
-        val results = (listOf(0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0) + WEIGHT).distinct().associateWith { w -> fifty(candidates, w, kcal).also { row("$w", it) } }
-
-        val shipped = results.getValue(WEIGHT)
-        assertTrue(shipped.map { it.restEuros }.average() < baseline.map { it.restEuros }.average(), "the rest falls")
-        assertTrue(
-            shipped.map { it.calorieErrorPercent }.average() <= baseline.map { it.calorieErrorPercent }.average() + 1.0,
-            "the calorie error rises by no more than a percentage point",
+        val candidates = fixture() ?: return
+        // No weights is the planner without the term: the same recipes, no preference for packs.
+        val baseline = fifty(candidates, PackWeights(reuse = 0.0, waste = 0.0))
+        println("reuse | waste | rest euros/week | calorie error % | protein % of target | fibre % of target | repeats/week")
+        fun row(weights: PackWeights, runs: List<Measure>) = println(
+            "%5.2f | %5.2f | %6.2f | %5.2f | %6.2f | %6.2f | %5.2f".format(
+                weights.reuse, weights.waste, runs.mean { it.restEuros }, runs.mean { it.calorieErrorPercent },
+                runs.mean { it.proteinPercent }, runs.mean { it.fibrePercent }, runs.mean { it.repeats.toDouble() },
+            ),
         )
-    }
+        row(PackWeights(0.0, 0.0), baseline)
+        val tried = listOf(0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.5).flatMap { waste -> listOf(0.75, 1.0, 1.5).map { reuse -> PackWeights(reuse, waste) } } + PackWeights()
+        val results = tried.distinct().associateWith { w -> fifty(candidates, w).also { row(w, it) } }
 
-    private companion object {
-        /** The weight in use, which the table is read at. */
-        const val WEIGHT = WeekPlanner.PACK_WEIGHT
+        val shipped = results.getValue(PackWeights())
+        assertTrue(shipped.mean { it.restEuros } < baseline.mean { it.restEuros }, "the rest falls")
+        assertTrue(shipped.mean { it.calorieErrorPercent } <= baseline.mean { it.calorieErrorPercent } + 1.0, "the calorie error rises by no more than a point")
+        assertTrue(shipped.mean { it.proteinPercent } >= baseline.mean { it.proteinPercent } - 2.0, "protein does not fall by more than two points of the target")
+        assertTrue(shipped.mean { it.fibrePercent } >= baseline.mean { it.fibrePercent } - 2.0, "fibre does not fall by more than two points of the target")
     }
 }
