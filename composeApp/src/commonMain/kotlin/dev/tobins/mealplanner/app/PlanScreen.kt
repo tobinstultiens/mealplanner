@@ -250,7 +250,7 @@ fun PlanScreen(
                             }
                             // A prep is made today or later: a week that is over has no day for it.
                             val days = prepDays(weekStart, today)
-                            TextButton(enabled = !busy && days.isNotEmpty(), onClick = { prepping = PrepChoice(preppable.singleOrNull(), days.first(), firstDay = today) }) {
+                            TextButton(enabled = !busy && days.isNotEmpty(), onClick = { prepping = newPrep(preppable, days, today) }) {
                                 Text(t(Msg.PREP_A_RECIPE))
                             }
                             if (plan.emptySlots.isNotEmpty() && emptyRotation) {

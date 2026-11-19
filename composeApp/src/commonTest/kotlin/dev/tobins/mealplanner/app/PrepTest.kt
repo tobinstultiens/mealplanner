@@ -12,6 +12,7 @@ import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.SparePortion
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -70,6 +71,25 @@ class PrepTest {
         val tuesday = PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-18").toggled("2026-11-17", DINNER).toggled("2026-11-18", LUNCH)
         assertEquals(Msg.PREP_MADE_ON_PAST, tuesday.problem)
         assertNull(tuesday.with(madeOn = "2026-11-18").toggled("2026-11-19", LUNCH).problem)
+    }
+
+    @Test
+    fun prepARecipeOpensOnAWayTheRecipeIsKept() {
+        val vacuumOnly = recipe(3, null, 6)
+        val opened = newPrep(listOf(vacuumOnly), listOf("2026-11-18", "2026-11-19"), today = "2026-11-18")
+        assertEquals(true to "2026-11-18", opened.vacuum to opened.madeOn)
+        assertEquals(7, opened.days.size, "made Wednesday, six days vacuum sealed")
+        assertEquals(Msg.PREP_FIRST_ON_MADE_DAY, opened.problem)
+        assertEquals(false, newPrep(listOf(salad), listOf("2026-11-18"), "2026-11-18").vacuum, "in a box when it keeps that way")
+        assertNull(newPrep(listOf(salad, vacuumOnly), listOf("2026-11-18"), "2026-11-18").recipe, "several: the user picks")
+    }
+
+    @Test
+    fun aShareInTheBoxSaysUntilWhenItKeepsAndOnItsLastDayToEatItOrThrowItAway() {
+        val spare = SparePortion(7, 1, "Salad", 1.25, PrepSlot("2026-11-18", LUNCH), lastDay = "2026-11-20", room = emptyList())
+        assertEquals("Skipped on Wed 18 Nov lunch · keeps until Fri 20 Nov", spare.whenText("2026-11-18", Strings.English))
+        assertEquals("Its last day: eat it today or throw it away.", spare.whenText("2026-11-20", Strings.English))
+        assertEquals("Laatste dag: eet het vandaag op of gooi het weg.", spare.whenText("2026-11-20", Strings.Dutch))
     }
 
     private val prep = MealPrep(

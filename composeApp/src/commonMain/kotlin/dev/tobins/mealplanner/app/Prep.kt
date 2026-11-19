@@ -97,12 +97,24 @@ data class PrepChoice(
     fun input(): PrepInput = PrepInput(recipe!!.id, madeOn, vacuum, meals.sortedWith(compareBy({ it.date }, { it.slot.ordinal })))
 }
 
+/**
+ * The choice "Prep a recipe…" opens with: made on the first of [days] (from [today] on, [prepDays]), with the recipe
+ * when only one of [recipes] keeps, kept the way it can be (vacuum sealed for one that keeps only that way).
+ */
+fun newPrep(recipes: List<RecipeSummary>, days: List<String>, today: String): PrepChoice =
+    PrepChoice(recipes.singleOrNull(), days.first(), firstDay = today).with()
+
 /** The meals of [prep] as a sentence names them: `Mon 16 Nov lunch, Tue 17 Nov dinner`. */
 fun prepMealsText(prep: MealPrep, t: Strings): String =
     prep.meals.joinToString(", ") { "${dayLabel(it.date, t.locale)} ${t.slot(it.slot)}" }
 
-/** Whether [spare] is on its last day on [today]: to eat that day or throw away. */
-fun SparePortion.lastDayOn(today: String): Boolean = lastDay == today
+/**
+ * What the card of [this] share in the box says under its title on [today]: when it was skipped and until when it keeps,
+ * or on its last day that it is to eat today or throw away.
+ */
+fun SparePortion.whenText(today: String, t: Strings): String =
+    if (lastDay == today) t(Msg.SPARE_LAST_DAY)
+    else t(Msg.SPARE_KEEPS, "${dayLabel(skipped.date, t.locale)} ${t.slot(skipped.slot)}", dayLabel(lastDay, t.locale))
 
 /**
  * The Prep dialog: [start] as the choice it opens with, [weekDays] the days the batch may be made on ([prepDays]),
@@ -240,11 +252,7 @@ fun SpareCard(spare: SparePortion, today: String, enabled: Boolean, onEat: (Prep
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             Text(t(Msg.SPARE_TITLE, spare.title), style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (spare.lastDayOn(today)) t(Msg.SPARE_LAST_DAY)
-                else t(Msg.SPARE_KEEPS, "${dayLabel(spare.skipped.date, t.locale)} ${t.slot(spare.skipped.slot)}", dayLabel(spare.lastDay, t.locale)),
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Text(spare.whenText(today, t), style = MaterialTheme.typography.bodyMedium)
             if (spare.room.isEmpty()) {
                 Text(t(Msg.SPARE_NO_ROOM), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {

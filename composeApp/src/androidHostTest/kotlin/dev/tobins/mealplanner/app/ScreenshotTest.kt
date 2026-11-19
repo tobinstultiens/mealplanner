@@ -47,6 +47,8 @@ import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PrepMeal
+import dev.tobins.mealplanner.api.PrepSlot
+import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
@@ -123,6 +125,16 @@ private fun prepChoices() {
         // The days from today on are offered: Monday and Tuesday have passed.
         PrepChoices(samplePrep, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe)) {}
     }
+}
+
+/** Wednesday's skipped lunch of a prep that keeps until today, with today's dinner free for it. */
+@Composable
+private fun spareOnItsLastDay() {
+    val spare = SparePortion(
+        1, 4, keepingRecipe.title, 1.0, PrepSlot(plusDays(FakeBackend.TODAY, -1), MealSlot.LUNCH), lastDay = FakeBackend.TODAY,
+        room = listOf(PrepSlot(FakeBackend.TODAY, MealSlot.DINNER)),
+    )
+    Column(Modifier.padding(16.dp)) { SpareCard(spare, FakeBackend.TODAY, enabled = true) {} }
 }
 
 @Composable
@@ -235,8 +247,11 @@ enum class Shot(
     PREP_CHOICES_NL(dutch = true, heightDp = 1100, content = { _, _ -> prepChoices() }),
     PREP_CHOICES_X2(heightDp = 2000, fontScale = 2.0f, content = { _, _ -> prepChoices() }),
     // Removing a prep names every meal that goes.
-    REMOVE_PREP(heightDp = 300, content = { _, _ -> removePrepQuestion() }),
-    REMOVE_PREP_NL(dutch = true, heightDp = 300, content = { _, _ -> removePrepQuestion() }),
+    REMOVE_PREP(heightDp = 420, content = { _, _ -> removePrepQuestion() }),
+    REMOVE_PREP_NL(dutch = true, heightDp = 420, content = { _, _ -> removePrepQuestion() }),
+    // A share in the box on its last day: eat it today or throw it away; with the meals it can still go to.
+    SPARE_LAST_DAY(heightDp = 300, content = { _, _ -> spareOnItsLastDay() }),
+    SPARE_LAST_DAY_NL(dutch = true, heightDp = 300, content = { _, _ -> spareOnItsLastDay() }),
     // What was in Wednesday's dinner: a line changed, one left out, one added in pieces, one linked to nothing; the
     // later dinner the extra chicken leaves short, and the quick add-ons (#226).
     ADJUST_MEAL(heightDp = 1400, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
