@@ -35,6 +35,34 @@ DELETE FROM planMeal WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?
 setLocked:
 UPDATE planMeal SET locked = ? WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?;
 
+-- What one meal ate that differs from its recipe (issue 226), one row per ingredient: grams is the amount
+-- eaten of it in this meal, 0 for a recipe line left out. The recipe stays as it is. The rows go with their
+-- meal, so replacing or removing the meal drops them, and with the ingredient when it leaves the catalogue.
+CREATE TABLE mealLine (
+    userId INTEGER NOT NULL,
+    weekStart TEXT NOT NULL,
+    day INTEGER NOT NULL,
+    slot TEXT NOT NULL,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    grams REAL NOT NULL,
+    PRIMARY KEY (userId, weekStart, day, slot, ingredientId),
+    FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE
+);
+
+CREATE INDEX mealLine_ingredient ON mealLine(ingredientId);
+
+selectMealLines:
+SELECT ingredientId, grams FROM mealLine WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
+
+selectWeekLines:
+SELECT day, slot, ingredientId, grams FROM mealLine WHERE userId = :userId AND weekStart = :weekStart;
+
+insertMealLine:
+INSERT INTO mealLine (userId, weekStart, day, slot, ingredientId, grams) VALUES (?, ?, ?, ?, ?, ?);
+
+deleteMealLines:
+DELETE FROM mealLine WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
+
 -- The latest offers per store, replaced as a whole by each successful fetch.
 CREATE TABLE offer (
     store TEXT NOT NULL,

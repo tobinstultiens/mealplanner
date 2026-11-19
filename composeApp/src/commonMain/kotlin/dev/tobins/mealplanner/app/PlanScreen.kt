@@ -59,6 +59,8 @@ fun PlanScreen(
     onOpenProfile: () -> Unit,
     onOpenRecipes: () -> Unit,
     onOpenBank: () -> Unit,
+    /** Opens what was in a meal, to adjust it (issue 226). */
+    onAdjust: (MealPlace) -> Unit = {},
 ) {
     val t = LocalStrings.current
     val now = mondayOf(rememberToday())
@@ -246,6 +248,7 @@ fun PlanScreen(
                                     }
                                 },
                                 onToggleLock = { meal -> change { api.setMealLocked(weekStart, meal.day, meal.slot, !meal.locked) } },
+                                onAdjust = { meal -> onAdjust(MealPlace(weekStart, meal.day, meal.slot)) },
                             )
                         }
                     }
@@ -269,6 +272,7 @@ private fun DayCard(
     onChoose: (Int, MealSlot) -> Unit,
     onToggleSkipped: (PlannedMeal) -> Unit,
     onToggleLock: (PlannedMeal) -> Unit,
+    onAdjust: (PlannedMeal) -> Unit,
 ) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
@@ -320,6 +324,12 @@ private fun DayCard(
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 DropdownMenuItem(text = { Text(t(Msg.ANOTHER_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onReroll(meal) })
                                 DropdownMenuItem(text = { Text(t(Msg.CHOOSE_RECIPE)) }, onClick = { menu = false; onChoose(meal.day, meal.slot) })
+                                // A skipped meal counts for nothing, so there is nothing in it to adjust.
+                                DropdownMenuItem(
+                                    text = { Text(t(Msg.ADJUST_WHAT_WAS_IN_IT)) },
+                                    enabled = meal.status != MealStatus.SKIPPED,
+                                    onClick = { menu = false; onAdjust(meal) },
+                                )
                                 DropdownMenuItem(
                                     text = { Text(if (meal.status == MealStatus.SKIPPED) t(Msg.EAT_AFTER_ALL) else t(Msg.NOT_EATING_THIS)) },
                                     onClick = { menu = false; onToggleSkipped(meal) },

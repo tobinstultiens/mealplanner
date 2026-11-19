@@ -186,6 +186,9 @@ enum class Shot(
     // Fibre next to kcal and protein in Dutch, where the totals are longest (#223).
     TODAY_NL(dutch = true, heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     PLAN_NL(dutch = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // What was in Wednesday's dinner: a line changed, one left out, one added in pieces, one linked to nothing (#226).
+    ADJUST_MEAL(heightDp = 1100, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
+    ADJUST_MEAL_NL(dutch = true, heightDp = 1100, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
     // No recipe of mine is in the rotation, so the week stays empty and says why, with a way to the Recipes tab.
     PLAN_EMPTY_ROTATION(emptyWeek = true, emptyRecipes = true, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     RECIPE_PICKER(heightDp = 1300, content = { api, _ -> recipePicker(api) }),

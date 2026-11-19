@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.MealSlot
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -10,6 +11,7 @@ class RoutesTest {
     private val allRoutes = Tab.entries.map { Route.TabRoute(it) } + listOf(
         Route.Recipe(12), Route.RecipeEditor(12), Route.RecipeEditor(null), Route.Bank,
         Route.Mapping, Route.Profile, Route.Pantry, Route.Offers, Route.Prices, Route.Settings,
+        Route.AdjustMeal(MealPlace("2026-11-16", 4, MealSlot.DINNER)),
     )
 
     @Test
@@ -85,5 +87,16 @@ class RoutesTest {
         assertEquals(today, parseRoute(NoRoutes.read()))
         NoRoutes.write("#/plan")
         assertEquals("", NoRoutes.read())
+    }
+
+    @Test
+    fun anAdjustedMealHasAnAddressOfItsOwnOverThePlan() {
+        val place = MealPlace("2026-11-16", 4, MealSlot.DINNER)
+        assertEquals("#/meals/2026-11-16/4/dinner", Route.AdjustMeal(place).hash)
+        assertEquals(OpenScreens(tab = Tab.PLAN, adjusting = place), Route.AdjustMeal(place).openScreens())
+        // Not a meal's place: a day outside the week, an unknown slot, no date, or a part missing.
+        for (address in listOf("#/meals/2026-11-16/7/dinner", "#/meals/2026-11-16/4/supper", "#/meals/today/4/dinner", "#/meals/2026-11-16/4")) {
+            assertEquals(today, parseRoute(address), address)
+        }
     }
 }

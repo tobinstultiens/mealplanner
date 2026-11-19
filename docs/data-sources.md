@@ -606,6 +606,18 @@ Nothing comes back once the owner has said otherwise: after the tick of that ent
 (not bought), or the ingredient was put on hand or removed by hand in the pantry. Meals eaten before
 version 11 of the database have nothing kept to give back.
 
+**An adjusted meal** (issue 226, README "What was in a meal") takes what was in it: its recipe's grams for
+its portions with its own changes (an amount changed, a line left out at 0 g, an ingredient added), by the
+rules above; an added ingredient that is in stock is eaten from it like any other. A leftover lunch's share,
+taken when its dinner is eaten, is the lunch as adjusted, added toppings included. Adjusting a meal whose
+share was taken already (eaten, the leftover lunch of an eaten dinner, or one that keeps a share) moves the
+stock by the difference: for each ingredient whose amount changed, what the meal took of it goes back into
+the entries it came from and the new amount is taken as eating it would take it (`StockRepository.retake`);
+what it took of the others stays. What the meal holds is then kept under it as before, so un-eating it
+gives back exactly that and the pantry is as it was before the meal was eaten. Adjusting a meal still to
+eat changes nothing in the stock until it is eaten. The shopping list does not change for an adjustment:
+what was added came from the fridge or the pantry.
+
 What a meal took is kept under its day and slot and goes with the meal, so a meal the stock went down
 for keeps its recipe and its place: it was eaten, it is the leftover lunch of an eaten dinner, or what
 was taken for it is kept under its slot all the same (a leftover lunch whose eaten dinner was removed,
@@ -630,6 +642,9 @@ or its dinner, is un-eaten:
 | Putting a recipe back in the bank (`PUT /api/recipes/{id}/added`, `{"added": false}`) | as for deleting; also while it is a routine | as for deleting: 409 naming the days, or the plan keeps the meals |
 | Taking a recipe out of the rotation | any | the meals planned with it stay as they are |
 | Locking, marking eaten, skipped or planned | any | only that flag changes; marking takes and gives back as above |
+| Adjusting what was in it (`PUT meals/{day}/{slot}/lines`) | skipped | 409, nothing changes |
+| Adjusting what was in it | its share taken (as the first row) | the meal keeps its recipe; the stock moves by the difference |
+| Adjusting what was in it | any other meal | only its lines change; the stock waits until it is eaten |
 
 Removing the leftover lunch of an eaten dinner is refused rather than giving its share back: the
 dinner was cooked with it, so that share is used whether the lunch is eaten or not. Skipping it says

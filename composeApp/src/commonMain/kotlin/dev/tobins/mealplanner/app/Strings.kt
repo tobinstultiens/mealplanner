@@ -34,9 +34,11 @@ class Strings private constructor(val language: Language, val locale: FormatLoca
     fun slot(slot: MealSlot, capitalised: Boolean = false): String =
         this(slot.msg()).let { if (capitalised) it.replaceFirstChar { c -> c.uppercase() } else it }
 
-    /** A planned meal's slot as a small heading: `Dinner`, or `Dinner · leftovers`. */
+    /** A planned meal's slot as a small heading: `Dinner`, `Dinner · leftovers`, `Lunch · leftovers · adjusted`. */
     fun mealLabel(meal: PlannedMeal): String =
-        slot(meal.slot, capitalised = true).let { if (meal.leftover) this(Msg.MEAL_LEFTOVERS, it) else it }
+        slot(meal.slot, capitalised = true)
+            .let { if (meal.leftover) this(Msg.MEAL_LEFTOVERS, it) else it }
+            .let { if (meal.adjusted) this(Msg.MEAL_ADJUSTED, it) else it }
 
     /**
      * What is wrong with a profile, as the shared calculator words it (`weightKg must be between 30 and 300`),

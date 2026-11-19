@@ -10,6 +10,10 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientPrice
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MappedLine
+import dev.tobins.mealplanner.api.MealAdjustment
+import dev.tobins.mealplanner.api.MealLine
+import dev.tobins.mealplanner.api.MealLineChange
+import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
@@ -154,6 +158,8 @@ class FakeBackend(
             )
             parts.size == 3 && parts[1] == "days" -> json.encodeToString(day(parts[2]))
             parts.size == 3 && parts[1] == "plans" -> json.encodeToString(plan(parts[2]))
+            // What was in a meal; every meal of the week is Wednesday's dinner here.
+            parts.size == 7 && parts[1] == "plans" && parts[6] == "lines" -> json.encodeToString(mealLines(method, sent))
             // Choosing a recipe for a meal: the plan, which already has such a choice.
             parts.size == 6 && parts[1] == "plans" && parts[3] == "meals" -> json.encodeToString(plan(parts[2]))
             parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(shopping(parts[2]))
@@ -217,7 +223,9 @@ class FakeBackend(
             meal(index, MealSlot.DINNER, 4, "Slow-cooked chicken thighs with coconut, lemon and spinach", 810.0, 55.0, 5.3, cost = 3.9),
         ).map { meal ->
             when {
-                // Thursday's dinner is left out; Friday's was chosen by the user, with Saturday's lunch its leftovers.
+                // Wednesday's dinner got more chicken and an egg, and no spinach; Thursday's dinner is left out;
+                // Friday's was chosen by the user, with Saturday's lunch its leftovers.
+                index == 2 && meal.slot == MealSlot.DINNER -> meal.copy(kcal = 935.0, proteinG = 72.0, fibreG = 3.1, adjusted = true)
                 index == 3 && meal.slot == MealSlot.DINNER -> meal.copy(status = MealStatus.SKIPPED)
                 index == 4 && meal.slot == MealSlot.DINNER -> meal.copy(recipeId = 5, title = "Lentil soup", locked = true, fibreG = 12.6)
                 index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true, fibreG = 12.6)
@@ -261,6 +269,37 @@ class FakeBackend(
             // The breakfast was eaten; the extra has no fibre.
             eatenFibreG = 8.2,
             expectedFibreG = planned.fibreG,
+        )
+    }
+
+    /** What the meal's changes are now; a test reads them, and every `PUT .../lines` replaces them. */
+    @Volatile
+    var lineChanges: List<MealLineChange> = listOf(MealLineChange(1, 250.0), MealLineChange(8, 0.0), MealLineChange(9, 60.0))
+
+    /**
+     * The chicken dinner with what was in it: the recipe's lines for one serving, one of them linked to no
+     * ingredient, with [lineChanges] applied. An egg is not in the catalogue the screens list, so that the
+     * pantry's picture stays as it is; its line counts it in pieces.
+     */
+    private fun mealLines(method: String, sent: String): MealLines {
+        if (method == "PUT") {
+            lineChanges = json.decodeFromString<MealAdjustment>(sent).lines
+            changes += "PUT lines $sent"
+        }
+        val changed = lineChanges.associate { it.ingredientId to it.grams }
+        val recipe = listOf(MealLine(1, "Chicken thigh fillet", 200.0, 200.0), MealLine(8, "Spinach", 75.0, 75.0), MealLine(5, "Olive oil", 10.0, 10.0))
+            .map { line -> changed[line.ingredientId]?.let { line.copy(grams = it, changed = true) } ?: line } +
+            MealLine(null, "Coconut milk", 100.0)
+        val names = (ingredients + Ingredient(9, "Egg", null, 60.0, null, null, null, isStaple = false)).associateBy { it.id }
+        val added = lineChanges.filter { change -> recipe.none { it.ingredientId == change.ingredientId } }.map { change ->
+            val ingredient = names.getValue(change.ingredientId)
+            MealLine(ingredient.id, ingredient.name, change.grams, fromRecipe = false, changed = true, gramsPerPiece = ingredient.gramsPerPiece)
+        }
+        val adjusted = lineChanges.isNotEmpty()
+        return MealLines(
+            WEEK_START, 2, MealSlot.DINNER, 4, "Slow-cooked chicken thighs with coconut, lemon and spinach", 1.0, recipe + added,
+            kcal = if (adjusted) 935.0 else 810.0, proteinG = if (adjusted) 72.0 else 55.0, fibreG = if (adjusted) 3.1 else 5.3,
+            complete = false, uncounted = listOf("Coconut milk"), adjusted = adjusted,
         )
     }
 

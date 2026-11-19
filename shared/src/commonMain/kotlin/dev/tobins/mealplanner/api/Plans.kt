@@ -43,6 +43,12 @@ data class PlannedMeal(
      * counted have it too.
      */
     val fibreG: Double? = null,
+    /**
+     * True when what was in this meal differs from its recipe (issue 226, [MealLines]). Then [kcal],
+     * [proteinG] and [fibreG] are those of the meal as adjusted, worked out when read; an app that
+     * does not know adjustments shows the right numbers without this.
+     */
+    val adjusted: Boolean = false,
 )
 
 /**
