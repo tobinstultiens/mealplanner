@@ -85,10 +85,13 @@ CREATE TABLE prep (
 
 CREATE INDEX prep_user ON prep(userId, lastDay);
 
--- A meal's share of a prepped batch. role is MEAL: the slot's meal is eaten from the batch, and portions is
--- NULL for the meal's own portions, or 0 once it was skipped and its share is eaten in another meal. (Room
--- for a side taken from a batch next to a slot's meal, with its own portions, without another migration.)
--- A row goes with its meal, so replacing or removing the meal takes it out of the batch.
+-- A meal's share of a prepped batch. role MEAL: the slot's meal is eaten from the batch, and portions is NULL
+-- for the meal's own portions, or 0 once it was skipped and its share is eaten in another meal. role SIDE
+-- (step 2): a side next to the slot's meal, which keeps its own main, of portions servings of the batch; it
+-- shares the meal's status, and is moved when its share is eaten elsewhere, except the side the batch is made
+-- with, which is kept at 0 as a meal is: the batch is still made on that day, with that meal.
+-- A row goes with its meal, so removing the meal takes it out of the batch; replacing a meal's main keeps
+-- its side (PlanRepository.save).
 CREATE TABLE prepPortion (
     userId INTEGER NOT NULL,
     weekStart TEXT NOT NULL,
@@ -109,8 +112,10 @@ INSERT INTO prep (userId, recipeId, madeOn, lastDay, vacuum) VALUES (?, ?, ?, ?,
 lastPrepId:
 SELECT last_insert_rowid();
 
+-- A batch with its recipe's title, which a batch eaten only as sides has nowhere else; NULL once the recipe is gone.
 selectPrep:
-SELECT * FROM prep WHERE userId = :userId AND id = :id;
+SELECT prep.*, recipe.title AS recipeTitle FROM prep LEFT JOIN recipe ON recipe.id = prep.recipeId AND recipe.userId = prep.userId
+WHERE prep.userId = :userId AND prep.id = :id;
 
 -- The account's batches still keeping on :date or later.
 selectPrepsKeeping:
@@ -122,27 +127,53 @@ DELETE FROM prep WHERE userId = :userId AND id = :id;
 insertPrepPortion:
 INSERT INTO prepPortion (userId, weekStart, day, slot, role, prepId, portions) VALUES (?, ?, ?, ?, 'MEAL', ?, NULL);
 
+insertSidePortion:
+INSERT INTO prepPortion (userId, weekStart, day, slot, role, prepId, portions) VALUES (?, ?, ?, ?, 'SIDE', ?, ?);
+
+-- The side next to one meal, if it has one.
+selectSidePortion:
+SELECT prepId, portions FROM prepPortion
+WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'SIDE';
+
+deleteSidePortion:
+DELETE FROM prepPortion WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'SIDE';
+
 -- Which batch each meal of one week is eaten from.
 selectWeekPrepIds:
 SELECT day, slot, prepId FROM prepPortion WHERE userId = :userId AND weekStart = :weekStart AND role = 'MEAL';
 
--- The meals of batches, in every week, with their share.
+-- Which batch the side next to each meal of one week is taken from.
+selectWeekSides:
+SELECT day, slot, prepId FROM prepPortion WHERE userId = :userId AND weekStart = :weekStart AND role = 'SIDE';
+
+-- The meals and sides of batches, in every week, with their share; a side with the meal it is next to.
 selectPrepMeals:
-SELECT prepPortion.prepId, prepPortion.portions AS share, planMeal.*
+SELECT prepPortion.prepId, prepPortion.role, prepPortion.portions AS share, planMeal.*
 FROM prepPortion
 JOIN planMeal ON planMeal.userId = prepPortion.userId AND planMeal.weekStart = prepPortion.weekStart
     AND planMeal.day = prepPortion.day AND planMeal.slot = prepPortion.slot
-WHERE prepPortion.userId = :userId AND prepPortion.role = 'MEAL' AND prepPortion.prepId IN :prepIds;
+WHERE prepPortion.userId = :userId AND prepPortion.prepId IN :prepIds;
+
+-- Where a recipe is eaten as a side in weeks that started after the given date (an ISO date), as selectPlannedFrom.
+selectSidesPlannedFrom:
+SELECT prepPortion.weekStart, prepPortion.day FROM prepPortion JOIN prep ON prep.id = prepPortion.prepId
+WHERE prep.userId = :userId AND prep.recipeId = :recipeId AND prepPortion.role = 'SIDE' AND prepPortion.weekStart > :after;
 
 -- The skipped meal's share is eaten in another meal.
 clearPrepShare:
 UPDATE prepPortion SET portions = 0
 WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'MEAL';
 
--- What a meal took from the stock and what was in it go with its share to another meal of the batch.
+-- The skipped side the batch is made with is eaten next to another meal: it stays, at 0, as where the batch is made.
+clearSideShare:
+UPDATE prepPortion SET portions = 0
+WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'SIDE';
+
+-- What a meal (or the side next to it, by role) took from the stock and what was in it go with its share to
+-- another meal of the batch.
 moveStockUses:
 UPDATE stockUse SET weekStart = :toWeek, day = :toDay, slot = :toSlot
-WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
+WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = :role;
 
 moveMealLines:
 UPDATE mealLine SET weekStart = :toWeek, day = :toDay, slot = :toSlot

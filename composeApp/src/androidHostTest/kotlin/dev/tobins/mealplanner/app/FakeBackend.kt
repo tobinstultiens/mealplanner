@@ -16,6 +16,7 @@ import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.MealPrep
+import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Nutrition
@@ -85,6 +86,8 @@ class FakeBackend(
     private val olderServer: Boolean = false,
     /** The week with a prep of the chicken thighs (issue 234), whose Wednesday lunch was skipped and is still in the box. */
     private val prepped: Boolean = false,
+    /** The week with half a serving of the chickpea salad prepped as a side next to three meals (issue 234, step 2). */
+    private val sides: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -243,7 +246,7 @@ class FakeBackend(
                 index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true, fibreG = 12.6)
                 else -> meal
             }
-        }.map { meal -> if (prepped) prepped(meal) else meal }.map { meal ->
+        }.map { meal -> if (prepped) prepped(meal) else meal }.map { meal -> if (sides) withSide(meal) else meal }.map { meal ->
             // What the server says to cook: Friday's lentil soup also feeds Saturday's lunch, which cooks nothing; the prep's Monday dinner cooks the batch.
             meal.copy(cookPortions = when {
                 meal.prep != null -> if (meal.leftover) 0.0 else meal.prep!!.portions
@@ -252,8 +255,29 @@ class FakeBackend(
                 else -> meal.portions
             })
         }
+        // As the server counts them: each meal with its side.
         val counted = meals.filter { it.status != MealStatus.SKIPPED }
-        return PlanDay(plusDays(WEEK_START, index), meals, counted.sumOf { it.kcal }, counted.sumOf { it.proteinG }, counted.sumOf { it.fibreG!! })
+        return PlanDay(plusDays(WEEK_START, index), meals, counted.sumOf { it.totalKcal }, counted.sumOf { it.totalProteinG }, counted.sumOf { it.totalFibreG!! })
+    }
+
+    /**
+     * The chickpea salad prepped as a side of half a serving: made today (Wednesday) with the dinner, which goes over the day's
+     * calories with it, and eaten next to Thursday's lunch and Friday's lentil soup.
+     */
+    private val sidePrep = MealPrep(
+        id = 2, madeOn = TODAY, lastDay = plusDays(TODAY, 3), vacuum = false,
+        meals = listOf(2 to MealSlot.DINNER, 3 to MealSlot.LUNCH, 4 to MealSlot.DINNER).map { (day, slot) ->
+            PrepMeal(plusDays(WEEK_START, day), slot, 0.5, MealStatus.PLANNED, side = true)
+        },
+    )
+
+    /** [meal] as the week of [sides] has it: with half a serving of the salad next to it, or as it was. */
+    private fun withSide(meal: PlannedMeal): PlannedMeal {
+        val date = plusDays(WEEK_START, meal.day)
+        if (sidePrep.meals.none { it.date == date && it.slot == meal.slot }) return meal
+        val prepDay = date == sidePrep.madeOn
+        val side = MealSide(2, "Chickpea salad with feta and roasted peppers", 0.5, 320.0, 21.0, 5.7, cost = 1.2, cookPortions = if (prepDay) 1.5 else 0.0, prep = sidePrep)
+        return meal.copy(side = side)
     }
 
     /**

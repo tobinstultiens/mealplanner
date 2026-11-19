@@ -84,6 +84,8 @@ fun Route.planRoutes() {
                 val kept = "; the new recipe \"${recipe.summary.title}\" is kept in your recipes"
                 call.unprocessableOnConflict(kept) { plans.place(week, day, slot, candidate) }?.let { call.respond(it) }
             }
+            // Takes the side next to the meal out of its batch (issue 234); the meal keeps its main.
+            delete("/side") { call.respond(call.user.preps.removeSide(call.week(), call.day(), call.slot())) }
             // Body: "EATEN", "SKIPPED" or "PLANNED".
             put("/status") {
                 call.respond(call.user.plans.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))

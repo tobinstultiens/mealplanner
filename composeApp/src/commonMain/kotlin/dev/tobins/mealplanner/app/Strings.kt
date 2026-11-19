@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.shopping.ShopSection
@@ -50,6 +51,10 @@ class Strings private constructor(val language: Language, val locale: FormatLoca
                 }
             }
             .let { if (meal.adjusted) this(Msg.MEAL_ADJUSTED, it) else it }
+
+    /** How the side next to the meal at [date]'s [slot] is labelled: "Side · prep day" where its batch is made, "Side · prepped Mon 16 Nov" after. */
+    fun sideLabel(side: MealSide, date: String, slot: MealSlot): String =
+        if (side.isPrepDay(date, slot)) this(Msg.SIDE_PREP_DAY) else this(Msg.SIDE_PREPPED, dayLabel(side.prep.madeOn, locale))
 
     /**
      * What is wrong with a profile, as the shared calculator words it (`weightKg must be between 30 and 300`),

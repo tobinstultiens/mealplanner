@@ -189,8 +189,8 @@ then, rather than going back to the defaults.
 
 ## Prepped meals
 
-A recipe can be made once and eaten over several days (issue 234, step 1; a side taken from a batch is step 2).
-Only by hand: the planner never starts a prep, it plans around one.
+A recipe can be made once and eaten over several days (issue 234), as the meals themselves or as a side next to
+them. Only by hand: the planner never starts a prep nor adds a side, it plans around them.
 
 - **How long it keeps.** A recipe's settings hold two numbers of days, per account: in a normal box and vacuum
   sealed, each 1 to 7 (a cooked meal keeps a week at most, so a batch reaches into the next plan week, never
@@ -231,9 +231,25 @@ Only by hand: the planner never starts a prep, it plans around one.
   planned, and generating it keeps them; a week with only those counts as not planned yet (the "Plan next week"
   notification, buying ahead). Today's "Dinner today" notification is only for a dinner with something to cook: not
   for a prepped later dinner.
-- Kept in `prep` and `prepPortion` (version 20 of the database). A `prepPortion` row is a meal's share of a batch;
-  it has a role (`MEAL` now) and its own portions, so step 2 can add a side taken from a batch without another
-  migration.
+- **Sides.** `PrepInput.side` (0.25 or 0.5, else 400) makes the batch a side of that many servings next to the
+  meal in each of its slots, which must hold a meal still to eat without a side (409 naming the slot otherwise).
+  The meal keeps its main and its portion: the main is not resized, and the day may go over its calories, which
+  the app says. A meal has at most one side, `PlannedMeal.side` (`MealSide`: the recipe, its portions, its kcal,
+  protein, fibre and cost from the recipe as it is now, `cookPortions` and the batch, whose `PrepMeal.side` marks
+  the sides). The meal's own numbers stay the main's; the day's totals (`PlanDay`, `DayView`) and the week's cost
+  count the side too. The side is eaten, skipped or planned with its meal, so a batch eaten as sides is made when
+  the first meal with one of its sides is eaten; it is bought with the meal it is made with, like any batch, and
+  can't be adjusted (what was in the meal is its main's). Replanning keeps a meal with a side; rerolling or
+  choosing another main keeps the side next to the new one; removing the meal takes the side out of its batch,
+  as `DELETE /api/plans/{weekStart}/meals/{day}/{slot}/side` does on its own, except for the side the batch is
+  made with or one of a batch that was made (409). Removing a prep eaten as sides takes the sides, the meals stay.
+  A skipped meal's side is a share in the box (`SparePortion.side`) whose room is the later meals still to eat
+  without a side; eaten there, it is the side of that meal. The side the batch is made with stays where it was at
+  0, as a skipped meal of a batch does: the batch is still made that day, with that meal, which shows the batch to
+  cook and can't be removed on its own.
+- Kept in `prep` and `prepPortion` (version 20 of the database). A `prepPortion` row is a meal's share of a batch,
+  with a role: `MEAL` for the slot's meal, `SIDE` for a side next to it, with its own portions. What a side takes
+  from the stock is kept under its meal apart from the main's (`stockUse.role`, version 21).
 
 **In the app.** A recipe's settings have "Keeps once made": in a box and vacuum sealed, each "not prepped" or 1 to 7
 days. On the Plan, "Prep a recipe…" under the replan button, or "Prep this recipe…" in the menu of a lunch or dinner
@@ -247,9 +263,19 @@ servings: 1 now, 3 for the prep's later meals", from a later day "Prepped on Mon
 meal's share still in the box today is a card above the days: when it was skipped and until when it keeps (on its last
 day "eat it today or throw it away"), and "Eat it on…" with the lunches and dinners that have room.
 
+The Prep dialog also asks how it is eaten: "The meal", or "A side" of 0.25 or 0.5 servings, when only lunches and
+dinners with a meal still to eat and no side yet can be picked (of the week shown and the next). "Add a prepped
+side…" in such a meal's menu opens it as a side of half a serving with that meal chosen. The side shows under the
+meal's main, "Side · prep day" where it is made and "Side · prepped Wed 18 Nov" after, with its numbers and what
+the meal comes to with it; a tap opens its recipe (the batch to cook on the prep day). The meal's menu then has
+"Remove the side" and "Remove the side's prep…". A day card with sides that is over its calories says by how much
+and what its sides add, as the day may have been over without them; Today's forecast counts them. A side needs a
+second meal to go with, as a prep is made once for several meals, and the dialog says so.
+
 An installed app that knows nothing of preps shows the later meals as locked leftovers with nothing to cook and
 the made-on day's meal as cooking for the leftovers; it marks them eaten or skipped as any meal, and a refusal to
-remove the made-on day's meal comes as a sentence.
+remove the made-on day's meal comes as a sentence. Of a meal with a side it shows the main alone, with the main's
+numbers, while the day's totals count the side; marking the meal eaten eats the side with it.
 
 ## Fibre and what the planner weighs most
 
@@ -490,7 +516,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch), the Prep dialog (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
+Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the question that removes a prep and a share in the box on its last day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for), the Notifications card (in English and Dutch, and with notifications refused by Android), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
@@ -703,7 +729,7 @@ and per meal `reroll`, `lock`, `status` and delete; `PUT meals/{day}/{slot}` wit
 locked, and a skipped meal leaves the day's and the week's totals; a meal that was eaten, or the leftover lunch of an eaten
 dinner, keeps its recipe and its place: `reroll`, `PUT` and delete answer 409, `POST meals/{day}/{slot}/generate` 422, and
 `generate` keeps it; see `docs/data-sources.md`, "Un-eating"; `preps` and `preps/{id}` with `preps/{id}/spare` for prepped
-meals, and `GET /api/preps/spare/{date}`, see "Prepped meals"), `/api/days/{date}` and `/api/log` (what was eaten)
+meals, `DELETE meals/{day}/{slot}/side` for a side, and `GET /api/preps/spare/{date}`, see "Prepped meals"), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion; the newest weighing is the profile's weight, so the targets follow it:
 a weighing for an earlier day leaves the profile alone, and removing the newest one gives the profile the weight of the newest
 one left. Removing the only one keeps the profile's weight, as what it was before is not stored; plans already made keep their

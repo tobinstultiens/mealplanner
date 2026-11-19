@@ -277,14 +277,16 @@ class RecipeRepository(
     }
 
     /**
-     * The days the recipe is planned in the current week or a later one. The plan keeps a meal
-     * by its stored title, so deleting the recipe would leave it in the plan while the shopping
-     * list stopped buying for it; weeks that are over are history and do not count.
+     * The days the recipe is planned in the current week or a later one, as a meal or as a side next to one
+     * (issue 234). The plan keeps a meal by its stored title, so deleting the recipe would leave it in the
+     * plan while the shopping list stopped buying for it; weeks that are over are history and do not count.
      */
-    private fun plannedDays(id: Long): List<LocalDate> =
-        db.planQueries.selectPlannedFrom(userId, id, serverToday().minusDays(7).toString()).executeAsList()
-            .map { LocalDate.parse(it.weekStart).plusDays(it.day) }
-            .distinct()
+    private fun plannedDays(id: Long): List<LocalDate> {
+        val after = serverToday().minusDays(7).toString()
+        val meals = db.planQueries.selectPlannedFrom(userId, id, after).executeAsList().map { it.weekStart to it.day }
+        val sides = db.planQueries.selectSidesPlannedFrom(userId, id, after).executeAsList().map { it.weekStart to it.day }
+        return (meals + sides).map { (week, day) -> LocalDate.parse(week).plusDays(day) }.distinct().sorted()
+    }
 
     private fun dayName(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.ENGLISH))
 

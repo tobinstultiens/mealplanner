@@ -156,10 +156,23 @@ class MigrationTest {
 
     /** Version 20 added prepped meals (19.sqm): a recipe's two keeps columns and the batches' tables, with their indexes. */
     private fun dropPreps(statement: Statement) {
+        dropStockUseRoles(statement)
         statement.execute("DROP TABLE prepPortion")
         statement.execute("DROP TABLE prep")
         statement.execute("ALTER TABLE recipe DROP COLUMN keepsDays")
         statement.execute("ALTER TABLE recipe DROP COLUMN keepsVacuumDays")
+    }
+
+    /** Version 21 kept the stock a side took apart from its meal's (20.sqm): stockUse as version 20 had it, empty. */
+    private fun dropStockUseRoles(statement: Statement) {
+        statement.execute("DROP TABLE stockUse")
+        statement.execute(
+            "CREATE TABLE stockUse (userId INTEGER NOT NULL, weekStart TEXT NOT NULL, day INTEGER NOT NULL, slot TEXT NOT NULL, " +
+                "ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE, fromWeek TEXT NOT NULL, source TEXT NOT NULL, " +
+                "addedAt TEXT NOT NULL, grams REAL, PRIMARY KEY (userId, weekStart, day, slot, ingredientId, fromWeek, source), " +
+                "FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE)",
+        )
+        statement.execute("CREATE INDEX stockUse_ingredient ON stockUse(ingredientId)")
     }
 
     @Test
@@ -459,7 +472,7 @@ class MigrationTest {
 
         // What a meal takes goes with it: replaced or removed, the meal leaves what it took taken.
         val tuesday = MealRef(week, 1, MealSlot.DINNER)
-        fun uses() = db.pantryQueries.selectStockUses(1, week.toString(), 1, "DINNER").executeAsList()
+        fun uses() = db.pantryQueries.selectStockUses(1, week.toString(), 1, "DINNER", MealRef.MEAL).executeAsList()
         ingredients.useUp(tuesday, mapOf(1L to 200.0, 2L to 100.0))
         assertEquals(400.0 to 900.0, left(1) to left(2))
         assertEquals(2, uses().size)
@@ -1103,6 +1116,87 @@ class MigrationTest {
         val prepped = alice.preps.create(week, PrepInput(1, "2026-11-20", meals = listOf(PrepSlot("2026-11-20", MealSlot.DINNER), PrepSlot("2026-11-21", MealSlot.LUNCH))))
         assertEquals(listOf(null, null, null, 1L, 1L), prepped.days.flatMap { it.meals }.map { it.prep?.id })
         assertEquals("1", single(url, "SELECT count(*) FROM planMeal WHERE userId = 2"), "Bob's plan as it was")
+        driver.close()
+    }
+
+    /**
+     * Version 20 is the schema of 19.sqm, which servers before sides (issue 234, step 2) run. stockUse is rebuilt with the
+     * role of each share: every row stays, each as its meal's own, so un-eating gives back what it did; a side taken from
+     * a batch then keeps its share apart from that of its meal's main.
+     */
+    @Test
+    fun aVersionTwentyDatabaseKeepsWhatEveryMealTookFromTheStockAsItsOwn() {
+        val file = createTempFile("v20", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropStockUseRoles(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name) VALUES (1, 1, 'Beef'), (2, 1, 'Lettuce'), (3, 2, 'Beef')")
+                statement.execute(
+                    "INSERT INTO recipe (id, userId, source, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, addedAt, inRotation, keepsDays) VALUES " +
+                        "(1, 1, 'MANUAL', 'own', 'Stew', '[]', 2, '', 1, '[]', 'MEAL', '2026-11-01T00:00:00Z', 1, 3), " +
+                        "(2, 1, 'MANUAL', 'own', 'Salad', '[]', 4, '', 1, '[]', 'MEAL', '2026-11-01T00:00:00Z', 1, 3), " +
+                        "(3, 2, 'MANUAL', 'own', 'Bob stew', '[]', 2, '', 1, '[]', 'MEAL', '2026-11-01T00:00:00Z', 1, NULL)",
+                )
+                statement.execute(
+                    "INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item) VALUES " +
+                        "(1, 0, 400, 'g', 'WEIGHT', 400, 'beef'), (2, 0, 400, 'g', 'WEIGHT', 400, 'lettuce'), (3, 0, 400, 'g', 'WEIGHT', 400, 'beef')",
+                )
+                // Alice: an eaten dinner and a prepped batch made on Tuesday, each with what it took of the beef; a dinner still to eat.
+                // Bob: an eaten dinner that took beef of his own.
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 0, 'EATEN'), (1, '$week', 1, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 1, 'EATEN'), " +
+                        "(1, '$week', 2, 'LUNCH', 1, 'Stew', 1.0, 600.0, 40.0, 0, 1, 'PLANNED'), (1, '$week', 3, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 0, 'PLANNED'), " +
+                        "(2, '$week', 0, 'DINNER', 3, 'Bob stew', 1.0, 600.0, 40.0, 0, 0, 'EATEN')",
+                )
+                statement.execute("INSERT INTO prep (id, userId, recipeId, madeOn, lastDay, vacuum) VALUES (1, 1, 1, '2026-11-17', '2026-11-20', 0)")
+                statement.execute("INSERT INTO prepPortion (userId, weekStart, day, slot, role, prepId, portions) VALUES (1, '$week', 1, 'DINNER', 'MEAL', 1, NULL), (1, '$week', 2, 'LUNCH', 'MEAL', 1, NULL)")
+                statement.execute("INSERT INTO stock (ingredientId, fromWeek, source, addedAt, grams) VALUES (1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 400.0), (3, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 800.0)")
+                statement.execute(
+                    "INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, source, addedAt, grams) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0), (1, '$week', 1, 'DINNER', 1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0), " +
+                        "(1, '$week', 2, 'LUNCH', 1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0), (2, '$week', 0, 'DINNER', 3, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0)",
+                )
+                statement.execute("PRAGMA user_version = 20")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        val uses = "userId || ':' || day || ':' || slot || ':' || ingredientId || ':' || fromWeek || ':' || source || ':' || addedAt || ':' || grams"
+        fun stockUses() = single(url, "SELECT $uses FROM stockUse ORDER BY userId, day, slot")
+        val before = counts() to stockUses()
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, counts() to stockUses(), "every row as it was, in every table")
+        assertEquals("MEAL", single(url, "SELECT group_concat(DISTINCT role) FROM stockUse"), "each the share of its meal itself")
+
+        // Alice's eaten dinner un-eaten gives back its beef; the batch un-made gives back both its meals'.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+        alice.profiles.save(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT))
+        alice.plans.setStatus(week, 0, MealSlot.DINNER, MealStatus.PLANNED)
+        assertEquals("600.0", single(url, "SELECT grams FROM stock WHERE ingredientId = 1"))
+        alice.plans.setStatus(week, 1, MealSlot.DINNER, MealStatus.PLANNED)
+        assertEquals("1000.0", single(url, "SELECT grams FROM stock WHERE ingredientId = 1"))
+
+        // A side of the salad next to Thursday's dinner and Friday's: eaten with Thursday's, its lettuce is kept apart from the stew's beef.
+        alice.plans.place(week, 4, MealSlot.DINNER, alice.recipes.candidate(1)!!)
+        alice.preps.create(week, PrepInput(2, "2026-11-19", meals = listOf(PrepSlot("2026-11-19", MealSlot.DINNER), PrepSlot("2026-11-20", MealSlot.DINNER)), side = 0.5))
+        alice.stock.putOnHandFrom(2, LocalDate.parse(week), 1000.0, StockSource.STOCK_UP)
+        alice.plans.setStatus(week, 3, MealSlot.DINNER, MealStatus.EATEN)
+        assertEquals("MEAL:1:200.0,SIDE:2:50.0", single(url, "SELECT role || ':' || ingredientId || ':' || grams FROM stockUse WHERE userId = 1 AND day = 3 ORDER BY role"))
+        assertEquals("1", single(url, "SELECT count(*) FROM stockUse WHERE userId = 2"), "Bob's as it was")
         driver.close()
     }
 }

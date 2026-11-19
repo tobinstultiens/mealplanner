@@ -1222,7 +1222,7 @@ class PlanTest {
         suspend fun recipe(id: Long) = recipes.getOrPut(id) { http.get("/api/recipes/$id").body() }
 
         fun left() = db.pantryQueries.selectStock(userId, weeks.last(), listOf(beef)).executeAsList().sumOf { it.grams!! }
-        fun takenFor(week: String, meal: PlannedMeal) = db.pantryQueries.selectStockUses(userId, week, meal.day.toLong(), meal.slot.name).executeAsList()
+        fun takenFor(week: String, meal: PlannedMeal) = db.pantryQueries.selectStockUses(userId, week, meal.day.toLong(), meal.slot.name, MealRef.MEAL).executeAsList()
         suspend fun plans() = weeks.associateWith { http.get("/api/plans/$it").body<WeekPlan>().days.flatMap { day -> day.meals } }
 
         /** Stock plus recorded use is what was stocked up, and every leftover lunch of an eaten dinner holds its share. */

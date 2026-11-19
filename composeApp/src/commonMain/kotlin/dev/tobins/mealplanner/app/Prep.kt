@@ -54,7 +54,8 @@ fun prepDays(weekStart: String, today: String): List<String> = (0..6).map { plus
 
 /**
  * What the Prep dialog has chosen so far: the recipe, the day it is made, how it is kept and the meals it is eaten in.
- * [firstDay] is the earliest day it may be made: today ([prepDays]).
+ * [firstDay] is the earliest day it may be made: today ([prepDays]). With [side], the batch is eaten as a side of that
+ * many servings next to the meals planned in [meals] (issue 234, step 2), which keep their own.
  */
 data class PrepChoice(
     val recipe: RecipeSummary?,
@@ -62,6 +63,7 @@ data class PrepChoice(
     val firstDay: String,
     val vacuum: Boolean = false,
     val meals: Set<PrepSlot> = emptySet(),
+    val side: Double? = null,
 ) {
     /** The days it keeps the chosen way; null when the recipe does not keep that way. */
     val keeps: Int? get() = recipe?.keeps(vacuum)
@@ -76,7 +78,8 @@ data class PrepChoice(
             recipe == null -> Msg.PREP_PICK_RECIPE
             keeps == null -> Msg.PREP_NOT_THIS_WAY
             meals.none { it.date == madeOn } -> Msg.PREP_FIRST_ON_MADE_DAY
-            meals.size < 2 -> Msg.PREP_TWO_MEALS
+            // A batch is made once for several meals; as a side that may be one meal short, so say why.
+            meals.size < 2 -> if (side == null) Msg.PREP_TWO_MEALS else Msg.PREP_TWO_SIDES
             else -> null
         }
 
@@ -93,8 +96,12 @@ data class PrepChoice(
         return copy(meals = if (meal in meals) meals - meal else meals + meal)
     }
 
+    /** Eaten as the meals themselves ([side] null) or as a side of [side] servings, then only next to the meals of [hosts] ([sideHosts]). */
+    fun eatenAs(side: Double?, hosts: Set<PrepSlot>): PrepChoice =
+        copy(side = side, meals = if (side == null) meals else meals.filterTo(LinkedHashSet()) { it in hosts })
+
     /** What the server is sent; only once [problem] is null. */
-    fun input(): PrepInput = PrepInput(recipe!!.id, madeOn, vacuum, meals.sortedWith(compareBy({ it.date }, { it.slot.ordinal })))
+    fun input(): PrepInput = PrepInput(recipe!!.id, madeOn, vacuum, meals.sortedWith(compareBy({ it.date }, { it.slot.ordinal })), side)
 }
 
 /**
@@ -104,9 +111,14 @@ data class PrepChoice(
 fun newPrep(recipes: List<RecipeSummary>, days: List<String>, today: String): PrepChoice =
     PrepChoice(recipes.singleOrNull(), days.first(), firstDay = today).with()
 
-/** The meals of [prep] as a sentence names them: `Mon 16 Nov lunch, Tue 17 Nov dinner`. */
+/** The meals of [prep] as a sentence names them: `Mon 16 Nov lunch, Tue 17 Nov dinner (side)`. */
 fun prepMealsText(prep: MealPrep, t: Strings): String =
-    prep.meals.joinToString(", ") { "${dayLabel(it.date, t.locale)} ${t.slot(it.slot)}" }
+    prep.meals.joinToString(", ") { meal ->
+        "${dayLabel(meal.date, t.locale)} ${t.slot(meal.slot)}".let { if (meal.side) t(Msg.PREP_MEAL_SIDE, it) else it }
+    }
+
+/** What the card of [this] share in the box is titled: a portion of the recipe, or a side. */
+fun SparePortion.titleText(t: Strings): String = t(if (side) Msg.SPARE_SIDE_TITLE else Msg.SPARE_TITLE, title)
 
 /**
  * What the card of [this] share in the box says under its title on [today]: when it was skipped and until when it keeps,
@@ -118,13 +130,15 @@ fun SparePortion.whenText(today: String, t: Strings): String =
 
 /**
  * The Prep dialog: [start] as the choice it opens with, [weekDays] the days the batch may be made on ([prepDays]),
- * [recipes] those it can be made of. [onSave] makes it, and says why when the server refuses.
+ * [recipes] those it can be made of, [hosts] the meals a side can go next to ([sideHosts]). [onSave] makes it, and
+ * says why when the server refuses.
  */
 @Composable
 fun PrepDialog(
     start: PrepChoice,
     weekDays: List<String>,
     recipes: List<RecipeSummary>,
+    hosts: Set<PrepSlot>,
     onDismiss: () -> Unit,
     onSave: suspend (PrepInput) -> String?,
 ) {
@@ -138,7 +152,7 @@ fun PrepDialog(
         title = { Text(t(Msg.PREP_TITLE)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                PrepChoices(choice, weekDays, recipes) { choice = it; error = null }
+                PrepChoices(choice, weekDays, recipes, hosts) { choice = it; error = null }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             }
         },
@@ -159,13 +173,14 @@ fun PrepDialog(
 }
 
 /**
- * The Prep dialog's body: the recipe, the day it is made, how it is kept, and a row per day it keeps with its lunch and
- * dinner, so no day past the last can be picked. Under it why it can't be made yet. A dialog is a window of its own, so
- * the screenshot tests take this.
+ * The Prep dialog's body: the recipe, the day it is made, how it is kept, whether it is eaten as the meal or as a side
+ * next to it, and a row per day it keeps with its lunch and dinner, so no day past the last can be picked; as a side,
+ * only the meals of [hosts] can be. Under it why it can't be made yet. A dialog is a window of its own, so the
+ * screenshot tests take this.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<RecipeSummary>, onChange: (PrepChoice) -> Unit) {
+fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<RecipeSummary>, hosts: Set<PrepSlot>, onChange: (PrepChoice) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         if (recipes.isEmpty()) {
@@ -205,13 +220,29 @@ fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<Recipe
                 )
             }
         }
+        Text(t(Msg.PREP_EATEN_AS), style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+            for (side in listOf(null) + SIDE_PORTIONS) {
+                FilterChip(
+                    selected = choice.side == side,
+                    onClick = { onChange(choice.eatenAs(side, hosts)) },
+                    label = { Text(side?.let { t(Msg.PREP_AS_SIDE, servingsText(it, t)) } ?: t(Msg.PREP_AS_MEAL)) },
+                )
+            }
+        }
+        if (choice.side != null) {
+            Text(t(Msg.PREP_SIDE_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (choice.days.isNotEmpty()) Text(t(Msg.PREP_EATEN_ON), style = MaterialTheme.typography.labelLarge)
         for (day in choice.days) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 Text(dayLabel(day, t.locale), modifier = Modifier.padding(top = Spacing.Related))
                 for (slot in listOf(MealSlot.LUNCH, MealSlot.DINNER)) {
+                    val meal = PrepSlot(day, slot)
                     FilterChip(
-                        selected = PrepSlot(day, slot) in choice.meals,
+                        selected = meal in choice.meals,
+                        // A side needs a meal to go with; one picked already can always be taken off.
+                        enabled = choice.side == null || meal in hosts || meal in choice.meals,
                         onClick = { onChange(choice.toggled(day, slot)) },
                         label = { Text(t.slot(slot, capitalised = true)) },
                     )
@@ -235,11 +266,11 @@ fun RemovePrepDialog(title: String, prep: MealPrep, onDismiss: () -> Unit, onRem
     )
 }
 
-/** The removal question's text: every meal of the prep that goes. */
+/** The removal question's text: every meal of the prep that goes; of a prep eaten as sides, every side, as the meals stay. */
 @Composable
 fun RemovePrepText(prep: MealPrep) {
     val t = LocalStrings.current
-    Text(t(Msg.REMOVE_PREP_TEXT, prepMealsText(prep, t)))
+    Text(t(if (prep.meals.all { it.side }) Msg.REMOVE_PREP_SIDES_TEXT else Msg.REMOVE_PREP_TEXT, prepMealsText(prep, t)))
 }
 
 /**
@@ -251,7 +282,7 @@ fun SpareCard(spare: SparePortion, today: String, enabled: Boolean, onEat: (Prep
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Text(t(Msg.SPARE_TITLE, spare.title), style = MaterialTheme.typography.titleMedium)
+            Text(spare.titleText(t), style = MaterialTheme.typography.titleMedium)
             Text(spare.whenText(today, t), style = MaterialTheme.typography.bodyMedium)
             if (spare.room.isEmpty()) {
                 Text(t(Msg.SPARE_NO_ROOM), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

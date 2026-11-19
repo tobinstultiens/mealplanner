@@ -302,6 +302,45 @@ class AccountsTest {
     }
 
     @Test
+    fun anotherAccountsSidesCanNeitherBeReadNorChanged() = testApplication {
+        start()
+        val week = "2026-11-16"
+        val profile = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        val (alice, bob) = listOf("alice", "bob").map { name -> clientFor(name).also { it.put("/api/profile") { setBody(profile) } } }
+        // Alice has a bowl on Tuesday's dinner and Wednesday's lunch, each with half a serving of her salad next to it; she skips Wednesday's.
+        val salad = alice.post("/api/recipes") { setBody(recipe.copy(title = "Alice's salad")) }.body<RecipeDetail>().summary
+        val bowl = alice.post("/api/recipes") { setBody(recipe.copy(title = "Alice's bowl")) }.body<RecipeDetail>().summary
+        alice.put("/api/recipes/${salad.id}/keeps") { setBody(RecipeKeeps(days = 3)) }
+        for (meal in listOf("1/DINNER", "2/LUNCH")) alice.put("/api/plans/$week/meals/$meal") { setBody(MealChoice(bowl.id)) }
+        val meals = listOf(PrepSlot("2026-11-17", MealSlot.DINNER), PrepSlot("2026-11-18", MealSlot.LUNCH))
+        val plan = alice.post("/api/plans/$week/preps") { setBody(PrepInput(salad.id, "2026-11-17", meals = meals, side = 0.5)) }.body<WeekPlan>()
+        val prep = plan.days.flatMap { it.meals }.mapNotNull { it.side?.prep }.first()
+        alice.put("/api/plans/$week/meals/2/LUNCH/status") { setBody(MealStatus.SKIPPED) }
+        val alicesWeek = alice.get("/api/plans/$week").body<WeekPlan>()
+        val alicesSpare = alice.get("/api/preps/spare/2026-11-18").body<List<SparePortion>>()
+        assertEquals(listOf(true), alicesSpare.map { it.side })
+
+        // Bob sees none of her sides, can't take her salad as one, nor remove one of hers, her prep or eat her spare side.
+        assertTrue(bob.get("/api/plans/$week").body<WeekPlan>().days.all { it.meals.isEmpty() })
+        assertEquals(emptyList(), bob.get("/api/preps/spare/2026-11-18").body<List<SparePortion>>())
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/plans/$week/preps") { setBody(PrepInput(salad.id, "2026-11-17", meals = meals, side = 0.5)) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.delete("/api/plans/$week/meals/1/DINNER/side").status)
+        assertEquals(HttpStatusCode.NotFound, bob.delete("/api/plans/$week/preps/${prep.id}").status)
+        val move = SpareMove(PrepSlot("2026-11-18", MealSlot.LUNCH), PrepSlot("2026-11-18", MealSlot.DINNER))
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/plans/$week/preps/${prep.id}/spare") { setBody(move) }.status)
+        // Sides of his own next to his own meals in the same slots leave hers as they are.
+        val bobsSalad = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's salad")) }.body<RecipeDetail>().summary
+        bob.put("/api/recipes/${bobsSalad.id}/keeps") { setBody(RecipeKeeps(days = 3)) }
+        for (meal in listOf("1/DINNER", "2/LUNCH")) bob.put("/api/plans/$week/meals/$meal") { setBody(MealChoice(bobsSalad.id)) }
+        val bobs = bob.post("/api/plans/$week/preps") { setBody(PrepInput(bobsSalad.id, "2026-11-17", meals = meals, side = 0.25)) }.body<WeekPlan>()
+        assertTrue(bobs.days.flatMap { it.meals }.mapNotNull { it.side }.all { it.recipeId == bobsSalad.id && it.prep.id != prep.id })
+        bob.put("/api/plans/$week/meals/2/LUNCH/status") { setBody(MealStatus.EATEN) }
+
+        assertEquals(alicesWeek, alice.get("/api/plans/$week").body<WeekPlan>())
+        assertEquals(alicesSpare, alice.get("/api/preps/spare/2026-11-18").body<List<SparePortion>>())
+    }
+
+    @Test
     fun eachAccountKeepsItsOwnPriorityAndFibreTarget() = testApplication {
         start()
         val alice = clientFor("alice")

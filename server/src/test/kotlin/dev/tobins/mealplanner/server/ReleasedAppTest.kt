@@ -241,6 +241,7 @@ class ReleasedAppTest {
         assertTrue(http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(list.items.first().key, true)) }.read<ShoppingList>().items.first().checked)
         http.readsARowAskedForAgain(chicken.id)
         http.readsAWeekWithAPrepOf(mine.summary.id)
+        http.readsAWeekWithASideOf(mine.summary.id)
 
         // The day, a log entry and weights.
         val date = "2026-11-17"
@@ -306,6 +307,34 @@ class ReleasedAppTest {
         val removal = delete("/api/plans/$week/meals/6/DINNER")
         assertEquals(HttpStatusCode.Conflict, removal.status)
         assertTrue(removal.bodyAsText().contains("Monday lunch, Tuesday dinner"), removal.bodyAsText())
+    }
+
+    /**
+     * Recipe [recipeId], which keeps since [readsAWeekWithAPrepOf], eaten in a newer app as a side of half a serving next to
+     * two planned lunches or dinners of the week (issue 234, step 2): the installed app reads the week and the day with
+     * each meal's main as it was, marks the later one eaten and not again, reads what is due and the list, and gets a
+     * sentence for removing the meal the side is made with, which the app shows.
+     */
+    private suspend fun HttpClient.readsAWeekWithASideOf(recipeId: Long) {
+        val before = read<WeekPlan>("/api/plans/$week").days.flatMap { it.meals }
+        val hosts = before.filter { it.day in 2..4 && it.status == MealStatus.PLANNED && it.slot in setOf(MealSlot.LUNCH, MealSlot.DINNER) }.take(2)
+        assertEquals(2, hosts.size, "two meals for the side to go with: $before")
+        fun date(day: Int) = java.time.LocalDate.parse(week).plusDays(day.toLong()).toString()
+        val meals = hosts.joinToString(",", "[", "]") { """{"date":"${date(it.day)}","slot":"${it.slot}"}""" }
+        val made = post("/api/plans/$week/preps") { setBody("""{"recipeId":$recipeId,"madeOn":"${date(hosts[0].day)}","meals":$meals,"side":0.5}""") }
+        assertTrue(made.bodyAsText().contains("\"side\""), "a newer app sees the sides")
+
+        val after = made.read<WeekPlan>().days.flatMap { it.meals }
+        assertEquals(hosts, hosts.map { host -> after.single { it.day == host.day && it.slot == host.slot } }, "each meal shows its main as it was")
+        assertTrue(read<DayView>("/api/days/${date(hosts[0].day)}").meals.any { it.slot == hosts[0].slot && it.recipeId == hosts[0].recipeId })
+        val later = "/api/plans/$week/meals/${hosts[1].day}/${hosts[1].slot}"
+        assertEquals(MealStatus.EATEN, put("$later/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>().days[hosts[1].day].meals.single { it.slot == hosts[1].slot }.status)
+        put("$later/status") { setBody(MealStatus.PLANNED) }.read<WeekPlan>()
+        read<NotificationFacts>("/api/notifications")
+        read<ShoppingList>("/api/plans/$week/shopping")
+        val removal = delete("/api/plans/$week/meals/${hosts[0].day}/${hosts[0].slot}")
+        assertEquals(HttpStatusCode.Conflict, removal.status)
+        assertTrue(removal.bodyAsText().contains("(a side)"), removal.bodyAsText())
     }
 
     /**
