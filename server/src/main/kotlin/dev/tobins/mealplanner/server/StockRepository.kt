@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.server.IngredientRepository.Companion.USED_UP_GRAMS
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.SelectStockOfAccount
+import dev.tobins.mealplanner.server.db.SelectStockUses
 import dev.tobins.mealplanner.server.db.Stock
 import java.time.LocalDate
 
@@ -147,18 +148,40 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
         if (grams.isEmpty()) return
         db.writing {
             if (uses(meal).isNotEmpty()) return@writing
-            val stock = pantry.selectStock(userId, meal.week.toString(), grams.keys).executeAsList().groupBy { it.ingredientId }
-            for ((id, entries) in stock) {
-                var wanted = grams.getValue(id)
-                for (entry in entries) {
-                    if (wanted <= 0.0) break
-                    val taken = takeFrom(entry, wanted)
-                    pantry.insertStockUse(
-                        userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, id, entry.fromWeek, entry.source, entry.addedAt, taken,
-                    )
-                    // An entry of unknown amount covers what is wanted, as far as anyone can tell.
-                    wanted = taken?.let { wanted - it } ?: 0.0
-                }
+            take(meal, grams)
+        }
+    }
+
+    /**
+     * [meal], whose share was taken already, was adjusted (issue 226): it now eats [grams] of each of these
+     * ingredients, 0 for one it no longer has. What it took of them goes back into the entries it came from
+     * ([giveBack]), and the new amounts are taken as eating it would take them ([useUp]); what it took of
+     * any other ingredient stays. So the stock moves by the difference, and un-eating it later gives back
+     * exactly what it holds then.
+     */
+    fun retake(meal: MealRef, grams: Map<Long, Double>) {
+        if (grams.isEmpty()) return
+        db.writing {
+            for (use in uses(meal).filter { it.ingredientId in grams }) putBack(use)
+            for (id in grams.keys) pantry.deleteStockUsesOfMeal(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, id)
+            take(meal, grams.filterValues { it > 0.0 })
+        }
+    }
+
+    /** Takes [grams] of each ingredient for [meal] from the stock that counts from its week or before, oldest first, and keeps what was taken under it. */
+    private fun take(meal: MealRef, grams: Map<Long, Double>) {
+        if (grams.isEmpty()) return
+        val stock = pantry.selectStock(userId, meal.week.toString(), grams.keys).executeAsList().groupBy { it.ingredientId }
+        for ((id, entries) in stock) {
+            var wanted = grams.getValue(id)
+            for (entry in entries) {
+                if (wanted <= 0.0) break
+                val taken = takeFrom(entry, wanted)
+                pantry.insertStockUse(
+                    userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, id, entry.fromWeek, entry.source, entry.addedAt, taken,
+                )
+                // An entry of unknown amount covers what is wanted, as far as anyone can tell.
+                wanted = taken?.let { wanted - it } ?: 0.0
             }
         }
     }
@@ -186,12 +209,15 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      * meantime stays as it is.
      */
     fun giveBack(meal: MealRef): Unit = db.writing {
-        for (use in uses(meal)) {
-            if (pantry.addToStock(use.grams, use.ingredientId, use.fromWeek, use.source, userId).value == 0L) {
-                pantry.insertStock(use.fromWeek, use.source, use.addedAt, use.grams, use.ingredientId, userId)
-            }
-        }
+        uses(meal).forEach(::putBack)
         pantry.deleteStockUses(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name)
+    }
+
+    /** Puts what one [use] took back into the entry it came from, or brings that entry back as it was when the meal used it up. */
+    private fun putBack(use: SelectStockUses) {
+        if (pantry.addToStock(use.grams, use.ingredientId, use.fromWeek, use.source, userId).value == 0L) {
+            pantry.insertStock(use.fromWeek, use.source, use.addedAt, use.grams, use.ingredientId, userId)
+        }
     }
 
     private fun uses(meal: MealRef) =

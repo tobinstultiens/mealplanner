@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.MealLineChange
+import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
@@ -19,6 +21,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import java.time.format.DateTimeParseException
+import kotlin.math.abs
 import kotlin.random.Random
 
 /**
@@ -39,6 +42,7 @@ class PlanRepository(
     private val shops: () -> Set<Store> = { Store.entries.toSet() },
 ) {
     private val q = db.planQueries
+    private val adjustments = MealAdjustments(db, userId, recipes, recipes.ingredients)
 
     fun get(weekStart: String): WeekPlan = view(parseWeekStart(weekStart))
 
@@ -247,11 +251,53 @@ class PlanRepository(
         leftoversOf(meal, week)?.takeIf { it.status != MealStatus.EATEN }?.let { stock.giveBack(MealRef(start, it.day, it.slot)) }
     }
 
-    /** Takes [meal]'s portions of its recipe from the stock ([gramsUsed]), kept under [meal]. */
+    /** Takes [meal]'s portions of its recipe from the stock, as it was adjusted ([MealAdjustments.gramsEaten]), kept under [meal]. */
     private fun take(start: LocalDate, meal: PlannedMeal) {
         val recipe = recipes.linesWithIngredients(listOf(meal.recipeId))[meal.recipeId] ?: return
-        stock.useUp(MealRef(start, meal.day, meal.slot), gramsUsed(recipe, meal.portions))
+        stock.useUp(MealRef(start, meal.day, meal.slot), adjustments.gramsEaten(start, meal, recipe))
     }
+
+    /** The meal in [day]'s [slot] with what was in it ([MealAdjustments.lines]); a [NotFoundException] for an empty slot. */
+    fun lines(weekStart: String, day: Int, slot: MealSlot): MealLines {
+        val start = parseWeekStart(weekStart)
+        return adjustments.lines(start, mealAt(meals(start), day, slot))
+    }
+
+    /**
+     * Says what was in a meal (issue 226): [changes] replace those it had ([MealAdjustments.replace]); none
+     * puts it back to its recipe. Any meal that is not skipped can be adjusted, eaten or still to eat, as
+     * toppings are often decided while cooking; a skipped one counts for nothing, so that is a
+     * [ConflictException]. When the meal's share of the stock was taken already ([shareTaken]), the stock
+     * moves by the difference ([StockRepository.retake]), and un-eating it later gives back what it holds
+     * then. A leftover lunch is adjusted on its own: its dinner keeps its lines.
+     */
+    fun adjust(weekStart: String, day: Int, slot: MealSlot, changes: List<MealLineChange>): MealLines {
+        val start = parseWeekStart(weekStart)
+        return db.writing {
+            val week = meals(start)
+            val meal = mealAt(week, day, slot)
+            if (meal.status == MealStatus.SKIPPED) throw ConflictException("This meal was skipped: mark it eaten or planned to say what was in it")
+            val recipe = recipes.linesWithIngredients(listOf(meal.recipeId))[meal.recipeId]
+            val before = recipe?.let { adjustments.gramsEaten(start, meal, it) }
+            adjustments.replace(start, meal, changes)
+            if (recipe != null && before != null && shareTaken(start, meal, week)) {
+                val after = adjustments.gramsEaten(start, meal, recipe)
+                val moved = (before.keys + after.keys).filter { abs((before[it] ?: 0.0) - (after[it] ?: 0.0)) > 1e-9 }
+                stock.retake(MealRef(start, day, slot), moved.associateWith { after[it] ?: 0.0 })
+            }
+            adjustments.lines(start, meal)
+        }
+    }
+
+    /**
+     * Whether [meal]'s share of the stock was taken ([eatFromStock]): it was eaten, it is the leftover lunch
+     * of an eaten dinner (cooked with it), or what was taken for it is kept under its slot all the same.
+     */
+    private fun shareTaken(start: LocalDate, meal: PlannedMeal, week: List<PlannedMeal>): Boolean =
+        meal.status == MealStatus.EATEN || dinnerOf(meal, week)?.status == MealStatus.EATEN || holdsStock(start, meal)
+
+    private fun mealAt(week: List<PlannedMeal>, day: Int, slot: MealSlot): PlannedMeal =
+        week.firstOrNull { it.day == day && it.slot == slot } ?: throw NotFoundException("No meal planned for day $day $slot")
 
     /** The meals planned for one date; the plan week is the one starting on that date's Monday. */
     fun mealsOn(date: LocalDate): Triple<LocalDate, Int, List<PlannedMeal>> {
@@ -260,17 +306,7 @@ class PlanRepository(
         val week = meals(start)
         val holding = holdingStock(start, week)
         val ofDay = week.filter { it.day == index }.sortedBy { it.slot.ordinal }.map { it.copy(cookPortions = cookPortions(it, week, holding)) }
-        return Triple(start, index, withFibre(ofDay))
-    }
-
-    /**
-     * [meals] with the fibre of their portions ([PlannedMeal.fibreG]) from their recipes' nutrition as it
-     * is now: not stored with the meal, so meals planned before fibre counted have it too. A meal whose
-     * recipe has no amounts any more has none.
-     */
-    private fun withFibre(meals: List<PlannedMeal>): List<PlannedMeal> {
-        val perServing = recipes.fibrePerServing(meals.map { it.recipeId })
-        return meals.map { meal -> meal.copy(fibreG = perServing[meal.recipeId]?.let { it * meal.portions }) }
+        return Triple(start, index, adjustments.withNutrition(start, ofDay))
     }
 
     /**
@@ -346,7 +382,7 @@ class PlanRepository(
         val costs = HashMap<Long, dev.tobins.mealplanner.api.RecipeCost?>()
         val week = meals(start)
         val holding = holdingStock(start, week)
-        val meals = withFibre(week).map { meal ->
+        val meals = adjustments.withNutrition(start, week).map { meal ->
             val cost = costs.getOrPut(meal.recipeId) { recipes.cost(meal.recipeId, prices) }
             meal.copy(cost = cost?.let { it.perServingWithOffers * meal.portions }, cookPortions = cookPortions(meal, week, holding))
         }

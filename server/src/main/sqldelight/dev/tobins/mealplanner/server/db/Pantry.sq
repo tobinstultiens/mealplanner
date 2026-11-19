@@ -114,6 +114,10 @@ INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, sour
 deleteStockUses:
 DELETE FROM stockUse WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
 
+-- A meal adjusted after its share was taken (issue 226): what it took of one ingredient was put back.
+deleteStockUsesOfMeal:
+DELETE FROM stockUse WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND ingredientId = :id;
+
 -- The entry was declared not bought (un-ticked): what meals took from it is not given back either.
 deleteStockUsesFrom:
 DELETE FROM stockUse WHERE userId = :userId AND ingredientId = :id AND fromWeek = :fromWeek AND source = :source;

@@ -1,0 +1,15 @@
+-- Version 17 -> 18: a meal adjusted to what was eaten (issue 226). A new table only, so no table is rebuilt
+-- and no row is touched: every meal planned before has no lines and counts its recipe as before.
+
+CREATE TABLE mealLine (
+    userId INTEGER NOT NULL,
+    weekStart TEXT NOT NULL,
+    day INTEGER NOT NULL,
+    slot TEXT NOT NULL,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    grams REAL NOT NULL,
+    PRIMARY KEY (userId, weekStart, day, slot, ingredientId),
+    FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE
+);
+
+CREATE INDEX mealLine_ingredient ON mealLine(ingredientId);

@@ -98,7 +98,15 @@ data class MealToCook(
 }
 
 /** Where a planned meal is: the plan's week (its first day), the day in it and the slot, which is what the status route takes. */
-data class MealPlace(val weekStart: String, val day: Int, val slot: MealSlot)
+data class MealPlace(val weekStart: String, val day: Int, val slot: MealSlot) {
+    companion object {
+        /** Keeps the place across a re-created screen; no place is an empty list. */
+        val Saver = listSaver<MealPlace?, Any>(
+            save = { place -> place?.let { listOf(it.weekStart, it.day, it.slot.name) }.orEmpty() },
+            restore = { v -> if (v.isEmpty()) null else MealPlace(v[0] as String, v[1] as Int, MealSlot.valueOf(v[2] as String)) },
+        )
+    }
+}
 
 /** What [this] meal of the week starting [weekStart] passes on to its recipe; null from a server that does not say how much to cook, so the recipe shows as written. */
 fun PlannedMeal.toCook(weekStart: String): MealToCook? = cookPortions?.let {

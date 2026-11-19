@@ -18,7 +18,10 @@ import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.Me
+import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealChoice
+import dev.tobins.mealplanner.api.MealLineChange
+import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
@@ -164,6 +167,52 @@ class AccountsTest {
         bob.put("/api/profile") { setBody("""{"weightKg":80.0,"heightCm":180.0,"ageYears":30,"sex":"MALE","activity":"LIGHT"}""") }
         assertEquals(0.5 to 1.0, bob.range())
         assertEquals(1.0 to 2.0, alice.range())
+    }
+
+    /** Issue 226: what was in a meal is the account's own, and so is what adjusting an eaten one takes from the stock. */
+    @Test
+    fun anotherAccountsMealCanNeitherBeReadNorAdjusted() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val week = "2026-11-16"
+        val lines = "/api/plans/$week/meals/0/DINNER/lines"
+        // Each has a stew of their own and an egg of their own, 600 g of eggs in stock.
+        val accounts = listOf("alice", "bob").associateWith { name ->
+            val client = clientFor(name)
+            client.put("/api/profile") { setBody(Profile(80.0, 175.0, 40, Sex.FEMALE, ActivityLevel.LIGHT)) }
+            client.post("/api/ingredients") { setBody(IngredientInput("Beef")) }
+            val egg = client.post("/api/ingredients") { setBody(IngredientInput("Egg", gramsPerPiece = 60.0)) }.body<Ingredient>()
+            val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+            val id = db.userQueries.selectBySubject("sub-$name").executeAsOne().id
+            StockRepository(db, FoodRepository(db), id).putOnHandFrom(egg.id, java.time.LocalDate.parse(week), grams = 600.0, source = StockSource.STOCK_UP)
+            Triple(client, id, stew to egg)
+        }
+        val (alice, aliceId, aliceMeal) = accounts.getValue("alice")
+        val (bob, bobId, bobMeal) = accounts.getValue("bob")
+        fun eggsLeft(id: Long, egg: Ingredient) = db.pantryQueries.selectStock(id, week, listOf(egg.id)).executeAsOne().grams
+        db.planQueries.upsertMeal(aliceId, week, 0, "DINNER", aliceMeal.first.id, aliceMeal.first.title, 2.0, 800.0, 40.0, 0, 0, "EATEN")
+        val adjusted = alice.put(lines) { setBody(MealAdjustment(listOf(MealLineChange(aliceMeal.second.id, 120.0)))) }.body<MealLines>()
+        assertTrue(adjusted.adjusted)
+        assertEquals(480.0, eggsLeft(aliceId, aliceMeal.second), "two of Alice's eggs, said after eating")
+
+        // Bob has no meal there: Alice's is a 404 to read and to change.
+        assertEquals(HttpStatusCode.NotFound, bob.get(lines).status)
+        assertEquals(HttpStatusCode.NotFound, bob.put(lines) { setBody(MealAdjustment(emptyList())) }.status)
+        // With a meal of his own in the same slot he sees only his; Alice's egg is not an ingredient of his.
+        db.planQueries.upsertMeal(bobId, week, 0, "DINNER", bobMeal.first.id, bobMeal.first.title, 2.0, 800.0, 40.0, 0, 0, "EATEN")
+        assertFalse(bob.get(lines).body<MealLines>().adjusted)
+        assertEquals(HttpStatusCode.NotFound, bob.put(lines) { setBody(MealAdjustment(listOf(MealLineChange(aliceMeal.second.id, 60.0)))) }.status)
+        assertFalse(bob.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single().adjusted)
+        // His own egg and his reset touch his meal and his stock only.
+        bob.put(lines) { setBody(MealAdjustment(listOf(MealLineChange(bobMeal.second.id, 60.0)))) }
+        assertEquals(540.0, eggsLeft(bobId, bobMeal.second))
+        bob.put(lines) { setBody(MealAdjustment(emptyList())) }
+        assertEquals(600.0, eggsLeft(bobId, bobMeal.second))
+
+        assertEquals(adjusted, alice.get(lines).body<MealLines>())
+        assertTrue(alice.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single().adjusted)
+        assertEquals(480.0, eggsLeft(aliceId, aliceMeal.second))
     }
 
     @Test

@@ -142,6 +142,8 @@ fun App(
     // Null: no editor open. -1: a new recipe. Otherwise the id of the recipe being edited.
     var editing by rememberSaveable { mutableStateOf(start.editing) }
     var mapping by rememberSaveable { mutableStateOf(start.mapping) }
+    // The planned meal whose ingredients are being adjusted (issue 226), opened from Today or the Plan.
+    var adjusting by rememberSaveable(stateSaver = MealPlace.Saver) { mutableStateOf(start.adjusting) }
     var bankOpen by rememberSaveable { mutableStateOf(start.bank) }
     var profileOpen by rememberSaveable { mutableStateOf(start.profile) }
     var pantryOpen by rememberSaveable { mutableStateOf(start.pantry) }
@@ -160,6 +162,7 @@ fun App(
         editing?.let { add("editor:$it") }
         openRecipeId?.let { add("recipe:$it") }
         if (mapping) add("mapping")
+        adjusting?.let { add("adjust:$it") }
         if (bankOpen) add("bank")
         if (profileOpen) add("profile")
         if (pantryOpen) add("pantry")
@@ -172,7 +175,7 @@ fun App(
         previousKeys = openKeys
     }
     // The address follows the open screen, so that a reload comes back to it.
-    val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen, bankOpen)
+    val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen, bankOpen, adjusting)
     LaunchedEffect(open, session != null) { addressFor(open, loggedIn = session != null)?.let(routes::write) }
     // Leaving the Plan tab the plan may have changed: the current week's list is fetched for the shop.
     var previousTab by remember { mutableStateOf(tab) }
@@ -326,6 +329,7 @@ fun App(
             key(settings) {
                 val recipeId = openRecipeId
                 val editingId = editing
+                val adjustingPlace = adjusting
                 when {
                     editingId != null -> screenStates.SaveableStateProvider("editor:$editingId") {
                         RecipeEditorScreen(
@@ -356,6 +360,10 @@ fun App(
                     mapping -> screenStates.SaveableStateProvider("mapping") {
                         BackHandler(enabled = true) { mapping = false }
                         MappingScreen(api, onBack = { mapping = false })
+                    }
+                    adjustingPlace != null -> screenStates.SaveableStateProvider("adjust:$adjustingPlace") {
+                        BackHandler(enabled = true) { adjusting = null }
+                        AdjustMealScreen(api, adjustingPlace, onBack = { adjusting = null })
                     }
                     recipeId != null -> screenStates.SaveableStateProvider("recipe:$recipeId") {
                         BackHandler(enabled = true) { openRecipeId = null }
@@ -397,13 +405,19 @@ fun App(
                             // Each tab keeps its own place while another tab or a screen opened from it is in front.
                             screenStates.SaveableStateProvider("tab:${tab.slug}") {
                               when (tab) {
-                                Tab.TODAY -> TodayScreen(api, onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) }, onOpenPlan = { tab = Tab.PLAN })
+                                Tab.TODAY -> TodayScreen(
+                                    api,
+                                    onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) },
+                                    onOpenPlan = { tab = Tab.PLAN },
+                                    onAdjust = { adjusting = it },
+                                )
                                 Tab.PLAN -> PlanScreen(
                                     api,
                                     onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) },
                                     onOpenProfile = { profileOpen = true },
                                     onOpenRecipes = { tab = Tab.RECIPES },
                                     onOpenBank = { tab = Tab.RECIPES; bankOpen = true },
+                                    onAdjust = { adjusting = it },
                                 )
                                 Tab.SHOPPING -> ShoppingScreen(shopping, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
                                 Tab.RECIPES -> RecipeListScreen(

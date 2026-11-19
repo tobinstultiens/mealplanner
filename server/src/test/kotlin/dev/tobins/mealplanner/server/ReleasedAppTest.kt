@@ -221,7 +221,12 @@ class ReleasedAppTest {
         http.delete("$at/lock").read<WeekPlan>()
         // A new recipe before eating: an eaten meal keeps its recipe.
         http.post("$at/generate") { setBody(GenerateRequest(GenerationMode.PREFERENCE, first.slot, "")) }.read<WeekPlan>()
-        http.put("$at/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>()
+        val planned = http.put("$at/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>().days[first.day].meals.single { it.slot == first.slot }
+        // Adjusted in a newer app (issue 226): the installed app reads the plan with the meal's own numbers.
+        val adjusted = http.put("$at/lines") { setBody("""{"lines":[{"ingredientId":${chicken.id},"grams":50.0}]}""") }
+        assertTrue(adjusted.status.isSuccess(), adjusted.bodyAsText())
+        val eaten = http.read<WeekPlan>("/api/plans/$week").days[first.day].meals.single { it.slot == first.slot }
+        assertTrue(eaten.kcal < planned.kcal, "50 g of chicken is less than the recipe's: ${eaten.kcal} of ${planned.kcal}")
 
         // The shopping list, an own item (a row of it for the released app, which cannot add one) and a tick.
         assertTrue(http.post("/api/plans/$week/shopping/extras") { setBody(mapOf("name" to "Coffee")) }.read<ShoppingList>().items.any { it.name == "Coffee" })

@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server.routes
 
 import dev.tobins.mealplanner.api.GenerateRequest
+import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
@@ -74,6 +75,15 @@ fun Route.planRoutes() {
             // Body: "EATEN", "SKIPPED" or "PLANNED".
             put("/status") {
                 call.respond(call.user.plans.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))
+            }
+            // What was in the meal (issue 226): its recipe's ingredients with this meal's changes, and their numbers.
+            route("/lines") {
+                get { call.respond(call.user.plans.lines(call.week(), call.day(), call.slot())) }
+                // Body {"lines": [{"ingredientId": 7, "grams": 60}]}: every change, replacing those before; [] resets.
+                put {
+                    val lines = call.receive<MealAdjustment>().lines
+                    call.respond(call.user.plans.adjust(call.week(), call.day(), call.slot(), lines))
+                }
             }
         }
     }

@@ -12,7 +12,10 @@ import dev.tobins.mealplanner.api.ManyAddedInput
 import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealChoice
+import dev.tobins.mealplanner.api.MealLineChange
+import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.PricesState
@@ -406,6 +409,17 @@ class ApiClient(
             setBody(MealChoice(recipeId))
         }.body()
     }
+
+    /** The meal in [day]'s [slot] with what was in it: its recipe's ingredients for its portions and this meal's changes. */
+    suspend fun mealLines(weekStart: String, day: Int, slot: MealSlot): MealLines =
+        http.get("api/plans/$weekStart/meals/$day/${slot.name}/lines").body()
+
+    /** Says what was in a meal: [changes] replace those it had, none puts it back to its recipe; answers the meal as it is now. */
+    suspend fun adjustMeal(weekStart: String, day: Int, slot: MealSlot, changes: List<MealLineChange>): MealLines =
+        http.put("api/plans/$weekStart/meals/$day/${slot.name}/lines") {
+            contentType(ContentType.Application.Json)
+            setBody(MealAdjustment(changes))
+        }.body()
 
     suspend fun setMealLocked(weekStart: String, day: Int, slot: MealSlot, locked: Boolean): WeekPlan {
         val path = "api/plans/$weekStart/meals/$day/${slot.name}/lock"

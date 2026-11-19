@@ -200,6 +200,41 @@ All of them are null from a server before fibre counted, and the app then shows 
 before the priority and the fibre target saves a profile without them; the server keeps the stored ones,
 as it does the portion range. A newer app sends `"fibreOverrideG": null` to take its own target away.
 
+## What was in a meal
+
+A meal can say exactly what was eaten (issue 226): **Adjust** on a meal of Today, or "Adjust what was in it"
+in its menu on the Plan, opens its recipe's ingredients for its portions (`#/meals/2026-11-16/4/dinner` in the
+browser). A line's amount can be changed, a line left out (with Undo in the snackbar, and "Put back" on the
+line), and any ingredient of the account's catalogue added; "Reset to recipe" takes every change away. An
+ingredient whose weight per piece the catalogue knows is shown and entered in pieces ("1 piece · 60 g",
+halves allowed; prefilled with one piece when added), any other in grams. Every edit is saved at once.
+Any meal that is not skipped can be adjusted, eaten or still to eat; a leftover lunch on its own (its
+dinner keeps its lines). The recipe itself, and the same recipe's meals on other days, never change.
+
+- `GET /api/plans/{weekStart}/meals/{day}/{slot}/lines` answers the meal's lines (`MealLines`): the
+  recipe's ingredients in its order, then those added, each with this meal's grams and the recipe's, and
+  the numbers they come to. Seasoning without an amount is left out; a line linked to no ingredient is
+  listed but cannot be changed.
+- `PUT` on the same path with `{"lines": [{"ingredientId": 7, "grams": 60}]}` replaces the meal's changes
+  (`[]` resets) and answers its `MealLines`. Grams are the amount eaten in this meal: 0 leaves a recipe line
+  out. An amount as the recipe has it (to 0.05 g) is no change, nor is 0 g of an ingredient the recipe does
+  not have. 404 for an empty slot or another account's meal, and for an ingredient not in the account's
+  catalogue; 409 for a skipped meal; 400 for an amount below 0 or above 5000 g, an ingredient twice, or more
+  than 100 lines.
+- An adjusted meal's kcal, protein and fibre are worked out when it is read, from the recipe's lines and the
+  catalogue as they are now with the meal's changes, the way a recipe's nutrition is; they replace the
+  recipe's numbers in the plan's meal (`PlannedMeal.adjusted` is then true), its day and week totals, and the
+  day view on Today. A meal without changes keeps the kcal and protein stored when it was planned, so a reset
+  restores nothing. An added ingredient without a NEVO food counts as nothing and the Adjust screen names it
+  (`MealLines.uncounted`). A meal's cost stays that of its recipe.
+- The changes are kept per meal (`mealLine`, version 18 of the database) and go with it: choosing another
+  recipe, "Another recipe", replanning or removing the meal drops them.
+- An adjustment never goes on the shopping list. What eating the meal takes from the stock follows it: see
+  "Un-eating" in `docs/data-sources.md`.
+
+An installed app that knows nothing of adjustments shows the adjusted numbers all the same, as it reads
+the meal's `kcal` and `proteinG`.
+
 ## Web client
 
 `composeApp` also builds for the browser (`./gradlew :composeApp:wasmJsBrowserDistribution`), and the
@@ -288,7 +323,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today (also in Dutch), Plan (also in Dutch and with an empty rotation), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
+Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal), the Adjust screen of a meal (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed

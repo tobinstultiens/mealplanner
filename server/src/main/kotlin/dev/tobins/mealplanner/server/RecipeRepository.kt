@@ -50,7 +50,8 @@ data class RecipeLines(val servings: Int, val lines: List<Pair<IngredientLine, I
  */
 class RecipeRepository(
     private val db: Database,
-    private val ingredients: IngredientRepository,
+    /** The catalogue the recipes' lines mean ingredients of; also what a planned meal's own lines name ([MealAdjustments]). */
+    val ingredients: IngredientRepository,
     private val userId: Long,
     /** Prices with the offers valid between two dates. */
     private val pricing: (LocalDate, LocalDate) -> Pricing = { _, _ -> Pricing.NONE },

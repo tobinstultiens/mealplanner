@@ -742,6 +742,36 @@ enum class Msg(private val english: String, private val dutch: String) {
     KEEPS_HINT("Only what keeps is suggested for buying ahead.", "Alleen wat goed blijft, wordt voorgesteld om vooruit te kopen."),
     KEEPS_SHORT("keeps", "blijft goed"),
 
+    // --- Adjusting a meal to what was in it (issue 226)
+    MEAL_ADJUSTED("{0} · adjusted", "{0} · aangepast"),
+    ADJUST("Adjust", "Aanpassen"),
+    ADJUST_WHAT_WAS_IN_IT("Adjust what was in it", "Aanpassen wat erin zat"),
+    ADJUST_TITLE("What was in it", "Wat erin zat"),
+    ADJUST_EXPLAIN(
+        "Change, leave out or add what was in this meal; it counts that. The recipe stays as it is.",
+        "Verander, laat weg of voeg toe wat er in deze maaltijd zat; die telt dat. Het recept blijft zoals het is.",
+    ),
+    ADJUST_RESET("Reset to recipe", "Terug naar het recept"),
+    ADJUST_RESET_DONE("Back to the recipe", "Weer volgens het recept"),
+    ADJUST_ADD("Add an ingredient", "Ingrediënt toevoegen"),
+    ADJUST_IN_MEAL("In this meal", "In deze maaltijd"),
+    ADJUST_LEFT_OUT("Left out", "Weggelaten"),
+    ADJUST_LEFT_OUT_DONE("{0} left out", "{0} weggelaten"),
+    ADJUST_REMOVED_DONE("{0} removed", "{0} verwijderd"),
+    ADJUST_PUT_BACK("Put back", "Terugzetten"),
+    ADJUST_LEAVE_OUT("Leave out {0}", "{0} weglaten"),
+    ADJUST_WAS("recipe: {0}", "recept: {0}"),
+    ADJUST_ADDED("added", "toegevoegd"),
+    ADJUST_NOT_LINKED("Not one of your ingredients, so not counted and not changeable", "Geen van je ingrediënten, dus niet meegeteld en niet aan te passen"),
+    ADJUST_AMOUNT_UNKNOWN("amount not known", "hoeveelheid onbekend"),
+    ADJUST_INCOMPLETE("Counted as nothing, no nutrition known: {0}", "Telt als niets, geen voedingswaarden bekend: {0}"),
+    ADJUST_LOAD_FAILED("Could not load this meal.", "Deze maaltijd kon niet worden geladen."),
+    ADJUST_NO_MATCH("No ingredient matches", "Geen ingrediënt gevonden"),
+    AMOUNT_OF("How much {0}?", "Hoeveel {0}?"),
+    AMOUNT_PIECES("Pieces", "Stuks"),
+    AMOUNT_GRAMS("Grams", "Gram"),
+    AMOUNT_FIELD("Amount", "Hoeveelheid"),
+
     // --- Android: the download of an update (toasts)
     DOWNLOADING_VERSION("Downloading version {0}…", "Versie {0} wordt gedownload…"),
     DOWNLOAD_FAILED("The download failed; try again from Settings.", "Het downloaden is mislukt; probeer het opnieuw via Instellingen."),
@@ -768,6 +798,9 @@ enum class Plural(
     /** For an amount that may be fractional: the count only picks the form, `{1}` is the amount as written. */
     SERVINGS_AMOUNT("{1} serving", "{1} servings", "{1} portie", "{1} porties"),
     PACK_PIECES("{0} piece", "{0} pieces", "{0} stuk", "{0} stuks"),
+
+    /** For an amount that may be fractional, as [SERVINGS_AMOUNT]: `1.5 pieces`. */
+    PIECES_AMOUNT("{1} piece", "{1} pieces", "{1} stuk", "{1} stuks"),
     INGREDIENTS_TO_LINK("{0} ingredient to link", "{0} ingredients to link", "{0} ingrediënt om te koppelen", "{0} ingrediënten om te koppelen"),
     STORE_ITEMS_ON_OFFER(
         "{1} · {0} item on offer", "{1} · {0} items on offer",

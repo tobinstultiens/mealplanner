@@ -1,8 +1,13 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.server.db.Database
@@ -128,7 +133,13 @@ class MigrationTest {
 
     /** Version 17 added whether a recipe is one of the account's and in its rotation (16.sqm). */
     private fun dropRecipeBank(statement: Statement) {
+        dropMealLines(statement)
         for (column in listOf("addedAt", "inRotation")) statement.execute("ALTER TABLE recipe DROP COLUMN $column")
+    }
+
+    /** Version 18 added what a meal ate that differs from its recipe (17.sqm); dropping the table drops its index. */
+    private fun dropMealLines(statement: Statement) {
+        statement.execute("DROP TABLE mealLine")
     }
 
     @Test
@@ -156,7 +167,7 @@ class MigrationTest {
         val tables = listOf(
             "appUser", "userMeta", "recipe", "recipeIngredient", "ingredient", "ingredientAlias", "onHand",
             "ingredientPrice", "planMeal", "shoppingCheck", "shoppingExtra", "stockUse", "offer", "foodLog", "weight",
-            "offerHistory", "regularPriceHistory", "stock", "offerRecording",
+            "offerHistory", "regularPriceHistory", "stock", "offerRecording", "mealLine",
         )
         for (table in tables) {
             assertEquals(columns(fresh, table), columns(url, table), "table $table after migration")
@@ -881,6 +892,72 @@ class MigrationTest {
         val gone = alice.bank().single()
         assertEquals(Triple(3L, false, 5), Triple(gone.id, gone.added, gone.rating))
         assertEquals(listOf("Curry", "Porridge", "Salsa", "Stew"), alice.list().map { it.title })
+        driver.close()
+    }
+
+    /**
+     * Version 17 is the schema of 16.sqm, which servers before adjusted meals (issue 226) run. Only a table is
+     * added: every row stays, every meal counts its recipe as before, and the meals can be adjusted from then on.
+     */
+    @Test
+    fun aVersionSeventeenDatabaseKeepsEveryRowAndItsMealsCountTheirRecipes() {
+        val file = createTempFile("v17", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropMealLines(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name) VALUES (1, 1, 'Beef'), (2, 1, 'Egg'), (3, 2, 'Beef')")
+                statement.execute(
+                    "INSERT INTO recipe (id, userId, source, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, addedAt, inRotation) VALUES " +
+                        "(1, 1, 'MANUAL', 'own', 'Stew', '[]', 2, '', 1, '[]', 'MEAL', '2026-11-01T00:00:00Z', 1), " +
+                        "(2, 2, 'MANUAL', 'own', 'Bob stew', '[]', 2, '', 1, '[]', 'MEAL', '2026-11-01T00:00:00Z', 1)",
+                )
+                statement.execute("INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item) VALUES (1, 0, 400, 'g', 'WEIGHT', 400, 'beef'), (2, 0, 400, 'g', 'WEIGHT', 400, 'beef')")
+                // Alice: an eaten dinner that took beef from her stock, and its leftover lunch. Bob: a planned dinner.
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 0, 'EATEN'), (1, '$week', 1, 'LUNCH', 1, 'Stew', 1.0, 600.0, 40.0, 1, 0, 'PLANNED'), " +
+                        "(2, '$week', 0, 'DINNER', 2, 'Bob stew', 1.0, 600.0, 40.0, 0, 0, 'PLANNED')",
+                )
+                statement.execute("INSERT INTO stock (ingredientId, fromWeek, source, addedAt, grams) VALUES (1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 600.0)")
+                statement.execute(
+                    "INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, source, addedAt, grams) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0), (1, '$week', 1, 'LUNCH', 1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0)",
+                )
+                statement.execute("PRAGMA user_version = 17")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        fun meals() = single(url, "SELECT userId || ':' || day || ':' || slot || ':' || kcal || ':' || status FROM planMeal ORDER BY userId, day")
+        val before = counts() to meals()
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, counts() to meals(), "every row as it was, in every table")
+        assertEquals("0", single(url, "SELECT count(*) FROM mealLine"))
+
+        // Alice's meals count their recipes as stored; her lunch can be adjusted, and its share moves by the egg it gets.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+        alice.profiles.save(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT))
+        val plan = alice.plans.get(week)
+        assertEquals(listOf(600.0, 600.0), plan.days.flatMap { it.meals }.map { it.kcal })
+        assertTrue(plan.days.flatMap { it.meals }.none { it.adjusted })
+        val lunch = alice.plans.adjust(week, 1, MealSlot.LUNCH, listOf(MealLineChange(1, 150.0)))
+        assertTrue(lunch.adjusted)
+        assertEquals("650.0", single(url, "SELECT grams FROM stock"), "the lunch's share of the beef went from 200 g to 150 g")
+        alice.plans.setStatus(week, 0, MealSlot.DINNER, MealStatus.PLANNED)
+        assertEquals("1000.0", single(url, "SELECT grams FROM stock"), "un-eaten, the dinner gives back both shares")
         driver.close()
     }
 }

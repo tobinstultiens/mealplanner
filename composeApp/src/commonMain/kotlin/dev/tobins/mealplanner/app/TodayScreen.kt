@@ -3,6 +3,8 @@ package dev.tobins.mealplanner.app
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,7 +52,13 @@ import kotlin.math.roundToInt
 /** One day: what is planned, what has been eaten, and how that compares with the targets. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal, String) -> Unit, onOpenPlan: () -> Unit) {
+fun TodayScreen(
+    api: ApiClient,
+    onOpenRecipe: (PlannedMeal, String) -> Unit,
+    onOpenPlan: () -> Unit,
+    /** Opens what was in a meal, to adjust it (issue 226). */
+    onAdjust: (MealPlace) -> Unit = {},
+) {
     val t = LocalStrings.current
     val now = rememberToday()
     val frontReturns = rememberFrontReturns()
@@ -132,6 +140,7 @@ fun TodayScreen(api: ApiClient, onOpenRecipe: (PlannedMeal, String) -> Unit, onO
                             pictureUrl = pictures[meal.recipeId],
                             onOpen = { onOpenRecipe(meal, day.weekStart) },
                             onStatus = { status -> change { api.setMealStatus(day.weekStart, day.dayIndex, meal.slot, status) } },
+                            onAdjust = { onAdjust(MealPlace(day.weekStart, day.dayIndex, meal.slot)) },
                         )
                     }
                     if (day.extras.isNotEmpty()) SectionHeader(t(Msg.ALSO_EATEN))
@@ -219,8 +228,9 @@ private fun TotalsCard(day: DayView) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MealCard(meal: PlannedMeal, pictureUrl: String?, onOpen: () -> Unit, onStatus: (MealStatus) -> Unit) {
+private fun MealCard(meal: PlannedMeal, pictureUrl: String?, onOpen: () -> Unit, onStatus: (MealStatus) -> Unit, onAdjust: () -> Unit) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -241,15 +251,19 @@ private fun MealCard(meal: PlannedMeal, pictureUrl: String?, onOpen: () -> Unit,
                 }
                 recipePicture(pictureUrl)?.let { RecipePhoto(it, Modifier.size(64.dp)) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalAlignment = Alignment.CenterVertically) {
+            // Wraps on a narrow screen with a large font, where the three buttons of a planned meal do not fit.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), itemVerticalAlignment = Alignment.CenterVertically) {
                 when (meal.status) {
                     MealStatus.PLANNED -> {
                         Button(onClick = { onStatus(MealStatus.EATEN) }) { Text(t(Msg.STATUS_EATEN)) }
                         OutlinedButton(onClick = { onStatus(MealStatus.SKIPPED) }) { Text(t(Msg.STATUS_SKIPPED)) }
+                        // Toppings are often decided while cooking: a meal still to eat can be adjusted too.
+                        TextButton(onClick = onAdjust) { Text(t(Msg.ADJUST)) }
                     }
                     MealStatus.EATEN -> {
                         Text(t(Msg.STATUS_EATEN_MARK), color = MaterialTheme.colorScheme.primary)
                         TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text(t(Msg.UNDO)) }
+                        TextButton(onClick = onAdjust) { Text(t(Msg.ADJUST)) }
                     }
                     MealStatus.SKIPPED -> {
                         Text(t(Msg.STATUS_SKIPPED), color = MaterialTheme.colorScheme.onSurfaceVariant)

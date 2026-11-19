@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.MealSlot
+
 /**
  * Which screen is open, as the address of the page (`#/recipes/12`), so that a reload or a
  * shared link lands on the same screen. Only the browser keeps it (see [RouteStore]); Android
@@ -24,6 +26,9 @@ sealed interface Route {
     data object Prices : Route
     data object Settings : Route
 
+    /** What was in a planned meal (issue 226), by where it is in the plan. */
+    data class AdjustMeal(val place: MealPlace) : Route
+
     /** The address fragment of this route, as [parseRoute] reads it back. */
     val hash: String
         get() = "#/" + when (this) {
@@ -37,6 +42,7 @@ sealed interface Route {
             Offers -> "offers"
             Prices -> "offers/prices"
             Settings -> "settings"
+            is AdjustMeal -> "meals/${place.weekStart}/${place.day}/${place.slot.name.lowercase()}"
         }
 }
 
@@ -59,9 +65,17 @@ fun parseRoute(hash: String): Route {
         parts[0] == "recipes" && parts.size == 2 && id != null -> Route.Recipe(id)
         parts[0] == "recipes" && parts.size == 3 && parts[2] == "edit" && id != null -> Route.RecipeEditor(id)
         parts == listOf("offers", "prices") -> Route.Prices
+        parts[0] == "meals" && parts.size == 4 -> mealPlace(parts[1], parts[2], parts[3])?.let { Route.AdjustMeal(it) }
         else -> null
     }
     return route ?: Route.TabRoute(Tab.TODAY)
+}
+
+/** A meal's place as the address writes it (`2026-11-16`, `0`, `dinner`); null when any part is not one. */
+private fun mealPlace(week: String, day: String, slot: String): MealPlace? {
+    if (!Regex("""\d{4}-\d{2}-\d{2}""").matches(week)) return null
+    val index = day.toIntOrNull()?.takeIf { it in 0..6 } ?: return null
+    return MealSlot.entries.firstOrNull { it.name.equals(slot, ignoreCase = true) }?.let { MealPlace(week, index, it) }
 }
 
 /**
@@ -82,6 +96,8 @@ data class OpenScreens(
     val settings: Boolean = false,
     /** The recipe bank, opened from the Recipes tab; a recipe opened from it is in front of it. */
     val bank: Boolean = false,
+    /** The meal whose ingredients are being adjusted, opened from Today or the Plan. */
+    val adjusting: MealPlace? = null,
 ) {
     /** The route of what is on screen: the same order of precedence as the screens are drawn in. */
     val route: Route
@@ -93,6 +109,7 @@ data class OpenScreens(
             pantry -> Route.Pantry
             profile -> Route.Profile
             mapping -> Route.Mapping
+            adjusting != null -> Route.AdjustMeal(adjusting)
             recipeId != null -> Route.Recipe(recipeId)
             bank -> Route.Bank
             else -> Route.TabRoute(tab)
@@ -111,6 +128,8 @@ fun Route.openScreens(): OpenScreens = when (this) {
     Route.Offers -> OpenScreens(tab = Tab.SHOPPING, offers = true)
     Route.Prices -> OpenScreens(tab = Tab.SHOPPING, offers = true, prices = true)
     Route.Settings -> OpenScreens(settings = true)
+    // Opened from Today or the Plan; the address does not say which, and the Plan has the meal's week.
+    is Route.AdjustMeal -> OpenScreens(tab = Tab.PLAN, adjusting = place)
 }
 
 /**
