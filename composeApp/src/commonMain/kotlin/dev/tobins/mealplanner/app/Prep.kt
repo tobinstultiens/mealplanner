@@ -46,10 +46,20 @@ fun RecipeSummary.keeps(vacuum: Boolean): Int? = if (vacuum) keepsVacuumDays els
 fun preppable(recipes: List<RecipeSummary>): List<RecipeSummary> =
     recipes.filter { it.added && it.kind == RecipeKind.MEAL && it.plannable && (it.keepsDays != null || it.keepsVacuumDays != null) }
 
-/** What the Prep dialog has chosen so far: the recipe, the day it is made, how it is kept and the meals it is eaten in. */
+/**
+ * The days of the week starting [weekStart] a prep may be made on: from [today] on. None of a week that is over: the
+ * server would take a day that has passed, but a batch is made for the days to come.
+ */
+fun prepDays(weekStart: String, today: String): List<String> = (0..6).map { plusDays(weekStart, it) }.filter { it >= today }
+
+/**
+ * What the Prep dialog has chosen so far: the recipe, the day it is made, how it is kept and the meals it is eaten in.
+ * [firstDay] is the earliest day it may be made: today ([prepDays]).
+ */
 data class PrepChoice(
     val recipe: RecipeSummary?,
     val madeOn: String,
+    val firstDay: String,
     val vacuum: Boolean = false,
     val meals: Set<PrepSlot> = emptySet(),
 ) {
@@ -62,6 +72,7 @@ data class PrepChoice(
     /** Why it can't be made yet, or null when it can. */
     val problem: Msg?
         get() = when {
+            madeOn < firstDay -> Msg.PREP_MADE_ON_PAST
             recipe == null -> Msg.PREP_PICK_RECIPE
             keeps == null -> Msg.PREP_NOT_THIS_WAY
             meals.none { it.date == madeOn } -> Msg.PREP_FIRST_ON_MADE_DAY
@@ -94,7 +105,7 @@ fun prepMealsText(prep: MealPrep, t: Strings): String =
 fun SparePortion.lastDayOn(today: String): Boolean = lastDay == today
 
 /**
- * The Prep dialog: [start] as the choice it opens with, [weekDays] the days the batch may be made on (the week shown),
+ * The Prep dialog: [start] as the choice it opens with, [weekDays] the days the batch may be made on ([prepDays]),
  * [recipes] those it can be made of. [onSave] makes it, and says why when the server refuses.
  */
 @Composable

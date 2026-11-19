@@ -237,8 +237,9 @@ Only by hand: the planner never starts a prep, it plans around one.
 
 **In the app.** A recipe's settings have "Keeps once made": in a box and vacuum sealed, each "not prepped" or 1 to 7
 days. On the Plan, "Prep a recipe…" under the replan button, or "Prep this recipe…" in the menu of a lunch or dinner
-whose recipe keeps (that day and meal already chosen), opens the Prep dialog: the recipe, the day it is made (a day of
-the week shown), in a box or vacuum sealed, and per day up to the last day it keeps its lunch and dinner; it says why
+whose recipe keeps (that day and meal already chosen, from today on), opens the Prep dialog: the recipe, the day it is
+made (a day of the week shown, today or later: a day that has passed is not offered, as the server would take it, and a
+week that is over has no "Prep a recipe…"), in a box or vacuum sealed, and per day up to the last day it keeps its lunch and dinner; it says why
 it can't be made yet (no meal on the made-on day, fewer than two meals). A prepped meal is labelled "Dinner · prep day"
 where it is made and "Lunch · prepped Mon 16 Nov" after; its lock can't be undone, and its menu has "Remove the
 prep…", which names every meal that goes before it removes them. The recipe opened from the prep day says "Cook 4

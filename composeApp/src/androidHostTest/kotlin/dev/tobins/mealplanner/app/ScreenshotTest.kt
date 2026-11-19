@@ -110,24 +110,25 @@ private val keepingRecipe = RecipeSummary(
     plannable = true, keepsDays = 3, keepsVacuumDays = 6,
 )
 
-/** The prep of the fake week: made on Monday's dinner, eaten on Tuesday's and Wednesday's lunches and Thursday's dinner. */
-private val samplePrep = PrepChoice(keepingRecipe, FakeBackend.WEEK_START).let { choice ->
+/** A prep being made today (Wednesday) at dinner, eaten on Thursday's and Friday's lunches and Saturday's dinner. */
+private val samplePrep = PrepChoice(keepingRecipe, FakeBackend.TODAY, firstDay = FakeBackend.TODAY).let { choice ->
     listOf(0 to MealSlot.DINNER, 1 to MealSlot.LUNCH, 2 to MealSlot.LUNCH, 3 to MealSlot.DINNER)
-        .fold(choice) { prep, (day, slot) -> prep.toggled(plusDays(FakeBackend.WEEK_START, day), slot) }
+        .fold(choice) { prep, (day, slot) -> prep.toggled(plusDays(FakeBackend.TODAY, day), slot) }
 }
 
 @Composable
 private fun prepChoices() {
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
-        PrepChoices(samplePrep, (0..6).map { plusDays(FakeBackend.WEEK_START, it) }, listOf(keepingRecipe)) {}
+        // The days from today on are offered: Monday and Tuesday have passed.
+        PrepChoices(samplePrep, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe)) {}
     }
 }
 
 @Composable
 private fun removePrepQuestion() {
     val prep = MealPrep(
-        1, FakeBackend.WEEK_START, plusDays(FakeBackend.WEEK_START, 3), false,
+        1, FakeBackend.TODAY, plusDays(FakeBackend.TODAY, 3), false,
         samplePrep.input().meals.map { PrepMeal(it.date, it.slot, 1.0, MealStatus.PLANNED) },
     )
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {

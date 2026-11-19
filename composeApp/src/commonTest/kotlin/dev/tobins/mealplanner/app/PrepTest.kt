@@ -33,7 +33,7 @@ class PrepTest {
 
     @Test
     fun noDayPastTheLastOneItKeepsCanBePicked() {
-        val choice = PrepChoice(salad, madeOn = "2026-11-17")
+        val choice = PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-17")
         assertEquals(listOf("2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"), choice.days, "made Tuesday, three days in a box")
         assertEquals("2026-11-22", choice.with(vacuum = true).days.last(), "five vacuum sealed")
 
@@ -47,7 +47,7 @@ class PrepTest {
 
     @Test
     fun aPrepNeedsARecipeTwoMealsAndItsFirstOnTheDayItIsMade() {
-        val choice = PrepChoice(null, madeOn = "2026-11-17")
+        val choice = PrepChoice(null, madeOn = "2026-11-17", firstDay = "2026-11-17")
         assertEquals(Msg.PREP_PICK_RECIPE, choice.problem)
         assertEquals(Msg.PREP_FIRST_ON_MADE_DAY, choice.with(recipe = salad).toggled("2026-11-18", LUNCH).problem)
         assertEquals(Msg.PREP_TWO_MEALS, choice.with(recipe = salad).toggled("2026-11-17", DINNER).problem)
@@ -61,10 +61,15 @@ class PrepTest {
     }
 
     @Test
-    fun aNewPrepIsMadeTodayInThisWeekAndOnMondayInAnother() {
-        assertEquals("2026-11-18", firstDayFrom("2026-11-16", "2026-11-18"))
-        assertEquals("2026-11-23", firstDayFrom("2026-11-23", "2026-11-18"))
-        assertEquals("2026-11-16", firstDayFrom("2026-11-16", "2026-11-25"))
+    fun aPrepIsNeverMadeOnADayThatHasPassed() {
+        // On Wednesday the dialog offers Wednesday to Sunday of this week, all of next week, none of last week.
+        assertEquals(listOf("2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21", "2026-11-22"), prepDays("2026-11-16", "2026-11-18"))
+        assertEquals(7, prepDays("2026-11-23", "2026-11-18").size)
+        assertEquals(emptyList(), prepDays("2026-11-09", "2026-11-18"))
+        // A meal of Tuesday offered from its menu on Wednesday: it can't be made.
+        val tuesday = PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-18").toggled("2026-11-17", DINNER).toggled("2026-11-18", LUNCH)
+        assertEquals(Msg.PREP_MADE_ON_PAST, tuesday.problem)
+        assertNull(tuesday.with(madeOn = "2026-11-18").toggled("2026-11-19", LUNCH).problem)
     }
 
     private val prep = MealPrep(

@@ -163,7 +163,7 @@ fun PlanScreen(
     }
 
     prepping?.let { start ->
-        PrepDialog(start, weekDays = (0..6).map { plusDays(weekStart, it) }, recipes = preppable, onDismiss = { prepping = null }) { input ->
+        PrepDialog(start, weekDays = prepDays(weekStart, today), recipes = preppable, onDismiss = { prepping = null }) { input ->
             when (val result = load { api.createPrep(weekStart, input) }) {
                 is Load.Ready -> {
                     state = result
@@ -248,7 +248,9 @@ fun PlanScreen(
                             Button(enabled = !busy, onClick = { change { api.generatePlan(weekStart) } }) {
                                 Text(if (hasMeals) t(Msg.REPLAN) else t(Msg.PLAN_WEEK))
                             }
-                            TextButton(enabled = !busy, onClick = { prepping = PrepChoice(preppable.singleOrNull(), madeOn = firstDayFrom(weekStart, today)) }) {
+                            // A prep is made today or later: a week that is over has no day for it.
+                            val days = prepDays(weekStart, today)
+                            TextButton(enabled = !busy && days.isNotEmpty(), onClick = { prepping = PrepChoice(preppable.singleOrNull(), days.first(), firstDay = today) }) {
                                 Text(t(Msg.PREP_A_RECIPE))
                             }
                             if (plan.emptySlots.isNotEmpty() && emptyRotation) {
@@ -283,6 +285,7 @@ fun PlanScreen(
                             DayCard(
                                 day = day,
                                 dayIndex = index,
+                                today = today,
                                 targets = plan.targets,
                                 // A slot is offered on every day that has no meal in it.
                                 missingSlots = MealSlot.entries.filter { slot -> day.meals.none { it.slot == slot } },
@@ -304,7 +307,7 @@ fun PlanScreen(
                                 onAdjust = { meal -> onAdjust(MealPlace(weekStart, meal.day, meal.slot)) },
                                 onPrep = { meal ->
                                     val date = plusDays(weekStart, meal.day)
-                                    prepping = PrepChoice(preppable.first { it.id == meal.recipeId }, madeOn = date).with().toggled(date, meal.slot)
+                                    prepping = PrepChoice(preppable.first { it.id == meal.recipeId }, madeOn = date, firstDay = today).with().toggled(date, meal.slot)
                                 },
                                 onRemovePrep = { meal -> removingPrep = meal },
                             )
@@ -320,6 +323,8 @@ fun PlanScreen(
 private fun DayCard(
     day: PlanDay,
     dayIndex: Int,
+    /** Today's ISO date: a prep is not made on a day that has passed. */
+    today: String,
     targets: DailyTargets,
     missingSlots: List<MealSlot>,
     enabled: Boolean,
@@ -400,7 +405,7 @@ private fun DayCard(
                                 DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onGenerate(meal) })
                                 if (meal.prep != null) {
                                     DropdownMenuItem(text = { Text(t(Msg.REMOVE_PREP)) }, onClick = { menu = false; onRemovePrep(meal) })
-                                } else if (meal.recipeId in preppable && (meal.slot == MealSlot.LUNCH || meal.slot == MealSlot.DINNER)) {
+                                } else if (meal.recipeId in preppable && (meal.slot == MealSlot.LUNCH || meal.slot == MealSlot.DINNER) && day.date >= today) {
                                     DropdownMenuItem(text = { Text(t(Msg.PREP_THIS_RECIPE)) }, onClick = { menu = false; onPrep(meal) })
                                 }
                             }
@@ -423,9 +428,6 @@ private fun DayCard(
         }
     }
 }
-
-/** The day a new prep is made on at first: today when it is in the week starting [weekStart], else that week's first day. */
-fun firstDayFrom(weekStart: String, today: String): String = if (today >= weekStart && today < plusDays(weekStart, 7)) today else weekStart
 
 /** A day's kcal and protein against the targets, and its fibre when the server sends fibre and its target. */
 private fun dayTotals(day: PlanDay, targets: DailyTargets, t: Strings): String {

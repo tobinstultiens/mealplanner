@@ -254,6 +254,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     PREP_EATEN_ON("Eaten on", "Gegeten op"),
     PREP_FIRST_ON_MADE_DAY("The first meal is on the day it is made.", "De eerste maaltijd is op de dag dat je het maakt."),
     PREP_TWO_MEALS("Pick at least two meals.", "Kies minstens twee maaltijden."),
+    PREP_MADE_ON_PAST("The day it is made has passed: pick today or a later day.", "De dag waarop je het maakt is voorbij: kies vandaag of later."),
     PREP_PICK_RECIPE("Pick a recipe that keeps.", "Kies een recept dat goed blijft."),
     PREP_NOT_THIS_WAY("This recipe is not kept this way.", "Dit recept wordt niet zo bewaard."),
     PREP_SAVE("Prep", "Preppen"),
