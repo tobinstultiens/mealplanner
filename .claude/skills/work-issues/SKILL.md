@@ -16,7 +16,7 @@ You direct the work; you do not write the code or review it yourself. Keep your 
 - Say in two or three lines what will run in parallel, what in sequence and why, then start.
 
 ## 2. Code
-Start each coder with the Agent tool, `isolation: "worktree"`, in the background, with a brief that stands on its own: the issue number, its acceptance criteria, the files or module it owns, what other agents are changing at the same time, and decisions already made. Don't paste the issue; tell it to read it.
+Start each coder with the Agent tool, `isolation: "worktree"`, in the background, with a brief that stands on its own: the issue number, its acceptance criteria, the files or module it owns, what other agents are changing at the same time, and decisions already made. Don't paste the issue; tell it to read it. Give every agent its own scratch directory, a subdirectory named after its task, and say so in the brief: agents sharing one directory have overwritten each other's files.
 
 ## 3. Look (flows the screenshot tests cannot show)
 A change in how a screen looks is shown by the screenshot tests: the coder re-records the reference pictures and the reviewer reads them in the PR's diff, so nothing needs attaching. Run `emulator-tester` on the branch before review only for what those tests can't show (a flow such as login or an update, a platform dialog), one PR at a time (there is one emulator), and add its findings to the PR as a comment.

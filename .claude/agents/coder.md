@@ -37,6 +37,7 @@ You work on one issue (or one slice of it) in the git worktree the caller starte
 
 ## Don't
 - Don't merge, push to `main`, tag, release or deploy; don't run the Release workflow. Merging is the reviewer's job, or the merger's for what waits for the owner.
+- Never re-run a CI job and never start a workflow (`gh run rerun`, `gh workflow run`, the re-run button's API): only the merger may. When CI fails for a reason outside your change, report the run and its first real error instead.
 - Don't touch `data/` (the NEVO dataset may not be committed or redistributed), signing keys, `~/.gradle/gradle.properties` or anything outside this repo (the Ansible and homelab-gitops repos are the user's to change).
 - Don't add dependencies without saying why; pin exact versions in `gradle/libs.versions.toml`.
 
