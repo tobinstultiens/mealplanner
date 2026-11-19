@@ -369,8 +369,8 @@ private fun DayCard(
                 modifier = Modifier.fillMaxWidth(),
             )
             // A side added by hand may take the day over its calories: said, not refused (issue 234).
-            day.kcalOverWithSides(targets)?.let { over ->
-                Text(t(Msg.DAY_OVER_WITH_SIDES, over), style = MaterialTheme.typography.bodySmall.numeric(), color = MaterialTheme.colorScheme.error)
+            day.overWithSides(targets)?.let { (over, sides) ->
+                Text(t(Msg.DAY_OVER_WITH_SIDES, over, sides), style = MaterialTheme.typography.bodySmall.numeric(), color = MaterialTheme.colorScheme.error)
             }
             if (day.meals.isEmpty()) {
                 Text(t(Msg.NOTHING_PLANNED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

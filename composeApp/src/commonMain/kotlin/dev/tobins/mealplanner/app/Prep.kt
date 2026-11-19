@@ -78,7 +78,8 @@ data class PrepChoice(
             recipe == null -> Msg.PREP_PICK_RECIPE
             keeps == null -> Msg.PREP_NOT_THIS_WAY
             meals.none { it.date == madeOn } -> Msg.PREP_FIRST_ON_MADE_DAY
-            meals.size < 2 -> Msg.PREP_TWO_MEALS
+            // A batch is made once for several meals; as a side that may be one meal short, so say why.
+            meals.size < 2 -> if (side == null) Msg.PREP_TWO_MEALS else Msg.PREP_TWO_SIDES
             else -> null
         }
 

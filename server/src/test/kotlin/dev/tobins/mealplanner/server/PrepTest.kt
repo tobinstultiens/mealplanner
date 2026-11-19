@@ -364,6 +364,24 @@ class PrepTest {
         assertEquals(2000.0, k.stockOf(k.chicken), 1e-9, "un-made, every share comes back, Friday's too")
     }
 
+    @Test
+    fun theMealABatchIsMadeWithStillMakesItWhenSkippedAndItsShareIsEatenElsewhere() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        // Made with Tuesday's dinner, which is skipped; its share is eaten on Wednesday evening instead.
+        http.prep(k.salad.id, "2026-11-17", "2026-11-17" to DINNER, "2026-11-18" to LUNCH, "2026-11-19" to DINNER)
+        http.mark("2026-11-17", DINNER, MealStatus.SKIPPED)
+        val spare = http.spare("2026-11-17").single()
+        val plan = http.post("/api/plans/$week/preps/${spare.prepId}/spare") { setBody(SpareMove(spare.skipped, PrepSlot("2026-11-18", DINNER))) }.body<WeekPlan>()
+
+        // The batch is still made on Tuesday, with that dinner: it shows the batch to cook and is the one that stays.
+        val tuesday = plan.at("2026-11-17", DINNER)!!
+        assertEquals(Triple(false, 4.25, 0.0), Triple(tuesday.leftover, tuesday.cookPortions, tuesday.prep!!.meals.first().portions))
+        assertEquals(listOf(0.0, 0.0, 0.0), listOf("2026-11-18" to LUNCH, "2026-11-18" to DINNER, "2026-11-19" to DINNER).map { plan.at(it.first, it.second)!!.cookPortions })
+        assertEquals(HttpStatusCode.Conflict, http.delete(mealPath("2026-11-17", DINNER)).status)
+        assertEquals(4.25 * 300, http.chickenRow()!!.grams!!, 1e-9)
+    }
+
     // --- Removing
 
     @Test
@@ -568,5 +586,32 @@ class PrepTest {
         assertEquals(taken, k.stockOf(k.chicken), 1e-9, "the stock does not move")
         http.mark("2026-11-17", DINNER, MealStatus.PLANNED)
         assertEquals(2000.0, k.stockOf(k.chicken), 1e-9, "un-made, every share comes back, Friday's side's too")
+    }
+
+    @Test
+    fun theSideABatchIsMadeWithStillMakesItWhenSkippedAndItsShareIsEatenElsewhere() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        http.planned()
+        // Made with Tuesday's dinner, which is skipped, and its side with it; the side is eaten next to Wednesday's dinner instead.
+        http.prep(k.salad.id, "2026-11-17", "2026-11-17" to DINNER, "2026-11-18" to LUNCH, "2026-11-19" to DINNER, side = 0.5)
+        http.mark("2026-11-17", DINNER, MealStatus.SKIPPED)
+        val spare = http.spare("2026-11-17").single()
+        val plan = http.post("/api/plans/$week/preps/${spare.prepId}/spare") { setBody(SpareMove(spare.skipped, PrepSlot("2026-11-18", DINNER))) }.body<WeekPlan>()
+
+        // The batch is still made on Tuesday, with that dinner's side, now 0: it shows the batch to cook and stays.
+        val tuesday = plan.at("2026-11-17", DINNER)!!.side!!
+        assertEquals(0.0 to 1.5, tuesday.portions to tuesday.cookPortions)
+        assertEquals(PrepSlot("2026-11-17", DINNER), tuesday.prep.meals.first().let { PrepSlot(it.date, it.slot) })
+        val later = listOf("2026-11-18" to LUNCH, "2026-11-18" to DINNER, "2026-11-19" to DINNER).map { plan.at(it.first, it.second)!!.side!! }
+        assertEquals(listOf(0.5 to 0.0, 0.5 to 0.0, 0.5 to 0.0), later.map { it.portions to it.cookPortions })
+        assertEquals(HttpStatusCode.Conflict, http.delete(mealPath("2026-11-17", DINNER, "/side")).status)
+        assertEquals(HttpStatusCode.Conflict, http.delete(mealPath("2026-11-17", DINNER)).status)
+        assertEquals(450.0, http.chickenRow()!!.grams!!, 1e-9, "the batch is bought as large as it was")
+
+        // Made when Wednesday's lunch is eaten: the shares of the sides eaten, none for Tuesday's.
+        k.stockUp(k.chicken, 1000.0)
+        http.mark("2026-11-18", LUNCH, MealStatus.EATEN)
+        assertEquals(1000.0 - 450.0, k.stockOf(k.chicken), 1e-9)
     }
 }

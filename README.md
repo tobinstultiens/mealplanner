@@ -244,7 +244,9 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   as `DELETE /api/plans/{weekStart}/meals/{day}/{slot}/side` does on its own, except for the side the batch is
   made with or one of a batch that was made (409). Removing a prep eaten as sides takes the sides, the meals stay.
   A skipped meal's side is a share in the box (`SparePortion.side`) whose room is the later meals still to eat
-  without a side; eaten there, it is the side of that meal.
+  without a side; eaten there, it is the side of that meal. The side the batch is made with stays where it was at
+  0, as a skipped meal of a batch does: the batch is still made that day, with that meal, which shows the batch to
+  cook and can't be removed on its own.
 - Kept in `prep` and `prepPortion` (version 20 of the database). A `prepPortion` row is a meal's share of a batch,
   with a role: `MEAL` for the slot's meal, `SIDE` for a side next to it, with its own portions. What a side takes
   from the stock is kept under its meal apart from the main's (`stockUse.role`, version 21).
@@ -266,8 +268,9 @@ dinners with a meal still to eat and no side yet can be picked (of the week show
 side…" in such a meal's menu opens it as a side of half a serving with that meal chosen. The side shows under the
 meal's main, "Side · prep day" where it is made and "Side · prepped Wed 18 Nov" after, with its numbers and what
 the meal comes to with it; a tap opens its recipe (the batch to cook on the prep day). The meal's menu then has
-"Remove the side" and "Remove the side's prep…". A day card whose sides take it over the calories says by how
-much; Today's forecast counts them.
+"Remove the side" and "Remove the side's prep…". A day card with sides that is over its calories says by how much
+and what its sides add, as the day may have been over without them; Today's forecast counts them. A side needs a
+second meal to go with, as a prep is made once for several meals, and the dialog says so.
 
 An installed app that knows nothing of preps shows the later meals as locked leftovers with nothing to cook and
 the made-on day's meal as cooking for the leftovers; it marks them eaten or skipped as any meal, and a refusal to

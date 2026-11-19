@@ -158,8 +158,9 @@ class PrepRepository(
      * after it, up to the batch's last day, that has room ([hasRoom]); whatever was planned there goes. The skipped
      * meal stays skipped with a share of 0, and what the stock gave for its share and what was in it go along, so
      * the batch, the shopping list and the stock stay as they were. A skipped side goes next to the meal there
-     * instead ([hasRoomForSide]), with what the stock gave for it, and is no longer next to the skipped meal.
-     * Answers the week starting [weekStart].
+     * instead ([hasRoomForSide]), with what the stock gave for it, and is no longer next to the skipped meal; the side
+     * the batch is made with stays there at 0, as a skipped meal does, so its meal still makes the batch (it shows
+     * the batch to cook and can't be removed on its own). Answers the week starting [weekStart].
      */
     fun eatSpare(weekStart: String, id: Long, move: SpareMove): WeekPlan {
         val shown = parseWeekStart(weekStart)
@@ -178,7 +179,12 @@ class PrepRepository(
             if (from.side) {
                 if (!hasRoomForSide(meals, day, slot, batch.id)) throw ConflictException("${Batch.slotName(target, slot)} has no meal still to eat without a side")
                 q.insertSidePortion(userId, week.toString(), day.toLong(), slot.name, batch.id, from.share)
-                q.deleteSidePortion(userId, old.week.toString(), old.day.toLong(), old.slot.name)
+                // The batch is still made on its made-on day, with that meal's side, as with a meal of a batch.
+                if (batch.isCook(old.week, from.meal, side = true)) {
+                    q.clearSideShare(userId, old.week.toString(), old.day.toLong(), old.slot.name)
+                } else {
+                    q.deleteSidePortion(userId, old.week.toString(), old.day.toLong(), old.slot.name)
+                }
             } else {
                 if (!hasRoom(week, meals, day, slot, batch.id)) throw ConflictException("${Batch.slotName(target, slot)} has a meal that stays")
                 plans.leftoversToReplace(week, meals, day, slot)?.let { plans.deleteMeal(week, it.day, it.slot) }

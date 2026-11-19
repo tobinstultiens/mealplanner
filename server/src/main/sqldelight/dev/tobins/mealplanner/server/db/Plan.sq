@@ -88,7 +88,8 @@ CREATE INDEX prep_user ON prep(userId, lastDay);
 -- A meal's share of a prepped batch. role MEAL: the slot's meal is eaten from the batch, and portions is NULL
 -- for the meal's own portions, or 0 once it was skipped and its share is eaten in another meal. role SIDE
 -- (step 2): a side next to the slot's meal, which keeps its own main, of portions servings of the batch; it
--- shares the meal's status, and is moved rather than kept at 0 when its share is eaten elsewhere.
+-- shares the meal's status, and is moved when its share is eaten elsewhere, except the side the batch is made
+-- with, which is kept at 0 as a meal is: the batch is still made on that day, with that meal.
 -- A row goes with its meal, so removing the meal takes it out of the batch; replacing a meal's main keeps
 -- its side (PlanRepository.save).
 CREATE TABLE prepPortion (
@@ -162,6 +163,11 @@ WHERE prep.userId = :userId AND prep.recipeId = :recipeId AND prepPortion.role =
 clearPrepShare:
 UPDATE prepPortion SET portions = 0
 WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'MEAL';
+
+-- The skipped side the batch is made with is eaten next to another meal: it stays, at 0, as where the batch is made.
+clearSideShare:
+UPDATE prepPortion SET portions = 0
+WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'SIDE';
 
 -- What a meal (or the side next to it, by role) took from the stock and what was in it go with its share to
 -- another meal of the batch.

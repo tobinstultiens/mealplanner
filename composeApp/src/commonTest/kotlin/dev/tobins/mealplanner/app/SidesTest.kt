@@ -20,6 +20,7 @@ import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.WeekPlan
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 /** What the Plan and Today offer and say of a side taken from a prepped batch (issue 234, step 2). */
@@ -87,13 +88,24 @@ class SidesTest {
     }
 
     @Test
-    fun aDayWithASideThatGoesOverItsCaloriesSaysByHowMuch() {
+    fun aDayWithASideThatGoesOverItsCaloriesSaysByHowMuchAndWhatItsSidesAdd() {
         val targets = DailyTargets(2000, 120)
         fun day(kcal: Double, vararg meals: PlannedMeal) = PlanDay("2026-11-17", meals.toList(), kcal, 0.0)
-        assertEquals(150, day(2150.0, meal(1, DINNER, side(1.0))).kcalOverWithSides(targets))
-        assertNull(day(1950.0, meal(1, DINNER, side(1.0))).kcalOverWithSides(targets), "under the target")
-        assertNull(day(2150.0, meal(1, DINNER)).kcalOverWithSides(targets), "over without a side: as the planner made it")
-        assertNull(day(2150.0, meal(1, DINNER, side(1.0), MealStatus.SKIPPED)).kcalOverWithSides(targets), "a skipped side counts for nothing")
+        // Over by more than the side adds: over without it too, which the sentence does not lay on the side.
+        val over = assertNotNull(day(2400.0, meal(1, DINNER, side(1.0))).overWithSides(targets))
+        assertEquals(400 to 225, over)
+        assertEquals("This day is 400 kcal over the target; its sides add 225 kcal.", Strings.English(Msg.DAY_OVER_WITH_SIDES, over.first, over.second))
+        assertEquals(150 to 225, day(2150.0, meal(1, DINNER, side(1.0))).overWithSides(targets))
+        assertNull(day(1950.0, meal(1, DINNER, side(1.0))).overWithSides(targets), "under the target")
+        assertNull(day(2150.0, meal(1, DINNER)).overWithSides(targets), "over without a side: as the planner made it")
+        assertNull(day(2150.0, meal(1, DINNER, side(1.0), MealStatus.SKIPPED)).overWithSides(targets), "a skipped side counts for nothing")
+    }
+
+    @Test
+    fun aSideForOneMealOnlySaysWhyItNeedsASecond() {
+        val choice = PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-17").toggled("2026-11-17", DINNER)
+        assertEquals(Msg.PREP_TWO_SIDES, choice.eatenAs(0.5, setOf(PrepSlot("2026-11-17", DINNER))).problem)
+        assertEquals(Msg.PREP_TWO_MEALS, choice.problem, "as the meal, as before")
     }
 
     @Test

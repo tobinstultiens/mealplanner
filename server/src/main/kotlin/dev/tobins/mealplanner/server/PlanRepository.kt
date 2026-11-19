@@ -674,9 +674,11 @@ class PlanRepository(
         val cookedAsSides = week.mapNotNull { meal ->
             val side = meal.side ?: return@mapNotNull null
             val batch = sideBatches[side.prep.id]?.takeIf { it.isCook(start, meal, side = true) } ?: return@mapNotNull null
+            // Of the recipe, not of the side: the side it is made with is 0 once its share is eaten elsewhere.
+            val recipe = recipes.candidate(batch.recipeId)
             PlannedMeal(
                 meal.day, meal.slot, batch.recipeId, batch.title, batch.portions,
-                kcal = side.kcal / side.portions * batch.portions, proteinG = side.proteinG / side.portions * batch.portions,
+                kcal = (recipe?.kcal ?: 0.0) * batch.portions, proteinG = (recipe?.proteinG ?: 0.0) * batch.portions,
                 locked = true, status = batch.status, prep = side.prep,
             )
         }

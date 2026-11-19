@@ -49,9 +49,15 @@ fun sideHosts(vararg weeks: WeekPlan?): Set<PrepSlot> = weeks.filterNotNull().fl
     }
 }.toSet()
 
-/** The kcal [this] day goes over [targets] by, rounded, when it has a side and goes over: what the day card says (a note, not a refusal). */
-fun PlanDay.kcalOverWithSides(targets: DailyTargets): Int? =
-    (kcal - targets.kcal).roundToInt().takeIf { over -> over > 0 && meals.any { it.side != null && it.status != MealStatus.SKIPPED } }
+/**
+ * What the day card says (a note, not a refusal) when [this] day has sides and goes over [targets]: the kcal it goes over by
+ * and the kcal its sides add, rounded; null otherwise. Both, as the day may have been over without its sides already.
+ */
+fun PlanDay.overWithSides(targets: DailyTargets): Pair<Int, Int>? {
+    val sides = meals.filter { it.status != MealStatus.SKIPPED }.mapNotNull { it.side }
+    val over = (kcal - targets.kcal).roundToInt()
+    return if (sides.isEmpty() || over <= 0) null else over to sides.sumOf { it.kcal }.roundToInt()
+}
 
 /** What [this] side gives, as a meal's numbers: `0.5 servings · 225 kcal · 30 g protein`. */
 fun MealSide.macrosText(strings: Strings): String =
