@@ -5,12 +5,16 @@ import dev.tobins.mealplanner.api.DinnerToday
 import dev.tobins.mealplanner.api.EndingOffer
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.NotificationFacts
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.SectionChoice
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
@@ -18,6 +22,7 @@ import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeighInDue
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.OfferSource
@@ -257,6 +262,35 @@ class NotificationsTest {
         http.mark(3, "DINNER", MealStatus.PLANNED)
         http.mark(3, "DINNER", MealStatus.EATEN)
         assertNull(facts("2026-11-19").dinner)
+    }
+
+    @Test
+    fun theDinnerThatMakesAPrepIsDueWithTheBatchAndAPreppedLaterDinnerIsNot() = testApplication {
+        start()
+        val http = clientFor("t").ready()
+        val salad = http.post("/api/recipes") { setBody(RecipeInput("Chicken salad", 4, "1200 | g | kipfilet")) }.body<RecipeDetail>().summary
+        http.put("/api/recipes/${salad.id}/keeps") { setBody(RecipeKeeps(days = 2)) }
+        val meals = listOf(PrepSlot("2026-11-17", MealSlot.DINNER), PrepSlot("2026-11-18", MealSlot.DINNER))
+        val plan = http.post("/api/plans/$week/preps") { setBody(PrepInput(salad.id, "2026-11-17", meals = meals)) }.body<WeekPlan>()
+        val portions = plan.days[1].meals.single().portions
+
+        assertEquals(DinnerToday(salad.id, "Chicken salad", portions, 2 * portions, week, 1), facts("2026-11-17").dinner, "Tuesday: cook the batch")
+        assertNull(facts("2026-11-18").dinner, "Wednesday's was made on Tuesday: nothing to cook")
+        assertEquals(1, facts("2026-11-18").mealsToMark, "but it is still to mark")
+    }
+
+    @Test
+    fun aWeekWithOnlyThePrepOfTheWeekBeforeIsStillToPlan() = testApplication {
+        start()
+        val http = clientFor("t").ready()
+        val salad = http.post("/api/recipes") { setBody(RecipeInput("Chicken salad", 4, "1200 | g | kipfilet")) }.body<RecipeDetail>().summary
+        http.put("/api/recipes/${salad.id}/keeps") { setBody(RecipeKeeps(days = 2)) }
+        val meals = listOf(PrepSlot("2026-11-22", MealSlot.DINNER), PrepSlot("2026-11-23", MealSlot.LUNCH))
+        assertEquals(HttpStatusCode.OK, http.post("/api/plans/$week/preps") { setBody(PrepInput(salad.id, "2026-11-22", meals = meals)) }.status)
+
+        assertEquals(nextWeek, facts("2026-11-21").planNextWeek, "Monday's lunch from Sunday's batch does not plan the week")
+        http.plan("t", day = 2, weekStart = nextWeek)
+        assertNull(facts("2026-11-21").planNextWeek)
     }
 
     @Test

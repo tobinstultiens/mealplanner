@@ -77,6 +77,8 @@ data class PlanRequest(
  * - A breakfast or snack slot with no suitable recipe stays empty.
  * - An excluded recipe is never planned, not even as a pinned routine or as leftovers;
  *   only locked meals keep it.
+ * - The meals of a prepped batch ([PlannedMeal.prep]) come locked: they leave no leftover lunch, and
+ *   only the one that cooks the batch counts as a use of its recipe (the later ones are leftovers).
  */
 object WeekPlanner {
     fun plan(request: PlanRequest): List<PlannedMeal> {
@@ -122,7 +124,8 @@ object WeekPlanner {
             if (dinner != null) {
                 val eaten = lockedDinner ?: meal(dinner, day, MealSlot.DINNER, request).also { meals += it }
                 val remaining = dinner.servings - eaten.portions
-                if (remaining >= PortionRange.LEAST_LEFTOVER) leftoverForLunch = dinner to remaining
+                // A prepped batch is made for its own meals only: nothing of it is left for the next lunch.
+                if (eaten.prep == null && remaining >= PortionRange.LEAST_LEFTOVER) leftoverForLunch = dinner to remaining
             }
             yesterdaysDinner = dinner
         }

@@ -23,6 +23,8 @@ CREATE TABLE recipe (
     imageVersion TEXT,                 -- version of the web-sized copy kept for it; NULL when there is none
     addedAt TEXT,                      -- App-owned: when it became one of my recipes; NULL while only in the bank
     inRotation INTEGER NOT NULL DEFAULT 0,  -- App-owned: 1 when the planner may pick it on its own
+    keepsDays INTEGER,                 -- App-owned: days it keeps once made in a normal box (issue 234); NULL: not prepped that way
+    keepsVacuumDays INTEGER,           -- App-owned: days it keeps once made and vacuum sealed; NULL: not prepped that way
     UNIQUE (userId, sourcePath)
 );
 
@@ -83,6 +85,9 @@ WHERE userId = ? AND id = ?;
 
 updateSettings:
 UPDATE recipe SET kind = ?, mealSlotsJson = ? WHERE userId = ? AND id = ?;
+
+setKeeps:
+UPDATE recipe SET keepsDays = :keepsDays, keepsVacuumDays = :keepsVacuumDays WHERE userId = :userId AND id = :id;
 
 updateManual:
 UPDATE recipe SET title = ?, tagsJson = ?, servings = ?, instructions = ?, problemsJson = ?

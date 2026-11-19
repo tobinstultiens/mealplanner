@@ -1,0 +1,31 @@
+-- Version 19 -> 20: prepped meals (issue 234). Two columns of a recipe (how many days it keeps once made, in a
+-- normal box and vacuum sealed) and two new tables, so no table is rebuilt and no row is touched: no recipe
+-- keeps until the account says so, and no meal is from a batch.
+
+ALTER TABLE recipe ADD COLUMN keepsDays INTEGER;
+ALTER TABLE recipe ADD COLUMN keepsVacuumDays INTEGER;
+
+CREATE TABLE prep (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    recipeId INTEGER NOT NULL,
+    madeOn TEXT NOT NULL,
+    lastDay TEXT NOT NULL,
+    vacuum INTEGER NOT NULL
+);
+
+CREATE INDEX prep_user ON prep(userId, lastDay);
+
+CREATE TABLE prepPortion (
+    userId INTEGER NOT NULL,
+    weekStart TEXT NOT NULL,
+    day INTEGER NOT NULL,
+    slot TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'MEAL',
+    prepId INTEGER NOT NULL REFERENCES prep(id) ON DELETE CASCADE,
+    portions REAL,
+    PRIMARY KEY (userId, weekStart, day, slot, role),
+    FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE
+);
+
+CREATE INDEX prepPortion_prep ON prepPortion(prepId);

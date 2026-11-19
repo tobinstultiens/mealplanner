@@ -5,7 +5,10 @@ import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.Store
@@ -147,7 +150,16 @@ class MigrationTest {
 
     /** Version 19 added a recipe's optional toppings (18.sqm); dropping the table drops its index. */
     private fun dropRecipeToppings(statement: Statement) {
+        dropPreps(statement)
         statement.execute("DROP TABLE recipeTopping")
+    }
+
+    /** Version 20 added prepped meals (19.sqm): a recipe's two keeps columns and the batches' tables, with their indexes. */
+    private fun dropPreps(statement: Statement) {
+        statement.execute("DROP TABLE prepPortion")
+        statement.execute("DROP TABLE prep")
+        statement.execute("ALTER TABLE recipe DROP COLUMN keepsDays")
+        statement.execute("ALTER TABLE recipe DROP COLUMN keepsVacuumDays")
     }
 
     @Test
@@ -1023,6 +1035,74 @@ class MigrationTest {
         assertEquals(listOf("Egg" to 60.0), alice.toppings.addOns(1).map { it.name to it.grams })
         assertEquals(listOf("Egg"), alice.toppings.set(1, ToppingsInput(listOf(ToppingInput(2, 60.0)))).toppings.map { it.name })
         assertEquals(emptyList(), scope(2).toppings.addOns(2))
+        driver.close()
+    }
+
+    /**
+     * Version 19 is the schema of 18.sqm, which servers before prepped meals (issue 234) run. Two columns and two tables
+     * are added: every row stays, no recipe keeps until the account says so, no meal is of a batch, and a dinner with its
+     * leftover lunch is cooked and eaten as before. A prep can be made from then on.
+     */
+    @Test
+    fun aVersionNineteenDatabaseKeepsEveryRowAndItsMealsAreOfNoBatch() {
+        val file = createTempFile("v19", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropPreps(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name) VALUES (1, 1, 'Beef'), (2, 1, 'Egg'), (3, 2, 'Beef')")
+                statement.execute(
+                    "INSERT INTO recipe (id, userId, source, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, addedAt, inRotation) VALUES " +
+                        "(1, 1, 'MANUAL', 'own', 'Stew', '[]', 2, '', 1, '[]', 'MEAL', '2026-11-01T00:00:00Z', 1), " +
+                        "(2, 2, 'MANUAL', 'own', 'Bob stew', '[]', 2, '', 1, '[]', 'MEAL', '2026-11-01T00:00:00Z', 1)",
+                )
+                statement.execute("INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item) VALUES (1, 0, 400, 'g', 'WEIGHT', 400, 'beef'), (2, 0, 400, 'g', 'WEIGHT', 400, 'beef')")
+                statement.execute("INSERT INTO recipeTopping (userId, recipeId, ingredientId, position, grams) VALUES (1, 1, 2, 0, 60.0)")
+                // Alice: an eaten dinner that took beef from her stock, its leftover lunch, and an adjusted meal. Bob: a planned dinner.
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 0, 'EATEN'), (1, '$week', 1, 'LUNCH', 1, 'Stew', 1.0, 600.0, 40.0, 1, 0, 'PLANNED'), " +
+                        "(1, '$week', 3, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 1, 'PLANNED'), (2, '$week', 0, 'DINNER', 2, 'Bob stew', 1.0, 600.0, 40.0, 0, 0, 'PLANNED')",
+                )
+                statement.execute("INSERT INTO mealLine (userId, weekStart, day, slot, ingredientId, grams) VALUES (1, '$week', 3, 'DINNER', 2, 60.0)")
+                statement.execute("INSERT INTO stock (ingredientId, fromWeek, source, addedAt, grams) VALUES (1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 600.0)")
+                statement.execute(
+                    "INSERT INTO stockUse (userId, weekStart, day, slot, ingredientId, fromWeek, source, addedAt, grams) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0), (1, '$week', 1, 'LUNCH', 1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0)",
+                )
+                statement.execute("PRAGMA user_version = 19")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        fun meals() = single(url, "SELECT userId || ':' || day || ':' || slot || ':' || leftover || ':' || locked || ':' || status FROM planMeal ORDER BY userId, day")
+        val before = counts() to meals()
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, counts() to meals(), "every row as it was, in every table")
+        assertEquals("0,0,0", listOf("prep", "prepPortion", "recipe WHERE keepsDays IS NOT NULL OR keepsVacuumDays IS NOT NULL").joinToString(",") { single(url, "SELECT count(*) FROM $it") })
+
+        // Alice's meals are of no batch; the dinner still cooks its leftover lunch, and a prep of the stew can be made.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+        alice.profiles.save(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT))
+        val meals = alice.plans.get(week).days.flatMap { it.meals }
+        assertTrue(meals.none { it.prep != null })
+        assertEquals(listOf(2.0, 0.0, 1.0), meals.map { it.cookPortions })
+        alice.recipes.setKeeps(1, RecipeKeeps(days = 2))
+        val prepped = alice.preps.create(week, PrepInput(1, "2026-11-20", meals = listOf(PrepSlot("2026-11-20", MealSlot.DINNER), PrepSlot("2026-11-21", MealSlot.LUNCH))))
+        assertEquals(listOf(null, null, null, 1L, 1L), prepped.days.flatMap { it.meals }.map { it.prep?.id })
+        assertEquals("1", single(url, "SELECT count(*) FROM planMeal WHERE userId = 2"), "Bob's plan as it was")
         driver.close()
     }
 }

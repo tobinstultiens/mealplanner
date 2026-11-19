@@ -72,7 +72,8 @@ class ShoppingListRepository(
      * row of what the meals need.
      */
     private fun list(start: LocalDate, advised: Boolean): ShoppingList {
-        val meals = plans.meals(start)
+        // A prepped batch is bought in the week it is made, as one meal of all its portions.
+        val meals = plans.forShopping(start)
         val sectionOf = sections()
         val lines = recipes.linesWithIngredients(meals.map { it.recipeId })
         val week = needsOf(meals, sectionOf, lines)
@@ -287,11 +288,12 @@ class ShoppingListRepository(
      * What to buy now for next week's meals. When next week is planned already, those are its
      * meals as planned; otherwise a provisional choice among the dinners the planner could pick
      * then ([BuyAhead.provisional]), one batch each. Nothing of it is stored: next week is planned
-     * as usual later, with what was ticked here on hand.
+     * as usual later, with what was ticked here on hand. The meals of a batch made this week are bought
+     * with it ([PlanRepository.forShopping]): a next week with only those counts as not planned.
      */
     private fun buyAhead(start: LocalDate, thisWeek: List<PlannedMeal>, advisor: ShoppingAdvisor): BuyAheadAdvice {
         val next = start.plusDays(DAYS.toLong())
-        val nextWeek = plans.meals(next)
+        val nextWeek = plans.forShopping(next)
         val (meals, ratings) = if (nextWeek.isNotEmpty()) {
             planned(nextWeek) to emptyMap()
         } else {

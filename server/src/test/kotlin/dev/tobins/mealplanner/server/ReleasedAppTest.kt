@@ -17,8 +17,12 @@ import dev.tobins.mealplanner.released.api.IngredientSection
 import dev.tobins.mealplanner.released.api.LogEntry
 import dev.tobins.mealplanner.released.api.MappingRequest
 import dev.tobins.mealplanner.released.api.Me
+import dev.tobins.mealplanner.released.api.MealAdjustment
+import dev.tobins.mealplanner.released.api.MealLineChange
+import dev.tobins.mealplanner.released.api.MealLines
 import dev.tobins.mealplanner.released.api.MealSlot
 import dev.tobins.mealplanner.released.api.MealStatus
+import dev.tobins.mealplanner.released.api.NotificationFacts
 import dev.tobins.mealplanner.released.api.OffersState
 import dev.tobins.mealplanner.released.api.Pantry
 import dev.tobins.mealplanner.released.api.PricesState
@@ -58,6 +62,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
@@ -235,6 +240,7 @@ class ReleasedAppTest {
         assertTrue(list.items.isNotEmpty())
         assertTrue(http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(list.items.first().key, true)) }.read<ShoppingList>().items.first().checked)
         http.readsARowAskedForAgain(chicken.id)
+        http.readsAWeekWithAPrepOf(mine.summary.id)
 
         // The day, a log entry and weights.
         val date = "2026-11-17"
@@ -265,6 +271,41 @@ class ReleasedAppTest {
         assertTrue(more.status.isSuccess(), more.bodyAsText())
         val asked = read<ShoppingList>("/api/plans/$week/shopping").items.single { it.key == key }
         assertTrue(asked.checked && asked.grams!! > bought.grams!!, "${asked.grams} after ${bought.grams}")
+    }
+
+    /**
+     * Recipe [recipeId] prepped in a newer app (issue 234), made on Sunday and eaten on Monday and Tuesday of the week
+     * after: the installed app reads both weeks, the later meals as locked leftovers with nothing to cook, marks one
+     * eaten and not again, reads its day, reads and adjusts what was in one, and reads what is due and the shopping lists. Removing the meal that makes the batch is refused with a
+     * sentence, which the app shows.
+     */
+    private suspend fun HttpClient.readsAWeekWithAPrepOf(recipeId: Long) {
+        val keeps = put("/api/recipes/$recipeId/keeps") { setBody("""{"days":3}""") }
+        assertTrue(keeps.status.isSuccess(), keeps.bodyAsText())
+        read<RecipeDetail>("/api/recipes/$recipeId")
+        val meals = """[{"date":"2026-11-22","slot":"DINNER"},{"date":"2026-11-23","slot":"LUNCH"},{"date":"2026-11-24","slot":"DINNER"}]"""
+        post("/api/plans/$week/preps") { setBody("""{"recipeId":$recipeId,"madeOn":"2026-11-22","meals":$meals}""") }.read<WeekPlan>()
+
+        val made = read<WeekPlan>("/api/plans/$week").days[6].meals.single { it.slot == MealSlot.DINNER }
+        val next = "2026-11-23"
+        val later = read<WeekPlan>("/api/plans/$next").days.flatMap { it.meals }
+        assertEquals(listOf(true, true), later.map { it.leftover && it.locked })
+        assertEquals(listOf(0.0, 0.0), later.map { it.cookPortions })
+        assertEquals(made.portions + later.sumOf { it.portions }, made.cookPortions)
+        val lunch = "/api/plans/$next/meals/0/LUNCH"
+        assertEquals(MealStatus.EATEN, put("$lunch/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>().days[0].meals.single().status)
+        put("$lunch/status") { setBody(MealStatus.PLANNED) }.read<WeekPlan>()
+        assertTrue(read<DayView>("/api/days/2026-11-23").meals.single().leftover)
+        // What was in a prepped meal, read and adjusted as the installed app does it (issue 226), and what is due.
+        val lines = read<MealLines>("$lunch/lines")
+        assertEquals(later.first().portions, lines.portions)
+        put("$lunch/lines") { setBody(MealAdjustment(lines.lines.mapNotNull { line -> line.ingredientId?.let { MealLineChange(it, 10.0) } })) }.read<MealLines>()
+        read<NotificationFacts>("/api/notifications")
+        read<ShoppingList>("/api/plans/$next/shopping")
+        read<ShoppingList>("/api/plans/$week/shopping")
+        val removal = delete("/api/plans/$week/meals/6/DINNER")
+        assertEquals(HttpStatusCode.Conflict, removal.status)
+        assertTrue(removal.bodyAsText().contains("Monday lunch, Tuesday dinner"), removal.bodyAsText())
     }
 
     /**

@@ -174,13 +174,15 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      * [meal] was eaten, using [grams] of each ingredient by id. It is eaten from the stock that counts
      * from its week or before, the oldest entry first and the next once that one is used up ([takeFrom]).
      * What was put on hand by hand stays, as it always has. What was taken from each entry is kept under
-     * [meal], for [giveBack]; a meal that has taken its share already takes nothing more.
+     * [meal], for [giveBack]; a meal that has taken its share already takes nothing more. A meal of a prepped
+     * batch eaten in a later week was cooked in the week the batch was made: [cookedIn] says which stock it
+     * was cooked from.
      */
-    fun useUp(meal: MealRef, grams: Map<Long, Double>) {
+    fun useUp(meal: MealRef, grams: Map<Long, Double>, cookedIn: LocalDate = meal.week) {
         if (grams.isEmpty()) return
         db.writing {
             if (uses(meal).isNotEmpty()) return@writing
-            take(meal, grams)
+            take(meal, grams, cookedIn)
         }
     }
 
@@ -200,10 +202,10 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
         }
     }
 
-    /** Takes [grams] of each ingredient for [meal] from the stock that counts from its week or before, oldest first, and keeps what was taken under it. */
-    private fun take(meal: MealRef, grams: Map<Long, Double>) {
+    /** Takes [grams] of each ingredient for [meal] from the stock that counts from [cookedIn] or before, oldest first, and keeps what was taken under it. */
+    private fun take(meal: MealRef, grams: Map<Long, Double>, cookedIn: LocalDate = meal.week) {
         if (grams.isEmpty()) return
-        val stock = pantry.selectStock(userId, meal.week.toString(), grams.keys).executeAsList().groupBy { it.ingredientId }
+        val stock = pantry.selectStock(userId, cookedIn.toString(), grams.keys).executeAsList().groupBy { it.ingredientId }
         for ((id, entries) in stock) {
             var wanted = grams.getValue(id)
             for (entry in entries) {

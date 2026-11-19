@@ -11,6 +11,7 @@ import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.Routines
@@ -411,6 +412,19 @@ class RecipeRepository(
         routines
     }
 
+    /**
+     * Sets how many days the recipe keeps once made, in a normal box and vacuum sealed (issue 234): what a prep
+     * of it may span. Per account, as the recipe is; any recipe of the account's, also one only in the bank.
+     */
+    fun setKeeps(id: Long, keeps: RecipeKeeps): RecipeDetail {
+        for (days in listOfNotNull(keeps.days, keeps.vacuumDays)) {
+            require(days in 1..RecipeKeeps.MAX_DAYS) { "keeps must be 1 to ${RecipeKeeps.MAX_DAYS} days, or null" }
+        }
+        q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+        q.setKeeps(keeps.days?.toLong(), keeps.vacuumDays?.toLong(), userId, id)
+        return find(id)!!
+    }
+
     fun updateSettings(id: Long, settings: RecipeSettings): RecipeDetail {
         q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
         q.updateSettings(settings.kind.name, Json.encodeToString(settings.mealSlots), userId, id)
@@ -561,6 +575,8 @@ class RecipeRepository(
         added = addedAt != null,
         inRotation = inRotation != 0L,
         removedFromSite = removedAt != null,
+        keepsDays = keepsDays?.toInt(),
+        keepsVacuumDays = keepsVacuumDays?.toInt(),
     )
 
     private fun Boolean.toLong() = if (this) 1L else 0L

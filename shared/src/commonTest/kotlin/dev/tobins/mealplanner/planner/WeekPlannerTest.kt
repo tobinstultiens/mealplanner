@@ -6,6 +6,9 @@ import dev.tobins.mealplanner.api.MealSlot.BREAKFAST
 import dev.tobins.mealplanner.api.MealSlot.DINNER
 import dev.tobins.mealplanner.api.MealSlot.LUNCH
 import dev.tobins.mealplanner.api.MealSlot.SNACK
+import dev.tobins.mealplanner.api.MealPrep
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.PrepMeal
 import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.PlannedMeal
 import kotlin.math.abs
@@ -112,6 +115,24 @@ class WeekPlannerTest {
         assertEquals(lockedLunch.copy(locked = true), plan.at(1, LUNCH))
         assertEquals(17L, plan.at(3, LUNCH).recipeId)
         assertEquals(1, plan.count { it.recipeId == 17L && it.slot == DINNER }, "the locked dinner is not planned a second time")
+    }
+
+    @Test
+    fun aPreppedBatchIsPlannedAroundLeavesNoLeftoverLunchAndCountsOnce() {
+        // Recipe 17 made on Tuesday's dinner and eaten Wednesday and Thursday at dinner and Friday at lunch.
+        val prep = MealPrep(
+            id = 1, madeOn = "2026-11-17", lastDay = "2026-11-21", vacuum = false,
+            meals = listOf(1 to DINNER, 2 to DINNER, 3 to DINNER, 4 to LUNCH).map { (day, slot) -> PrepMeal("2026-11-${16 + day}", slot, 1.0, MealStatus.PLANNED) },
+        )
+        val prepped = listOf(1 to DINNER, 2 to DINNER, 3 to DINNER, 4 to LUNCH).mapIndexed { i, (day, slot) ->
+            PlannedMeal(day, slot, 17, "Recipe 17", 1.0, 810.0, 52.0, leftover = i > 0, locked = true, prep = prep)
+        }
+        val plan = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes, locked = prepped))
+
+        assertEquals(prepped, prepped.map { plan.at(it.day, it.slot) }, "the prepped meals stay as they are")
+        for (day in 2..3) assertNotEquals(17L, plan.at(day, LUNCH).recipeId, "no leftover lunch of the batch on day $day")
+        assertEquals(4, plan.count { it.recipeId == 17L }, "the batch's recipe is planned nowhere else")
+        assertEquals(7, plan.filter { it.slot == DINNER }.size)
     }
 
     @Test

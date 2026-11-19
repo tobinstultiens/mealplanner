@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.ManyAddedInput
 import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.Routines
@@ -82,6 +83,8 @@ fun Route.recipeRoutes(cooking: CookingSync) {
             call.respond(HttpStatusCode.NoContent)
         }
         put("/settings") { call.respond(call.user.recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }
+        // How many days it keeps once made (issue 234), body {"days": 3, "vacuumDays": 6}; null for a way it is not prepped.
+        put("/keeps") { call.respond(call.user.recipes.setKeeps(call.id(), call.receive<RecipeKeeps>())) }
         put("/rating") { call.respond(call.user.recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
         put("/added") { call.respond(call.user.recipes.setAdded(call.id(), call.receive<AddedInput>())) }
         put("/rotation") { call.respond(call.user.recipes.setRotation(call.id(), call.receive<RotationInput>())) }
