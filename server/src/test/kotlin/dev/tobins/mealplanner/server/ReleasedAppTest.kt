@@ -17,8 +17,12 @@ import dev.tobins.mealplanner.released.api.IngredientSection
 import dev.tobins.mealplanner.released.api.LogEntry
 import dev.tobins.mealplanner.released.api.MappingRequest
 import dev.tobins.mealplanner.released.api.Me
+import dev.tobins.mealplanner.released.api.MealAdjustment
+import dev.tobins.mealplanner.released.api.MealLineChange
+import dev.tobins.mealplanner.released.api.MealLines
 import dev.tobins.mealplanner.released.api.MealSlot
 import dev.tobins.mealplanner.released.api.MealStatus
+import dev.tobins.mealplanner.released.api.NotificationFacts
 import dev.tobins.mealplanner.released.api.OffersState
 import dev.tobins.mealplanner.released.api.Pantry
 import dev.tobins.mealplanner.released.api.PricesState
@@ -272,8 +276,8 @@ class ReleasedAppTest {
     /**
      * Recipe [recipeId] prepped in a newer app (issue 234), made on Sunday and eaten on Monday and Tuesday of the week
      * after: the installed app reads both weeks, the later meals as locked leftovers with nothing to cook, marks one
-     * eaten and not again, and reads its day and the shopping lists. Removing the meal that makes the batch is refused
-     * with a sentence, which the app shows.
+     * eaten and not again, reads its day, reads and adjusts what was in one, and reads what is due and the shopping lists. Removing the meal that makes the batch is refused with a
+     * sentence, which the app shows.
      */
     private suspend fun HttpClient.readsAWeekWithAPrepOf(recipeId: Long) {
         val keeps = put("/api/recipes/$recipeId/keeps") { setBody("""{"days":3}""") }
@@ -292,6 +296,11 @@ class ReleasedAppTest {
         assertEquals(MealStatus.EATEN, put("$lunch/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>().days[0].meals.single().status)
         put("$lunch/status") { setBody(MealStatus.PLANNED) }.read<WeekPlan>()
         assertTrue(read<DayView>("/api/days/2026-11-23").meals.single().leftover)
+        // What was in a prepped meal, read and adjusted as the installed app does it (issue 226), and what is due.
+        val lines = read<MealLines>("$lunch/lines")
+        assertEquals(later.first().portions, lines.portions)
+        put("$lunch/lines") { setBody(MealAdjustment(lines.lines.mapNotNull { line -> line.ingredientId?.let { MealLineChange(it, 10.0) } })) }.read<MealLines>()
+        read<NotificationFacts>("/api/notifications")
         read<ShoppingList>("/api/plans/$next/shopping")
         read<ShoppingList>("/api/plans/$week/shopping")
         val removal = delete("/api/plans/$week/meals/6/DINNER")
