@@ -43,10 +43,17 @@ import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.IngredientSection
+import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.PrepMeal
+import dev.tobins.mealplanner.api.PrepSlot
+import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
+import dev.tobins.mealplanner.api.RecipeKind
+import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
@@ -99,6 +106,49 @@ private val sampleProfile = Profile(
 
 /** Controls of three kinds; the test gives the one tagged [FOCUSED] keyboard focus, to see the ring on each. */
 /** The recipe picker's body for a dinner, over the fake backend's recipes: a dialog is a window the picture does not include. */
+/** The chicken thighs as the Prep dialog offers them: three days in a box, six vacuum sealed. */
+private val keepingRecipe = RecipeSummary(
+    4, "Slow-cooked chicken thighs with coconut, lemon and spinach", "Dinner", emptyList(), 2, RecipeSource.COOKING_SITE, RecipeKind.MEAL,
+    plannable = true, keepsDays = 3, keepsVacuumDays = 6,
+)
+
+/** A prep being made today (Wednesday) at dinner, eaten on Thursday's and Friday's lunches and Saturday's dinner. */
+private val samplePrep = PrepChoice(keepingRecipe, FakeBackend.TODAY, firstDay = FakeBackend.TODAY).let { choice ->
+    listOf(0 to MealSlot.DINNER, 1 to MealSlot.LUNCH, 2 to MealSlot.LUNCH, 3 to MealSlot.DINNER)
+        .fold(choice) { prep, (day, slot) -> prep.toggled(plusDays(FakeBackend.TODAY, day), slot) }
+}
+
+@Composable
+private fun prepChoices() {
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
+        // The days from today on are offered: Monday and Tuesday have passed.
+        PrepChoices(samplePrep, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe)) {}
+    }
+}
+
+/** Wednesday's skipped lunch of a prep that keeps until today, with today's dinner free for it. */
+@Composable
+private fun spareOnItsLastDay() {
+    val spare = SparePortion(
+        1, 4, keepingRecipe.title, 1.0, PrepSlot(plusDays(FakeBackend.TODAY, -1), MealSlot.LUNCH), lastDay = FakeBackend.TODAY,
+        room = listOf(PrepSlot(FakeBackend.TODAY, MealSlot.DINNER)),
+    )
+    Column(Modifier.padding(16.dp)) { SpareCard(spare, FakeBackend.TODAY, enabled = true) {} }
+}
+
+@Composable
+private fun removePrepQuestion() {
+    val prep = MealPrep(
+        1, FakeBackend.TODAY, plusDays(FakeBackend.TODAY, 3), false,
+        samplePrep.input().meals.map { PrepMeal(it.date, it.slot, 1.0, MealStatus.PLANNED) },
+    )
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(LocalStrings.current(Msg.REMOVE_PREP_TITLE, keepingRecipe.title), style = MaterialTheme.typography.headlineSmall)
+        RemovePrepText(prep)
+    }
+}
+
 @Composable
 private fun recipePicker(api: ApiClient) {
     val recipes by produceState<List<RecipeSummary>?>(null) { value = api.recipes() }
@@ -174,6 +224,8 @@ enum class Shot(
     val emptyOffers: Boolean = false,
     val emptyPrices: Boolean = false,
     val emptyRecipes: Boolean = false,
+    /** The fake backend's week with a prep (issue 234). */
+    val prepped: Boolean = false,
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
     val dutch: Boolean = false,
     val heightDp: Int = 640,
@@ -187,6 +239,19 @@ enum class Shot(
     // Fibre next to kcal and protein in Dutch, where the totals are longest (#223).
     TODAY_NL(dutch = true, heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     PLAN_NL(dutch = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // A prep made on Monday's dinner, eaten until Thursday, with Wednesday's skipped lunch still in the box (issue 234).
+    PLAN_PREP(prepped = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_PREP_NL(prepped = true, dutch = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // The Prep dialog's body, as a dialog is a window of its own: in both languages, and at the largest font.
+    PREP_CHOICES(heightDp = 1100, content = { _, _ -> prepChoices() }),
+    PREP_CHOICES_NL(dutch = true, heightDp = 1100, content = { _, _ -> prepChoices() }),
+    PREP_CHOICES_X2(heightDp = 2000, fontScale = 2.0f, content = { _, _ -> prepChoices() }),
+    // Removing a prep names every meal that goes.
+    REMOVE_PREP(heightDp = 420, content = { _, _ -> removePrepQuestion() }),
+    REMOVE_PREP_NL(dutch = true, heightDp = 420, content = { _, _ -> removePrepQuestion() }),
+    // A share in the box on its last day: eat it today or throw it away; with the meals it can still go to.
+    SPARE_LAST_DAY(heightDp = 300, content = { _, _ -> spareOnItsLastDay() }),
+    SPARE_LAST_DAY_NL(dutch = true, heightDp = 300, content = { _, _ -> spareOnItsLastDay() }),
     // What was in Wednesday's dinner: a line changed, one left out, one added in pieces, one linked to nothing; the
     // later dinner the extra chicken leaves short, and the quick add-ons (#226).
     ADJUST_MEAL(heightDp = 1400, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
@@ -368,7 +433,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     @get:Rule
     val compose = createEmptyComposeRule()
 
-    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes).also { it.profile = shot.profile }
+    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped).also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)
 
     @Before
