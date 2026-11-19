@@ -92,6 +92,21 @@ class AdjustMealScreenTest {
     }
 
     @Test
+    fun undoTakesBackOnlyItsOwnEditWhenAnotherWasSavedSince() {
+        show()
+        scrollTo(hasContentDescription("Leave out Olive oil")).performClick()
+        waitForChanges(*start.toTypedArray(), MealLineChange(5, 0.0))
+        waitFor("Olive oil left out")
+        // While that snackbar shows, the spinach is put back; then the olive oil's Undo is tapped.
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Put back").fetchSemanticsNodes().size == 2 }
+        scrollTo(hasText("Spinach")).assertExists()
+        compose.onAllNodesWithText("Put back")[0].performClick()
+        waitForChanges(MealLineChange(1, 250.0), MealLineChange(9, 60.0), MealLineChange(5, 0.0))
+        compose.onNodeWithText("Undo").performClick()
+        waitForChanges(MealLineChange(1, 250.0), MealLineChange(9, 60.0))
+    }
+
+    @Test
     fun anAmountIsChangedInGramsOrInPieces() {
         show()
         scrollTo("Chicken thigh fillet").performClick()

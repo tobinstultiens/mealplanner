@@ -34,6 +34,33 @@ class MealChangesTest {
     }
 
     @Test
+    fun anUndoTakesBackItsOwnEditAndLeavesAnEditMadeSince() {
+        // The rice is set to 80 g; then, before that is undone, the beef is left out.
+        val riceEdit = meal.withAmount(1, 80.0)
+        assertEquals(setOf(1L), touched(meal.changes(), riceEdit))
+        val beforeRice = meal.before(setOf(1L))
+        val afterBoth = meal.copy(
+            lines = listOf(rice.copy(grams = 80.0), beef.copy(grams = 0.0, changed = true), edamame, egg, unlinked),
+        )
+        assertEquals(
+            listOf(MealLineChange(2, 0.0), MealLineChange(3, 0.0), MealLineChange(4, 60.0), MealLineChange(1, 150.0)),
+            afterBoth.undoing(beforeRice),
+            "the rice back to 150 g, the beef still left out",
+        )
+
+        // A reset undone puts back what was changed before it, and keeps an ingredient added since.
+        val beforeReset = meal.before(touched(meal.changes(), emptyList()))
+        val resetThenFeta = meal.copy(lines = listOf(rice.copy(grams = 100.0, changed = false), beef, edamame.copy(grams = 50.0, changed = false), MealLine(5, "Feta", 30.0, fromRecipe = false, changed = true)))
+        assertEquals(
+            listOf(MealLineChange(5, 30.0), MealLineChange(1, 150.0), MealLineChange(3, 0.0), MealLineChange(4, 60.0)),
+            resetThenFeta.undoing(beforeReset),
+        )
+        // Undoing the edit that added an ingredient (it had no change before) takes it away again.
+        val withFeta = meal.copy(lines = meal.lines + MealLine(5, "Feta", 30.0, fromRecipe = false, changed = true))
+        assertEquals(meal.changes(), withFeta.undoing(meal.before(setOf(5L))))
+    }
+
+    @Test
     fun aLineSaysItsAmountInPiecesWhenTheCatalogueKnowsTheirWeight() {
         assertEquals("1 piece · 60 g", amountText(60.0, 60.0, Strings.English))
         assertEquals("1.5 pieces · 90 g", amountText(90.0, 60.0, Strings.English))

@@ -8,7 +8,7 @@ import kotlin.math.abs
 
 /*
  * What the Adjust screen sends and shows (issue 226). Every edit sends the meal's whole list of changes,
- * as `PUT .../lines` replaces them, so an undo is sending the list from before again.
+ * as `PUT .../lines` replaces them; an undo puts back only what its own edit touched ([undoing]).
  */
 
 /** The most of one ingredient a meal can have, as the server takes it: more is a typing mistake. */
@@ -33,6 +33,24 @@ fun MealLines.leavingOut(line: MealLine): List<MealLineChange> {
     val id = line.ingredientId ?: return changes()
     return if (line.fromRecipe) withAmount(id, 0.0) else asInRecipe(line)
 }
+
+/** The ingredients whose change differs between [old] and [new]: what one edit touched. */
+fun touched(old: List<MealLineChange>, new: List<MealLineChange>): Set<Long> {
+    val before = old.associate { it.ingredientId to it.grams }
+    val after = new.associate { it.ingredientId to it.grams }
+    return (before.keys + after.keys).filterTo(HashSet()) { before[it] != after[it] }
+}
+
+/** What [ingredients] had before an edit, to take that edit back on its own: each one's change, null where it had none. */
+fun MealLines.before(ingredients: Set<Long>): Map<Long, MealLineChange?> =
+    ingredients.associateWith { id -> changes().firstOrNull { it.ingredientId == id } }
+
+/**
+ * The changes with one edit taken back: the ingredients it touched as they were before it ([previous]),
+ * every other line as it is now, so an edit made since stays.
+ */
+fun MealLines.undoing(previous: Map<Long, MealLineChange?>): List<MealLineChange> =
+    changes().filter { it.ingredientId !in previous } + previous.values.filterNotNull()
 
 /** True for a line of the recipe that was left out of this meal. */
 val MealLine.leftOut: Boolean get() = fromRecipe && changed && grams == 0.0

@@ -42,6 +42,8 @@ import dev.tobins.mealplanner.api.MealLine
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * What was in one planned meal (issue 226): its recipe's ingredients for its portions, each of which can
@@ -59,6 +61,7 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
+    val saving = remember { Mutex() }
     // The line whose amount is being changed, and the ingredient being added once one is picked.
     var editing by remember { mutableStateOf<MealLine?>(null) }
     var picking by rememberSaveable { mutableStateOf(false) }
@@ -66,20 +69,28 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
 
     LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.mealLines(place.weekStart, place.day, place.slot) } }
 
-    /** Saves [changes] and shows the meal as it is then; [done] is said with an Undo that saves the changes from before. */
-    fun save(changes: List<MealLineChange>, done: String? = null) {
-        val before = (state as? Load.Ready)?.value?.changes() ?: return
-        if (busy) return
-        busy = true
+    /**
+     * Saves the changes [edit] makes of the meal as it is when its turn comes, and shows the meal as it is
+     * then. Saves go one at a time, each from the answer to the one before, so none overwrites another.
+     * [done] is said with an Undo that takes back this edit only: what it touched goes back as it was,
+     * and an edit made since stays.
+     */
+    fun save(done: String? = null, edit: (MealLines) -> List<MealLineChange>) {
         scope.launch {
-            val result = load { api.adjustMeal(place.weekStart, place.day, place.slot, changes) }
-            busy = false
+            var previous = emptyMap<Long, MealLineChange?>()
+            val result = saving.withLock {
+                val meal = (state as? Load.Ready)?.value ?: return@launch
+                val changes = edit(meal)
+                previous = meal.before(touched(meal.changes(), changes))
+                busy = true
+                load { api.adjustMeal(place.weekStart, place.day, place.slot, changes) }.also {
+                    if (it is Load.Ready) state = it
+                    busy = false
+                }
+            }
             when (result) {
-                is Load.Ready -> {
-                    state = result
-                    if (done != null && snackbar.showSnackbar(done, t(Msg.UNDO), duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                        save(before)
-                    }
+                is Load.Ready -> if (done != null && snackbar.showSnackbar(done, t(Msg.UNDO), duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                    save { it.undoing(previous) }
                 }
                 is Load.Failed -> snackbar.showSnackbar(failureSentence(result))
                 Load.Loading -> Unit
@@ -98,7 +109,7 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                     contentPadding = PaddingValues(Spacing.ScreenEdge),
                     verticalArrangement = Arrangement.spacedBy(Spacing.Related),
                 ) {
-                    item { MealHeader(meal, enabled = !busy, onReset = { save(emptyList(), t(Msg.ADJUST_RESET_DONE)) }) }
+                    item { MealHeader(meal, enabled = !busy, onReset = { save(t(Msg.ADJUST_RESET_DONE)) { emptyList() } }) }
                     item { SectionHeader(t(Msg.ADJUST_IN_MEAL)) }
                     items(meal.lines, key = { "${it.ingredientId}:${it.name}" }) { line ->
                         LineRow(
@@ -107,9 +118,9 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                             onEdit = { editing = line },
                             onLeaveOut = {
                                 val done = if (line.fromRecipe) Msg.ADJUST_LEFT_OUT_DONE else Msg.ADJUST_REMOVED_DONE
-                                save(meal.leavingOut(line), t(done, line.name))
+                                save(t(done, line.name)) { it.leavingOut(line) }
                             },
-                            onPutBack = { save(meal.asInRecipe(line)) },
+                            onPutBack = { save { it.asInRecipe(line) } },
                         )
                     }
                     item {
@@ -119,7 +130,7 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                 editing?.let { line ->
                     AmountDialog(line.name, line.gramsPerPiece, line.grams, onDismiss = { editing = null }) { grams ->
                         editing = null
-                        save(meal.withAmount(line.ingredientId!!, grams))
+                        save { it.withAmount(line.ingredientId!!, grams) }
                     }
                 }
                 if (picking) {
@@ -132,7 +143,7 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                     // Prefilled with one piece when the catalogue knows its weight: "1 egg, 60 g".
                     AmountDialog(ingredient.name, ingredient.gramsPerPiece, ingredient.gramsPerPiece, onDismiss = { adding = null }) { grams ->
                         adding = null
-                        save(meal.withAmount(ingredient.id, grams))
+                        save { it.withAmount(ingredient.id, grams) }
                     }
                 }
             }

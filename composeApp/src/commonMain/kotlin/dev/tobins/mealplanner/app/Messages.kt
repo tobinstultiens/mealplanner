@@ -770,7 +770,6 @@ enum class Msg(private val english: String, private val dutch: String) {
     AMOUNT_OF("How much {0}?", "Hoeveel {0}?"),
     AMOUNT_PIECES("Pieces", "Stuks"),
     AMOUNT_GRAMS("Grams", "Gram"),
-    AMOUNT_FIELD("Amount", "Hoeveelheid"),
 
     // --- Android: the download of an update (toasts)
     DOWNLOADING_VERSION("Downloading version {0}…", "Versie {0} wordt gedownload…"),
