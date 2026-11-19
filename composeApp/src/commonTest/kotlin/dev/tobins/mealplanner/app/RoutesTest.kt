@@ -105,10 +105,15 @@ class RoutesTest {
     @Test
     fun anOpeningReadsBackFromItsString() {
         val dinner = MealToCook(12, 1.5, 2.25, skipped = false, MealPlace("2026-11-16", 3, MealSlot.DINNER), planned = true)
-        for (opening in listOf(Opening(Route.TabRoute(Tab.SHOPPING)), Opening(Route.Recipe(12), dinner), Opening(Route.Recipe(12)))) {
+        val nextWeek = Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-23")
+        for (opening in listOf(Opening(Route.TabRoute(Tab.SHOPPING)), Opening(Route.Recipe(12), dinner), Opening(Route.Recipe(12)), nextWeek)) {
             assertEquals(opening, parseOpening(opening.encoded), opening.encoded)
         }
         assertEquals("#/recipes/12|2026-11-16|3|DINNER|1.5|2.25", Opening(Route.Recipe(12), dinner).encoded)
+        assertEquals("#/plan|2026-11-23", nextWeek.encoded)
+        // A week that is not a Monday's date is no week of the plan: the Plan opens as usual.
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN)), parseOpening("#/plan|2026-11-24"))
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN)), parseOpening("#/plan|soon"))
         // A meal that cannot be read leaves the recipe to open as written; an unknown route is Today, as an address.
         assertEquals(Opening(Route.Recipe(12)), parseOpening("#/recipes/12|2026-11-16|3|ELEVENSES|1.5|2.25"))
         assertEquals(Opening(today), parseOpening("#/nowhere|x"))

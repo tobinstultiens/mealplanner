@@ -352,7 +352,7 @@ the device; each kind is an Android notification channel of its own, so the syst
 |---|---|---|---|
 | App update | A newer release exists (release builds only), once per version | The app, which offers the update | On |
 | Offers ending | An offer at one of the account's stores ends today or tomorrow, for a row of this week's shopping list still to buy (not ticked, still needed by a meal), or a buy-ahead or stock-up row not ticked or dismissed; once per day, one notification naming them all ("3 offers for your list end today") | Shopping | On |
-| Plan next week | On Saturday and Sunday, while next week has no meals and offers valid next week at the account's stores are in; once per week | Plan | On |
+| Plan next week | On Saturday and Sunday, while next week has no meals and offers valid next week at the account's stores are in; once per week | Plan, on next week | On |
 | Weigh-in | The newest weigh-in is 7 or more days old and there is a profile; once per 7 days, until one is entered | Progress | Off |
 | Dinner today | Today has a planned dinner that is neither eaten nor skipped; once per day | The recipe, from that meal (its servings to cook) | Off |
 | Mark what you ate | A meal of today is still planned; once per day | Today | Off |
@@ -369,8 +369,8 @@ nothing until the next run, and its renewals never end the session (see "Account
 asks for the permission where Android needs it; while a switch is on and Android does not let the app post, the
 card says so with "Open Android settings". A tapped notification carries its screen as a route (`Opening` in
 `Routes.kt`), which `MainActivity` hands to the app from a closed app and from an open one; the recipe editor and
-the profile stay in front when they are open, so nothing typed is lost. Plan opens on this week: the Plan screen
-takes no week from outside yet.
+the profile stay in front when they are open, so nothing typed is lost. "Plan next week" opens the Plan on next
+week (the `Opening` carries the week, `PlanScreen` starts on it), afresh each time it is tapped.
 
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):

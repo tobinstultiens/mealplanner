@@ -22,6 +22,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
@@ -145,6 +146,9 @@ fun App(
     var openRecipeId by rememberSaveable { mutableStateOf(start.recipeId) }
     // The planned meal the open recipe was opened from, for how much to cook; none from the recipe list.
     var openMeal by rememberSaveable(stateSaver = MealToCook.Saver) { mutableStateOf(opened?.meal) }
+    // The week a tapped notification asked the Plan to show, and how often one asked: each asking shows it afresh.
+    var planWeek by rememberSaveable { mutableStateOf(opened?.week) }
+    var planAsked by rememberSaveable { mutableIntStateOf(0) }
     // Null: no editor open. -1: a new recipe. Otherwise the id of the recipe being edited.
     var editing by rememberSaveable { mutableStateOf(start.editing) }
     var mapping by rememberSaveable { mutableStateOf(start.mapping) }
@@ -190,6 +194,10 @@ fun App(
         tab = now.tab
         openRecipeId = now.recipeId
         openMeal = opening.meal
+        opening.week?.let {
+            planWeek = it
+            planAsked++
+        }
         editing = now.editing
         mapping = now.mapping
         profileOpen = now.profile
@@ -437,14 +445,18 @@ fun App(
                                     onOpenPlan = { tab = Tab.PLAN },
                                     onAdjust = { adjusting = it },
                                 )
-                                Tab.PLAN -> PlanScreen(
-                                    api,
-                                    onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) },
-                                    onOpenProfile = { profileOpen = true },
-                                    onOpenRecipes = { tab = Tab.RECIPES },
-                                    onOpenBank = { tab = Tab.RECIPES; bankOpen = true },
-                                    onAdjust = { adjusting = it },
-                                )
+                                // A week asked for by a notification starts the Plan afresh on it; otherwise it keeps its place.
+                                Tab.PLAN -> key(planAsked) {
+                                    PlanScreen(
+                                        api,
+                                        onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) },
+                                        onOpenProfile = { profileOpen = true },
+                                        onOpenRecipes = { tab = Tab.RECIPES },
+                                        onOpenBank = { tab = Tab.RECIPES; bankOpen = true },
+                                        onAdjust = { adjusting = it },
+                                        startWeek = planWeek,
+                                    )
+                                }
                                 Tab.SHOPPING -> ShoppingScreen(shopping, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })
                                 Tab.RECIPES -> RecipeListScreen(
                                     api,

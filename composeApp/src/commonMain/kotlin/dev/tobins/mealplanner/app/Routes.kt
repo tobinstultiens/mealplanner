@@ -160,21 +160,31 @@ object NoRoutes : RouteStore {
 
 /**
  * A screen asked for from outside the app: a tapped notification (Android). [meal] is the planned meal a
- * recipe is opened from, so that it shows the servings to cook, as when it is opened from Today.
+ * recipe is opened from, so that it shows the servings to cook, as when it is opened from Today; [week] is
+ * the week (its Monday) the Plan shows.
  */
-data class Opening(val route: Route, val meal: MealToCook? = null) {
+data class Opening(val route: Route, val meal: MealToCook? = null, val week: String? = null) {
     /**
-     * As one string, for an Android intent's extra: the route's address, and with a [meal] its place and
-     * servings after it (`#/recipes/12|2026-11-16|3|DINNER|1.5|2.25`). [parseOpening] reads it back.
+     * As one string, for an Android intent's extra: the route's address, and after it a [meal]'s place and
+     * servings (`#/recipes/12|2026-11-16|3|DINNER|1.5|2.25`) or the [week] (`#/plan|2026-11-23`).
+     * [parseOpening] reads it back.
      */
     val encoded: String
-        get() = route.hash + (meal?.place?.let { "|${it.weekStart}|${it.day}|${it.slot.name}|${meal.portions}|${meal.cookPortions}" } ?: "")
+        get() = route.hash +
+            (meal?.place?.let { "|${it.weekStart}|${it.day}|${it.slot.name}|${meal.portions}|${meal.cookPortions}" } ?: "") +
+            (week?.let { "|$it" } ?: "")
 }
 
-/** The [Opening] of an [Opening.encoded] string; a meal that cannot be read is left out, so the recipe opens as written. */
+/**
+ * The [Opening] of an [Opening.encoded] string; a meal or week that cannot be read is left out, so the recipe
+ * opens as written and the Plan on this week.
+ */
 fun parseOpening(text: String): Opening {
     val parts = text.split('|')
     val route = parseRoute(parts.first())
+    if (route == Route.TabRoute(Tab.PLAN) && parts.size == 2) {
+        return Opening(route, week = parts[1].takeIf { runCatching { mondayOf(it) == it }.getOrDefault(false) })
+    }
     val recipe = route as? Route.Recipe ?: return Opening(route)
     if (parts.size != 6) return Opening(route)
     val meal = runCatching {
