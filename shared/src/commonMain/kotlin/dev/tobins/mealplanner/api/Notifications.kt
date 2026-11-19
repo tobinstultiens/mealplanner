@@ -14,14 +14,15 @@ data class NotificationFacts(
     val date: String,
     /**
      * The rows of this week's shopping list with an offer at one of the account's stores that ends today
-     * or tomorrow: rows of what the meals need that are not ticked and still needed, own items not ticked,
-     * and buy-ahead and stock-up advice not ticked or dismissed. Those ending today first, then in the
-     * order of the list; one entry per row.
+     * or tomorrow: rows of what the meals need that are not ticked, still needed and not covered by what is
+     * known to be at home, own items not ticked, and buy-ahead and stock-up advice not ticked or dismissed.
+     * Those ending today first, then in the order of the list; one entry per row.
      */
     val offersEnding: List<EndingOffer> = emptyList(),
     /**
      * The first day (a Monday, ISO) of next week, on a Saturday or Sunday while that week has no meals and
-     * offers valid in it at one of the account's stores are in; null otherwise.
+     * next week's offers are in: an offer at one of the account's stores that starts next week (one running on
+     * from this week, or dated over months, does not count); null otherwise.
      */
     val planNextWeek: String? = null,
     /** The newest weigh-in, when it is 7 or more days old and the account has a profile; null otherwise. */

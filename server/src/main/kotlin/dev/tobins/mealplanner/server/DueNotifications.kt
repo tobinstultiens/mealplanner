@@ -26,8 +26,8 @@ class DueNotifications(
     private val profiles: ProfileRepository,
     /** The stores the account shops at: an offer elsewhere is no reason to hurry. */
     private val shops: () -> Set<Store>,
-    /** The stores with an offer valid at some point between two dates, at every store. */
-    private val storesWithOffers: (LocalDate, LocalDate) -> Set<Store>,
+    /** The stores with an offer that starts between two dates, both included. */
+    private val storesWithOffersStarting: (LocalDate, LocalDate) -> Set<Store>,
     private val today: () -> LocalDate = ::serverToday,
 ) {
     fun facts(): NotificationFacts {
@@ -45,17 +45,29 @@ class DueNotifications(
 
     /**
      * The rows of this week's list (the week starting [weekStart]) still to buy that have an offer at one of
-     * the account's stores ending on [day] or the next day. "Still to buy": not ticked, and for a row of the
-     * meals' needs one that a meal still to cook needs ([ShoppingItem.toComeGrams] not 0); the advice is
-     * empty when dismissed. The offer must have started: one that begins tomorrow is no reason to hurry.
+     * the account's stores ending on [day] or the next day. The offer must have started: one that begins
+     * tomorrow is no reason to hurry. The advice is empty when dismissed.
      */
     private fun offersEnding(day: LocalDate, weekStart: LocalDate): List<EndingOffer> {
         val list = shopping.get(weekStart.toString())
         val inUse = shops()
-        val stillToBuy = list.items.filter { !it.checked && it.toComeGrams != 0.0 } + (list.buyAhead + list.stockUp).filter { !it.checked }
+        val stillToBuy = list.items.filter(::stillToBuy) + (list.buyAhead + list.stockUp).filter { !it.checked }
         return stillToBuy.mapNotNull { item -> endingOn(item, day, inUse)?.let { EndingOffer(item.name, it.toString()) } }
             .distinctBy { it.name }
             .sortedBy { it.endsOn }
+    }
+
+    /**
+     * Whether [item], a row of what the meals need or an own item, is still to buy: not ticked, needed by a meal
+     * still to cook ([ShoppingItem.toComeGrams] not 0), and not covered by what is at home: a row on hand with a
+     * known amount left ([ShoppingItem.onHandGrams]) at least what those meals need, as the list itself counts it.
+     * A row on hand in an amount nobody knows stays: the list asks to check, and it may have to be bought.
+     */
+    private fun stillToBuy(item: ShoppingItem): Boolean {
+        if (item.checked || item.toComeGrams == 0.0) return false
+        val left = item.onHandGrams ?: return true
+        val needed = item.toComeGrams ?: return true
+        return left < needed
     }
 
     /** The earliest day, [day] or the next, that an offer of [item] at one of [inUse] valid on [day] ends; null when none does. */
@@ -66,14 +78,17 @@ class DueNotifications(
             .minOrNull()
 
     /**
-     * Next week's first day, on a Saturday or Sunday, while that week has no meals and offers valid in it at
-     * one of the account's stores are in: the planner has what it plans with.
+     * Next week's first day, on a Saturday or Sunday, while that week has no meals and next week's offers are in:
+     * an offer at one of the account's stores that *starts* next week (Monday to Sunday). An offer that only runs
+     * on into next week says nothing about next week's folder: this week's run on (Jumbo's weeks go from
+     * Wednesday to Tuesday), and Jumbo dates some offers over months. AH and Lidl start their weeks on Monday
+     * (Lidl's second batch on Thursday), Jumbo on Wednesday, and Jumbo lists next week's offers before they start.
      */
     private fun planNextWeek(day: LocalDate, weekStart: LocalDate): LocalDate? {
         if (day.dayOfWeek != DayOfWeek.SATURDAY && day.dayOfWeek != DayOfWeek.SUNDAY) return null
         val next = weekStart.plusWeeks(1)
         if (plans.meals(next).isNotEmpty()) return null
-        return next.takeIf { storesWithOffers(next, next.plusDays(6)).any { it in shops() } }
+        return next.takeIf { storesWithOffersStarting(next, next.plusDays(6)).any { it in shops() } }
     }
 
     /** The newest weigh-in, when it is a week old or older and there is a profile its weight goes to. */
