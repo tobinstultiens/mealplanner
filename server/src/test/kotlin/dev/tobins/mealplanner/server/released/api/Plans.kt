@@ -1,4 +1,4 @@
-// Frozen from v0.1.7 (45c196e24b79b6b3893e23fd5cc3364fa46acc38) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.8 (1a56aa21c718bafd22d7c56d7176ef7e8bf7ca1c) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -37,6 +37,19 @@ data class PlannedMeal(
      * Not stored: it follows from the week's meals, and agrees with what the shopping list counts.
      */
     val cookPortions: Double? = null,
+    /**
+     * Grams of fibre in the portions eaten; null from a server before fibre counted (issue 223), and then
+     * the app shows no fibre. Not stored with the meal as [kcal] is: it follows from the recipe's
+     * nutrition as it is now, as [cost] follows from today's prices, so meals planned before fibre
+     * counted have it too.
+     */
+    val fibreG: Double? = null,
+    /**
+     * True when what was in this meal differs from its recipe (issue 226, [MealLines]). Then [kcal],
+     * [proteinG] and [fibreG] are those of the meal as adjusted, worked out when read; an app that
+     * does not know adjustments shows the right numbers without this.
+     */
+    val adjusted: Boolean = false,
 )
 
 /**
@@ -54,6 +67,8 @@ data class PlanDay(
     val meals: List<PlannedMeal>,
     val kcal: Double,
     val proteinG: Double,
+    /** Fibre of the meals not skipped, as [kcal]; null from a server before fibre counted. */
+    val fibreG: Double? = null,
 )
 
 @Serializable

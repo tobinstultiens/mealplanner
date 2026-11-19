@@ -1,4 +1,4 @@
-// Frozen from v0.1.7 (45c196e24b79b6b3893e23fd5cc3364fa46acc38) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.8 (1a56aa21c718bafd22d7c56d7176ef7e8bf7ca1c) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -39,6 +39,12 @@ data class DayView(
     /** Everything planned that is not skipped, plus extras: where the day ends if the plan is followed. */
     val expectedKcal: Double,
     val expectedProteinG: Double,
+    /**
+     * Fibre eaten and expected, as the kcal; null from a server before fibre counted. Extras have no
+     * fibre: they are logged with kcal and protein only, so they add nothing here.
+     */
+    val eatenFibreG: Double? = null,
+    val expectedFibreG: Double? = null,
 )
 
 @Serializable

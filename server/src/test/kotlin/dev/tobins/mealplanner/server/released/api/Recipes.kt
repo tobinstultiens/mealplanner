@@ -1,4 +1,4 @@
-// Frozen from v0.1.7 (45c196e24b79b6b3893e23fd5cc3364fa46acc38) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.8 (1a56aa21c718bafd22d7c56d7176ef7e8bf7ca1c) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -136,6 +136,8 @@ data class RecipeDetail(
     /** Markdown. */
     val instructions: String,
     val problems: List<String>,
+    /** The account's optional toppings of the recipe ([RecipeTopping]), in their order; empty from a server from before them. */
+    val toppings: List<RecipeTopping> = emptyList(),
 )
 
 /** When the server last read the cooking site, from `GET /api/sync/cooking`. */
