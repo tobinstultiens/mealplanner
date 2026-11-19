@@ -226,7 +226,10 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   the day after, it is not listed, and it is never planned on its own. `POST
   /api/plans/{weekStart}/preps/{id}/spare` with `{"from": {"date": ..., "slot": ...}, "to": {...}}` eats it there:
   the meal there goes, the skipped meal keeps a share of 0 (and can no longer be marked eaten), and what the stock
-  gave for it goes along, so the batch, the list and the stock stay as they were.
+  gave for it goes along, so the batch, the list and the stock stay as they were. The morning after the last day,
+  the "Prepped food to throw away" notification (issue 264) names what may still be in a box: the shares of skipped
+  meals or sides not eaten elsewhere, and the meals of the batch never marked. A batch never made (no meal of it
+  eaten) has nothing in a box and is not named.
 - **Into the next week.** A prep may run over the week's end. Its meals are in the next week before that week is
   planned, and generating it keeps them; a week with only those counts as not planned yet (the "Plan next week"
   notification, buying ahead). Today's "Dinner today" notification is only for a dinner with something to cook: not
@@ -454,10 +457,12 @@ the device; each kind is an Android notification channel of its own, so the syst
 | Weigh-in | The newest weigh-in is 7 or more days old and there is a profile; once per 7 days, until one is entered | Progress | Off |
 | Dinner today | Today has a planned dinner that is neither eaten nor skipped; once per day | The recipe, from that meal (its servings to cook) | Off |
 | Mark what you ate | A meal of today is still planned; once per day | Today | Off |
+| Prepped food to throw away | The morning after a prepped batch's last day (its own: in a box or vacuum sealed), when the batch was made (a meal of it eaten) and a share of it was skipped and not eaten elsewhere ("Throw away 1 portion of Chili con carne" / "It kept until Mon 23 Nov."), or a meal or side of it was never marked ("1 portion of Chili con carne was not marked: eaten, or to throw away?"); sides say "side". Several batches go into one notification; once per batch, and only on the day after its last day | Plan, on the week of the first meal not marked, else on the week the batch was made | On (only an account that made a prep gets it) |
 
 The server says what is due, the app decides whether to tell: `GET /api/notifications` answers, for the calling
-account and the server's today, the facts behind kinds 2 to 6 as data (`NotificationFacts`: names, dates, counts,
-the recipe), and the app words them in its language (`Messages.kt`). One WorkManager job (`NotificationWorker`)
+account and the server's today, the facts behind kinds 2 to 7 as data (`NotificationFacts`: names, dates, counts,
+the recipe; for kind 7, `prepsPastLastDay`: per batch whose last day was yesterday, the recipe, the shares left and
+the meals not marked), and the app words them in its language (`Messages.kt`). One WorkManager job (`NotificationWorker`)
 replaces the daily update check: every four hours on any network, as Android allows, it checks the release and,
 when logged in, asks the server. Android decides when the periodic run happens, so it may never fall inside the two
 hours of "Mark what you ate"; therefore every run also schedules a one-off run five minutes after the next window
@@ -465,7 +470,7 @@ opens (08:00, 15:00 or 20:00 by the device's clock), and the app's start does to
 whatever the phase of the periodic one (`NotificationWindows`). The schedule outlives the app being swiped away and a reboot (WorkManager keeps it
 in JobScheduler and sets it again at boot); a force stop (Settings → Apps → Force stop, or a phone maker's battery
 saver that force-stops on a swipe) cancels it until the app is next opened, which schedules it again. What decides (the kind, its switch, what was told already per kind and day, week
-or version, and the windows) is common code (`NotificationPlanner`): kinds 1 to 4 from 08:00, dinner from 15:00,
+or version, and the windows) is common code (`NotificationPlanner`): kinds 1 to 4 and 7 from 08:00, dinner from 15:00,
 "mark what you ate" from 20:00, and nothing between 22:00 and 08:00, by the device's clock; Android only schedules,
 asks and posts. A logged-out app posts nothing but the update; the check never shows an error, a failure tells
 nothing until the next run, and its renewals never end the session (see "Accounts and login"). Turning a switch on
@@ -517,7 +522,7 @@ the test and in `git log`, not here.
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
 Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the question that removes a prep and a share in the box on its last day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
-Settings and login screens (the login with a known server and with the address asked for), the Notifications card (in English and Dutch, and with notifications refused by Android), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
+Settings and login screens (the login with a known server and with the address asked for), the Notifications card (in English and Dutch, with notifications refused by Android, and at font scale 2 in both languages), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
 sample data, with the date, time zone and locale (English, UK) fixed, so a picture only changes when the

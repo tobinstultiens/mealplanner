@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepPastLastDay
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.SparePortion
@@ -151,6 +152,17 @@ class PrepRepository(
                 )
             }
         }
+    }
+
+    /**
+     * The batches whose last day was the day before [today] that may have left something in a box ([Batch.pastLastDay]),
+     * for the notification to throw it away (issue 264). Only the day after: the box is to go then, and a batch is told
+     * of once. Each batch goes by its own last day, so one kept vacuum sealed comes later than one in a box.
+     */
+    fun pastLastDay(today: LocalDate): List<PrepPastLastDay> {
+        val ids = q.selectPrepsEndingOn(userId, today.minusDays(1).toString()).executeAsList()
+        val batches = Batch.load(db, userId, ids)
+        return ids.mapNotNull { batches[it]?.pastLastDay() }
     }
 
     /**

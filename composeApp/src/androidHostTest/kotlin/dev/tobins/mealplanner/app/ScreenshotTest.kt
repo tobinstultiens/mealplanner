@@ -424,10 +424,13 @@ enum class Shot(
             onBack = {},
         )
     }),
-    // The Notifications card (Android only): the defaults with weigh-in turned on, in both languages, and with notifications refused by Android.
-    NOTIFICATIONS(heightDp = 760, content = { _, _ -> notificationsCard(allowed = true) }),
-    NOTIFICATIONS_NL(dutch = true, heightDp = 800, content = { _, _ -> notificationsCard(allowed = true) }),
-    NOTIFICATIONS_REFUSED(heightDp = 860, content = { _, _ -> notificationsCard(allowed = false) }),
+    // The Notifications card (Android only): the defaults with weigh-in turned on, in both languages, with notifications refused
+    // by Android, and at font scale 2 in both languages, where the hints are longest (prepped food to throw away, issue 264).
+    NOTIFICATIONS(heightDp = 860, content = { _, _ -> notificationsCard(allowed = true) }),
+    NOTIFICATIONS_NL(dutch = true, heightDp = 920, content = { _, _ -> notificationsCard(allowed = true) }),
+    NOTIFICATIONS_REFUSED(heightDp = 960, content = { _, _ -> notificationsCard(allowed = false) }),
+    NOTIFICATIONS_X2(heightDp = 1600, fontScale = 2.0f, content = { _, _ -> notificationsCard(allowed = true) }),
+    NOTIFICATIONS_X2_NL(dutch = true, heightDp = 1800, fontScale = 2.0f, content = { _, _ -> notificationsCard(allowed = true) }),
 }
 
 /** The Notifications card with the default switches and the weigh-in on; [allowed] is whether Android lets the app post. */
