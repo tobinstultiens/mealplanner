@@ -350,6 +350,17 @@ design change, so pull requests and tickets do not need screenshots attached. A 
 variant goes into the `Shot` enum or the `Look`s in `ScreenshotTest`. The emulator remains for flows such
 as the login and updates. `allTests` leaves these tests out.
 
+Robolectric runs offline. It would fetch the `android-all-instrumented` jar of the SDK the tests run at
+(`15-robolectric-14663667-2-i7` for SDK 35) from Maven Central when the first test starts, and a failed
+fetch failed every Robolectric test of the run (issue 239). `gradle/robolectric.gradle.kts`, applied by the
+root build to every module with Robolectric among its dependencies, resolves that jar as a normal Gradle
+dependency (`robolectric-android-all` in `gradle/libs.versions.toml`, so Gradle's retries and the CI cache
+apply and a failure says so at dependency resolution) and sets `robolectric.offline`. A new Robolectric
+version, or a test at another SDK (`@Config(sdk = ...)`), needs the matching `android-all-instrumented`
+version in the catalog; without it the test fails at once, naming the missing jar. The Wasm npm install is
+checked before webpack (`verifyWasmNpmInstall` in the root build file): a package of
+`kotlin-js-store/wasm/yarn.lock` missing from `build/wasm/node_modules` fails there with that message.
+
 ## Database changes
 
 The schema lives in `server/src/main/sqldelight/.../db/*.sq` and always describes the current
