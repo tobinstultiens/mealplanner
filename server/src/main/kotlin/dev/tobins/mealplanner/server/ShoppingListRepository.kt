@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.ShoppingAdvice
@@ -289,11 +290,14 @@ class ShoppingListRepository(
      * meals as planned; otherwise a provisional choice among the dinners the planner could pick
      * then ([BuyAhead.provisional]), one batch each. Nothing of it is stored: next week is planned
      * as usual later, with what was ticked here on hand. The meals of a batch made this week are bought
-     * with it ([PlanRepository.forShopping]): a next week with only those counts as not planned.
+     * with it ([PlanRepository.forShopping]): a next week with only those counts as not planned, and the
+     * provisional choice is for the dinners they leave free (issue 263), none when they fill every one.
      */
     private fun buyAhead(start: LocalDate, thisWeek: List<PlannedMeal>, advisor: ShoppingAdvisor): BuyAheadAdvice {
         val next = start.plusDays(DAYS.toLong())
         val nextWeek = plans.forShopping(next)
+        val limit = if (nextWeek.isEmpty()) minOf(BuyAhead.MAX_MEALS, freeDinners(next)) else BuyAhead.MAX_MEALS
+        if (limit == 0) return BuyAheadAdvice(emptyList(), false)
         val (meals, ratings) = if (nextWeek.isNotEmpty()) {
             planned(nextWeek) to emptyMap()
         } else {
@@ -312,9 +316,13 @@ class ShoppingListRepository(
             ratings,
             onHand = stock.onHandFor(next),
             onOfferNextWeek = plans.onOffer(next),
+            limit = limit,
         )
         return BuyAheadAdvice(items, provisional = nextWeek.isEmpty())
     }
+
+    /** The dinners of the week starting [start] that hold no meal yet: those the meals of a batch made the week before leave free. */
+    private fun freeDinners(start: LocalDate): Int = DAYS - plans.meals(start).count { it.slot == MealSlot.DINNER }
 
     /**
      * Ticks an item off, or back on. A buy-ahead item ticked is on hand from next week, a stock-up

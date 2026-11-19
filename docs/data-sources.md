@@ -510,7 +510,8 @@ not planned this week (the planner avoids last week's recipes), one batch each. 
 them qualifies when it keeps, is on offer this week but not (as far as known) next week, is not a
 staple and not on hand, and its saving is known. The meals saving at least €0.50 that way, at most
 three, most saved first (`BuyAhead.choose`), give the list: what one batch of each needs, with the
-meals named. No random choice is involved, so the list stays the same while it is ticked off.
+meals named. A next week that holds only the meals of a batch made this week counts as not planned, and
+its provisional choice is no more dinners than those meals leave free: none when they fill every dinner. No random choice is involved, so the list stays the same while it is ticked off.
 Nothing of the provisional choice is stored, so `ShoppingList.buyAheadProvisional` is true while next
 week has no plan: the app then says the meals are dinners next week could have (rows read "for e.g."
 before them) and not what it will cook. It is false once next week is planned, and when buy ahead is
@@ -661,8 +662,8 @@ until it is made. A side taken from a batch (step 2) takes its share as its reci
 adjusted), kept under the meal it is next to but apart from that meal's own (`stockUse.role` `SIDE`), so eating
 or un-eating the meal's main moves only the main's share, and the side's goes with its batch; a new main for the
 meal keeps the side's share where it is. A batch made with a side is one meal of the list next to that meal. What was at home for a week's shortfalls (`atHome`, below) counts what each meal of the week
-took; for a batch made in one week and eaten in the next, the later meals' shares are counted in the next week,
-so a shortfall warning about such a batch may be off by them.
+took, but a batch by the week it was made in, whose stock it was cooked from (issue 263): the shares of its meals
+and sides in the next week count there, and not in the next week.
 
 **An adjusted meal** (issue 226, README "What was in a meal") takes what was in it: its recipe's grams for
 its portions with its own changes (an amount changed, a line left out at 0 g, an ingredient added), by the

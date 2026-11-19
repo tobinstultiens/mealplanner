@@ -45,7 +45,7 @@ class ShoppingAdvisor(
      * planned already): the ingredients that keep, are on offer now but not next week
      * ([onOfferNextWeek]), and are not on hand next week ([onHand]) unless this list's own tick
      * put them there. Staples never are: the list leaves them out. Of the meals, [BuyAhead.choose]
-     * picks those that save most; [ratings] by recipe id break ties.
+     * picks those that save most, at most [limit]; [ratings] by recipe id break ties.
      */
     fun buyAhead(
         meals: List<PlannedRecipe>,
@@ -53,6 +53,7 @@ class ShoppingAdvisor(
         ratings: Map<Long, Int?>,
         onHand: Set<Long>,
         onOfferNextWeek: Set<Long>,
+        limit: Int = BuyAhead.MAX_MEALS,
     ): List<ShoppingItem> {
         fun qualifies(need: ShoppingNeed): Boolean {
             val id = need.ingredient?.id ?: return false
@@ -62,7 +63,7 @@ class ShoppingAdvisor(
             val needs = shoppingNeeds(listOf(meal), lines, sectionOf).needs.filter(::qualifies)
             AheadOption(meal.recipeId, meal.title, needs.sumOf { saving(it)!! }, ratings[meal.recipeId])
         }
-        val chosen = BuyAhead.choose(options).mapTo(HashSet()) { it.recipeId }
+        val chosen = BuyAhead.choose(options).take(limit).mapTo(HashSet()) { it.recipeId }
         return shoppingNeeds(meals.filter { it.recipeId in chosen }, lines, sectionOf).needs.filter(::qualifies).map { need ->
             val id = need.ingredient!!.id
             val key = ShoppingKey.Ahead(id)

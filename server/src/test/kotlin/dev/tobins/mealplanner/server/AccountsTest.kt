@@ -95,9 +95,17 @@ class AccountsTest {
         }
     }
 
+    /**
+     * The server's today for [start]: Monday 16 November 2026 unless a test moves it, so that the tests' preps are made on
+     * days still to come and their batches end when the test says, whenever they run.
+     */
+    private var today: java.time.LocalDate = java.time.LocalDate.parse("2026-11-16")
+
     private fun ApplicationTestBuilder.start() {
         val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
-        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        application {
+            module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens, today = { today })
+        }
     }
 
     private val recipe = RecipeInput(title = "Alice's stew", servings = 2, ingredients = "400 | g | beef\n1 | onion | large", instructions = "Stew.")
@@ -418,8 +426,9 @@ class AccountsTest {
     @Test
     fun aBatchPastItsLastDayIsToldOnlyToItsOwnAccount() = testApplication {
         start()
-        // On the server's today, so that the batch's last day was yesterday whatever day the test runs on.
-        val madeOn = serverToday().minusDays(3)
+        // Made on Tuesday and kept two days: its last day is Thursday, so it is told on Friday.
+        val madeOn = java.time.LocalDate.parse("2026-11-17")
+        val friday = madeOn.plusDays(3)
         fun mealPath(date: java.time.LocalDate) =
             "/api/plans/${Batch.mondayOf(date)}/meals/${date.toEpochDay() - Batch.mondayOf(date).toEpochDay()}/DINNER"
         val profile = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
@@ -429,12 +438,15 @@ class AccountsTest {
         val stew = alice.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
         alice.put("/api/recipes/${stew.id}/keeps") { setBody(RecipeKeeps(days = 2)) }
         val dates = (0L..2L).map { madeOn.plusDays(it) }
+        today = madeOn
         val made = alice.post("/api/plans/${Batch.mondayOf(madeOn)}/preps") {
             setBody(PrepInput(stew.id, madeOn.toString(), meals = dates.map { PrepSlot(it.toString(), MealSlot.DINNER) }))
         }
         assertEquals(HttpStatusCode.OK, made.status, made.bodyAsText())
         alice.put("${mealPath(dates[0])}/status") { setBody(MealStatus.EATEN) }
         alice.put("${mealPath(dates[1])}/status") { setBody(MealStatus.SKIPPED) }
+        today = friday
+        assertEquals(friday.toString(), alice.facts().date, "the server's day is the test's")
         val hers = alice.facts().prepsPastLastDay
         assertEquals(listOf(Triple(stew.id, 1, 1)), hers.map { Triple(it.recipeId, it.left, it.unmarked) })
 
@@ -446,10 +458,58 @@ class AccountsTest {
         // His own batch in the same dinners, eaten completely, leaves hers as it is and tells him nothing.
         val bobsStew = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's stew")) }.body<RecipeDetail>().summary
         bob.put("/api/recipes/${bobsStew.id}/keeps") { setBody(RecipeKeeps(days = 2)) }
-        bob.post("/api/plans/${Batch.mondayOf(madeOn)}/preps") { setBody(PrepInput(bobsStew.id, madeOn.toString(), meals = dates.map { PrepSlot(it.toString(), MealSlot.DINNER) })) }
+        today = madeOn
+        val his = bob.post("/api/plans/${Batch.mondayOf(madeOn)}/preps") { setBody(PrepInput(bobsStew.id, madeOn.toString(), meals = dates.map { PrepSlot(it.toString(), MealSlot.DINNER) })) }
+        assertEquals(HttpStatusCode.OK, his.status, his.bodyAsText())
         for (date in dates) assertEquals(HttpStatusCode.OK, bob.put("${mealPath(date)}/status") { setBody(MealStatus.EATEN) }.status)
+        today = friday
         assertEquals(emptyList(), bob.facts().prepsPastLastDay)
         assertEquals(hers, alice.facts().prepsPastLastDay)
+    }
+
+    /**
+     * Issue 263: what was at home for a week's shortfalls counts the stock a batch took for its meals of the next week, by
+     * the batch's own account. Bob's batch in the same slots, eaten across the same two weeks, leaves Alice's as they were.
+     */
+    @Test
+    fun aBatchAcrossTwoWeeksCountsOnlyTowardsItsOwnAccountsShortfalls() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens, today = { today }) }
+        val week = "2026-11-16"
+        fun path(date: String) = java.time.LocalDate.parse(date).let { d -> "/api/plans/${Batch.mondayOf(d)}/meals/${d.toEpochDay() - Batch.mondayOf(d).toEpochDay()}/DINNER" }
+        val lunchOfMonday = "/api/plans/2026-11-23/meals/0/LUNCH"
+        val profile = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        // Each has a stew (200 g of beef a serving) that keeps five days, a batch of it made on Thursday and eaten then and
+        // on Monday after, Friday's stew with [extra] grams of beef added, and Saturday's still to cook; beef enough for
+        // all as planned. Bob makes his batch by eating Monday's lunch.
+        suspend fun cook(name: String, extra: Double, eatFirst: String): HttpClient {
+            val client = clientFor(name)
+            client.put("/api/profile") { setBody(profile) }
+            val beef = client.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+            val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+            client.put("/api/recipes/${stew.id}/keeps") { setBody(RecipeKeeps(days = 5)) }
+            val made = client.post("/api/plans/$week/preps") {
+                setBody(PrepInput(stew.id, "2026-11-19", meals = listOf(PrepSlot("2026-11-19", MealSlot.DINNER), PrepSlot("2026-11-23", MealSlot.LUNCH))))
+            }.body<WeekPlan>()
+            for (date in listOf("2026-11-20", "2026-11-21")) client.put(path(date)) { setBody(MealChoice(stew.id)) }
+            val planned = client.get("/api/plans/$week").body<WeekPlan>().days.flatMap { it.meals }
+            val servings = made.days.flatMap { it.meals }.first { it.prep != null }.prep!!.portions + planned.filter { it.prep == null }.sumOf { it.portions }
+            val id = db.userQueries.selectBySubject("sub-$name").executeAsOne().id
+            StockRepository(db, FoodRepository(db), id).putOnHandFrom(beef.id, java.time.LocalDate.parse(week), grams = 200.0 * servings, source = StockSource.STOCK_UP)
+            client.put("$eatFirst/status") { setBody(MealStatus.EATEN) }
+            val friday = planned.single { it.day == 4 }
+            client.put("${path("2026-11-20")}/lines") { setBody(MealAdjustment(listOf(MealLineChange(beef.id, 200.0 * friday.portions + extra)))) }
+            client.put("${path("2026-11-20")}/status") { setBody(MealStatus.EATEN) }
+            return client
+        }
+        suspend fun HttpClient.shortfalls() = get("${path("2026-11-20")}/lines").body<MealLines>().shortfalls.map { it.day to it.grams }
+
+        val alice = cook("alice", extra = 100.0, eatFirst = path("2026-11-19"))
+        assertEquals(listOf(5 to 100.0), alice.shortfalls(), "Saturday is short of what Friday added, and no more")
+        val bob = cook("bob", extra = 50.0, eatFirst = lunchOfMonday)
+        assertEquals(listOf(5 to 50.0), bob.shortfalls())
+        assertEquals(listOf(5 to 100.0), alice.shortfalls())
     }
 
     @Test

@@ -127,6 +127,12 @@ class ReleasedAppTest {
     private lateinit var db: dev.tobins.mealplanner.server.db.Database
 
     /** A server with a NEVO fixture, five recipes of the cooking site, offers and a plan's worth of everything else. */
+    /**
+     * The server's today: the Monday of [week] unless a test moves it, so that the preps made in a newer app are made on days
+     * still to come and a batch ends when the test says, whenever it runs.
+     */
+    private var today: java.time.LocalDate = java.time.LocalDate.parse(week)
+
     private fun ApplicationTestBuilder.start(): HttpClient {
         val repo = createTempDirectory("cooking").toFile()
         for (i in 0..4) File(repo, "content/recipes/meal-$i.md").apply { parentFile.mkdirs() }.writeText(meal("Meal $i", if (i == 0) "1 | g | dragon fruit\n" else ""))
@@ -142,7 +148,7 @@ class ReleasedAppTest {
             ),
         )
         db = openDatabase(config.databaseUrl).second
-        application { module(config, db, listOf(jumbo), priceSource = null, generator = FakeGenerator(), verifier = TestTokens) }
+        application { module(config, db, listOf(jumbo), priceSource = null, generator = FakeGenerator(), verifier = TestTokens, today = { today }) }
         return createClient {
             install(ContentNegotiation) { json(releasedJson) }
             defaultRequest {
@@ -340,7 +346,7 @@ class ReleasedAppTest {
     /**
      * A batch whose last day was yesterday with a share skipped and a meal never marked (issue 264), prepped in a newer
      * app: the installed app reads what is due, of which it does not know this, and marks the meal it shows. On a server
-     * of its own, as the batch must end on the server's yesterday, which falls on any day of the main test's week.
+     * of its own, whose today moves from the day the batch is made to the day after its last day.
      */
     @Test
     fun theInstalledAppReadsWhatIsDueWithABatchPastItsLastDay() = testApplication {
@@ -349,7 +355,9 @@ class ReleasedAppTest {
         val stew = http.post("/api/recipes") { setBody(RecipeInput("My stew", 2, "400 | g | chicken fillet", "Stew.")) }.read<RecipeDetail>().summary
         val keeps = http.put("/api/recipes/${stew.id}/keeps") { setBody("""{"days":2}""") }
         assertTrue(keeps.status.isSuccess(), keeps.bodyAsText())
-        val madeOn = serverToday().minusDays(3)
+        // Made on Tuesday and kept two days: its last day is Thursday, so it is told on Friday.
+        val madeOn = java.time.LocalDate.parse("2026-11-17")
+        today = madeOn
         val dates = (0L..2L).map { madeOn.plusDays(it) }
         fun dayOf(date: java.time.LocalDate) = (date.toEpochDay() - Batch.mondayOf(date).toEpochDay()).toInt()
         fun mealPath(date: java.time.LocalDate) = "/api/plans/${Batch.mondayOf(date)}/meals/${dayOf(date)}/DINNER"
@@ -357,6 +365,7 @@ class ReleasedAppTest {
         http.post("/api/plans/${Batch.mondayOf(madeOn)}/preps") { setBody("""{"recipeId":${stew.id},"madeOn":"$madeOn","meals":$meals}""") }.read<WeekPlan>()
         http.put("${mealPath(dates[0])}/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>()
         http.put("${mealPath(dates[1])}/status") { setBody(MealStatus.SKIPPED) }.read<WeekPlan>()
+        today = madeOn.plusDays(3)
 
         suspend fun readsWhatIsDue() {
             val due = http.get("/api/notifications")

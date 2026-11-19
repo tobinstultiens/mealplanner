@@ -204,14 +204,16 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   made-on day plus the days it keeps (the last day, `MealPrep.lastDay`). Each meal gets the portion the planner
   would give that slot within the profile's range ("Portion per meal"); the batch is their sum. A slot may be empty
   or hold a meal that may be replaced; a dinner's leftover lunch goes with it. 400 for fewer than two meals, a
-  breakfast or snack, a first meal on another day; 409 when the recipe does not keep that way, a meal is past the
-  last day, a slot's meal was eaten or is of another prep; 404 for another account's recipe.
+  breakfast or snack, a first meal on another day; 409 when the made-on day has passed (the server's today), the
+  recipe does not keep that way, a meal is past the last day, a slot's meal was eaten or is of another prep; 404 for
+  another account's recipe.
 - **In the plan.** Every meal of a prep has `PlannedMeal.prep` (`MealPrep`: the made-on day, the last day, normal
   or vacuum, and every meal of the batch with its share and status, also those of the next week) and is locked.
   The made-on day's meal cooks the whole batch (`cookPortions`, so the recipe and cook mode show the batch's
   amounts), also when that meal itself was skipped; the later ones are `leftover` with nothing to cook. Each day
   counts its own portion, on the Plan and on Today. Generating or replanning keeps them and plans around them: a
-  prepped dinner leaves no leftover lunch, and only the meal that makes the batch counts as a use of its recipe.
+  prepped dinner leaves no leftover lunch, and every meal or side of a batch in the week counts as a use of its recipe
+  (also those of a batch made the week before), so the planner does not plan that recipe again next to it.
   The made-on day's meal can be neither replaced nor removed on its own (409, naming the later meals: `DELETE
   /api/plans/{weekStart}/preps/{id}` removes the prep with all its meals, in every week, after the app named
   them); a later meal can, which makes the batch smaller, until the batch is made. Unlocking a prepped meal is a 409.
@@ -232,8 +234,10 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   eaten) has nothing in a box and is not named.
 - **Into the next week.** A prep may run over the week's end. Its meals are in the next week before that week is
   planned, and generating it keeps them; a week with only those counts as not planned yet (the "Plan next week"
-  notification, buying ahead). Today's "Dinner today" notification is only for a dinner with something to cook: not
-  for a prepped later dinner.
+  notification, buying ahead, whose suggested dinners are then no more than the dinners those meals leave free).
+  Today's "Dinner today" notification is only for a dinner with something to cook: not for a prepped later dinner.
+  A shortfall warning ("What was in a meal") counts what the batch took for its meals of the next week in the week
+  it was made, whose stock it was cooked from.
 - **Sides.** `PrepInput.side` (0.25 or 0.5, else 400) makes the batch a side of that many servings next to the
   meal in each of its slots, which must hold a meal still to eat without a side (409 naming the slot otherwise).
   The meal keeps its main and its portion: the main is not resized, and the day may go over its calories, which
@@ -243,7 +247,8 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   count the side too. The side is eaten, skipped or planned with its meal, so a batch eaten as sides is made when
   the first meal with one of its sides is eaten; it is bought with the meal it is made with, like any batch, and
   can't be adjusted (what was in the meal is its main's). Replanning keeps a meal with a side; rerolling or
-  choosing another main keeps the side next to the new one; removing the meal takes the side out of its batch,
+  choosing another main keeps the side next to the new one, and a reroll never picks the side's own recipe (409 when
+  no other recipe fits); removing the meal takes the side out of its batch,
   as `DELETE /api/plans/{weekStart}/meals/{day}/{slot}/side` does on its own, except for the side the batch is
   made with or one of a batch that was made (409). Removing a prep eaten as sides takes the sides, the meals stay.
   A skipped meal's side is a share in the box (`SparePortion.side`) whose room is the later meals still to eat
@@ -257,7 +262,7 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
 **In the app.** A recipe's settings have "Keeps once made": in a box and vacuum sealed, each "not prepped" or 1 to 7
 days. On the Plan, "Prep a recipe…" under the replan button, or "Prep this recipe…" in the menu of a lunch or dinner
 whose recipe keeps (that day and meal already chosen, from today on), opens the Prep dialog: the recipe, the day it is
-made (a day of the week shown, today or later: a day that has passed is not offered, as the server would take it, and a
+made (a day of the week shown, today or later: a day that has passed is not offered, as the server refuses it, and a
 week that is over has no "Prep a recipe…"), in a box or vacuum sealed, and per day up to the last day it keeps its lunch and dinner; it says why
 it can't be made yet (no meal on the made-on day, fewer than two meals). A prepped meal is labelled "Dinner · prep day"
 where it is made and "Lunch · prepped Mon 16 Nov" after; its lock can't be undone, and its menu has "Remove the

@@ -1107,7 +1107,7 @@ class MigrationTest {
         // Alice's meals are of no batch; the dinner still cooks its leftover lunch, and a prep of the stew can be made.
         val foods = FoodRepository(db)
         val offers = OfferRepository(db, emptyList())
-        val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+        val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(week) })
         alice.profiles.save(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT))
         val meals = alice.plans.get(week).days.flatMap { it.meals }
         assertTrue(meals.none { it.prep != null })
@@ -1183,7 +1183,7 @@ class MigrationTest {
         // Alice's eaten dinner un-eaten gives back its beef; the batch un-made gives back both its meals'.
         val foods = FoodRepository(db)
         val offers = OfferRepository(db, emptyList())
-        val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+        val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(week) })
         alice.profiles.save(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT))
         alice.plans.setStatus(week, 0, MealSlot.DINNER, MealStatus.PLANNED)
         assertEquals("600.0", single(url, "SELECT grams FROM stock WHERE ingredientId = 1"))

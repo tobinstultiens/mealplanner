@@ -44,6 +44,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.time.Duration
+import java.time.LocalDate
 import kotlin.time.Duration.Companion.hours
 
 /** Runtime settings, read from the environment in [ServerConfig.fromEnv]. */
@@ -130,6 +131,8 @@ fun Application.module(
     priceSource: PriceSource? = defaultPriceSource(),
     generator: RecipeGenerator? = ClaudeRecipeGenerator.fromEnv(),
     verifier: TokenVerifier = config.oidcIssuer?.let { OidcVerifier(it, config.oidcClientId) } ?: NoLogin,
+    /** Today as the household sees it, for every account ([UserScope]); a test sets the day, so it does not depend on when it runs. */
+    today: () -> LocalDate = ::serverToday,
 ) {
     if (config.oidcIssuer == null && verifier === NoLogin) log.error("MEALPLANNER_OIDC_ISSUER is not set: nobody can log in")
     // Shared by every account: nutrition data, store offers and regular prices.
@@ -138,7 +141,7 @@ fun Application.module(
     val prices = PriceRepository(database, priceSource, foods, offers)
     val users = UserRepository(database)
     // Everything else belongs to one account and is reached through its scope.
-    fun scope(accountId: Long) = UserScope(accountId, database, foods, offers, prices, generator, config.imageDir)
+    fun scope(accountId: Long) = UserScope(accountId, database, foods, offers, prices, generator, config.imageDir, today)
     val serverSite = CookingSync.serverSite(config.cookingRepo, config.cookingRepoUrl, config.dataDir)
     val cooking = CookingSync(users, config.dataDir, serverSite, config.cookingRepoShared, ::scope, config.cookingFetchInterval)
 

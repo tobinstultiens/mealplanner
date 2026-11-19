@@ -77,8 +77,9 @@ data class PlanRequest(
  * - A breakfast or snack slot with no suitable recipe stays empty.
  * - An excluded recipe is never planned, not even as a pinned routine or as leftovers;
  *   only locked meals keep it.
- * - The meals of a prepped batch ([PlannedMeal.prep]) come locked: they leave no leftover lunch, and
- *   only the one that cooks the batch counts as a use of its recipe (the later ones are leftovers).
+ * - The meals of a prepped batch ([PlannedMeal.prep]) come locked and leave no leftover lunch. Each of them, and
+ *   each side of a batch next to a meal ([PlannedMeal.side]), counts as a use of its recipe ([uses]), also the
+ *   later ones and those of a batch made the week before: the recipe fills those meals already.
  */
 object WeekPlanner {
     fun plan(request: PlanRequest): List<PlannedMeal> {
@@ -149,7 +150,7 @@ object WeekPlanner {
         return usable.filter { slot in it.slots && isAMeal(it, budgetSlot, request.targets, request.portions) }.maxByOrNull { candidate ->
             score(
                 candidate, budgetSlot, request,
-                uses = meals.count { it.recipeId == candidate.recipeId && !it.leftover },
+                uses = uses(candidate.recipeId, meals),
                 sameTagAsYesterday = yesterdaysDinner != null && candidate.tags.firstOrNull() == yesterdaysDinner.tags.firstOrNull() &&
                     candidate.tags.isNotEmpty(),
                 jitter = random.nextDouble(),
@@ -161,6 +162,14 @@ object WeekPlanner {
             )
         }
     }
+
+    /**
+     * How often [meals] eat recipe [recipeId] already, for [score]'s penalty on repeats. A dinner's leftover lunch is
+     * no use of its own: it comes with the dinner. Every meal or side of a prepped batch is: the batch was made for
+     * all of them, so planning its recipe once more would fill much of the week with one recipe (issue 263).
+     */
+    private fun uses(recipeId: Long, meals: List<PlannedMeal>): Int =
+        meals.count { it.recipeId == recipeId && (!it.leftover || it.prep != null) } + meals.count { it.side?.recipeId == recipeId }
 
     /**
      * Higher is better. The weights are judgement calls, tuned so calorie fit and variety dominate.

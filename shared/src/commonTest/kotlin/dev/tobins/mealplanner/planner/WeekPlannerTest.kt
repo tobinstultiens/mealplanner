@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.api.MealSlot.DINNER
 import dev.tobins.mealplanner.api.MealSlot.LUNCH
 import dev.tobins.mealplanner.api.MealSlot.SNACK
 import dev.tobins.mealplanner.api.MealPrep
+import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PrepMeal
 import dev.tobins.mealplanner.api.PlanPriority
@@ -133,6 +134,52 @@ class WeekPlannerTest {
         for (day in 2..3) assertNotEquals(17L, plan.at(day, LUNCH).recipeId, "no leftover lunch of the batch on day $day")
         assertEquals(4, plan.count { it.recipeId == 17L }, "the batch's recipe is planned nowhere else")
         assertEquals(7, plan.filter { it.slot == DINNER }.size)
+    }
+
+    /** Recipe 17 as the planner's favourite: rated 5, rich in protein and with its ingredients at home. */
+    private val favourite17 = pantryOfRecipes.map { if (it.recipeId == 17L) it.copy(rating = 5, proteinG = 80.0, onHandCount = 3) else it }
+
+    /** The locked meals of a batch of recipe 17 made on [madeOn] (ISO) and eaten in [meals] of the week of 16 November; [cooked] is the one that makes it, if in this week. */
+    private fun batchOf17(madeOn: String, meals: List<Pair<Int, MealSlot>>, cooked: Pair<Int, MealSlot>?): List<PlannedMeal> {
+        val prep = MealPrep(
+            id = 1, madeOn = madeOn, lastDay = "2026-11-21", vacuum = false,
+            meals = meals.map { (day, slot) -> PrepMeal("2026-11-${16 + day}", slot, 1.0, MealStatus.PLANNED) },
+        )
+        return meals.map { (day, slot) -> PlannedMeal(day, slot, 17, "Recipe 17", 1.0, 810.0, 80.0, leftover = (day to slot) != cooked, locked = true, prep = prep) }
+    }
+
+    @Test
+    fun everyMealOfAPreppedBatchCountsAgainstPlanningItsRecipeAgain() {
+        val alone = WeekPlanner.plan(PlanRequest(targets, favourite17))
+        assertTrue(alone.any { it.recipeId == 17L && it.slot == DINNER }, "without a prep the favourite is a dinner")
+
+        // Made on Tuesday's dinner and eaten Wednesday lunch and Thursday dinner: three uses, not one.
+        val thisWeek = batchOf17("2026-11-17", listOf(1 to DINNER, 2 to LUNCH, 3 to DINNER), cooked = 1 to DINNER)
+        val plan = WeekPlanner.plan(PlanRequest(targets, favourite17, locked = thisWeek))
+        assertEquals(thisWeek, thisWeek.map { plan.at(it.day, it.slot) }, "the prepped meals stay as they are")
+        assertEquals(3, plan.count { it.recipeId == 17L }, "the batch's recipe is not planned again, nor its leftovers: ${plan.filter { it.recipeId == 17L }}")
+
+        // The tail of a batch made the Sunday before: none of its meals cooks, and each still counts.
+        val tail = batchOf17("2026-11-15", listOf(0 to LUNCH, 0 to DINNER, 1 to DINNER), cooked = null)
+        val after = WeekPlanner.plan(PlanRequest(targets, favourite17, locked = tail))
+        assertEquals(3, after.count { it.recipeId == 17L }, "the recipe of last week's batch is not planned again: ${after.filter { it.recipeId == 17L }}")
+        assertEquals(7, after.filter { it.slot == DINNER }.size, "every dinner is planned all the same")
+    }
+
+    @Test
+    fun aSideOfAPreppedBatchCountsAgainstPlanningItsRecipeAsAMain() {
+        val prep = MealPrep(
+            id = 2, madeOn = "2026-11-16", lastDay = "2026-11-19", vacuum = false,
+            meals = listOf(0, 3).map { PrepMeal("2026-11-${16 + it}", DINNER, 0.5, MealStatus.PLANNED, side = true) },
+        )
+        val withSides = listOf(0, 3).map { day ->
+            val side = MealSide(17, "Recipe 17", 0.5, 405.0, 40.0, cookPortions = if (day == 0) 1.0 else 0.0, prep = prep)
+            PlannedMeal(day, DINNER, 10L + day, "Recipe ${10 + day}", 1.0, 600.0, 45.0, locked = true, side = side)
+        }
+        val plan = WeekPlanner.plan(PlanRequest(targets, favourite17, locked = withSides))
+
+        assertEquals(0, plan.count { it.recipeId == 17L }, "the side's recipe is not also planned as a main: ${plan.filter { it.recipeId == 17L }}")
+        assertEquals(withSides, withSides.map { plan.at(it.day, it.slot) })
     }
 
     @Test

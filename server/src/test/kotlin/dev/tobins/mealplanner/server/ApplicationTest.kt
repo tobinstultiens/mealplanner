@@ -30,9 +30,15 @@ import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.config.MapApplicationConfig
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation as ServerContentNegotiation
+import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -277,6 +283,31 @@ class ApplicationTest {
             assertEquals("""{"error":"Recipe id must be a number"}""", answer.bodyAsText())
             val warning = appender.list.single { it.level == Level.WARN }.formattedMessage
             assertTrue("/api/recipes/abc" in warning && "Recipe id must be a number" in warning, warning)
+        } finally {
+            log.detachAppender(appender)
+        }
+    }
+
+    /** Issue 263: an app that leaves a screen while it loads cancels the call; that is no server error. */
+    @Test
+    fun aCancelledCallIsNotLoggedAsAFailedRequest() = testApplication {
+        // Unhandled exceptions are answered and logged by the engine, as Netty's does, rather than thrown into the test.
+        environment { config = MapApplicationConfig("ktor.test.throwOnException" to "false") }
+        install(ServerContentNegotiation) { json() }
+        install(StatusPages) { errorMapping() }
+        routing {
+            get("/cancelled") { throw CancellationException("Response was cancelled") }
+            get("/broken") { error("a bug") }
+        }
+        val log = LoggerFactory.getLogger("io.ktor.test") as Logger
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        log.addAppender(appender)
+        try {
+            client.get("/cancelled")
+            assertEquals(emptyList(), appender.list.filter { it.level == Level.ERROR }.map { it.formattedMessage })
+            // A real failure still is one.
+            assertEquals(HttpStatusCode.InternalServerError, client.get("/broken").status)
+            assertTrue(appender.list.single { it.level == Level.ERROR }.formattedMessage.contains("/broken"))
         } finally {
             log.detachAppender(appender)
         }

@@ -126,10 +126,18 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      *
      * Null where an amount is not known: on hand by hand, stock or a use of an unknown amount, or a tick that
      * remembers no weight. Unknown is not none, so callers must not read null as zero.
+     *
+     * A prepped batch is cooked from the stock of the week it is made in, whichever week its meals are in, and what
+     * each meal took is kept under that meal (issue 263). So what [cookedElsewhere], meals of [week] of a batch made in
+     * another week, took was not at home for this week's meals, and what [cookedHere], meals of other weeks of a
+     * batch made in this one, took was.
      */
-    fun atHome(week: LocalDate): Map<Long, Double?> {
-        val taken = pantry.selectWeekStockUses(userId, week.toString()).executeAsList()
-            .groupBy({ it.ingredientId }, { it.grams })
+    fun atHome(week: LocalDate, cookedElsewhere: Set<MealRef> = emptySet(), cookedHere: List<MealRef> = emptyList()): Map<Long, Double?> {
+        val ofWeek = pantry.selectWeekStockUses(userId, week.toString()).executeAsList()
+            .filter { MealRef(week, it.day.toInt(), MealSlot.valueOf(it.slot), side = it.role == MealRef.SIDE) !in cookedElsewhere }
+            .map { it.ingredientId to it.grams }
+        val taken = (ofWeek + cookedHere.flatMap(::uses).map { it.ingredientId to it.grams })
+            .groupBy({ it.first }, { it.second })
             .mapValues { (_, grams) -> grams.takeIf { null !in it }?.sumOf { it!! } }
         val stocked = listOf(onHandGramsFor(week), taken)
         val stock = stocked.flatMapTo(HashSet()) { it.keys }.associateWith { id ->
