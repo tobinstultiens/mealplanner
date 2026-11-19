@@ -135,6 +135,8 @@ data class RecipeDetail(
     /** Markdown. */
     val instructions: String,
     val problems: List<String>,
+    /** The account's optional toppings of the recipe ([RecipeTopping]), in their order; empty from a server from before them. */
+    val toppings: List<RecipeTopping> = emptyList(),
 )
 
 /** When the server last read the cooking site, from `GET /api/sync/cooking`. */

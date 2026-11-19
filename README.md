@@ -231,11 +231,59 @@ dinner keeps its lines). The recipe itself, and the same recipe's meals on other
   (`MealLines.uncounted`). A meal's cost stays that of its recipe.
 - The changes are kept per meal (`mealLine`, version 18 of the database) and go with it: choosing another
   recipe, "Another recipe", replanning or removing the meal drops them.
-- An adjustment never goes on the shopping list. What eating the meal takes from the stock follows it: see
-  "Un-eating" in `docs/data-sources.md`.
+- An adjustment does not go on the shopping list by itself: what was added came from the fridge or the
+  pantry. The one exception is an addition that takes what was at home for a meal still to cook that week
+  (below). What eating the meal takes from the stock follows it: see "Un-eating" in `docs/data-sources.md`.
+  An adjustment to a meal eaten earlier takes from the stock as it is now, so from a later purchase when the
+  ingredient was bought since (there is no record of what was at home when it was eaten).
+
+**Quick add-ons.** At the top of the Adjust screen, above the meal's lines (and under the warning below, when
+there is one), are chips, "Feta · 30 g" or "Egg · 1 piece", one tap each, so a known topping is two taps from
+Today however long the recipe is: the recipe's optional toppings first, in their order, then the ingredients
+added to that recipe's meals before (in any week), most often added first, then the most recent, each with the
+amount its latest meal had; at most eight of those. A chip adds its amount on top of what the meal has of that
+ingredient: one the meal has already (a topping the recipe has too, or a second egg) says so, "+ 30 g
+Cucumber". From earlier meals only ingredients the recipe does not have count: a meal keeps what it ate of a
+recipe ingredient in all, not what was extra. Reset to recipe takes a meal's additions away, so they no longer
+count for these chips either. A chip adds as any edit does, with Undo in the snackbar. Amounts are in pieces
+only where that is a sensible count (whole pieces, halves or quarters), here and on the meal's lines; "30 g" of a
+cucumber is said in grams.
+
+- `GET /api/recipes/{id}/add-ons` answers them (`AddOn`: the ingredient, its name, the grams to add, its weight
+  per piece, whether it is a topping and how many meals had it added). 404 for another account's recipe.
+
+**Optional toppings** are set in a recipe's settings in the app (under "Plan as", for one of my recipes): an
+ingredient of the catalogue and the amount one meal usually gets of it, in pieces where the catalogue counts
+it. They are the account's own, as the rating is, also on a cooking-site recipe, and a sync never changes
+them. They are not part of the recipe's nutrition, cost or shopping until one is added to a meal.
+
+- `PUT /api/recipes/{id}/toppings` with `{"toppings": [{"ingredientId": 7, "grams": 60}]}` replaces them in
+  that order (`[]` takes them all away) and answers the recipe; `RecipeDetail.toppings` lists them. Any recipe
+  of the account, in the bank too. 404 for another account's recipe or an ingredient not in its catalogue; 400
+  for an amount of 0 or less or above 5000 g, an ingredient twice, or more than 20 toppings. Kept in
+  `recipeTopping` (version 19 of the database); they go with the recipe or the ingredient when either is
+  deleted.
+
+**A later meal left short.** When an adjusted meal has more of an ingredient than its recipe, and that takes
+what was at home for a meal still to cook that week, the Adjust screen says so ("Not enough left for a later
+meal": `Spinach: 100 g short for Spinach curry, dinner Thu 19 Nov`) and the shopping list asks for the amount
+short again. What is at home is what the server knows of: the larger of the stock the week had and what the
+ingredient's ticked row on the week's list covered (not their sum, as a tick covers the week's whole need, the
+stock included). A staple, an ingredient used to taste, and one whose need can't be weighed have no row to ask
+on, so nothing is said of them. With enough left (overstocked, or the later meal adjusted to use less) there is no warning and the
+list stays as it was; an addition beyond what was at home came from the fridge and asks for nothing. The same
+holds when the adjusted meal was eaten already. An ingredient set "On hand" by hand in the pantry has no amount,
+so nothing is said about it: the owner says it is at home, and the server cannot tell how much is left. The card
+says one amount per ingredient, the later meals' shortfalls added up and rounded once, as the list rounds the
+amount it asks for again, so the two agree. How it is worked out, and how the list's row shows it, is in
+`docs/data-sources.md`, "A later meal left short".
+
+- `MealLines.shortfalls` lists the later meals the meal leaves short (`LaterShortfall`: day, slot, title,
+  ingredient, grams); empty when enough is left.
 
 An installed app that knows nothing of adjustments shows the adjusted numbers all the same, as it reads
-the meal's `kcal` and `proteinG`.
+the meal's `kcal` and `proteinG`; it reads a recipe with toppings as before, and a shopping row that asks for
+more again as it reads any row whose need grew.
 
 ## Web client
 
@@ -325,7 +373,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal), the Adjust screen of a meal (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
+Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed

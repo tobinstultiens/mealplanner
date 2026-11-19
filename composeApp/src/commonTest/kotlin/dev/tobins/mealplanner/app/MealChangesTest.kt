@@ -1,15 +1,19 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.LaterShortfall
 import dev.tobins.mealplanner.api.MealLine
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.RecipeTopping
+import dev.tobins.mealplanner.api.ToppingInput
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** What the Adjust screen sends for each edit, and how it shows amounts (issue 226). */
+/** What the Adjust screen sends for each edit, how it shows amounts, its quick add-ons and its warning, and the recipe's toppings (issue 226). */
 class MealChangesTest {
     private val rice = MealLine(1, "Rice", 150.0, recipeGrams = 100.0, changed = true)
     private val beef = MealLine(2, "Beef", 150.0, recipeGrams = 150.0)
@@ -100,7 +104,66 @@ class MealChangesTest {
     fun theIngredientsToAddLeaveOutWhatTheMealHasAndPutNamesThatStartWithTheSearchFirst() {
         fun ingredient(id: Long, name: String) = Ingredient(id, name, null, null, null, null, null, isStaple = false)
         val all = listOf(ingredient(1, "Rice"), ingredient(5, "Brown rice"), ingredient(6, "Rice vinegar"), ingredient(7, "Avocado"))
-        assertEquals(listOf("Rice vinegar", "Brown rice"), ingredientsMatching(all, "RICE ", inMeal = setOf(1)).map { it.name })
-        assertEquals(listOf("Avocado", "Brown rice", "Rice vinegar"), ingredientsMatching(all, "", inMeal = setOf(1)).map { it.name })
+        assertEquals(listOf("Rice vinegar", "Brown rice"), ingredientsMatching(all, "RICE ", left = setOf(1)).map { it.name })
+        assertEquals(listOf("Avocado", "Brown rice", "Rice vinegar"), ingredientsMatching(all, "", left = setOf(1)).map { it.name })
+    }
+
+    @Test
+    fun aQuickAddOnAddsItsAmountOnTopOfWhatTheMealHas() {
+        val avocado = AddOn(8, "Avocado", 70.0, 140.0, topping = true)
+        val feta = AddOn(5, "Feta", 40.0, times = 2)
+        // A topping the recipe has too (the rice, 150 g in this meal), and a second egg on the one added.
+        val moreRice = AddOn(1, "Rice", 50.0, topping = true)
+        val egg = AddOn(4, "Egg", 60.0, 60.0, topping = true)
+        val offered = meal.quickAddOns(listOf(avocado, egg, feta, moreRice))
+        assertEquals(listOf(avocado, egg, feta, moreRice), offered.map { it.addOn })
+        assertEquals(
+            listOf("Avocado · 0.5 pieces", "+ 1 piece Egg", "Feta · 40 g", "+ 50 g Rice"),
+            offered.map { it.chipText(Strings.English) },
+        )
+        assertEquals("Avocado · 0,5 stuks", offered[0].chipText(Strings.Dutch))
+        assertEquals(listOf(MealLineChange(3, 0.0), MealLineChange(4, 60.0), MealLineChange(1, 200.0)), meal.adding(offered[3]))
+        assertEquals(listOf(MealLineChange(1, 150.0), MealLineChange(3, 0.0), MealLineChange(4, 120.0)), meal.adding(offered[1]))
+
+        // A recipe line left out gets the amount itself; a line nobody can weigh, and too much in all, get no chip.
+        val edamame = meal.quickAddOns(listOf(AddOn(3, "Edamame", 30.0, topping = true))).single()
+        assertEquals("Edamame · 30 g" to 30.0, edamame.chipText(Strings.English) to edamame.total)
+        val bunch = meal.copy(lines = meal.lines + MealLine(9, "Coriander", null))
+        assertEquals(emptyList(), bunch.quickAddOns(listOf(AddOn(9, "Coriander", 5.0), AddOn(2, "Beef", 4900.0))))
+    }
+
+    @Test
+    fun anAmountIsSaidInPiecesOnlyWhenThatIsASensibleCount() {
+        // 30 g of a 340 g cucumber is no count: grams alone, also on the Adjust screen's lines.
+        assertEquals("30 g", amountText(30.0, 340.0, Strings.English))
+        assertEquals("1.5 g", amountText(1.5, 4.0, Strings.English), "0.38 of a garlic clove")
+        assertEquals("0.25 pieces · 15 g", amountText(15.0, 60.0, Strings.English))
+        assertEquals("2.75 pieces · 165 g", amountText(165.0, 60.0, Strings.English))
+        assertEquals("1 piece · 60 g", amountText(60.01, 60.0, Strings.English), "a count rounded on its way through grams")
+        assertEquals("Cucumber · 30 g", QuickAddOn(AddOn(6, "Cucumber", 30.0, 340.0), 0.0).chipText(Strings.English))
+        assertEquals("+ 30 g Cucumber", QuickAddOn(AddOn(6, "Cucumber", 30.0, 340.0), 60.0).chipText(Strings.English))
+    }
+
+    @Test
+    fun theLaterMealsLeftShortAreSaidPerIngredientRoundedOnce() {
+        // The emulator's case: 36.6 g and 56.7 g are 93.3 g, which the shopping list asks for as "93 g more".
+        val beef = listOf(
+            LaterShortfall(6, MealSlot.LUNCH, "Rice bowl", 2, "Beef", 36.6),
+            LaterShortfall(6, MealSlot.DINNER, "Rice bowl", 2, "Beef", 56.7),
+        )
+        val short = meal.copy(shortfalls = beef + LaterShortfall(3, MealSlot.DINNER, "Spinach curry", 8, "Spinach", 100.0))
+        assertEquals(
+            listOf("Beef: 93 g short for Rice bowl, lunch Sun 22 Nov; Rice bowl, dinner Sun 22 Nov", "Spinach: 100 g short for Spinach curry, dinner Thu 19 Nov"),
+            short.shortfallTexts(Strings.English),
+        )
+        assertEquals("Spinach: 100 g te weinig voor Spinach curry, avondeten do 19 nov", short.shortfallTexts(Strings.Dutch)[1])
+    }
+
+    @Test
+    fun aToppingIsChangedWhereItIsAddedAtTheEndOrRemoved() {
+        val toppings = listOf(RecipeTopping(4, "Egg", 60.0, 60.0), RecipeTopping(5, "Feta", 30.0))
+        assertEquals(listOf(ToppingInput(4, 120.0), ToppingInput(5, 30.0)), toppings.withTopping(4, 120.0))
+        assertEquals(listOf(ToppingInput(4, 60.0), ToppingInput(5, 30.0), ToppingInput(8, 70.0)), toppings.withTopping(8, 70.0))
+        assertEquals(listOf(ToppingInput(5, 30.0)), toppings.withoutTopping(4))
     }
 }

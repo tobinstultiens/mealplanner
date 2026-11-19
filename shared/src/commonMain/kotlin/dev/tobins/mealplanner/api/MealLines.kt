@@ -58,4 +58,24 @@ data class MealLines(
     val uncounted: List<String> = emptyList(),
     /** True when some line differs from the recipe; then [PlannedMeal.adjusted] is too. */
     val adjusted: Boolean = false,
+    /**
+     * The meals still to cook after this one in its week that what is at home no longer covers, of an
+     * ingredient this meal has more of than its recipe: the warning to show. The shopping list asks for
+     * that amount again. Empty when enough is left, and from a server from before it.
+     */
+    val shortfalls: List<LaterShortfall> = emptyList(),
+)
+
+/**
+ * A meal still to cook that is [grams] short of an ingredient, because adjusted meals ate what was at home
+ * for it (the stock, and what was ticked as bought on the week's shopping list).
+ */
+@Serializable
+data class LaterShortfall(
+    val day: Int,
+    val slot: MealSlot,
+    val title: String,
+    val ingredientId: Long,
+    val name: String,
+    val grams: Double,
 )

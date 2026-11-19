@@ -310,6 +310,7 @@ fun RecipeDetailScreen(
                                 (load { api.updateRecipeSettings(recipeId, settings) } as? Load.Ready)?.let { state = it }
                             }
                         }
+                        ToppingsSettings(api, recipe) { settle(it, Msg.TOPPINGS_FAILED) }
                         routines?.let { current ->
                             RoutineButtons(recipe.summary, current) { updated ->
                                 scope.launch { (load { api.saveRoutines(updated) } as? Load.Ready)?.let { routines = it.value } }

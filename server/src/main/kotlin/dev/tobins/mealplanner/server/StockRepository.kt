@@ -98,6 +98,38 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
         return gramsIn(stock) + pantry.selectOnHandByHand(userId).executeAsList().associateWith { null }
     }
 
+    /**
+     * What was at home for the meals of the week starting [week], by ingredient, for [shortfalls] (issue 226): the
+     * larger of what the stock gave the week (what counts from then, [onHandGramsFor], with what the week's meals
+     * took of it already) and what the tick of its row of the week's shopping list says was covered.
+     *
+     * Not their sum: a tick remembers what the row said then, the week's whole need, and the row said to buy only
+     * what the stock did not cover, so the stock is in the tick already. The larger of the two is what the list
+     * itself counts on when it asks for more (a ticked row's "more" is the need beyond the tick, but no more than
+     * the meals to come need beyond the stock), so the warning and the row come from the same number. It is what
+     * was at home when the owner bought what the row said; stock put at home for the week after the tick (used up
+     * on the list, stocked up again) is in neither, as the list does not count it either.
+     *
+     * Null where an amount is not known: on hand by hand, stock or a use of an unknown amount, or a tick that
+     * remembers no weight. Unknown is not none, so callers must not read null as zero.
+     */
+    fun atHome(week: LocalDate): Map<Long, Double?> {
+        val taken = pantry.selectWeekStockUses(userId, week.toString()).executeAsList()
+            .groupBy({ it.ingredientId }, { it.grams })
+            .mapValues { (_, grams) -> grams.takeIf { null !in it }?.sumOf { it!! } }
+        val stocked = listOf(onHandGramsFor(week), taken)
+        val stock = stocked.flatMapTo(HashSet()) { it.keys }.associateWith { id ->
+            stocked.filter { id in it }.map { it[id] }.takeIf { null !in it }?.sumOf { it!! }
+        }
+        val ticked = db.shoppingQueries.selectChecks(userId, week.toString()).executeAsList().mapNotNull { tick ->
+            (ShoppingKey.parseOrNull(tick.itemKey) as? ShoppingKey.Ingredient)?.let { it.id to tick.grams }
+        }.toMap()
+        return (stock.keys + ticked.keys).associateWith { id ->
+            val known = listOf(stock, ticked).filter { id in it }.map { it[id] }
+            known.takeIf { null !in it }?.maxOf { it!! }
+        }
+    }
+
     /** The grams of each ingredient in [entries] of the stock, added up; null for one with an entry whose amount is not known. */
     private fun gramsIn(entries: List<SelectStockOfAccount>): Map<Long, Double?> =
         entries.groupBy({ it.ingredientId }, { it.grams }).mapValues { (_, grams) -> grams.takeIf { null !in it }?.sumOf { it!! } }

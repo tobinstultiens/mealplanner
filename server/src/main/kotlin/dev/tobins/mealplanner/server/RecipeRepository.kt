@@ -17,6 +17,7 @@ import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.RecipeTopping
 import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
@@ -107,7 +108,18 @@ class RecipeRepository(
             },
             instructions = row.instructions,
             problems = Json.decodeFromString(row.problemsJson),
+            toppings = toppings(id),
         )
+    }
+
+    /** The account's optional toppings of recipe [id] ([RecipeToppings]), in their order. */
+    fun toppings(id: Long): List<RecipeTopping> {
+        val rows = q.selectToppings(userId, id).executeAsList()
+        if (rows.isEmpty()) return emptyList()
+        val catalogue = ingredients.list().associateBy { it.id }
+        return rows.mapNotNull { row ->
+            catalogue[row.ingredientId]?.let { RecipeTopping(it.id, it.name, row.grams, it.gramsPerPiece) }
+        }
     }
 
     /**

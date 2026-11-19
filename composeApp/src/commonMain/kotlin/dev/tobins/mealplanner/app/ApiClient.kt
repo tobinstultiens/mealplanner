@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodDataset
 import dev.tobins.mealplanner.api.GenerateRequest
+import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientSection
@@ -41,6 +42,8 @@ import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.CookingSyncStatus
+import dev.tobins.mealplanner.api.ToppingInput
+import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
@@ -339,6 +342,15 @@ class ApiClient(
         contentType(ContentType.Application.Json)
         setBody(settings)
     }.body()
+
+    /** Replaces the recipe's optional toppings with [toppings], in their order; answers the recipe. */
+    suspend fun setRecipeToppings(id: Long, toppings: List<ToppingInput>): RecipeDetail = http.put("api/recipes/$id/toppings") {
+        contentType(ContentType.Application.Json)
+        setBody(ToppingsInput(toppings))
+    }.body()
+
+    /** What a meal of recipe [id] can have added with one tap; none from a server from before quick add-ons. */
+    suspend fun addOns(id: Long): List<AddOn> = unlessUnknown { http.get("api/recipes/$id/add-ons").body<List<AddOn>>() }.orEmpty()
 
     suspend fun rateRecipe(id: Long, rating: Int?): RecipeDetail = http.put("api/recipes/$id/rating") {
         contentType(ContentType.Application.Json)

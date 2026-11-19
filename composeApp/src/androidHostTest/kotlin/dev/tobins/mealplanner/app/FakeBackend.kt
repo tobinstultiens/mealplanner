@@ -38,7 +38,11 @@ import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
+import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.AddedInput
+import dev.tobins.mealplanner.api.LaterShortfall
+import dev.tobins.mealplanner.api.RecipeTopping
+import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.api.ManyAddedInput
 import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.RotationInput
@@ -138,6 +142,7 @@ class FakeBackend(
             // A server from before the bank reads `bank` as a recipe id.
             path == "/api/recipes/bank" -> if (olderServer) throw Refusal(400, "Recipe id must be a number") else recipesJson(bank())
             parts.size == 3 && parts[1] == "recipes" -> detailJson(parts[2].toLong())
+            parts.size == 4 && parts[1] == "recipes" && parts[3] == "add-ons" -> json.encodeToString(addOns(parts[2].toLong()))
             path == "/api/profile" -> profileJson(method, sent)
             method == "PUT" && path.startsWith("/api/plans/") && path.endsWith("/status") -> { changes += "PUT $path $sent"; "{}" }
             path == "/api/routines" -> json.encodeToString(Routines(breakfast = 1))
@@ -290,18 +295,33 @@ class FakeBackend(
         val recipe = listOf(MealLine(1, "Chicken thigh fillet", 200.0, 200.0), MealLine(8, "Spinach", 75.0, 75.0), MealLine(5, "Olive oil", 10.0, 10.0))
             .map { line -> changed[line.ingredientId]?.let { line.copy(grams = it, changed = true) } ?: line } +
             MealLine(null, "Coconut milk", 100.0)
-        val names = (ingredients + Ingredient(9, "Egg", null, 60.0, null, null, null, isStaple = false)).associateBy { it.id }
         val added = lineChanges.filter { change -> recipe.none { it.ingredientId == change.ingredientId } }.map { change ->
             val ingredient = names.getValue(change.ingredientId)
             MealLine(ingredient.id, ingredient.name, change.grams, fromRecipe = false, changed = true, gramsPerPiece = ingredient.gramsPerPiece)
         }
         val adjusted = lineChanges.isNotEmpty()
+        // More chicken than the recipe's takes what was bought for Saturday's dinner of the same recipe.
+        val shortfalls = changed[1]?.takeIf { it > 200.0 }?.let {
+            listOf(LaterShortfall(5, MealSlot.DINNER, "Slow-cooked chicken thighs with coconut, lemon and spinach", 1, "Chicken thigh fillet", it - 200.0))
+        }.orEmpty()
         return MealLines(
             WEEK_START, 2, MealSlot.DINNER, 4, "Slow-cooked chicken thighs with coconut, lemon and spinach", 1.0, recipe + added,
             kcal = if (adjusted) 935.0 else 810.0, proteinG = if (adjusted) 72.0 else 55.0, fibreG = if (adjusted) 3.1 else 5.3,
-            complete = false, uncounted = listOf("Coconut milk"), adjusted = adjusted,
+            complete = false, uncounted = listOf("Coconut milk"), adjusted = adjusted, shortfalls = shortfalls,
         )
     }
+
+    /** The catalogue's ingredients by id, with an egg the screens' catalogue does not list (so the pantry's picture stays as it is). */
+    private val names = (ingredients + Ingredient(9, "Egg", null, 60.0, null, null, null, isStaple = false)).associateBy { it.id }
+
+    /** Each recipe's toppings; the chicken dinner's are feta and an egg. A test reads them, and `PUT .../toppings` replaces them. */
+    @Volatile
+    var toppings: Map<Long, List<RecipeTopping>> = mapOf(4L to listOf(RecipeTopping(2, "Feta", 30.0), RecipeTopping(9, "Egg", 60.0, 60.0)))
+
+    /** A recipe's quick add-ons: its toppings, then Greek yoghurt, added to three of its meals before. */
+    private fun addOns(recipeId: Long): List<AddOn> =
+        toppings[recipeId].orEmpty().map { AddOn(it.ingredientId, it.name, it.grams, it.gramsPerPiece, topping = true) } +
+            AddOn(3, "Greek yoghurt", 50.0, times = 3)
 
     private fun shopping(weekStart: String): ShoppingList {
         if (emptyWeek) return ShoppingList(weekStart, emptyList(), emptyList())
@@ -493,6 +513,14 @@ class FakeBackend(
                 setAdded(listOf(id), input.added, input.inRotation)
                 detailJson(id)
             }
+            "toppings" -> {
+                val id = parts[2].toLong()
+                toppings = toppings + (id to json.decodeFromString<ToppingsInput>(sent).toppings.map { input ->
+                    val ingredient = names.getValue(input.ingredientId)
+                    RecipeTopping(ingredient.id, ingredient.name, input.grams, ingredient.gramsPerPiece)
+                })
+                detailJson(id)
+            }
             "rotation" -> if (many) {
                 val input = json.decodeFromString<ManyRotationInput>(sent)
                 setRotation(input.ids, input.inRotation)
@@ -539,6 +567,7 @@ class FakeBackend(
             line(1.0, "lemon", Dimension.COUNT, "juiced"),
             line(null, null, null, "salt and pepper to taste"),
         ),
+        toppings = toppings[id].orEmpty(),
         instructions = "Season the chicken and brown it in a heavy pan.\n\n" +
             "1. Add the coconut milk and the lemon juice.\n2. Cover and cook gently for 40 minutes.\n3. Stir in the spinach until it wilts.\n\n" +
             "Serve with rice or flatbread.",

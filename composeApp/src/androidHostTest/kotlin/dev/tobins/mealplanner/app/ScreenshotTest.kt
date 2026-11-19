@@ -186,9 +186,10 @@ enum class Shot(
     // Fibre next to kcal and protein in Dutch, where the totals are longest (#223).
     TODAY_NL(dutch = true, heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     PLAN_NL(dutch = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
-    // What was in Wednesday's dinner: a line changed, one left out, one added in pieces, one linked to nothing (#226).
-    ADJUST_MEAL(heightDp = 1100, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
-    ADJUST_MEAL_NL(dutch = true, heightDp = 1100, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
+    // What was in Wednesday's dinner: a line changed, one left out, one added in pieces, one linked to nothing; the
+    // later dinner the extra chicken leaves short, and the quick add-ons (#226).
+    ADJUST_MEAL(heightDp = 1400, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
+    ADJUST_MEAL_NL(dutch = true, heightDp = 1400, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
     // No recipe of mine is in the rotation, so the week stays empty and says why, with a way to the Recipes tab.
     PLAN_EMPTY_ROTATION(emptyWeek = true, emptyRecipes = true, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     RECIPE_PICKER(heightDp = 1300, content = { api, _ -> recipePicker(api) }),
@@ -218,12 +219,14 @@ enum class Shot(
     // The list was loaded, then the server could not be reached on a refresh: the list stays, with the line and its Retry below.
     RECIPES_REFRESH_FAILED(heightDp = 1100, content = { api, _ -> recipesRefreshFailed(api) }),
     RECIPES_EMPTY(emptyRecipes = true, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}) }),
-    RECIPE_DETAIL(heightDp = 1700, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
+    // With its optional toppings, one counted in pieces (#226).
+    RECIPE_DETAIL(heightDp = 1900, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
+    RECIPE_DETAIL_NL(dutch = true, heightDp = 1900, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
     // Opened from a planned meal: the amounts of 1.5 of the recipe's 2 servings, and nothing to cook for leftovers.
-    RECIPE_FROM_MEAL(heightDp = 1700, content = { api, _ ->
+    RECIPE_FROM_MEAL(heightDp = 1900, content = { api, _ ->
         RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 1.5, skipped = false))
     }),
-    RECIPE_FROM_LEFTOVERS(heightDp = 1700, content = { api, _ ->
+    RECIPE_FROM_LEFTOVERS(heightDp = 1900, content = { api, _ ->
         RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 0.0, skipped = false))
     }),
     // Cook mode of a planned meal, the way it opens: scaled amounts, the first step current.

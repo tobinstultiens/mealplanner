@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.ManyAddedInput
 import dev.tobins.mealplanner.api.ManyRotationInput
@@ -41,6 +42,8 @@ import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.ShopsSetting
+import dev.tobins.mealplanner.api.ToppingInput
+import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
@@ -213,6 +216,47 @@ class AccountsTest {
         assertEquals(adjusted, alice.get(lines).body<MealLines>())
         assertTrue(alice.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single().adjusted)
         assertEquals(480.0, eggsLeft(aliceId, aliceMeal.second))
+    }
+
+    /** Issue 226: a recipe's toppings and its quick add-ons are the account's own. */
+    @Test
+    fun anotherAccountsToppingsAndAddOnsCanNeitherBeReadNorChanged() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val week = "2026-11-16"
+        // Each has a stew and an egg; Alice's stew has the egg as a topping and a meal that had cheese added.
+        val accounts = listOf("alice", "bob").associateWith { name ->
+            val client = clientFor(name)
+            val egg = client.post("/api/ingredients") { setBody(IngredientInput("Egg", gramsPerPiece = 60.0)) }.body<Ingredient>()
+            val cheese = client.post("/api/ingredients") { setBody(IngredientInput("Cheese")) }.body<Ingredient>()
+            val stew = client.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+            Triple(client, db.userQueries.selectBySubject("sub-$name").executeAsOne().id, Triple(stew, egg, cheese))
+        }
+        val (alice, aliceId, aliceKitchen) = accounts.getValue("alice")
+        val (bob, _, bobKitchen) = accounts.getValue("bob")
+        val (stew, egg, cheese) = aliceKitchen
+        assertEquals(HttpStatusCode.OK, alice.put("/api/recipes/${stew.id}/toppings") { setBody(ToppingsInput(listOf(ToppingInput(egg.id, 60.0)))) }.status)
+        db.planQueries.upsertMeal(aliceId, week, 0, "DINNER", stew.id, stew.title, 1.0, 800.0, 40.0, 0, 0, "PLANNED")
+        alice.put("/api/plans/$week/meals/0/DINNER/lines") { setBody(MealAdjustment(listOf(MealLineChange(cheese.id, 30.0)))) }
+        val alicesAddOns = alice.get("/api/recipes/${stew.id}/add-ons").body<List<AddOn>>()
+        assertEquals(listOf("Egg", "Cheese"), alicesAddOns.map { it.name })
+
+        // Alice's recipe is a 404 to Bob, for its add-ons and its toppings alike.
+        assertEquals(HttpStatusCode.NotFound, bob.get("/api/recipes/${stew.id}/add-ons").status)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/${stew.id}/toppings") { setBody(ToppingsInput(listOf(ToppingInput(bobKitchen.second.id, 60.0)))) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/${stew.id}/toppings") { setBody(ToppingsInput(emptyList())) }.status)
+        // On his own recipe, Alice's egg is no ingredient of his; his add-ons have nothing of Alice's meals.
+        val bobsStew = bobKitchen.first
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/${bobsStew.id}/toppings") { setBody(ToppingsInput(listOf(ToppingInput(egg.id, 60.0)))) }.status)
+        assertEquals(emptyList(), bob.get("/api/recipes/${bobsStew.id}/add-ons").body<List<AddOn>>())
+        assertEquals(emptyList(), bob.get("/api/recipes/${bobsStew.id}").body<RecipeDetail>().toppings)
+        // His own topping is his only.
+        bob.put("/api/recipes/${bobsStew.id}/toppings") { setBody(ToppingsInput(listOf(ToppingInput(bobKitchen.third.id, 20.0)))) }
+        assertEquals(listOf("Cheese"), bob.get("/api/recipes/${bobsStew.id}/add-ons").body<List<AddOn>>().map { it.name })
+
+        assertEquals(alicesAddOns, alice.get("/api/recipes/${stew.id}/add-ons").body<List<AddOn>>())
+        assertEquals(listOf(egg.id to 60.0), alice.get("/api/recipes/${stew.id}").body<RecipeDetail>().toppings.map { it.ingredientId to it.grams })
     }
 
     @Test

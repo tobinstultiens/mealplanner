@@ -770,6 +770,23 @@ enum class Msg(private val english: String, private val dutch: String) {
     AMOUNT_OF("How much {0}?", "Hoeveel {0}?"),
     AMOUNT_PIECES("Pieces", "Stuks"),
     AMOUNT_GRAMS("Grams", "Gram"),
+    ADJUST_QUICK("Quick add", "Snel toevoegen"),
+    ADJUST_ADDED_DONE("{0} added", "{0} toegevoegd"),
+    ADJUST_SHORT_TITLE("Not enough left for a later meal", "Niet genoeg over voor een latere maaltijd"),
+    ADJUST_SHORT("{0}: {1} short for {2}", "{0}: {1} te weinig voor {2}"),
+    ADJUST_SHORT_MEAL("{0}, {1} {2}", "{0}, {1} {2}"),
+    ADJUST_SHORT_LISTED(
+        "This meal used what was at home for it, so the shopping list asks for it again.",
+        "Deze maaltijd gebruikte wat daarvoor in huis was, dus het boodschappenlijstje vraagt er weer om.",
+    ),
+    TOPPINGS("Optional toppings", "Toppings naar keuze"),
+    TOPPINGS_HINT(
+        "Offered first when you adjust a meal of this recipe. Not counted in its nutrition, cost or shopping until added to a meal.",
+        "Staan vooraan als je een maaltijd van dit recept aanpast. Tellen niet mee in voedingswaarden, kosten of boodschappen tot ze aan een maaltijd zijn toegevoegd.",
+    ),
+    TOPPING_ADD("Add a topping", "Topping toevoegen"),
+    TOPPING_REMOVE("Remove {0}", "{0} verwijderen"),
+    TOPPINGS_FAILED("Could not save the toppings: {0}", "De toppings konden niet worden opgeslagen: {0}"),
 
     // --- Android: the download of an update (toasts)
     DOWNLOADING_VERSION("Downloading version {0}…", "Versie {0} wordt gedownload…"),

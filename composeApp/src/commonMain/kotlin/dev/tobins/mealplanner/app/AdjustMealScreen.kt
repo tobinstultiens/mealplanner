@@ -3,18 +3,26 @@ package dev.tobins.mealplanner.app
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -37,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MealLine
 import dev.tobins.mealplanner.api.MealLineChange
@@ -66,8 +75,12 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
     var editing by remember { mutableStateOf<MealLine?>(null) }
     var picking by rememberSaveable { mutableStateOf(false) }
     var adding by remember { mutableStateOf<Ingredient?>(null) }
+    // The recipe's quick add-ons; none until they are in, or when they could not be loaded (Add still works).
+    var addOns by remember { mutableStateOf<List<AddOn>>(emptyList()) }
+    val recipeId = (state as? Load.Ready)?.value?.recipeId
 
     LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.mealLines(place.weekStart, place.day, place.slot) } }
+    LaunchedEffect(recipeId, reload) { recipeId?.let { id -> (load { api.addOns(id) } as? Load.Ready)?.let { addOns = it.value } } }
 
     /**
      * Saves the changes [edit] makes of the meal as it is when its turn comes, and shows the meal as it is
@@ -110,7 +123,18 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(Spacing.Related),
                 ) {
                     item { MealHeader(meal, enabled = !busy, onReset = { save(t(Msg.ADJUST_RESET_DONE)) { emptyList() } }) }
-                    item { SectionHeader(t(Msg.ADJUST_IN_MEAL)) }
+                    // First on the screen: a warning an edit brings is seen at once, and a known topping is two taps
+                    // from Today however long the recipe is.
+                    if (meal.shortfalls.isNotEmpty()) item { LaterMealsShort(meal) }
+                    val quick = meal.quickAddOns(addOns)
+                    if (quick.isNotEmpty()) {
+                        item {
+                            QuickAddOns(quick, enabled = !busy) { chosen ->
+                                save(t(Msg.ADJUST_ADDED_DONE, chosen.addOn.name)) { it.adding(chosen) }
+                            }
+                        }
+                    }
+                    item { SectionHeader(t(Msg.ADJUST_IN_MEAL), Modifier.padding(top = Spacing.Related)) }
                     items(meal.lines, key = { "${it.ingredientId}:${it.name}" }) { line ->
                         LineRow(
                             line,
@@ -134,7 +158,7 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                     }
                 }
                 if (picking) {
-                    IngredientPicker(api, inMeal = meal.lines.mapNotNullTo(HashSet()) { it.ingredientId }, onDismiss = { picking = false }) { ingredient ->
+                    IngredientPicker(api, t(Msg.ADJUST_ADD), left = meal.lines.mapNotNullTo(HashSet()) { it.ingredientId }, onDismiss = { picking = false }) { ingredient ->
                         picking = false
                         adding = ingredient
                     }
@@ -174,6 +198,50 @@ private fun MealHeader(meal: MealLines, enabled: Boolean, onReset: () -> Unit) {
     }
 }
 
+/**
+ * The later meals this one leaves short (issue 226): each with the ingredient and how much, and that the shopping
+ * list asks for it again. An adjustment buys nothing itself; this is the one case where it does.
+ */
+@Composable
+private fun LaterMealsShort(meal: MealLines) {
+    val t = LocalStrings.current
+    Card(
+        Modifier.fillMaxWidth().padding(top = Spacing.Related),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
+    ) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
+            Text(t(Msg.ADJUST_SHORT_TITLE), style = MaterialTheme.typography.titleSmall)
+            meal.shortfallTexts(t).forEach { Text(it, style = MaterialTheme.typography.bodyMedium.numeric()) }
+            Text(t(Msg.ADJUST_SHORT_LISTED), style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/**
+ * The recipe's toppings and what its meals had added before, as chips: one tap adds one in its amount, on top of
+ * what the meal has of it. A chip for something the meal has already says "+ 30 g" itself, so it has no plus icon.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun QuickAddOns(addOns: List<QuickAddOn>, enabled: Boolean, onAdd: (QuickAddOn) -> Unit) {
+    val t = LocalStrings.current
+    Column(Modifier.padding(top = Spacing.Related), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
+        SectionHeader(t(Msg.ADJUST_QUICK))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+            addOns.forEach { quick ->
+                AssistChip(
+                    enabled = enabled,
+                    onClick = { onAdd(quick) },
+                    label = { Text(quick.chipText(t)) },
+                    leadingIcon = if (quick.extra) null else {
+                        { Icon(AppIcons.Add, contentDescription = null, Modifier.size(AssistChipDefaults.IconSize)) }
+                    },
+                )
+            }
+        }
+    }
+}
+
 /** One ingredient: tapped, its amount changes; the cross leaves it out; a line left out can be put back. */
 @Composable
 private fun LineRow(line: MealLine, enabled: Boolean, onEdit: () -> Unit, onLeaveOut: () -> Unit, onPutBack: () -> Unit) {
@@ -208,7 +276,8 @@ private fun LineRow(line: MealLine, enabled: Boolean, onEdit: () -> Unit, onLeav
 @Composable
 internal fun AmountDialog(name: String, gramsPerPiece: Double?, grams: Double?, onDismiss: () -> Unit, onConfirm: (Double) -> Unit) {
     val t = LocalStrings.current
-    val startInPieces = gramsPerPiece != null
+    // In pieces for a new ingredient (prefilled with one) or an amount that is a sensible count; "0.09" is no count.
+    val startInPieces = gramsPerPiece != null && (grams == null || inPieces(grams, gramsPerPiece))
     val startText = remember { amountFieldText(grams, startInPieces, gramsPerPiece) }
     var inPieces by remember { mutableStateOf(startInPieces) }
     var text by remember { mutableStateOf(startText) }
@@ -254,9 +323,12 @@ internal fun AmountDialog(name: String, gramsPerPiece: Double?, grams: Double?, 
     )
 }
 
-/** Searches the account's ingredients for one to add; a failure to load them is said in place of the list. */
+/**
+ * Searches the account's ingredients for one to add, under [title]; those in [left] are left out, as they have a
+ * line of their own. A failure to load them is said in place of the list.
+ */
 @Composable
-private fun IngredientPicker(api: ApiClient, inMeal: Set<Long>, onDismiss: () -> Unit, onPick: (Ingredient) -> Unit) {
+internal fun IngredientPicker(api: ApiClient, title: String, left: Set<Long>, onDismiss: () -> Unit, onPick: (Ingredient) -> Unit) {
     val t = LocalStrings.current
     var catalogue by remember { mutableStateOf<Load<List<Ingredient>>>(Load.Loading) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -264,7 +336,7 @@ private fun IngredientPicker(api: ApiClient, inMeal: Set<Long>, onDismiss: () ->
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.ADJUST_ADD)) },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 OutlinedTextField(query, { query = it }, label = { Text(t(Msg.SEARCH_INGREDIENTS)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -272,7 +344,7 @@ private fun IngredientPicker(api: ApiClient, inMeal: Set<Long>, onDismiss: () ->
                     Load.Loading -> Text(t(Msg.LOADING))
                     is Load.Failed -> Text(failureSentence(all), color = MaterialTheme.colorScheme.error)
                     is Load.Ready -> {
-                        val shown = ingredientsMatching(all.value, query, inMeal)
+                        val shown = ingredientsMatching(all.value, query, left)
                         if (shown.isEmpty()) Text(t(Msg.ADJUST_NO_MATCH), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         LazyColumn(Modifier.heightIn(max = 320.dp)) {
                             items(shown, key = { it.id }) { ingredient ->

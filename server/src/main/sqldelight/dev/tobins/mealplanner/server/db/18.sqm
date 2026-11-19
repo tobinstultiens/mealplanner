@@ -1,0 +1,13 @@
+-- Version 18 -> 19: optional toppings of a recipe, per account (issue 226). A new table only, so no table is
+-- rebuilt and no row is touched: every recipe starts without toppings.
+
+CREATE TABLE recipeTopping (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    recipeId INTEGER NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    grams REAL NOT NULL,
+    PRIMARY KEY (userId, recipeId, ingredientId)
+);
+
+CREATE INDEX recipeTopping_ingredient ON recipeTopping(ingredientId);

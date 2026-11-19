@@ -123,6 +123,16 @@ fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, s
     )
 }
 
+/**
+ * The ingredients of [recipe] that the shopping list has no row with a known weight for, by the rules of
+ * [shoppingNeeds]: staples (always at home, so never on the list), one that counts for nothing (to taste), and
+ * one with a line whose amount can't be weighed. A later meal left short ([shortfalls]) is asked for again on
+ * its row, so these, which have none to ask on, are not looked at.
+ */
+fun withoutWeighedRow(recipe: RecipeLines): Set<Long> = recipe.lines.mapNotNullTo(HashSet()) { (line, ingredient) ->
+    ingredient?.id?.takeIf { ingredient.isStaple || ingredient.negligible || line.amount != null && gramsOf(line, ingredient) == null }
+}
+
 /** The weight of a line with an amount, by the ingredient's conversions or else its own; null when it can't be told. */
 private fun gramsOf(line: IngredientLine, ingredient: Ingredient?): Double? =
     ingredient?.let { NutritionCalculator.quantityOf(line, it)?.grams } ?: line.baseAmount.takeIf { line.dimension == Dimension.WEIGHT }

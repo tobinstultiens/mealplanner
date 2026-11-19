@@ -9,6 +9,8 @@ import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.api.ToppingInput
+import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.OfferSource
@@ -139,7 +141,13 @@ class MigrationTest {
 
     /** Version 18 added what a meal ate that differs from its recipe (17.sqm); dropping the table drops its index. */
     private fun dropMealLines(statement: Statement) {
+        dropRecipeToppings(statement)
         statement.execute("DROP TABLE mealLine")
+    }
+
+    /** Version 19 added a recipe's optional toppings (18.sqm); dropping the table drops its index. */
+    private fun dropRecipeToppings(statement: Statement) {
+        statement.execute("DROP TABLE recipeTopping")
     }
 
     @Test
@@ -958,6 +966,63 @@ class MigrationTest {
         assertEquals("650.0", single(url, "SELECT grams FROM stock"), "the lunch's share of the beef went from 200 g to 150 g")
         alice.plans.setStatus(week, 0, MealSlot.DINNER, MealStatus.PLANNED)
         assertEquals("1000.0", single(url, "SELECT grams FROM stock"), "un-eaten, the dinner gives back both shares")
+        driver.close()
+    }
+
+    /**
+     * Version 18 is the schema of 17.sqm, which servers before a recipe's toppings (issue 226) run. Only a table
+     * is added: every row stays, no recipe has a topping, and the meals' add-ons are what they had added.
+     */
+    @Test
+    fun aVersionEighteenDatabaseKeepsEveryRowAndItsRecipesStartWithoutToppings() {
+        val file = createTempFile("v18", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropRecipeToppings(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name) VALUES (1, 1, 'Rice'), (2, 1, 'Egg'), (3, 2, 'Rice')")
+                statement.execute(
+                    "INSERT INTO recipe (id, userId, source, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, addedAt, inRotation) VALUES " +
+                        "(1, 1, 'MANUAL', 'own', 'Bowl', '[]', 1, '', 1, '[]', 'MEAL', '2026-11-01T00:00:00Z', 1), " +
+                        "(2, 2, 'MANUAL', 'own', 'Bob bowl', '[]', 1, '', 1, '[]', 'MEAL', '2026-11-01T00:00:00Z', 1)",
+                )
+                statement.execute("INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item) VALUES (1, 0, 100, 'g', 'WEIGHT', 100, 'rice'), (2, 0, 100, 'g', 'WEIGHT', 100, 'rice')")
+                // Alice's bowl had an egg added; Bob's is as planned.
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 0, 'DINNER', 1, 'Bowl', 1.0, 400.0, 10.0, 0, 0, 'EATEN'), (2, '$week', 0, 'DINNER', 2, 'Bob bowl', 1.0, 400.0, 10.0, 0, 0, 'PLANNED')",
+                )
+                statement.execute("INSERT INTO mealLine (userId, weekStart, day, slot, ingredientId, grams) VALUES (1, '$week', 0, 'DINNER', 2, 60.0)")
+                statement.execute("PRAGMA user_version = 18")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        fun lines() = single(url, "SELECT userId || ':' || day || ':' || slot || ':' || ingredientId || ':' || grams FROM mealLine ORDER BY userId")
+        val before = counts() to lines()
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, counts() to lines(), "every row as it was, in every table")
+        assertEquals("0", single(url, "SELECT count(*) FROM recipeTopping"))
+
+        // Alice's bowl has no toppings yet; its add-ons are the egg its meal had, and a topping can be set.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        fun scope(id: Long) = UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+        val alice = scope(1)
+        assertEquals(emptyList(), alice.recipes.find(1)!!.toppings)
+        assertEquals(listOf("Egg" to 60.0), alice.toppings.addOns(1).map { it.name to it.grams })
+        assertEquals(listOf("Egg"), alice.toppings.set(1, ToppingsInput(listOf(ToppingInput(2, 60.0)))).toppings.map { it.name })
+        assertEquals(emptyList(), scope(2).toppings.addOns(2))
         driver.close()
     }
 }

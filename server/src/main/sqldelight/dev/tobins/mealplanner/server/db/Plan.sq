@@ -63,6 +63,14 @@ INSERT INTO mealLine (userId, weekStart, day, slot, ingredientId, grams) VALUES 
 deleteMealLines:
 DELETE FROM mealLine WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
 
+-- What the account's meals of one recipe had in them, in every week: where quick add-ons come from.
+selectRecipeMealLines:
+SELECT mealLine.ingredientId, mealLine.grams, mealLine.weekStart, mealLine.day, mealLine.slot
+FROM mealLine
+JOIN planMeal ON planMeal.userId = mealLine.userId AND planMeal.weekStart = mealLine.weekStart
+    AND planMeal.day = mealLine.day AND planMeal.slot = mealLine.slot
+WHERE mealLine.userId = :userId AND planMeal.recipeId = :recipeId AND mealLine.grams > 0;
+
 -- The latest offers per store, replaced as a whole by each successful fetch.
 CREATE TABLE offer (
     store TEXT NOT NULL,

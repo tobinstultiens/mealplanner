@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.LaterShortfall
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
@@ -257,11 +258,62 @@ class PlanRepository(
         stock.useUp(MealRef(start, meal.day, meal.slot), adjustments.gramsEaten(start, meal, recipe))
     }
 
-    /** The meal in [day]'s [slot] with what was in it ([MealAdjustments.lines]); a [NotFoundException] for an empty slot. */
+    /**
+     * The meal in [day]'s [slot] with what was in it ([MealAdjustments.lines]) and the later meals it leaves
+     * short ([warnings]); a [NotFoundException] for an empty slot.
+     */
     fun lines(weekStart: String, day: Int, slot: MealSlot): MealLines {
         val start = parseWeekStart(weekStart)
-        return adjustments.lines(start, mealAt(meals(start), day, slot))
+        val week = meals(start)
+        val meal = mealAt(week, day, slot)
+        return adjustments.lines(start, meal).copy(shortfalls = warnings(start, meal, week))
     }
+
+    /**
+     * What the adjustments of the week starting [start] leave its meals still to cook short of (issue 226,
+     * [dev.tobins.mealplanner.server.shortfalls]), from what was at home for them ([StockRepository.atHome]).
+     * The meals walked are those cooked ([shareTaken]) or still to cook ([stillToCook]), in the order they
+     * are cooked ([cookingOrder]). An ingredient the week's list has no weighed row for ([withoutWeighedRow]:
+     * a staple, one to taste, one some line of the week can't weigh) counts as not known at home, so it is
+     * never short: there would be no row to ask for it again, and the warning would say what the list doesn't.
+     * Nothing without an adjusted meal in the week.
+     */
+    fun shortfallsIn(start: LocalDate, week: List<PlannedMeal>): Shortfalls {
+        val changes = adjustments.changesIn(start)
+        if (changes.isEmpty()) return Shortfalls.NONE
+        val lines = recipes.linesWithIngredients(week.map { it.recipeId })
+        val toCook = stillToCook(start, week).mapTo(HashSet()) { it.day to it.slot }
+        val cooked = week.filter { (it.day to it.slot) in toCook || shareTaken(start, it, week) }.sortedBy { cookingOrder(it, week) }
+        val noRow = lines.values.flatMapTo(HashSet(), ::withoutWeighedRow)
+        return shortfalls(adjustments.demands(cooked, lines, changes, toCook), stock.atHome(start) + noRow.associateWith { null })
+    }
+
+    /**
+     * The meals cooked after [meal] that its week leaves short ([shortfallsIn]) of an ingredient [meal] took more
+     * of than its recipe from what was at home: what the Adjust screen warns of. A meal cooked before it took
+     * its share first, and an ingredient [meal] had from the fridge took nothing another meal needed.
+     */
+    private fun warnings(start: LocalDate, meal: PlannedMeal, week: List<PlannedMeal>): List<LaterShortfall> {
+        val result = shortfallsIn(start, week)
+        val order = cookingOrder(meal, week)
+        val names = recipes.ingredients.list().associate { it.id to it.name }
+        return result.short.filter { short ->
+            cookingOrder(short.meal, week) > order &&
+                result.taken[short.ingredientId].orEmpty().any { it.demand.meal.day == meal.day && it.demand.meal.slot == meal.slot }
+        }.map { LaterShortfall(it.meal.day, it.meal.slot, it.meal.title, it.ingredientId, names[it.ingredientId].orEmpty(), it.grams) }
+    }
+
+    /**
+     * Where [meal] comes in the order [week]'s meals are cooked: by day and slot, but a leftover lunch with the
+     * dinner it is cooked with, unless that dinner was skipped and the lunch is cooked for itself.
+     */
+    private fun cookingOrder(meal: PlannedMeal, week: List<PlannedMeal>): Double {
+        val cookedWith = dinnerOf(meal, week)?.takeIf { it.status != MealStatus.SKIPPED }
+        return cookedWith?.let { at(it) + 0.5 } ?: at(meal)
+    }
+
+    /** [meal]'s place in its week, slot by slot: what [cookingOrder] counts from. */
+    private fun at(meal: PlannedMeal): Double = (meal.day * MealSlot.entries.size + meal.slot.ordinal).toDouble()
 
     /**
      * Says what was in a meal (issue 226): [changes] replace those it had ([MealAdjustments.replace]); none
@@ -285,7 +337,7 @@ class PlanRepository(
                 val moved = (before.keys + after.keys).filter { abs((before[it] ?: 0.0) - (after[it] ?: 0.0)) > 1e-9 }
                 stock.retake(MealRef(start, day, slot), moved.associateWith { after[it] ?: 0.0 })
             }
-            adjustments.lines(start, meal)
+            adjustments.lines(start, meal).copy(shortfalls = warnings(start, meal, week))
         }
     }
 
