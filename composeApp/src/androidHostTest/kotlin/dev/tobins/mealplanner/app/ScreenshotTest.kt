@@ -123,7 +123,23 @@ private fun prepChoices() {
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
         // The days from today on are offered: Monday and Tuesday have passed.
-        PrepChoices(samplePrep, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe)) {}
+        PrepChoices(samplePrep, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe), hosts = emptySet()) {}
+    }
+}
+
+/**
+ * The same recipe eaten as a side of half a serving, next to today's dinner and Friday's lunch: today's lunch was eaten,
+ * Thursday's dinner is skipped and Friday's has a side already, so none of those can be picked.
+ */
+@Composable
+private fun prepSideChoices() {
+    val hosts = listOf(0 to MealSlot.DINNER, 1 to MealSlot.LUNCH, 2 to MealSlot.LUNCH, 3 to MealSlot.LUNCH, 3 to MealSlot.DINNER)
+        .mapTo(HashSet()) { (day, slot) -> PrepSlot(plusDays(FakeBackend.TODAY, day), slot) }
+    val choice = PrepChoice(keepingRecipe, FakeBackend.TODAY, firstDay = FakeBackend.TODAY)
+        .eatenAs(0.5, hosts).toggled(FakeBackend.TODAY, MealSlot.DINNER).toggled(plusDays(FakeBackend.TODAY, 2), MealSlot.LUNCH)
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
+        PrepChoices(choice, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe), hosts) {}
     }
 }
 
@@ -226,6 +242,8 @@ enum class Shot(
     val emptyRecipes: Boolean = false,
     /** The fake backend's week with a prep (issue 234). */
     val prepped: Boolean = false,
+    /** The fake backend's week with a side prepped next to three meals (issue 234, step 2). */
+    val sides: Boolean = false,
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
     val dutch: Boolean = false,
     val heightDp: Int = 640,
@@ -246,6 +264,16 @@ enum class Shot(
     PREP_CHOICES(heightDp = 1100, content = { _, _ -> prepChoices() }),
     PREP_CHOICES_NL(dutch = true, heightDp = 1100, content = { _, _ -> prepChoices() }),
     PREP_CHOICES_X2(heightDp = 2000, fontScale = 2.0f, content = { _, _ -> prepChoices() }),
+    // Half a serving of a salad as a side next to three meals: the side under each, what the meal comes to with it, and the
+    // days it takes over the calories (issue 234, step 2); in both languages, and on Today, where the batch is made.
+    PLAN_SIDES(sides = true, heightDp = 4800, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_SIDES_NL(sides = true, dutch = true, heightDp = 4800, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    TODAY_SIDES(sides = true, heightDp = 2000, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    TODAY_SIDES_NL(sides = true, dutch = true, heightDp = 2000, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    // The Prep dialog eaten as a side: only the meals a side can go next to can be picked.
+    PREP_SIDE_CHOICES(heightDp = 1300, content = { _, _ -> prepSideChoices() }),
+    PREP_SIDE_CHOICES_NL(dutch = true, heightDp = 1300, content = { _, _ -> prepSideChoices() }),
+    PREP_SIDE_CHOICES_X2(heightDp = 2000, fontScale = 2.0f, content = { _, _ -> prepSideChoices() }),
     // Removing a prep names every meal that goes.
     REMOVE_PREP(heightDp = 420, content = { _, _ -> removePrepQuestion() }),
     REMOVE_PREP_NL(dutch = true, heightDp = 420, content = { _, _ -> removePrepQuestion() }),
@@ -433,7 +461,8 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     @get:Rule
     val compose = createEmptyComposeRule()
 
-    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped).also { it.profile = shot.profile }
+    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides)
+        .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)
 
     @Before

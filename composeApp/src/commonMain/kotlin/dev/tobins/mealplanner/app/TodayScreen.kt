@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
 import kotlinx.coroutines.launch
@@ -54,7 +55,8 @@ import kotlin.math.roundToInt
 @Composable
 fun TodayScreen(
     api: ApiClient,
-    onOpenRecipe: (PlannedMeal, String) -> Unit,
+    /** Opens a recipe from a meal: its id and what the meal says about cooking it (a side's, for a side). */
+    onOpenRecipe: (Long, MealToCook?) -> Unit,
     onOpenPlan: () -> Unit,
     /** Opens what was in a meal, to adjust it (issue 226). */
     onAdjust: (MealPlace) -> Unit = {},
@@ -138,7 +140,9 @@ fun TodayScreen(
                         MealCard(
                             meal = meal,
                             pictureUrl = pictures[meal.recipeId],
-                            onOpen = { onOpenRecipe(meal, day.weekStart) },
+                            date = day.date,
+                            onOpen = { onOpenRecipe(meal.recipeId, meal.toCook(day.weekStart)) },
+                            onOpenSide = { side -> onOpenRecipe(side.recipeId, side.toCook(meal.status == MealStatus.SKIPPED)) },
                             onStatus = { status -> change { api.setMealStatus(day.weekStart, day.dayIndex, meal.slot, status) } },
                             onAdjust = { onAdjust(MealPlace(day.weekStart, day.dayIndex, meal.slot)) },
                         )
@@ -230,7 +234,16 @@ private fun TotalsCard(day: DayView) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MealCard(meal: PlannedMeal, pictureUrl: String?, onOpen: () -> Unit, onStatus: (MealStatus) -> Unit, onAdjust: () -> Unit) {
+private fun MealCard(
+    meal: PlannedMeal,
+    pictureUrl: String?,
+    /** The meal's ISO date, which says whether its side's batch is made today. */
+    date: String,
+    onOpen: () -> Unit,
+    onOpenSide: (MealSide) -> Unit,
+    onStatus: (MealStatus) -> Unit,
+    onAdjust: () -> Unit,
+) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -251,6 +264,8 @@ private fun MealCard(meal: PlannedMeal, pictureUrl: String?, onOpen: () -> Unit,
                 }
                 recipePicture(pictureUrl)?.let { RecipePhoto(it, Modifier.size(64.dp)) }
             }
+            // A side is eaten or skipped with its meal: the buttons below mark both.
+            meal.side?.let { side -> SideRow(meal, side, date, onOpen = { onOpenSide(side) }) }
             // Wraps on a narrow screen with a large font, where the three buttons of a planned meal do not fit.
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), itemVerticalAlignment = Alignment.CenterVertically) {
                 when (meal.status) {

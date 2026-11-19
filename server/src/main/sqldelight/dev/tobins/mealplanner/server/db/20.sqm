@@ -1,0 +1,32 @@
+-- Version 20 -> 21: a side taken from a prepped batch (issue 234, step 2). A side is a prepPortion row of role SIDE
+-- next to its meal's main, which needs no change; but what its share takes from the stock is kept under the same
+-- meal as what the main takes, and could not be told apart: the same ingredient taken from the same entry would be
+-- one row, and eating the main would find the side's share there and take nothing. stockUse gets the role of the
+-- share it was taken for, part of its key; every row there is a main's (MEAL), as no side existed before.
+--
+-- The table is rebuilt, as SQLite can't change a key in place: the old one is renamed out of the way first, and no
+-- table refers to stockUse, so dropping it at the end cascades nowhere.
+
+ALTER TABLE stockUse RENAME TO stockUse_old;
+
+CREATE TABLE stockUse (
+    userId INTEGER NOT NULL,
+    weekStart TEXT NOT NULL,
+    day INTEGER NOT NULL,
+    slot TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'MEAL',
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    fromWeek TEXT NOT NULL,
+    source TEXT NOT NULL,
+    addedAt TEXT NOT NULL,
+    grams REAL,
+    PRIMARY KEY (userId, weekStart, day, slot, role, ingredientId, fromWeek, source),
+    FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE
+);
+
+INSERT INTO stockUse (userId, weekStart, day, slot, role, ingredientId, fromWeek, source, addedAt, grams)
+SELECT userId, weekStart, day, slot, 'MEAL', ingredientId, fromWeek, source, addedAt, grams FROM stockUse_old;
+
+DROP TABLE stockUse_old;
+
+CREATE INDEX stockUse_ingredient ON stockUse(ingredientId);

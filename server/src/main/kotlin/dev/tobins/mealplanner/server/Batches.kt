@@ -15,30 +15,41 @@ import java.util.Locale
 
 /**
  * A meal of a prepped batch as stored: the meal in its [week], and its [share] of the batch, which is the
- * meal's portions until it is skipped and its share is eaten in another meal (then 0).
+ * meal's portions until it is skipped and its share is eaten in another meal (then 0). A [side] is the side
+ * next to [meal] (issue 234, step 2): [meal] is the meal whose main it goes with, whose status it shares, and
+ * [share] its own portions.
  */
-class BatchMeal(val week: LocalDate, val meal: PlannedMeal, val share: Double) {
+class BatchMeal(val week: LocalDate, val meal: PlannedMeal, val share: Double, val side: Boolean = false) {
     val date: LocalDate get() = week.plusDays(meal.day.toLong())
 
-    val ref: MealRef get() = MealRef(week, meal.day, meal.slot)
+    val ref: MealRef get() = MealRef(week, meal.day, meal.slot, side)
 
     fun isAt(date: LocalDate, slot: MealSlot): Boolean = this.date == date && meal.slot == slot
+
+    /** Whether this is [meal]'s own share in [week] ([side] false) or that of the side next to it ([side] true). */
+    fun isOf(week: LocalDate, meal: PlannedMeal, side: Boolean): Boolean =
+        this.week == week && this.meal.day == meal.day && this.meal.slot == meal.slot && this.side == side
 }
 
 /**
  * A prepped batch (issue 234, the tables `prep` and `prepPortion`): one recipe cooked once, on [madeOn], and
  * eaten in [meals] until [lastDay], in eating order and in whichever plan weeks they are. The batch is the
- * sum of the meals' shares: a skipped meal's share stays in it, as it is in the box.
+ * sum of the meals' shares: a skipped meal's share stays in it, as it is in the box. Its meals are the slots'
+ * meals or sides next to them (step 2), or both; [title] is its recipe's.
  */
 class Batch(
     val id: Long,
     val recipeId: Long,
+    val title: String,
     val madeOn: LocalDate,
     val lastDay: LocalDate,
     val vacuum: Boolean,
     val meals: List<BatchMeal>,
 ) {
-    /** The meal that makes the batch: its first, on [madeOn]. It stays while the batch does ([PlanRepository]'s rules). */
+    /**
+     * The meal that makes the batch: its first, on [madeOn], a slot's meal or a side next to one. It stays while the
+     * batch does ([PlanRepository]'s rules).
+     */
     val cook: BatchMeal? get() = meals.firstOrNull()?.takeIf { it.date == madeOn }
 
     /** Made, and so bought and taken from the stock: one of its meals was eaten. */
@@ -61,20 +72,29 @@ class Batch(
             else -> MealStatus.PLANNED
         }
 
-    fun isCook(week: LocalDate, meal: PlannedMeal): Boolean = cook?.let { it.week == week && it.meal.day == meal.day && it.meal.slot == meal.slot } == true
+    /** Whether [meal] of [week] is the meal that makes the batch: its own share ([side] false) or its side's. */
+    fun isCook(week: LocalDate, meal: PlannedMeal, side: Boolean = false): Boolean = cook?.isOf(week, meal, side) == true
 
+    /** The batch's meal or side at [date]'s [slot]: a batch is never both the meal of a slot and the side next to it. */
     fun mealAt(date: LocalDate, slot: MealSlot): BatchMeal? = meals.firstOrNull { it.isAt(date, slot) }
+
+    /** The side of the batch next to [meal] of [week]; null when its side is of another batch or it has none. */
+    fun sideOf(week: LocalDate, meal: PlannedMeal): BatchMeal? = meals.firstOrNull { it.isOf(week, meal, side = true) }
+
+    /** The servings cooked when [meal] of [week] is made, for its own share or its [side]'s: the batch where it is made, else 0. */
+    fun cookPortions(week: LocalDate, meal: PlannedMeal, side: Boolean): Double =
+        if (isCook(week, meal, side) && status != MealStatus.SKIPPED) portions else 0.0
 
     fun toApi() = MealPrep(
         id = id,
         madeOn = madeOn.toString(),
         lastDay = lastDay.toString(),
         vacuum = vacuum,
-        meals = meals.map { PrepMeal(it.date.toString(), it.meal.slot, it.share, it.meal.status) },
+        meals = meals.map { PrepMeal(it.date.toString(), it.meal.slot, it.share, it.meal.status, side = it.side) },
     )
 
-    /** The meals after the first, as a sentence names them: `Tuesday lunch, Wednesday dinner`. */
-    fun laterMealsText(): String = meals.drop(1).joinToString(", ") { slotName(it.date, it.meal.slot) }
+    /** The meals after the first, as a sentence names them: `Tuesday lunch, Wednesday dinner (a side)`. */
+    fun laterMealsText(): String = meals.drop(1).joinToString(", ") { slotName(it.date, it.meal.slot) + if (it.side) " (a side)" else "" }
 
     companion object {
         /** Reads the batches [ids] of [userId] with every meal of each, in every week; a batch of another account is not there. */
@@ -85,11 +105,14 @@ class Batch(
                 val ofBatch = meals[row.id].orEmpty().map { m ->
                     val meal = PlannedMeal(
                         day = m.day.toInt(), slot = MealSlot.valueOf(m.slot), recipeId = m.recipeId, title = m.title, portions = m.portions,
-                        kcal = m.kcal, proteinG = m.proteinG, locked = true, status = MealStatus.valueOf(m.status),
+                        kcal = m.kcal, proteinG = m.proteinG, locked = m.locked != 0L, status = MealStatus.valueOf(m.status),
                     )
-                    BatchMeal(LocalDate.parse(m.weekStart), meal, m.share ?: m.portions)
+                    val side = m.role == MealRef.SIDE
+                    BatchMeal(LocalDate.parse(m.weekStart), if (side) meal else meal.copy(locked = true), m.share ?: m.portions, side)
                 }.sortedWith(compareBy({ it.date }, { it.meal.slot.ordinal }))
-                row.id to Batch(row.id, row.recipeId, LocalDate.parse(row.madeOn), LocalDate.parse(row.lastDay), row.vacuum != 0L, ofBatch)
+                // The recipe's title as stored, else that of a meal of it, which the plan keeps when the recipe goes.
+                val title = row.recipeTitle ?: ofBatch.firstOrNull { !it.side }?.meal?.title.orEmpty()
+                row.id to Batch(row.id, row.recipeId, title, LocalDate.parse(row.madeOn), LocalDate.parse(row.lastDay), row.vacuum != 0L, ofBatch)
             }
         }
 

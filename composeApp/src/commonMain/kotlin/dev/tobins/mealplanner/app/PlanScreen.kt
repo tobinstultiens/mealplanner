@@ -42,6 +42,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.DailyTargets
+import dev.tobins.mealplanner.api.MealPrep
+import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlanDay
@@ -57,7 +59,8 @@ import kotlin.math.roundToInt
 @Composable
 fun PlanScreen(
     api: ApiClient,
-    onOpenRecipe: (PlannedMeal, String) -> Unit,
+    /** Opens a recipe from a meal: its id and what the meal says about cooking it (a side's, for a side). */
+    onOpenRecipe: (Long, MealToCook?) -> Unit,
     onOpenProfile: () -> Unit,
     onOpenRecipes: () -> Unit,
     onOpenBank: () -> Unit,
@@ -88,9 +91,9 @@ fun PlanScreen(
     var generatingFor by remember { mutableStateOf<PlannedMeal?>(null) }
     // The slot a recipe is being chosen for: a planned meal's or an empty one's.
     var choosingFor by remember { mutableStateOf<Pair<Int, MealSlot>?>(null) }
-    // The prep being made (issue 234), the prepped meal whose prep is being removed, and the shares of skipped prepped meals still in the box.
+    // The prep being made (issue 234), the prep being removed with the title of its recipe, and the shares of skipped prepped meals still in the box.
     var prepping by remember { mutableStateOf<PrepChoice?>(null) }
-    var removingPrep by remember { mutableStateOf<PlannedMeal?>(null) }
+    var removingPrep by remember { mutableStateOf<Pair<String, MealPrep>?>(null) }
     var spares by remember { mutableStateOf<List<SparePortion>>(emptyList()) }
     val preppable = myRecipes?.let(::preppable).orEmpty()
 
@@ -108,6 +111,11 @@ fun PlanScreen(
     }
     LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.plan(weekStart) } }
     LaunchedEffect(reload, frontReturns, today) { refreshSpares() }
+    // The week after the one shown, while the Prep dialog is open: a batch may be eaten into it, as a side next to its meals too.
+    var nextWeek by remember(weekStart) { mutableStateOf<WeekPlan?>(null) }
+    LaunchedEffect(prepping != null, weekStart) {
+        if (prepping != null) (load { api.plan(plusDays(weekStart, 7)) } as? Load.Ready)?.let { nextWeek = it.value }
+    }
 
     /** Shows another week the user stepped to, from its top. */
     fun show(week: String) {
@@ -163,7 +171,8 @@ fun PlanScreen(
     }
 
     prepping?.let { start ->
-        PrepDialog(start, weekDays = prepDays(weekStart, today), recipes = preppable, onDismiss = { prepping = null }) { input ->
+        val hosts = sideHosts((state as? Load.Ready)?.value, nextWeek)
+        PrepDialog(start, weekDays = prepDays(weekStart, today), recipes = preppable, hosts = hosts, onDismiss = { prepping = null }) { input ->
             when (val result = load { api.createPrep(weekStart, input) }) {
                 is Load.Ready -> {
                     state = result
@@ -177,9 +186,8 @@ fun PlanScreen(
         }
     }
 
-    removingPrep?.let { meal ->
-        val prep = meal.prep ?: return@let
-        RemovePrepDialog(meal.title, prep, onDismiss = { removingPrep = null }) {
+    removingPrep?.let { (title, prep) ->
+        RemovePrepDialog(title, prep, onDismiss = { removingPrep = null }) {
             removingPrep = null
             change { api.removePrep(weekStart, prep.id) }
         }
@@ -292,7 +300,8 @@ fun PlanScreen(
                                 enabled = !busy,
                                 pictures = pictures,
                                 preppable = preppable.mapTo(HashSet()) { it.id },
-                                onOpenRecipe = { meal -> onOpenRecipe(meal, weekStart) },
+                                onOpenRecipe = { meal -> onOpenRecipe(meal.recipeId, meal.toCook(weekStart)) },
+                                onOpenSide = { meal, side -> onOpenRecipe(side.recipeId, side.toCook(meal.status == MealStatus.SKIPPED)) },
                                 onReroll = { meal -> change { api.rerollMeal(weekStart, meal.day, meal.slot) } },
                                 onGenerate = { meal -> generatingFor = meal },
                                 onChoose = { day, slot -> choosingFor = day to slot },
@@ -309,7 +318,12 @@ fun PlanScreen(
                                     val date = plusDays(weekStart, meal.day)
                                     prepping = PrepChoice(preppable.first { it.id == meal.recipeId }, madeOn = date, firstDay = today).with().toggled(date, meal.slot)
                                 },
-                                onRemovePrep = { meal -> removingPrep = meal },
+                                onRemovePrep = { title, prep -> removingPrep = title to prep },
+                                onAddSide = { meal ->
+                                    val date = plusDays(weekStart, meal.day)
+                                    prepping = PrepChoice(preppable.singleOrNull(), madeOn = date, firstDay = today, side = SIDE_PORTIONS.last()).with().toggled(date, meal.slot)
+                                },
+                                onRemoveSide = { meal -> change { api.removeSide(weekStart, meal.day, meal.slot) } },
                             )
                         }
                     }
@@ -339,7 +353,11 @@ private fun DayCard(
     onToggleLock: (PlannedMeal) -> Unit,
     onAdjust: (PlannedMeal) -> Unit,
     onPrep: (PlannedMeal) -> Unit,
-    onRemovePrep: (PlannedMeal) -> Unit,
+    /** Removes a prep after naming its meals: the meal's own or its side's, with the title of its recipe. */
+    onRemovePrep: (String, MealPrep) -> Unit,
+    onOpenSide: (PlannedMeal, MealSide) -> Unit,
+    onAddSide: (PlannedMeal) -> Unit,
+    onRemoveSide: (PlannedMeal) -> Unit,
 ) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
@@ -350,6 +368,10 @@ private fun DayCard(
                 progress = { (day.kcal / targets.kcal).toFloat().coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
             )
+            // A side added by hand may take the day over its calories: said, not refused (issue 234).
+            day.kcalOverWithSides(targets)?.let { over ->
+                Text(t(Msg.DAY_OVER_WITH_SIDES, over), style = MaterialTheme.typography.bodySmall.numeric(), color = MaterialTheme.colorScheme.error)
+            }
             if (day.meals.isEmpty()) {
                 Text(t(Msg.NOTHING_PLANNED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -403,15 +425,26 @@ private fun DayCard(
                                     onClick = { menu = false; onToggleSkipped(meal) },
                                 )
                                 DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onGenerate(meal) })
-                                if (meal.prep != null) {
-                                    DropdownMenuItem(text = { Text(t(Msg.REMOVE_PREP)) }, onClick = { menu = false; onRemovePrep(meal) })
-                                } else if (meal.recipeId in preppable && (meal.slot == MealSlot.LUNCH || meal.slot == MealSlot.DINNER) && day.date >= today) {
+                                val lunchOrDinner = meal.slot == MealSlot.LUNCH || meal.slot == MealSlot.DINNER
+                                val prep = meal.prep
+                                if (prep != null) {
+                                    DropdownMenuItem(text = { Text(t(Msg.REMOVE_PREP)) }, onClick = { menu = false; onRemovePrep(meal.title, prep) })
+                                } else if (meal.recipeId in preppable && lunchOrDinner && day.date >= today) {
                                     DropdownMenuItem(text = { Text(t(Msg.PREP_THIS_RECIPE)) }, onClick = { menu = false; onPrep(meal) })
+                                }
+                                val side = meal.side
+                                if (side != null) {
+                                    DropdownMenuItem(text = { Text(t(Msg.REMOVE_SIDE)) }, onClick = { menu = false; onRemoveSide(meal) })
+                                    DropdownMenuItem(text = { Text(t(Msg.REMOVE_SIDE_PREP)) }, onClick = { menu = false; onRemovePrep(side.title, side.prep) })
+                                } else if (preppable.isNotEmpty() && lunchOrDinner && meal.status == MealStatus.PLANNED && day.date >= today) {
+                                    // A side goes next to a meal still to eat, from today on, as a batch is made for the days to come.
+                                    DropdownMenuItem(text = { Text(t(Msg.ADD_SIDE)) }, onClick = { menu = false; onAddSide(meal) })
                                 }
                             }
                         }
                     }
                     MealNumbers(meal.macrosText(t), meal.cost?.let { "≈ ${formatEuro(it, t.locale)}" }, Modifier.padding(bottom = 4.dp))
+                    meal.side?.let { side -> SideRow(meal, side, day.date, onOpen = { onOpenSide(meal, side) }, Modifier.padding(bottom = 4.dp)) }
                 }
             }
             if (missingSlots.isNotEmpty()) {

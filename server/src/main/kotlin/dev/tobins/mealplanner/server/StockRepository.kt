@@ -9,8 +9,22 @@ import dev.tobins.mealplanner.server.db.SelectStockUses
 import dev.tobins.mealplanner.server.db.Stock
 import java.time.LocalDate
 
-/** A planned meal by where it is in the plan: what a meal takes from the stock is kept under it. */
-data class MealRef(val week: LocalDate, val day: Int, val slot: MealSlot)
+/**
+ * A planned meal by where it is in the plan: what a meal takes from the stock is kept under it. With [side], the side
+ * next to that meal (issue 234, step 2), whose share is kept under the same meal but apart from the meal's own.
+ */
+data class MealRef(val week: LocalDate, val day: Int, val slot: MealSlot, val side: Boolean = false) {
+    /** `stockUse.role` of what is kept under it. */
+    val role: String get() = if (side) SIDE else MEAL
+
+    companion object {
+        /** The role of a meal's own share, in `stockUse` and `prepPortion`. */
+        const val MEAL = "MEAL"
+
+        /** The role of the share of the side next to a meal. */
+        const val SIDE = "SIDE"
+    }
+}
 
 /**
  * What put an entry of the stock at home (`stock.source`). The stock is kept per source and week
@@ -197,7 +211,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
         if (grams.isEmpty()) return
         db.writing {
             for (use in uses(meal).filter { it.ingredientId in grams }) putBack(use)
-            for (id in grams.keys) pantry.deleteStockUsesOfMeal(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, id)
+            for (id in grams.keys) pantry.deleteStockUsesOfMeal(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, meal.role, id)
             take(meal, grams.filterValues { it > 0.0 })
         }
     }
@@ -212,7 +226,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
                 if (wanted <= 0.0) break
                 val taken = takeFrom(entry, wanted)
                 pantry.insertStockUse(
-                    userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, id, entry.fromWeek, entry.source, entry.addedAt, taken,
+                    userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, meal.role, id, entry.fromWeek, entry.source, entry.addedAt, taken,
                 )
                 // An entry of unknown amount covers what is wanted, as far as anyone can tell.
                 wanted = taken?.let { wanted - it } ?: 0.0
@@ -244,7 +258,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      */
     fun giveBack(meal: MealRef): Unit = db.writing {
         uses(meal).forEach(::putBack)
-        pantry.deleteStockUses(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name)
+        pantry.deleteStockUses(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, meal.role)
     }
 
     /** Puts what one [use] took back into the entry it came from, or brings that entry back as it was when the meal used it up. */
@@ -255,7 +269,22 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
     }
 
     private fun uses(meal: MealRef) =
-        pantry.selectStockUses(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name).executeAsList()
+        pantry.selectStockUses(userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, meal.role).executeAsList()
+
+    /** What [meal] took from the stock and keeps, for [keep] to keep again once its slot's row was replaced. */
+    fun taken(meal: MealRef): List<SelectStockUses> = uses(meal)
+
+    /**
+     * Keeps [uses] under [meal] again as they were ([taken]): the stock stays as it is, as they were never given back. For
+     * a side whose meal's main was replaced (issue 234), which takes the rows kept under the meal's slot with it.
+     */
+    fun keep(meal: MealRef, uses: List<SelectStockUses>) {
+        for (use in uses) {
+            pantry.insertStockUse(
+                userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, meal.role, use.ingredientId, use.fromWeek, use.source, use.addedAt, use.grams,
+            )
+        }
+    }
 
     /**
      * Fails unless [id] is one of the account's ingredients: the stock's statements name the account,

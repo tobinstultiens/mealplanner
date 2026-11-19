@@ -461,6 +461,9 @@ class ApiClient(
     /** Takes prep [id] out of the plan with all its meals, in every week; answers the week starting [weekStart]. */
     suspend fun removePrep(weekStart: String, id: Long): WeekPlan = http.delete("api/plans/$weekStart/preps/$id").body()
 
+    /** Takes the side next to the meal in [day]'s [slot] out of its batch (issue 234, step 2); the meal keeps its main. */
+    suspend fun removeSide(weekStart: String, day: Int, slot: MealSlot): WeekPlan = http.delete("api/plans/$weekStart/meals/$day/${slot.name}/side").body()
+
     /** The shares of skipped prepped meals still in the box on [date]; none from a server from before preps. */
     suspend fun spareShares(date: String): List<SparePortion> = unlessUnknown { http.get("api/preps/spare/$date").body<List<SparePortion>>() }.orEmpty()
 

@@ -33,13 +33,14 @@ class TrackingRepository(
             targets = profiles.state().targets,
             meals = meals,
             extras = extras,
-            eatenKcal = eaten.sumOf { it.kcal } + extras.sumOf { it.kcal },
-            eatenProteinG = eaten.sumOf { it.proteinG } + extras.sumOf { it.proteinG },
-            expectedKcal = expected.sumOf { it.kcal } + extras.sumOf { it.kcal },
-            expectedProteinG = expected.sumOf { it.proteinG } + extras.sumOf { it.proteinG },
+            // A meal counts with its side (issue 234), which is eaten or skipped with it.
+            eatenKcal = eaten.sumOf { it.totalKcal } + extras.sumOf { it.kcal },
+            eatenProteinG = eaten.sumOf { it.totalProteinG } + extras.sumOf { it.proteinG },
+            expectedKcal = expected.sumOf { it.totalKcal } + extras.sumOf { it.kcal },
+            expectedProteinG = expected.sumOf { it.totalProteinG } + extras.sumOf { it.proteinG },
             // Extras are logged without fibre (issue 223 leaves them at none).
-            eatenFibreG = eaten.sumOf { it.fibreG ?: 0.0 },
-            expectedFibreG = expected.sumOf { it.fibreG ?: 0.0 },
+            eatenFibreG = eaten.sumOf { (it.fibreG ?: 0.0) + (it.side?.fibreG ?: 0.0) },
+            expectedFibreG = expected.sumOf { (it.fibreG ?: 0.0) + (it.side?.fibreG ?: 0.0) },
         )
     }
 

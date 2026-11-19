@@ -446,7 +446,7 @@ fun App(
                               when (tab) {
                                 Tab.TODAY -> TodayScreen(
                                     api,
-                                    onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) },
+                                    onOpenRecipe = { recipeId, meal -> openRecipeId = recipeId; openMeal = meal },
                                     onOpenPlan = { tab = Tab.PLAN },
                                     onAdjust = { adjusting = it },
                                 )
@@ -454,7 +454,7 @@ fun App(
                                 Tab.PLAN -> key(planAsked) {
                                     PlanScreen(
                                         api,
-                                        onOpenRecipe = { meal, weekStart -> openRecipeId = meal.recipeId; openMeal = meal.toCook(weekStart) },
+                                        onOpenRecipe = { recipeId, meal -> openRecipeId = recipeId; openMeal = meal },
                                         onOpenProfile = { profileOpen = true },
                                         onOpenRecipes = { tab = Tab.RECIPES },
                                         onOpenBank = { tab = Tab.RECIPES; bankOpen = true },

@@ -56,6 +56,49 @@ data class PlannedMeal(
      * know preps shows them as leftovers.
      */
     val prep: MealPrep? = null,
+    /**
+     * The side next to this meal's main, taken from a prepped batch (issue 234, step 2); null for a meal without
+     * one and from a server before sides. The main keeps its own [portions], [kcal], [proteinG], [fibreG] and
+     * [cost]: the side's are its own, and the day's totals ([PlanDay], [DayView]) count both. It shares the
+     * meal's [status]: eaten, skipped or planned with it. An app that does not know sides shows the main alone.
+     */
+    val side: MealSide? = null,
+) {
+    /** The kcal of the meal with its [side]: what the meal and its day count. */
+    val totalKcal: Double get() = kcal + (side?.kcal ?: 0.0)
+
+    /** The protein of the meal with its [side]. */
+    val totalProteinG: Double get() = proteinG + (side?.proteinG ?: 0.0)
+
+    /** The fibre of the meal with its [side]; null when the main's is not known. */
+    val totalFibreG: Double? get() = fibreG?.let { it + (side?.fibreG ?: 0.0) }
+
+    /** The cost of the meal with its [side]; null when the main's is not known. */
+    val totalCost: Double? get() = cost?.let { it + (side?.cost ?: 0.0) }
+}
+
+/**
+ * A side next to a meal's main (issue 234, step 2): [portions] (a quarter or half a serving) of a prepped batch's
+ * recipe, added by hand; the planner never adds one. Its numbers are those of its portions of the recipe as the
+ * recipe is now, as a meal's fibre is.
+ */
+@Serializable
+data class MealSide(
+    val recipeId: Long,
+    val title: String,
+    val portions: Double,
+    val kcal: Double,
+    val proteinG: Double,
+    val fibreG: Double? = null,
+    /** Estimated euros for its portions with the week's offers; null when unknown. */
+    val cost: Double? = null,
+    /**
+     * The servings to cook when this meal is made, as [PlannedMeal.cookPortions]: the whole batch on the day it is
+     * made with this side, and 0 on its later days.
+     */
+    val cookPortions: Double,
+    /** The batch it is taken from: its [MealPrep.meals] hold this side ([PrepMeal.side]). */
+    val prep: MealPrep,
 )
 
 /**
@@ -85,6 +128,8 @@ data class PrepMeal(
     /** Its share of the batch: the meal's portions, or 0 when it was skipped and its share is eaten in another meal. */
     val portions: Double,
     val status: MealStatus,
+    /** True when this is a side next to the meal at [date]'s [slot], whose status it shares, rather than the meal itself. */
+    val side: Boolean = false,
 )
 
 /** A lunch or dinner on one date, as a prep names its meals. */
@@ -98,7 +143,9 @@ data class PrepSlot(
 /**
  * Body of `POST /api/plans/{weekStart}/preps`: [recipeId] made on [madeOn] in a normal box or [vacuum]
  * sealed, and eaten in [meals] (lunches and dinners, the first on [madeOn], none after the day the
- * recipe's keeps allow). Each meal gets the portion the planner would give it, within the profile's range.
+ * recipe's keeps allow). Each meal gets the portion the planner would give it, within the profile's range;
+ * with [side], the batch is eaten as a side of that many servings (0.25 or 0.5) next to the meal in each
+ * of [meals], which keeps its main.
  */
 @Serializable
 data class PrepInput(
@@ -106,6 +153,7 @@ data class PrepInput(
     val madeOn: String,
     val vacuum: Boolean = false,
     val meals: List<PrepSlot>,
+    val side: Double? = null,
 )
 
 /**
@@ -122,8 +170,13 @@ data class SparePortion(
     /** The meal that was skipped. */
     val skipped: PrepSlot,
     val lastDay: String,
-    /** The lunches and dinners it can still be eaten in, from the date asked about on, earliest first: empty or free to plan. */
+    /**
+     * The lunches and dinners it can still be eaten in, from the date asked about on, earliest first: empty or free to
+     * plan; for a [side], those with a meal still to eat that has no side yet.
+     */
     val room: List<PrepSlot>,
+    /** True when the share is a side, which goes next to the meal it is eaten with. */
+    val side: Boolean = false,
 )
 
 /** Body of `POST /api/plans/{weekStart}/preps/{id}/spare`: eat the share of the skipped meal [from] in [to] instead. */

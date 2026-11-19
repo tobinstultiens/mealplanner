@@ -39,19 +39,19 @@ class MealAdjustments(
 
     /**
      * [meals] of one week as [shortfalls] walks them: what each one's recipe gives it and what
-     * it eats with [changes] ([changesIn]); those in [toCook], by day and slot, are still to cook. [recipeLines] are
-     * their recipes' lines by id ([RecipeRepository.linesWithIngredients]).
+     * it eats with its changes ([changesOf], as [changesIn] has them); those in [toCook] are still to cook.
+     * [recipeLines] are their recipes' lines by id ([RecipeRepository.linesWithIngredients]).
      */
     fun demands(
         meals: List<PlannedMeal>,
         recipeLines: Map<Long, RecipeLines>,
-        changes: Map<Pair<Int, MealSlot>, Map<Long, Double>>,
-        toCook: Set<Pair<Int, MealSlot>>,
+        changesOf: (PlannedMeal) -> Map<Long, Double>?,
+        toCook: Set<PlannedMeal>,
     ): List<MealDemand> {
         return meals.map { meal ->
             val recipe = recipeLines[meal.recipeId]?.let { gramsUsed(it, meal.portions) }.orEmpty()
-            val eaten = (recipe + changes[meal.day to meal.slot].orEmpty()).filterValues { it > 0.0 }
-            MealDemand(meal, recipe, eaten, toCook = (meal.day to meal.slot) in toCook)
+            val eaten = (recipe + changesOf(meal).orEmpty()).filterValues { it > 0.0 }
+            MealDemand(meal, recipe, eaten, toCook = meal in toCook)
         }
     }
 
