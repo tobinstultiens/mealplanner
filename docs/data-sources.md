@@ -164,6 +164,11 @@ portion takes from open packs, times 0.75, so that a dinner that uses up half a 
 dinner opened is preferred on Wednesday. The planner stays greedy: Monday is not chosen because Thursday
 could use its tub. Leftover lunches open nothing and the priorities do not change the term.
 
+A pack written in pieces ("3 stuks", "per stuk") is counted through the ingredient's weight per piece
+(`gramsPerPiece`), which the issue had left out of scope; 10 of the 43 covered ingredients depend on it (bell pepper,
+cucumber, egg, lime, mango, onion, red onion, romaine lettuce, baguette, bread roll). Three more (yoghurt, milk,
+whipping cream) are packs in litres, counted at the ingredient's density or 1 g/ml.
+
 Measured on the cooking repo's recipes with AH's prices of 2026-11-19 (`PackRestMeasurementTest`: 50 seeds, 40
 recipes in the rotation, 53 fresh ingredients with a pack), the euros of pack rest a week left fell from 25.19 to
 22.77 and the mean daily calorie error rose from 5.14 % to 5.54 %. A heavier weight lowered the rest no further

@@ -77,6 +77,9 @@ data class PlanRequest(
  *   only locked meals keep it.
  */
 object WeekPlanner {
+    /** What each euro of pack rest reused counts in the score; chosen with PackRestMeasurementTest. */
+    const val PACK_WEIGHT = 0.75
+
     fun plan(request: PlanRequest): List<PlannedMeal> {
         val random = Random(request.seed)
         val meals = request.locked.map { it.copy(locked = true) }.toMutableList()
@@ -204,10 +207,7 @@ object WeekPlanner {
      */
     private data class Weights(val protein: Double, val fibre: Double, val savings: Double, val packs: Double) {
         companion object {
-            /** Euros of the week's pack rest reused count this much each, as measured in PackRestMeasurementTest. */
-            private const val PACKS = 0.75
-
-            private val BALANCED = Weights(protein = 2.0, fibre = 1.0, savings = 1.0, packs = PACKS)
+            private val BALANCED = Weights(protein = 2.0, fibre = 1.0, savings = 1.0, packs = PACK_WEIGHT)
 
             fun of(priority: PlanPriority): Weights = when (priority) {
                 PlanPriority.BALANCED -> BALANCED

@@ -78,12 +78,12 @@ class PackRestMeasurementTest {
         return candidates to TargetCalculator.targets(profile).kcal
     }
 
-    /** Plans 50 seeds with the pack euros of each recipe scaled by [weight] (the term is linear in them), measured at the real euros. */
+    /** Plans 50 seeds with the pack euros of each recipe scaled so that the planner's effective weight is [weight] (the term is linear in them: they are divided by [WeekPlanner.PACK_WEIGHT], which it multiplies in again), measured at the real euros. */
     private val profile = Profile(75.0, 180.0, 35, Sex.MALE, ActivityLevel.MODERATE)
 
     private fun fifty(candidates: List<PlanCandidate>, weight: Double, kcal: Int): List<Measure> {
         val real = candidates.associateBy { it.recipeId }
-        val scaled = candidates.map { c -> c.copy(freshUses = c.freshUses.map { it.copy(pack = Pack(it.pack.grams, it.pack.euros * weight)) }) }
+        val scaled = candidates.map { c -> c.copy(freshUses = c.freshUses.map { it.copy(pack = Pack(it.pack.grams, it.pack.euros * weight / WeekPlanner.PACK_WEIGHT)) }) }
         val targets = TargetCalculator.targets(profile)
         return (0L until 50L).map { seed -> measure(WeekPlanner.plan(PlanRequest(targets, scaled, seed = seed)), real, kcal) }
     }
@@ -108,7 +108,7 @@ class PackRestMeasurementTest {
     }
 
     private companion object {
-        /** The weight in use ([WeekPlanner]'s pack weight), which the table above is read at. */
-        const val WEIGHT = 0.75
+        /** The weight in use, which the table is read at. */
+        const val WEIGHT = WeekPlanner.PACK_WEIGHT
     }
 }
