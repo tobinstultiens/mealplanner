@@ -152,7 +152,8 @@ class CookingSync(
      * Imports the server's site into the account; the caller holds the account's lock. Fetches first when
      * [fetch], or when there is no clone yet, as [fetchServerSite] allows. Reading the pages and the pictures
      * holds the clone's lock, so that no fetch changes its files meanwhile; the import into the database does
-     * not, so that another account reading the clone does not wait for it.
+     * not, so that another account reading the clone does not wait for it. Imports into several accounts at once
+     * still write one after another, each in a transaction of its own ([writing], issue 246).
      */
     private suspend fun importServerSite(accountId: Long, fetch: Boolean): SyncResult? {
         val site = serverSite ?: return null

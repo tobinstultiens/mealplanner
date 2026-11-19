@@ -40,7 +40,11 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import java.io.File
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit.MILLISECONDS
+import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.io.path.createTempDirectory
@@ -48,6 +52,8 @@ import kotlin.io.path.createTempFile
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -59,6 +65,9 @@ import kotlin.test.assertTrue
  * The server runs on a database whose driver lets another connection write and commit right after the
  * first read inside a transaction, which is where a deferred transaction would lose: its first write then
  * fails with SQLITE_BUSY_SNAPSHOT. Taken first, the lock holds that write off until the change is done.
+ *
+ * Writers of one process take turns as well (issue 246), on a file as on the in-memory database of most tests,
+ * whose one connection every thread shares: none begins its transaction inside another's.
  */
 class WriteLockTest {
     private val dir = createTempDirectory("write-lock").toFile()
@@ -219,5 +228,82 @@ class WriteLockTest {
             done.countDown()
             holder.join()
         }
+    }
+
+    /** A database at [url] and an account in it, for [check]; on the in-memory database of most tests and on a file, as the server's. */
+    private fun onEither(check: (Database, UserRepository, Long) -> Unit) {
+        for (at in listOf("jdbc:sqlite::memory:", url)) {
+            val db = openDatabase(at).second
+            val users = UserRepository(db)
+            check(db, users, users.resolve(Identity("sub-turns", "turns")).id)
+        }
+    }
+
+    /** Runs [body] on a thread of its own, whatever the machine's cores; [CompletableFuture.get] passes its failure on. */
+    private fun elsewhere(body: () -> Unit): CompletableFuture<Unit> = CompletableFuture<Unit>().also { done ->
+        thread {
+            try {
+                done.complete(body())
+            } catch (e: Throwable) {
+                done.completeExceptionally(e)
+            }
+        }
+    }
+
+    /**
+     * A second writer waits for the first to commit before its own transaction begins (issue 246). Two
+     * accounts' cooking-site imports at once began a second transaction on the in-memory database's one
+     * connection ("cannot start a transaction within a transaction"), or the second ran inside the first's.
+     */
+    @Test
+    fun aSecondWriterWaitsUntilTheFirstIsDone() = onEither { db, users, account ->
+        val inside = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val first = elsewhere { db.writing { users.setMeta(account, "turn", "first"); inside.countDown(); release.await(30, SECONDS) } }
+        assertTrue(inside.await(30, SECONDS))
+        val entered = CountDownLatch(1)
+        val second = elsewhere { db.writing { entered.countDown(); users.setMeta(account, "turn", "second") } }
+        assertFalse(entered.await(300, MILLISECONDS), "the second writer waits while the first is in its transaction")
+        release.countDown()
+        first.get(30, SECONDS)
+        second.get(30, SECONDS)
+        assertEquals("second", users.meta(account, "turn"))
+    }
+
+    /** A writer that fails takes back what it wrote, and nothing of the writer before it, which committed (issue 246). */
+    @Test
+    fun aWriterThatFailsTakesBackOnlyItsOwn() = onEither { db, users, account ->
+        val inside = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val first = elsewhere { db.writing { users.setMeta(account, "turn", "first"); inside.countDown(); release.await(30, SECONDS) } }
+        assertTrue(inside.await(30, SECONDS))
+        val second = elsewhere { db.writing { users.setMeta(account, "turn", "second"); error("the second writer fails") } }
+        // Time for the second writer to get as far as it can while the first holds its turn.
+        Thread.sleep(300)
+        release.countDown()
+        first.get(30, SECONDS)
+        val failure = assertFailsWith<ExecutionException> { second.get(30, SECONDS) }
+        assertEquals("the second writer fails", failure.cause?.message)
+        assertEquals("first", users.meta(account, "turn"))
+    }
+
+    /**
+     * A writer called inside another on the same thread, as eating a meal changes the stock, joins it rather than
+     * waiting for itself: the two commit or are taken back together, and afterwards another thread writes as usual.
+     */
+    @Test
+    fun aWriterInsideAWriterJoinsIt() = onEither { db, users, account ->
+        elsewhere {
+            db.writing { users.setMeta(account, "outer", "1"); db.writing { users.setMeta(account, "inner", "1") } }
+            assertFailsWith<IllegalStateException> {
+                db.writing {
+                    users.setMeta(account, "outer", "2")
+                    db.writing { users.setMeta(account, "inner", "2"); error("the inner writer fails") }
+                }
+            }
+        }.get(30, SECONDS)
+        assertEquals(listOf("1", "1"), listOf(users.meta(account, "outer"), users.meta(account, "inner")))
+        elsewhere { db.writing { users.setMeta(account, "outer", "3") } }.get(30, SECONDS)
+        assertEquals("3", users.meta(account, "outer"))
     }
 }
