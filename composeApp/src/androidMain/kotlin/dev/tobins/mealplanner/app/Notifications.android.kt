@@ -36,17 +36,22 @@ fun notificationsAllowed(context: Context): Boolean {
 
 /**
  * The Notifications card's way to the permission. Made with [activity], before it starts, as Android requires
- * of a permission request; [allowed] is read again each time the activity resumes, which it does after the
- * system's question and after the system's settings, and when the app comes back to the front.
+ * of a permission request: also as a field of the activity, so it touches no context until the activity is
+ * created (Android attaches the activity's context only after constructing it). [allowed] is read when the
+ * activity is created and again each time it resumes, which it does after the system's question and after the
+ * system's settings, and when the app comes back to the front.
  */
 class AndroidNotificationAccess(private val activity: ComponentActivity) : NotificationAccess {
-    private val state = MutableStateFlow(notificationsAllowed(activity))
+    /** False until the activity is created: nothing draws the card before then. */
+    private val state = MutableStateFlow(false)
     override val allowed: StateFlow<Boolean> = state.asStateFlow()
 
     private val request = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { readAgain() }
 
     init {
-        activity.lifecycle.addObserver(LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) readAgain() })
+        activity.lifecycle.addObserver(
+            LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_CREATE || event == Lifecycle.Event.ON_RESUME) readAgain() },
+        )
     }
 
     private fun readAgain() {

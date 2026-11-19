@@ -22,6 +22,7 @@ using weekly offers from AH, Jumbo and Lidl and recipes from the cooking site.
 ./gradlew :shared:jvmTest            # parser and domain tests only
 ./gradlew :server:test               # API tests (in-memory SQLite)
 ./gradlew :server:shadowJar          # fat jar at server/build/libs/server-all.jar
+./gradlew :androidApp:testDebugUnitTest  # the real MainActivity starts (Robolectric, AppStartTest)
 ./gradlew :androidApp:installDebug   # install on a connected device or emulator
 docker build -t mealplanner:dev .    # needs the fat jar built first
 ```

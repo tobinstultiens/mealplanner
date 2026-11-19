@@ -64,6 +64,11 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // AppStartTest starts the real MainActivity under Robolectric, with the app's theme and manifest.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 kotlin {
@@ -76,6 +81,9 @@ dependencies {
     implementation(libs.androidx.work.runtime)
     // The login page in a Custom Tab over the app, instead of a separate browser tab.
     implementation(libs.androidx.browser)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
 }
 
 /**
