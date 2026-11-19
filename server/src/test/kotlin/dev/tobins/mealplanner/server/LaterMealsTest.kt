@@ -171,6 +171,21 @@ class LaterMealsTest {
     }
 
     @Test
+    fun theMealsLeftShortAddUpToWhatTheRowAsksForAgain() = testApplication {
+        // The emulator's case in small: three bowls of 56.7 g spinach bought for, and Monday's set to 150 g. Tuesday
+        // is 36.6 g short and Wednesday 56.7 g: 93.3 g, which the app rounds once on both the card and the row.
+        val http = start()
+        val k = http.kitchen()
+        val bowl = http.post("/api/recipes") { setBody(RecipeInput("Spinach bowl", 1, "56.7 | g | later spinach", "Cook.")) }.body<RecipeDetail>().summary
+        for (day in 0..2) k.plan(day, bowl)
+        http.tick(k.spinach)
+        val short = http.adjust(0, k.spinach to 150.0).shortfalls
+        assertEquals(listOf(1 to 36.6, 2 to 56.7), short.map { it.day to Math.round(it.grams * 10) / 10.0 })
+        val row = http.row("Later spinach")
+        assertEquals(row.grams!! - row.boughtGrams!!, short.sumOf { it.grams }, 1e-9)
+    }
+
+    @Test
     fun withEnoughLeftThereIsNoWarningAndNoRowChanges() = testApplication {
         val http = start()
         val k = http.kitchen()

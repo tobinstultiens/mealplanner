@@ -773,7 +773,8 @@ enum class Msg(private val english: String, private val dutch: String) {
     ADJUST_QUICK("Quick add", "Snel toevoegen"),
     ADJUST_ADDED_DONE("{0} added", "{0} toegevoegd"),
     ADJUST_SHORT_TITLE("Not enough left for a later meal", "Niet genoeg over voor een latere maaltijd"),
-    ADJUST_SHORT("{0}: {1} short for {2}, {3} {4}", "{0}: {1} te weinig voor {2}, {3} {4}"),
+    ADJUST_SHORT("{0}: {1} short for {2}", "{0}: {1} te weinig voor {2}"),
+    ADJUST_SHORT_MEAL("{0}, {1} {2}", "{0}, {1} {2}"),
     ADJUST_SHORT_LISTED(
         "This meal used what was at home for it, so the shopping list asks for it again.",
         "Deze maaltijd gebruikte wat daarvoor in huis was, dus het boodschappenlijstje vraagt er weer om.",

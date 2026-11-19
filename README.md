@@ -237,12 +237,17 @@ dinner keeps its lines). The recipe itself, and the same recipe's meals on other
   An adjustment to a meal eaten earlier takes from the stock as it is now, so from a later purchase when the
   ingredient was bought since (there is no record of what was at home when it was eaten).
 
-**Quick add-ons.** Above "Add an ingredient" the Adjust screen has chips, "Feta · 30 g" or "Egg · 1 piece",
-one tap each: the recipe's optional toppings first, in their order, then the ingredients added to that
-recipe's meals before (in any week), most often added first, then the most recent, each with the amount its
-latest meal had; at most eight of those. An ingredient the meal has already has no chip, as it is changed on
-its own line, and an ingredient of the recipe is never one (more of it is a changed line, not an add-on). A
-chip adds it as any addition does, with Undo in the snackbar.
+**Quick add-ons.** At the top of the Adjust screen, above the meal's lines (and under the warning below, when
+there is one), are chips, "Feta · 30 g" or "Egg · 1 piece", one tap each, so a known topping is two taps from
+Today however long the recipe is: the recipe's optional toppings first, in their order, then the ingredients
+added to that recipe's meals before (in any week), most often added first, then the most recent, each with the
+amount its latest meal had; at most eight of those. A chip adds its amount on top of what the meal has of that
+ingredient: one the meal has already (a topping the recipe has too, or a second egg) says so, "+ 30 g
+Cucumber". From earlier meals only ingredients the recipe does not have count: a meal keeps what it ate of a
+recipe ingredient in all, not what was extra. Reset to recipe takes a meal's additions away, so they no longer
+count for these chips either. A chip adds as any edit does, with Undo in the snackbar. Amounts are in pieces
+only where that is a sensible count (whole pieces, halves or quarters), here and on the meal's lines; "30 g" of a
+cucumber is said in grams.
 
 - `GET /api/recipes/{id}/add-ons` answers them (`AddOn`: the ingredient, its name, the grams to add, its weight
   per piece, whether it is a topping and how many meals had it added). 404 for another account's recipe.
@@ -265,7 +270,10 @@ meal": `Spinach: 100 g short for Spinach curry, dinner Thu 19 Nov`) and the shop
 short again. What is at home is what the server knows of: the stock, and what was ticked as bought on the
 week's list. With enough left (overstocked, or the later meal adjusted to use less) there is no warning and the
 list stays as it was; an addition beyond what was at home came from the fridge and asks for nothing. The same
-holds when the adjusted meal was eaten already. How it is worked out, and how the list's row shows it, is in
+holds when the adjusted meal was eaten already. An ingredient set "On hand" by hand in the pantry has no amount,
+so nothing is said about it: the owner says it is at home, and the server cannot tell how much is left. The card
+says one amount per ingredient, the later meals' shortfalls added up and rounded once, as the list rounds the
+amount it asks for again, so the two agree. How it is worked out, and how the list's row shows it, is in
 `docs/data-sources.md`, "A later meal left short".
 
 - `MealLines.shortfalls` lists the later meals the meal leaves short (`LaterShortfall`: day, slot, title,

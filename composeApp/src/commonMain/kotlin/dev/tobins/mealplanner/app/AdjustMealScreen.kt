@@ -123,7 +123,18 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(Spacing.Related),
                 ) {
                     item { MealHeader(meal, enabled = !busy, onReset = { save(t(Msg.ADJUST_RESET_DONE)) { emptyList() } }) }
-                    item { SectionHeader(t(Msg.ADJUST_IN_MEAL)) }
+                    // First on the screen: a warning an edit brings is seen at once, and a known topping is two taps
+                    // from Today however long the recipe is.
+                    if (meal.shortfalls.isNotEmpty()) item { LaterMealsShort(meal) }
+                    val quick = meal.quickAddOns(addOns)
+                    if (quick.isNotEmpty()) {
+                        item {
+                            QuickAddOns(quick, enabled = !busy) { chosen ->
+                                save(t(Msg.ADJUST_ADDED_DONE, chosen.addOn.name)) { it.adding(chosen) }
+                            }
+                        }
+                    }
+                    item { SectionHeader(t(Msg.ADJUST_IN_MEAL), Modifier.padding(top = Spacing.Related)) }
                     items(meal.lines, key = { "${it.ingredientId}:${it.name}" }) { line ->
                         LineRow(
                             line,
@@ -135,16 +146,6 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                             },
                             onPutBack = { save { it.asInRecipe(line) } },
                         )
-                    }
-                    // Next to what was just changed, so a warning that an edit brings is seen at once.
-                    if (meal.shortfalls.isNotEmpty()) item { LaterMealsShort(meal) }
-                    val quick = meal.quickAddOns(addOns)
-                    if (quick.isNotEmpty()) {
-                        item {
-                            QuickAddOns(quick, enabled = !busy) { addOn ->
-                                save(t(Msg.ADJUST_ADDED_DONE, addOn.name)) { it.withAmount(addOn.ingredientId, addOn.grams) }
-                            }
-                        }
                     }
                     item {
                         Button(enabled = !busy, onClick = { picking = true }, modifier = Modifier.padding(top = Spacing.Related)) { Text(t(Msg.ADJUST_ADD)) }
@@ -210,26 +211,31 @@ private fun LaterMealsShort(meal: MealLines) {
     ) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
             Text(t(Msg.ADJUST_SHORT_TITLE), style = MaterialTheme.typography.titleSmall)
-            meal.shortfalls.forEach { Text(it.text(meal.weekStart, t), style = MaterialTheme.typography.bodyMedium.numeric()) }
+            meal.shortfallTexts(t).forEach { Text(it, style = MaterialTheme.typography.bodyMedium.numeric()) }
             Text(t(Msg.ADJUST_SHORT_LISTED), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
 
-/** The recipe's toppings and what its meals had added before, as chips: one tap adds one in its amount. */
+/**
+ * The recipe's toppings and what its meals had added before, as chips: one tap adds one in its amount, on top of
+ * what the meal has of it. A chip for something the meal has already says "+ 30 g" itself, so it has no plus icon.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun QuickAddOns(addOns: List<AddOn>, enabled: Boolean, onAdd: (AddOn) -> Unit) {
+private fun QuickAddOns(addOns: List<QuickAddOn>, enabled: Boolean, onAdd: (QuickAddOn) -> Unit) {
     val t = LocalStrings.current
     Column(Modifier.padding(top = Spacing.Related), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
         SectionHeader(t(Msg.ADJUST_QUICK))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            addOns.forEach { addOn ->
+            addOns.forEach { quick ->
                 AssistChip(
                     enabled = enabled,
-                    onClick = { onAdd(addOn) },
-                    label = { Text(addOn.chipText(t)) },
-                    leadingIcon = { Icon(AppIcons.Add, contentDescription = null, Modifier.size(AssistChipDefaults.IconSize)) },
+                    onClick = { onAdd(quick) },
+                    label = { Text(quick.chipText(t)) },
+                    leadingIcon = if (quick.extra) null else {
+                        { Icon(AppIcons.Add, contentDescription = null, Modifier.size(AssistChipDefaults.IconSize)) }
+                    },
                 )
             }
         }
@@ -270,7 +276,8 @@ private fun LineRow(line: MealLine, enabled: Boolean, onEdit: () -> Unit, onLeav
 @Composable
 internal fun AmountDialog(name: String, gramsPerPiece: Double?, grams: Double?, onDismiss: () -> Unit, onConfirm: (Double) -> Unit) {
     val t = LocalStrings.current
-    val startInPieces = gramsPerPiece != null
+    // In pieces for a new ingredient (prefilled with one) or an amount that is a sensible count; "0.09" is no count.
+    val startInPieces = gramsPerPiece != null && (grams == null || inPieces(grams, gramsPerPiece))
     val startText = remember { amountFieldText(grams, startInPieces, gramsPerPiece) }
     var inPieces by remember { mutableStateOf(startInPieces) }
     var text by remember { mutableStateOf(startText) }

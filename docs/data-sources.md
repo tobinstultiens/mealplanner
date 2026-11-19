@@ -630,7 +630,8 @@ home for the week's meals is what the server knows of (`StockRepository.atHome`)
 the week (`onHandGramsFor`), what the week's eaten meals took of it already (it was there for them), and the
 grams each tick of a row of what the meals need remembers was bought on the week's list. An ingredient on
 hand by hand, or with stock, a use or a tick of an unknown amount, claims nothing, as nobody knows how much
-there is. The walk (`shortfalls` in `Shortfalls.kt`) goes through the meals cooked or still to cook in the
+there is: an ingredient set "On hand" in the pantry gives no warning and no row, by design, until it is taken
+off again. The walk (`shortfalls` in `Shortfalls.kt`) goes through the meals cooked or still to cook in the
 order they are cooked (by day and slot, a leftover lunch with the dinner it was cooked with), twice at once:
 as adjusted, each meal taking what it eats while something is left, and as planned, each taking its recipe's.
 A meal still to cook needs its recipe's amount, or less when it was itself adjusted to less (more than its
@@ -649,7 +650,10 @@ least a gram, is what adjustments left it short. So:
 The same holds when the bowl was eaten before the spinach was added: its share comes off the stock then
 (above), and the walk counts it back as at home for the week's meals. The Adjust screen shows a later meal
 cooked after the one being adjusted, of an ingredient that one took more of than its recipe from what was at
-home.
+home, with one amount per ingredient: the meals' shortfalls added up and rounded once. When what was bought
+covered the week before the adjustment, that sum is exactly what the row then asks for beyond it, which the app
+rounds the same way, so the card's `93 g` and the row's `93 g more` agree (two meals rounded each, 37 g and
+57 g, would have said 94 g). When less was bought than the week needed, the row asks for that too.
 
 On the list (`ShoppingListRepository.countTaken`), only for an ingredient that leaves a later meal short, the
 grams each adjusted meal took of what was at home beyond its recipe count as part of that meal's need: in the

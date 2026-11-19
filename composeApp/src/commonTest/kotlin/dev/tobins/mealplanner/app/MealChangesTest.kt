@@ -109,22 +109,54 @@ class MealChangesTest {
     }
 
     @Test
-    fun theQuickAddOnsLeaveOutWhatTheMealHasAndSayTheirAmount() {
+    fun aQuickAddOnAddsItsAmountOnTopOfWhatTheMealHas() {
         val avocado = AddOn(8, "Avocado", 70.0, 140.0, topping = true)
         val feta = AddOn(5, "Feta", 40.0, times = 2)
-        // The egg is in the meal already (changed on its line), and so is the rice.
-        val offered = meal.quickAddOns(listOf(avocado, AddOn(4, "Egg", 60.0, 60.0, topping = true), feta, AddOn(1, "Rice", 50.0)))
-        assertEquals(listOf(avocado, feta), offered)
-        assertEquals(listOf("Avocado · 0.5 pieces", "Feta · 40 g"), offered.map { it.chipText(Strings.English) })
-        assertEquals("Avocado · 0,5 stuks", avocado.chipText(Strings.Dutch))
-        assertEquals("Egg · 1 piece", AddOn(4, "Egg", 60.0, 60.0).chipText(Strings.English))
+        // A topping the recipe has too (the rice, 150 g in this meal), and a second egg on the one added.
+        val moreRice = AddOn(1, "Rice", 50.0, topping = true)
+        val egg = AddOn(4, "Egg", 60.0, 60.0, topping = true)
+        val offered = meal.quickAddOns(listOf(avocado, egg, feta, moreRice))
+        assertEquals(listOf(avocado, egg, feta, moreRice), offered.map { it.addOn })
+        assertEquals(
+            listOf("Avocado · 0.5 pieces", "+ 1 piece Egg", "Feta · 40 g", "+ 50 g Rice"),
+            offered.map { it.chipText(Strings.English) },
+        )
+        assertEquals("Avocado · 0,5 stuks", offered[0].chipText(Strings.Dutch))
+        assertEquals(listOf(MealLineChange(3, 0.0), MealLineChange(4, 60.0), MealLineChange(1, 200.0)), meal.adding(offered[3]))
+        assertEquals(listOf(MealLineChange(1, 150.0), MealLineChange(3, 0.0), MealLineChange(4, 120.0)), meal.adding(offered[1]))
+
+        // A recipe line left out gets the amount itself; a line nobody can weigh, and too much in all, get no chip.
+        val edamame = meal.quickAddOns(listOf(AddOn(3, "Edamame", 30.0, topping = true))).single()
+        assertEquals("Edamame · 30 g" to 30.0, edamame.chipText(Strings.English) to edamame.total)
+        val bunch = meal.copy(lines = meal.lines + MealLine(9, "Coriander", null))
+        assertEquals(emptyList(), bunch.quickAddOns(listOf(AddOn(9, "Coriander", 5.0), AddOn(2, "Beef", 4900.0))))
     }
 
     @Test
-    fun aLaterMealLeftShortIsNamedWithItsDayAndTheAmount() {
-        val short = LaterShortfall(3, MealSlot.DINNER, "Spinach curry", 8, "Spinach", 100.0)
-        assertEquals("Spinach: 100 g short for Spinach curry, dinner Thu 19 Nov", short.text("2026-11-16", Strings.English))
-        assertEquals("Spinach: 100 g te weinig voor Spinach curry, avondeten do 19 nov", short.text("2026-11-16", Strings.Dutch))
+    fun anAmountIsSaidInPiecesOnlyWhenThatIsASensibleCount() {
+        // 30 g of a 340 g cucumber is no count: grams alone, also on the Adjust screen's lines.
+        assertEquals("30 g", amountText(30.0, 340.0, Strings.English))
+        assertEquals("1.5 g", amountText(1.5, 4.0, Strings.English), "0.38 of a garlic clove")
+        assertEquals("0.25 pieces · 15 g", amountText(15.0, 60.0, Strings.English))
+        assertEquals("2.75 pieces · 165 g", amountText(165.0, 60.0, Strings.English))
+        assertEquals("1 piece · 60 g", amountText(60.01, 60.0, Strings.English), "a count rounded on its way through grams")
+        assertEquals("Cucumber · 30 g", QuickAddOn(AddOn(6, "Cucumber", 30.0, 340.0), 0.0).chipText(Strings.English))
+        assertEquals("+ 30 g Cucumber", QuickAddOn(AddOn(6, "Cucumber", 30.0, 340.0), 60.0).chipText(Strings.English))
+    }
+
+    @Test
+    fun theLaterMealsLeftShortAreSaidPerIngredientRoundedOnce() {
+        // The emulator's case: 36.6 g and 56.7 g are 93.3 g, which the shopping list asks for as "93 g more".
+        val beef = listOf(
+            LaterShortfall(6, MealSlot.LUNCH, "Rice bowl", 2, "Beef", 36.6),
+            LaterShortfall(6, MealSlot.DINNER, "Rice bowl", 2, "Beef", 56.7),
+        )
+        val short = meal.copy(shortfalls = beef + LaterShortfall(3, MealSlot.DINNER, "Spinach curry", 8, "Spinach", 100.0))
+        assertEquals(
+            listOf("Beef: 93 g short for Rice bowl, lunch Sun 22 Nov; Rice bowl, dinner Sun 22 Nov", "Spinach: 100 g short for Spinach curry, dinner Thu 19 Nov"),
+            short.shortfallTexts(Strings.English),
+        )
+        assertEquals("Spinach: 100 g te weinig voor Spinach curry, avondeten do 19 nov", short.shortfallTexts(Strings.Dutch)[1])
     }
 
     @Test

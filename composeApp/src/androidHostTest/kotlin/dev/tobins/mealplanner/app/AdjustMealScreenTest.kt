@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -25,6 +26,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * The Adjust screen as it is used (issue 226): every edit sends the meal's whole list of changes, an undo
@@ -118,6 +120,8 @@ class AdjustMealScreenTest {
         scrollTo("Chicken thigh fillet").performClick()
         typeAmount("300")
         waitForChanges(MealLineChange(1, 300.0), MealLineChange(8, 0.0), MealLineChange(9, 60.0))
+        // Until the answer is on the screen it is still saving, and its lines can't be tapped.
+        waitFor("300 g · recipe: 200 g")
 
         // The egg's field is in pieces: two of them are 120 g.
         scrollTo("Egg").performClick()
@@ -145,15 +149,27 @@ class AdjustMealScreenTest {
     @Test
     fun aQuickAddOnIsAddedWithOneTapAndCanBeUndone() {
         show()
-        // The recipe's toppings first (its egg is in the meal already, so not offered), then what was added before.
-        // They load after the meal.
+        // The recipe's toppings first, then what was added before; they load after the meal. They come before the
+        // meal's lines, so however long the recipe, a known topping needs no scrolling.
         compose.waitUntil(timeoutMillis = 10_000) { runCatching { scrollTo("Greek yoghurt · 50 g") }.isSuccess }
-        assertEquals(0, compose.onAllNodesWithText("Egg · 1 piece").fetchSemanticsNodes().size)
+        val chips = scrollTo("Feta · 30 g").getUnclippedBoundsInRoot()
+        val firstLine = scrollTo("Chicken thigh fillet").getUnclippedBoundsInRoot()
+        assertTrue(chips.bottom < firstLine.top, "the chips at $chips, the first line at $firstLine")
+
         scrollTo("Feta · 30 g").performClick()
         waitForChanges(*start.toTypedArray(), MealLineChange(2, 30.0))
         waitFor("Feta added")
         compose.onNodeWithText("Undo").performClick()
         waitForChanges(*start.toTypedArray())
+    }
+
+    @Test
+    fun aToppingTheMealHasAlreadyIsAddedOnTopOfIt() {
+        show()
+        // The egg topping, with an egg in the meal already: its chip says it is extra, and adds a second one.
+        compose.waitUntil(timeoutMillis = 10_000) { runCatching { scrollTo("+ 1 piece Egg") }.isSuccess }
+        scrollTo("+ 1 piece Egg").performClick()
+        waitForChanges(MealLineChange(1, 250.0), MealLineChange(8, 0.0), MealLineChange(9, 120.0))
     }
 
     @Test

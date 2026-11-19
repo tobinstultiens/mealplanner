@@ -45,7 +45,9 @@ class RecipeToppings(private val db: Database, private val userId: Long, private
      * What a meal of recipe [recipeId] can have added with one tap: its toppings first, in their order, then
      * the ingredients added to its meals before (in any week) that it does not have, most often added first
      * and then the most recently, each with the amount its latest meal had; at most [MAX_EARLIER] of those.
-     * An ingredient the recipe has is no add-on, even when a meal had more of it: that is changed on its line.
+     * A topping is offered whatever the recipe has: the app adds its amount on top of what the meal has. From
+     * earlier meals, though, an ingredient the recipe has is no add-on: a meal stores what it ate of it in all,
+     * not what was extra, and that depended on its portions and on the recipe as it was then.
      */
     fun addOns(recipeId: Long): List<AddOn> {
         requireRecipe(recipeId)

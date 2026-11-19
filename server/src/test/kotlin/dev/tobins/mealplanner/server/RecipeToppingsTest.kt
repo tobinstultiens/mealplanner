@@ -193,5 +193,9 @@ class RecipeToppingsTest {
         val lines = http.adjust(week, 3, k.feta to feta.grams)
         assertEquals(40.0, lines.lines.single { it.name == "Top feta" }.grams)
         assertEquals(3, http.addOns(k.bowl.id)[1].times)
+
+        // A topping the recipe has too is offered all the same: the app adds it on top of what the meal has.
+        http.setToppings(k.bowl.id, k.rice to 50.0)
+        assertEquals(AddOn(k.rice.id, "Top rice", 50.0, topping = true), http.addOns(k.bowl.id).first())
     }
 }
