@@ -4,11 +4,19 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.NotificationFacts
 import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /*
  * The Android app's notifications (issue 225). The server says what is due (`GET /api/notifications`);
@@ -37,6 +45,38 @@ enum class NotificationKind(val key: String, val channel: String, val defaultOn:
 
         /** The kinds the server's facts are about: all but the update, which GitHub tells. */
         val fromServer = entries - UPDATE
+    }
+}
+
+/**
+ * When the background check must run so that every kind's window gets a run, whatever the phase of the periodic
+ * check (which Android runs about every four hours, at times of its own choosing and so possibly never inside
+ * the two hours of "Mark what you ate"). One extra run is due [MARGIN] after each hour a window opens; each
+ * run asks for the next one, so the chain goes on while the app is used now and then and the periodic check
+ * runs.
+ */
+@OptIn(ExperimentalTime::class)
+object NotificationWindows {
+    /** A run waits this long after the hour so that it is surely inside the window, and not at its very edge. */
+    val MARGIN: Duration = 5.minutes
+
+    /** The hours at which a window opens, in the order of the day. */
+    val openingHours: List<Int> = NotificationKind.entries.map { it.fromHour }.distinct().sorted()
+
+    /** The hour of the window the next run is for, and how long from now on the device's clock until it is due. */
+    fun untilNextRun(clock: Clock = Clock.System, zone: TimeZone = TimeZone.currentSystemDefault()): Pair<Int, Duration> {
+        val now = clock.now()
+        val (hour, due) = nextRun(now, zone)
+        return hour to due - now
+    }
+
+    /** The run after [now]: the hour of the window it is for, and the instant it is due, on the device's [zone]. */
+    fun nextRun(now: Instant, zone: TimeZone): Pair<Int, Instant> {
+        val today = now.toLocalDateTime(zone).date
+        return (0..1).flatMap { days ->
+            val day = today.plus(days, DateTimeUnit.DAY)
+            openingHours.map { hour -> hour to LocalDateTime(day, LocalTime(hour, 0)).toInstant(zone) + MARGIN }
+        }.first { it.second > now }
     }
 }
 

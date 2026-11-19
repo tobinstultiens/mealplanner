@@ -20,9 +20,8 @@ data class NotificationFacts(
      */
     val offersEnding: List<EndingOffer> = emptyList(),
     /**
-     * The first day (a Monday, ISO) of next week, on a Saturday or Sunday while that week has no meals and
-     * next week's offers are in: an offer at one of the account's stores that starts next week (one running on
-     * from this week, or dated over months, does not count); null otherwise.
+     * The first day (a Monday, ISO) of next week, on a Saturday or Sunday while that week has no meals,
+     * whatever the stores' offers; null otherwise.
      */
     val planNextWeek: String? = null,
     /** The newest weigh-in, when it is 7 or more days old and the account has a profile; null otherwise. */

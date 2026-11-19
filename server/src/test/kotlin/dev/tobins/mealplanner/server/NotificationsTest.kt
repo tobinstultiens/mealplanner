@@ -189,8 +189,8 @@ class NotificationsTest {
     // --- Plan next week
 
     @Test
-    fun nextWeekIsDueFromSaturdayWhileItHasNoMealsAndItsOffersAreIn() = testApplication {
-        start(chickenOffer, Offer(Store.JUMBO, "Jumbo Rijst 1 kg", "40% korting", validFrom = nextWeek, validUntil = "2026-11-29"))
+    fun nextWeekIsDueFromSaturdayWhileItHasNoMeals() = testApplication {
+        start(chickenOffer)
         val alice = clientFor("t").ready()
         val bob = clientFor("bob").ready()
         bob.get("/api/me")
@@ -204,38 +204,18 @@ class NotificationsTest {
         alice.plan("t", day = 0, weekStart = nextWeek)
         assertNull(facts("2026-11-21").planNextWeek)
         assertEquals(nextWeek, facts("2026-11-21", "bob").planNextWeek)
+    }
 
-        // Next week's offers are at a store Bob doesn't shop at.
+    @Test
+    fun nextWeekIsDueWithoutOffersAndForEveryStore() = testApplication {
+        // No offer of next week anywhere (AH and Lidl list theirs only once the week has started), and an account at AH alone.
+        start(Offer(Store.AH, "AH Broccoli", "1+1 gratis", validFrom = week, validUntil = "2026-11-22"))
+        val bob = clientFor("bob").ready()
         bob.put("/api/shops") { setBody(ShopsSetting(listOf(Store.AH))) }
-        assertNull(facts("2026-11-21", "bob").planNextWeek)
-    }
+        assertEquals(nextWeek, facts("2026-11-21", "bob").planNextWeek)
 
-    @Test
-    fun nextWeekIsNotDueBeforeItsOffersAreIn() = testApplication {
-        start(chickenOffer)
-        clientFor("t").ready()
-        assertNull(facts("2026-11-21").planNextWeek)
-    }
-
-    @Test
-    fun offersRunningOnIntoNextWeekAreNotNextWeeksOffers() = testApplication {
-        start(
-            // Jumbo's week of this Wednesday to next Tuesday, and an offer Jumbo dates over most of the year.
-            Offer(Store.JUMBO, "Jumbo Rijst 1 kg", "40% korting", validFrom = "2026-11-18", validUntil = "2026-11-24"),
-            Offer(Store.JUMBO, "Jumbo Oosterse maaltijden", "2 voor 5,50", validFrom = "2026-01-07", validUntil = "2026-12-08"),
-            // AH's week, ending on Sunday.
-            Offer(Store.AH, "AH Broccoli", "1+1 gratis", validFrom = week, validUntil = "2026-11-22"),
-        )
-        clientFor("t").ready()
-        assertNull(facts("2026-11-21").planNextWeek, "Saturday, with only this week's offers and a long-dated one")
-    }
-
-    @Test
-    fun anOfferStartingMidNextWeekBringsItsOffersIn() = testApplication {
-        // Jumbo lists its week from Wednesday 25 November before it starts.
-        start(chickenOffer, Offer(Store.JUMBO, "Jumbo Rijst 1 kg", "40% korting", validFrom = "2026-11-25", validUntil = "2026-12-01"))
-        clientFor("t").ready()
-        assertEquals(nextWeek, facts("2026-11-22").planNextWeek)
+        clientFor("t").ready().put("/api/shops") { setBody(ShopsSetting(listOf(Store.LIDL))) }
+        assertEquals(nextWeek, facts("2026-11-21").planNextWeek)
     }
 
     // --- Weigh-in
