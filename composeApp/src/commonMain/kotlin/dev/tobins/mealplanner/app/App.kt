@@ -239,7 +239,7 @@ fun App(
             startingLogin = true
             // No page when the login was called off meanwhile (another server saved, or logged out).
             runCatching { logins.start(server.url, launcher.redirectUri(server.url))?.let(launcher::open) }
-                .onFailure { loginError = strings(Msg.LOGIN_START_FAILED, it.message) }
+                .onFailure { loginError = sentence(strings(Msg.LOGIN_START_FAILED, reasonOf(it))) }
             startingLogin = false
         }
     }

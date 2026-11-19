@@ -92,7 +92,7 @@ fun GenerateDialog(
                             error = when (result.status) {
                                 503 -> t(Msg.GEN_OFF)
                                 409 -> t(Msg.GEN_NEEDS_PROFILE)
-                                else -> t(Msg.GEN_FAILED, result.message)
+                                else -> failureSentence(result, Msg.GEN_FAILED)
                             }
                         }
                         Load.Loading -> Unit

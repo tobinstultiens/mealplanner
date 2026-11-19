@@ -44,16 +44,22 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
     Load.Ready(block())
 } catch (e: CancellationException) {
     throw e
-} catch (e: ResponseException) {
-    // The server explains errors as {"error": "..."}; fall back to the status line.
-    val reason = runCatching {
-        kotlinx.serialization.json.Json.parseToJsonElement(e.response.bodyAsText())
-            .let { it as? kotlinx.serialization.json.JsonObject }?.get("error")
-            ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-    }.getOrNull()
-    Load.Failed(reason ?: Strings.current(Msg.SERVER_ANSWERED, e.response.status.value, e.response.status.description), e.response.status.value)
 } catch (e: Exception) {
-    Load.Failed(
+    failedFrom(e)
+}
+
+/** What [e], thrown by a request, means for the user: the server's explanation, or a technical failure flagged as such. */
+internal suspend fun failedFrom(e: Throwable): Load.Failed {
+    if (e is ResponseException) {
+        // The server explains errors as {"error": "..."}; fall back to the status line when there is none or it is empty.
+        val reason = runCatching {
+            kotlinx.serialization.json.Json.parseToJsonElement(e.response.bodyAsText())
+                .let { it as? kotlinx.serialization.json.JsonObject }?.get("error")
+                ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+        return Load.Failed(reason ?: Strings.current(Msg.SERVER_ANSWERED, e.response.status.value, e.response.status.description), e.response.status.value)
+    }
+    return Load.Failed(
         e.message ?: Strings.current(Msg.UNKNOWN_ERROR),
         technical = e.message != null,
         unreadable = e is SerializationException || e is ContentConvertException,
@@ -61,9 +67,9 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
     )
 }
 
-/** [text] as a sentence: capitalised and with a full stop unless it ends in one already. */
+/** [text] as a sentence: capitalised and with a full stop unless it ends in one already; blank stays as it is. */
 internal fun sentence(text: String): String =
-    text.replaceFirstChar { it.uppercase() }.let { if (it.last() in ".!?") it else "$it." }
+    if (text.isBlank()) text else text.replaceFirstChar { it.uppercase() }.let { if (it.last() in ".!?") it else "$it." }
 
 /**
  * What a snackbar says about [failed], as a sentence: the server's own explanation, or for a technical
@@ -77,6 +83,14 @@ internal fun failureSentence(failed: Load.Failed, msg: Msg? = null): String {
 
 /** Runs [action]; null when it worked, else the sentence for a snackbar. */
 internal suspend fun failureOf(action: suspend () -> Unit): String? = (load(action) as? Load.Failed)?.let { failureSentence(it) }
+
+/**
+ * Why [e], caught where the app did something other than [load], failed, as a fragment for inside a sentence.
+ * An [IllegalStateException] is the app's own sentence (`error(...)`, `check(...)`) and stays; any other
+ * exception goes through [failedFrom], so its text ("unexpected end of stream on http://...") is never shown.
+ */
+internal suspend fun reasonOf(e: Throwable): String =
+    if (e is IllegalStateException && !e.message.isNullOrBlank()) e.message!! else reasonOf(failedFrom(e))
 
 /** Why [failed] failed, as a fragment for inside a sentence: the server's explanation or a plain reason. */
 internal fun reasonOf(failed: Load.Failed): String = if (failed.technical) plainReason(failed) else failed.message

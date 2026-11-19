@@ -152,7 +152,7 @@ fun RecipeDetailScreen(
     suspend fun settle(result: Load<RecipeDetail>, failed: Msg) {
         when (result) {
             is Load.Ready -> state = result
-            is Load.Failed -> snackbar.showSnackbar(t(failed, result.message))
+            is Load.Failed -> snackbar.showSnackbar(failureSentence(result, failed))
             Load.Loading -> Unit
         }
     }
@@ -199,7 +199,7 @@ fun RecipeDetailScreen(
             acting = false
             when (result) {
                 is Load.Ready -> eaten = true
-                is Load.Failed -> snackbar.showSnackbar(t(Msg.COOK_MARK_EATEN_FAILED, result.message))
+                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.COOK_MARK_EATEN_FAILED))
                 Load.Loading -> Unit
             }
         }
@@ -212,7 +212,7 @@ fun RecipeDetailScreen(
             acting = false
             when (result) {
                 is Load.Ready -> onBack()
-                is Load.Failed -> snackbar.showSnackbar(t(Msg.DELETE_FAILED, result.message))
+                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.DELETE_FAILED))
                 Load.Loading -> Unit
             }
         }

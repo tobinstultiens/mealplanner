@@ -347,7 +347,7 @@ class LoginTest {
         val state = startedLogin(logins)
 
         logins.deliver("https://meals.example.nl/app/login?code=stolen&state=forged")
-        assertEquals(LoginProgress.Failed(Strings.current(Msg.LOGIN_ANSWER_MISMATCH)), logins.outcome())
+        assertEquals(LoginProgress.Failed(sentence(Strings.current(Msg.LOGIN_ANSWER_MISMATCH))), logins.outcome())
         assertEquals(null, storage.session())
         assertTrue(forms.isEmpty(), "a foreign code never reaches the provider")
 
@@ -362,7 +362,7 @@ class LoginTest {
         val logins = exchange(storage, fakeProvider(mutableListOf()))
         val state = startedLogin(logins)
         logins.deliver("https://meals.example.nl/app/login?error=access_denied&error_description=No&state=$state")
-        assertEquals(LoginProgress.Failed("No"), logins.outcome())
+        assertEquals(LoginProgress.Failed("No."), logins.outcome())
         startedLogin(logins)
         assertEquals(LoginProgress.Idle, logins.progress.value)
     }

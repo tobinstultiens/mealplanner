@@ -201,7 +201,7 @@ internal fun ShoppingScreen(
     /** Shown at once; when the server can't be told, the chips go back and say why. */
     fun chooseShops(chosen: Set<Store>) {
         scope.launch {
-            (load { accountShops.choose(chosen) } as? Load.Failed)?.let { snackbar.showSnackbar(t(Msg.SHOPS_SAVE_FAILED, it.message)) }
+            (load { accountShops.choose(chosen) } as? Load.Failed)?.let { snackbar.showSnackbar(failureSentence(it, Msg.SHOPS_SAVE_FAILED)) }
         }
     }
 

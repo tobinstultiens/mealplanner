@@ -99,7 +99,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                 )
                 baseline = form
             }
-            is Load.Failed -> snackbar.showSnackbar(t(Msg.EDITOR_LOAD_FAILED, result.message))
+            is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.EDITOR_LOAD_FAILED))
             Load.Loading -> Unit
         }
         loading = false
@@ -170,7 +170,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                                 is Load.Failed -> {
                                     saving = false
                                     snackbar.showSnackbar(
-                                        if (result.status == 400) checkLinesMessage(t, result.message) else t(Msg.SAVE_FAILED, result.message),
+                                        if (result.status == 400) checkLinesMessage(t, result.message) else failureSentence(result, Msg.SAVE_FAILED),
                                     )
                                 }
                                 Load.Loading -> Unit
@@ -188,7 +188,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                                     is Load.Ready -> onDone(null)
                                     is Load.Failed -> {
                                         saving = false
-                                        snackbar.showSnackbar(t(Msg.DELETE_FAILED, result.message))
+                                        snackbar.showSnackbar(failureSentence(result, Msg.DELETE_FAILED))
                                     }
                                     Load.Loading -> Unit
                                 }
