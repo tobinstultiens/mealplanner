@@ -271,7 +271,7 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                                     baseline = saving
                                     snackbar.showSnackbar(t(Msg.PROFILE_SAVED))
                                 }
-                                is Load.Failed -> snackbar.showSnackbar(t(Msg.SAVE_FAILED, result.message))
+                                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.SAVE_FAILED))
                                 Load.Loading -> Unit
                             }
                         }

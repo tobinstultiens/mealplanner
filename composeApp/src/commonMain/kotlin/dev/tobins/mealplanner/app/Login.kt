@@ -382,7 +382,7 @@ class LoginExchange(
             // Called off: whoever did it has said what the screen shows.
             throw e
         } catch (e: Exception) {
-            LoginProgress.Failed(e.message ?: Strings.current(Msg.LOGIN_FAILED))
+            LoginProgress.Failed(sentence(reasonOf(e)))
         }
     }
 

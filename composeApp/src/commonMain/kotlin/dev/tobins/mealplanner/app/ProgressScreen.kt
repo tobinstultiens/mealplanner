@@ -77,7 +77,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
         scope.launch {
             when (val result = load(action)) {
                 is Load.Ready -> state = result
-                is Load.Failed -> snackbar.showSnackbar(result.message)
+                is Load.Failed -> snackbar.showSnackbar(failureSentence(result))
                 Load.Loading -> Unit
             }
         }

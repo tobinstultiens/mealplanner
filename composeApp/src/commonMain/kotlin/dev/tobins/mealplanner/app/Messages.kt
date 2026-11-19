@@ -131,7 +131,6 @@ enum class Msg(private val english: String, private val dutch: String) {
 
     // --- App shell and login
     YOUR_ACCOUNT("your account", "je account"),
-    LOGIN_FAILED("Logging in failed", "Inloggen is mislukt"),
     LOGIN_START_FAILED("Could not start the login: {0}", "Kon het inloggen niet starten: {0}"),
 
     // --- Login screen

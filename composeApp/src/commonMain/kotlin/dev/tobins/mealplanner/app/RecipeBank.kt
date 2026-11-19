@@ -164,7 +164,7 @@ internal fun CookingRepoDialog(status: CookingSyncStatus?, onDismiss: () -> Unit
     fun save() {
         saving = true
         scope.launch {
-            runCatching { onSave(siteSetting(choice, url, serverSite)) }.onFailure { error = (load { throw it } as? Load.Failed)?.let { failureSentence(it) } ?: it.message }
+            runCatching { onSave(siteSetting(choice, url, serverSite)) }.onFailure { error = sentence(reasonOf(it)) }
             saving = false
         }
     }
