@@ -196,6 +196,14 @@ class FakeBackend(
             close()
             return
         }
+        // A login the server refuses on every request, as one with MEALPLANNER_OIDC_GROUP answers an account outside it.
+        if (requestHeaders.getFirst("Authorization") == "Bearer $NOT_IN_GROUP_TOKEN") {
+            val bytes = """{"error":"This account may not use the meal planner yet. Ask the person who runs this server.","reason":"not_in_group"}""".toByteArray()
+            responseHeaders.add("Content-Type", "application/json")
+            sendResponseHeaders(403, bytes.size.toLong())
+            responseBody.use { it.write(bytes) }
+            return
+        }
         val sent = requestBody.readBytes().decodeToString()
         requests += "$requestMethod ${requestURI.path}"
         var status = 200
@@ -984,5 +992,8 @@ class FakeBackend(
 
         /** An access token every call answers 401 to. */
         const val REFUSED_TOKEN = "refused-token"
+
+        /** An access token of an account outside the server's group: every call answers 403 `not_in_group` to it. */
+        const val NOT_IN_GROUP_TOKEN = "not-in-group-token"
     }
 }

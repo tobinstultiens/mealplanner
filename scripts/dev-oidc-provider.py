@@ -10,6 +10,17 @@ the app, the web client and the server to log in the way they do in production.
 The login page asks only for a username (no password): development only, never expose it.
 On an emulator, `adb reverse tcp:8090 tcp:8090` and `adb reverse tcp:8080 tcp:8080` make both
 reachable as localhost, so the issuer is the same for the app and the server.
+
+Users and groups, to play a member and a non-member of the server's group (MEALPLANNER_OIDC_GROUP):
+
+    python3 scripts/dev-oidc-provider.py --user anna=mealplanner,family --user eve=family --user bob=
+    python3 scripts/dev-oidc-provider.py --users users.json      # {"anna": ["mealplanner"], "eve": []}
+
+With users given only they can log in; the file is read again for every token, a renewal too, as
+Authelia reads the directory, so taking someone out of a group in it shows at their next renewal.
+Without users anyone can, in the --default-groups (`mealplanner` unless set; `--default-groups ""`
+for none). As with Authelia's `groups` scope and a claims policy that puts the claim in the access
+token, the token has a `groups` claim only when the client asked for the `groups` scope.
 """
 import argparse
 import base64
@@ -25,8 +36,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-CODES = {}     # code -> (client_id, redirect_uri, challenge, username)
-REFRESH = {}   # refresh token -> (client_id, username)
+CODES = {}     # code -> (client_id, redirect_uri, challenge, username, scope)
+REFRESH = {}   # refresh token -> (client_id, username, scope)
 
 
 def b64(data: bytes) -> str:
@@ -44,9 +55,37 @@ def jwt(claims: dict) -> str:
     return f"{header}.{body}.{b64(signature)}"
 
 
+def parse_user(text: str):
+    """`name=group,group` (or `name=` for no groups, `name` alone the same) as (name, [groups])."""
+    name, _, groups = text.partition("=")
+    if not name:
+        raise argparse.ArgumentTypeError(f"no user name in '{text}'")
+    return name, [group for group in groups.split(",") if group]
+
+
 class Provider(BaseHTTPRequestHandler):
     issuer = ""
     lifetime = 300
+    users = None          # {name: [groups]} from --user; None: anyone may log in
+    users_file = None     # --users, read again for every token
+    default_groups = ["mealplanner"]
+
+    @classmethod
+    def directory(cls):
+        """The users who may log in and their groups, as now; None when anyone may."""
+        if cls.users_file is None:
+            return cls.users
+        with open(cls.users_file) as f:
+            listed = json.load(f)
+        return {**(cls.users or {}), **{name: list(groups) for name, groups in listed.items()}}
+
+    @classmethod
+    def groups_of(cls, username):
+        """The user's groups now; None for a user who may not log in (any more)."""
+        directory = cls.directory()
+        if directory is None:
+            return list(cls.default_groups)
+        return directory.get(username)
 
     def send(self, status, body, content_type="application/json", headers=None):
         data = body if isinstance(body, bytes) else body.encode()
@@ -88,24 +127,34 @@ class Provider(BaseHTTPRequestHandler):
                 <title>Dev login</title><body style="font-family:sans-serif;margin:2rem">
                 <h1>Dev login</h1><p>Client: {html.escape(query.get("client_id", ""))}</p>
                 <form method="post" action="/authorize">{hidden}
-                <label>Username <input name="username" value="tester" autofocus></label>
+                <label>Username <input name="username" value="{html.escape(self.first_user())}" autofocus></label>
                 <button type="submit" id="login">Log in</button></form>""", "text/html")
         elif url.path == "/userinfo":
             claims = self.bearer_claims()
             if claims is None:
                 return self.send(401, json.dumps({"error": "invalid_token"}))
-            self.send(200, json.dumps({"sub": claims["sub"], "preferred_username": claims["preferred_username"],
-                                       "name": claims["preferred_username"].title()}))
+            info = {"sub": claims["sub"], "preferred_username": claims["preferred_username"],
+                    "name": claims["preferred_username"].title()}
+            if "groups" in claims:
+                info["groups"] = claims["groups"]
+            self.send(200, json.dumps(info))
         else:
             self.send(404, "not found", "text/plain")
+
+    def first_user(self):
+        directory = self.directory()
+        return next(iter(directory), "") if directory else "tester"
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         form = dict(urllib.parse.parse_qsl(self.rfile.read(length).decode()))
         path = urllib.parse.urlparse(self.path).path
         if path == "/authorize":
+            username = form.get("username") or "tester"
+            if self.groups_of(username) is None:
+                return self.send(403, f"Unknown user {html.escape(username)}", "text/html")
             code = secrets.token_urlsafe(24)
-            CODES[code] = (form["client_id"], form["redirect_uri"], form["code_challenge"], form.get("username") or "tester")
+            CODES[code] = (form["client_id"], form["redirect_uri"], form["code_challenge"], username, form.get("scope", ""))
             target = form["redirect_uri"] + ("&" if "?" in form["redirect_uri"] else "?") + urllib.parse.urlencode(
                 {"code": code, "state": form.get("state", "")})
             self.send(302, b"", headers={"Location": target})
@@ -117,21 +166,27 @@ class Provider(BaseHTTPRequestHandler):
                 if entry is None or entry[1] != form.get("redirect_uri") or entry[0] != form.get("client_id") \
                         or b64(hashlib.sha256(verifier.encode()).digest()) != entry[2]:
                     return self.send(400, json.dumps({"error": "invalid_grant"}))
-                client_id, username = entry[0], entry[3]
+                client_id, username, scope = entry[0], entry[3], entry[4]
             elif grant == "refresh_token":
                 entry = REFRESH.pop(form.get("refresh_token", ""), None)
                 if entry is None or entry[0] != form.get("client_id"):
                     return self.send(400, json.dumps({"error": "invalid_grant"}))
-                client_id, username = entry
+                client_id, username, scope = entry
             else:
                 return self.send(400, json.dumps({"error": "unsupported_grant_type"}))
+            # Read now, for a renewal too: a user taken out of the list can no longer renew, as with Authelia.
+            groups = self.groups_of(username)
+            if groups is None:
+                return self.send(400, json.dumps({"error": "invalid_grant"}))
             refresh = secrets.token_urlsafe(32)
-            REFRESH[refresh] = (client_id, username)
+            REFRESH[refresh] = (client_id, username, scope)
             now = int(time.time())
-            access = jwt({"iss": self.issuer, "sub": f"dev-{username}", "aud": [client_id], "client_id": client_id,
-                          "preferred_username": username, "iat": now, "exp": now + self.lifetime, "jti": secrets.token_hex(8)})
-            self.send(200, json.dumps({"access_token": access, "token_type": "bearer", "expires_in": self.lifetime,
-                                       "refresh_token": refresh, "scope": "openid profile offline_access"}))
+            claims = {"iss": self.issuer, "sub": f"dev-{username}", "aud": [client_id], "client_id": client_id,
+                      "preferred_username": username, "iat": now, "exp": now + self.lifetime, "jti": secrets.token_hex(8)}
+            if "groups" in scope.split():
+                claims["groups"] = groups
+            self.send(200, json.dumps({"access_token": jwt(claims), "token_type": "bearer", "expires_in": self.lifetime,
+                                       "refresh_token": refresh, "scope": scope}))
         else:
             self.send(404, "not found", "text/plain")
 
@@ -151,8 +206,16 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument("--issuer", default=None, help="defaults to http://localhost:PORT")
     parser.add_argument("--lifetime", type=int, default=300, help="access token lifetime in seconds")
+    parser.add_argument("--user", type=parse_user, action="append", metavar="NAME=GROUP,GROUP",
+                        help="a user who may log in, with their groups (repeat; NAME= for none)")
+    parser.add_argument("--users", metavar="FILE", help='users and groups as JSON, {"anna": ["mealplanner"]}; read for every token')
+    parser.add_argument("--default-groups", default="mealplanner", metavar="GROUP,GROUP",
+                        help="the groups of anyone logging in when no users are given (default: mealplanner)")
     args = parser.parse_args()
     Provider.issuer = args.issuer or f"http://localhost:{args.port}"
     Provider.lifetime = args.lifetime
+    Provider.users = dict(args.user) if args.user else None
+    Provider.users_file = args.users
+    Provider.default_groups = [group for group in args.default_groups.split(",") if group]
     print(f"Dev OIDC provider at {Provider.issuer}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", args.port), Provider).serve_forever()

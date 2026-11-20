@@ -17,6 +17,21 @@ data class AuthConfig(
     val scopes: List<String>,
 )
 
+/**
+ * The machine-readable `reason` next to the `error` sentence of the 403 a server answers to a valid login that may
+ * not use it (`MEALPLANNER_OIDC_GROUP`), on every route. The app tells them apart by these, not by the wording.
+ */
+object LoginRefusal {
+    /** The login says which groups the account is in, and the server's group is not among them. */
+    const val NOT_IN_GROUP = "not_in_group"
+
+    /**
+     * The login says nothing about groups: made before the server asked for them (logging in again fixes it), or
+     * the provider does not put them in its access tokens (only its owner can fix that).
+     */
+    const val NO_GROUPS = "no_groups"
+}
+
 /** The logged-in account, from `GET /api/me`. */
 @Serializable
 data class Me(

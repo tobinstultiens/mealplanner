@@ -4,7 +4,9 @@ import com.auth0.jwk.JwkProvider
 import com.auth0.jwk.JwkProviderBuilder
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
+import com.auth0.jwt.interfaces.Claim
 import dev.tobins.mealplanner.api.AuthConfig
+import dev.tobins.mealplanner.api.LoginRefusal
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
@@ -51,6 +53,39 @@ object NoLogin : TokenVerifier {
 
 /** Scopes clients ask for: offline_access gives a refresh token, so the app stays logged in. */
 val LOGIN_SCOPES = listOf("openid", "profile", "email", "offline_access")
+
+/**
+ * Authelia's scope for the account's groups, and the name of the claim that lists them (an array of strings). The
+ * claim is in the access token only when the client's claims policy names it (`access_token: ['groups']`, see
+ * docs/deploy.md); by default Authelia gives it at the userinfo endpoint only.
+ */
+const val GROUPS = "groups"
+
+/**
+ * The scopes the server tells clients to ask for (`GET /api/auth/config`). The groups only while [group] is set: a
+ * provider refuses a login that asks for a scope its client may not have, so asking for it before the owner has
+ * allowed it there would lock everyone out.
+ */
+fun loginScopes(group: String?): List<String> = if (group == null) LOGIN_SCOPES else LOGIN_SCOPES + GROUPS
+
+/** Thrown when a valid login may not use this server; answered 403 with the sentence and [reason] ([LoginRefusal]). */
+class LoginRefusedException(val reason: String, message: String) : RuntimeException(message)
+
+/**
+ * Lets [identity] through only when [group] is null (any account the provider knows, as before the setting) or the
+ * token lists [group] among its groups. Checked on every call, before the account is looked up or made: a refused
+ * login gets no account, and a person taken out of the group is refused from the first token renewed after it.
+ */
+fun requireMember(identity: Identity, group: String?) {
+    if (group == null) return
+    val groups = identity.groups ?: throw LoginRefusedException(
+        LoginRefusal.NO_GROUPS,
+        "This login does not say which groups the account is in. Log out and log in again; if this stays, ask the person who runs this server.",
+    )
+    if (group !in groups) {
+        throw LoginRefusedException(LoginRefusal.NOT_IN_GROUP, "This account may not use the meal planner yet. Ask the person who runs this server.")
+    }
+}
 
 /**
  * Verifies JWT access tokens issued by an OpenID Connect provider (Authelia with
@@ -116,11 +151,21 @@ class OidcVerifier(
                 verified.audience.orEmpty().contains(clientId)
             val subject = verified.subject
             if (!forThisApp || subject.isNullOrBlank()) return null
-            Identity(subject, verified.getClaim("preferred_username").asString(), verified.getClaim("name").asString())
+            Identity(subject, verified.getClaim("preferred_username").asString(), verified.getClaim("name").asString(), groupsOf(verified.getClaim(GROUPS)))
         } catch (e: Exception) {
             log.debug("Rejected a token: ${e.message}")
             null
         }
+    }
+
+    /**
+     * The groups a token's claim lists. A claim that is there but null counts as no groups: a provider may write an
+     * empty list that way (a Go nil slice). Only a token without the claim at all has none to tell ([Identity.groups]).
+     */
+    private fun groupsOf(claim: Claim): List<String>? = when {
+        claim.isMissing -> null
+        claim.isNull -> emptyList()
+        else -> claim.asList(String::class.java) ?: listOfNotNull(claim.asString())
     }
 
     override suspend fun userinfo(token: String): Identity? = runCatching {

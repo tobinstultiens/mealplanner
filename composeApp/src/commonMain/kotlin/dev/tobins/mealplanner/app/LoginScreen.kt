@@ -111,4 +111,6 @@ private val LoggedOut.message: Msg?
         LoggedOut.BY_USER -> Msg.LOGGED_OUT_BY_USER
         LoggedOut.EXPIRED -> Msg.LOGGED_OUT_EXPIRED
         LoggedOut.NOT_RENEWED -> Msg.LOGGED_OUT_NOT_RENEWED
+        LoggedOut.NOT_ALLOWED -> Msg.LOGGED_OUT_NOT_ALLOWED
+        LoggedOut.NO_GROUPS -> Msg.LOGGED_OUT_NO_GROUPS
     }

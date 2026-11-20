@@ -67,6 +67,11 @@ data class ServerConfig(
     val oidcIssuer: String? = null,
     /** This app's client id at the issuer. */
     val oidcClientId: String = "mealplanner",
+    /**
+     * The group at the issuer whose members may use the server (`MEALPLANNER_OIDC_GROUP`, e.g. `mealplanner`); null:
+     * every account the issuer knows, as before the setting. See [requireMember].
+     */
+    val oidcGroup: String? = null,
     /** Username that takes over the data from before accounts; unset: the first account to log in. */
     val owner: String? = null,
     /** Where per-account files (cooking repo clones) go. */
@@ -101,6 +106,7 @@ data class ServerConfig(
                 fetchOffers = env["MEALPLANNER_FETCH_OFFERS"]?.lowercase() !in setOf("false", "off", "0"),
                 oidcIssuer = env["MEALPLANNER_OIDC_ISSUER"]?.takeIf { it.isNotBlank() },
                 oidcClientId = env["MEALPLANNER_OIDC_CLIENT_ID"]?.takeIf { it.isNotBlank() } ?: "mealplanner",
+                oidcGroup = env["MEALPLANNER_OIDC_GROUP"]?.trim()?.takeIf { it.isNotEmpty() },
                 owner = env["MEALPLANNER_OWNER"]?.takeIf { it.isNotBlank() },
                 androidCertificates = env["MEALPLANNER_ANDROID_CERTS"].orEmpty().split(',', ' ').map { it.trim() }.filter { it.isNotEmpty() },
                 dataDir = dataDir,
@@ -179,11 +185,13 @@ fun Application.module(
     install(ContentNegotiation) { json() }
     install(StatusPages) { errorMapping() }
     install(Authentication) {
-        // Access tokens from Authelia (or another OpenID Connect provider). Any account it
-        // knows may log in; the token's subject decides whose data a call sees.
+        // Access tokens from Authelia (or another OpenID Connect provider). Any account it knows
+        // may log in, or with MEALPLANNER_OIDC_GROUP only its members; the token's subject decides
+        // whose data a call sees.
         bearer("api") {
             authenticate { credential ->
                 val identity = verifier.verify(credential.token) ?: return@authenticate null
+                requireMember(identity, config.oidcGroup)
                 // Access tokens may not carry names; ask once, when the account is new.
                 val known = database.userQueries.selectBySubject(identity.subject).executeAsOneOrNull() != null
                 val named = if (identity.username == null && !known) verifier.userinfo(credential.token) ?: identity else identity

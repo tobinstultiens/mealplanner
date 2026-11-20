@@ -94,8 +94,9 @@ fun App(
     }
     // Renewed tokens go to storage only: the client keeps using them, and the screens don't reload.
     // When renewing ended the session (see Login.refresh for when it does), the app asks to log in again.
+    // A login the server refuses (not in its group, issue 314) ends the session the same way, saying why.
     val api = remember(settings, session) {
-        ApiClient(settings, session) { refused ->
+        ApiClient(settings, session, loginRefused = { refused, reason -> if (logins.loginRefused(refused, reason)) session = null }) { refused ->
             logins.renew(settings.url, refused) ?: run {
                 // Whoever logs in next may be someone else: what was the account's goes, as on logging out.
                 // The shopping session of this client is closed when the client is replaced; until then

@@ -10,6 +10,8 @@ data class Identity(
     val subject: String,
     val username: String? = null,
     val displayName: String? = null,
+    /** The token's `groups` claim; null when it has none at all, which is not the same as being in no group. */
+    val groups: List<String>? = null,
 )
 
 /** A logged-in account: the principal of every authenticated call. */

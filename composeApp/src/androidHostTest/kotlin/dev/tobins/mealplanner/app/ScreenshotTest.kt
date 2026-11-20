@@ -583,6 +583,13 @@ enum class Shot(
     LOGIN(heightDp = 760, content = { _, _ ->
         LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.EXPIRED, error = null, busy = false, {}, {})
     }),
+    // Logged out because the server lets only its group in and this account is not in it (issue 314); in Dutch too.
+    LOGIN_NOT_ALLOWED(heightDp = 760, content = { _, _ ->
+        LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.NOT_ALLOWED, error = null, busy = false, {}, {})
+    }),
+    LOGIN_NOT_ALLOWED_NL(dutch = true, heightDp = 760, content = { _, _ ->
+        LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.NOT_ALLOWED, error = null, busy = false, {}, {})
+    }),
     // No server known yet (a debug build): the address is asked for; the last attempt could not reach it.
     LOGIN_ASKS_SERVER(heightDp = 860, content = { _, _ ->
         LoginScreen(

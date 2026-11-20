@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.LoginRefusal
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -903,5 +904,74 @@ class LoginTest {
         val logins = exchange(storage, fakeProvider(forms), clock)
         assertEquals("access-1", logins.renew(server.url, refused = "stored")?.accessToken)
         assertEquals(1, forms.size)
+    }
+
+    // --- A login the server refuses: not in the group that may use it (issue 314).
+
+    /**
+     * The meal planner's API as a server with `MEALPLANNER_OIDC_GROUP` answers a login outside the group: 403 on
+     * every request, with [reason] next to the sentence (none: a 403 that is not about the login).
+     */
+    private fun refusing(reason: String?, asked: MutableList<String?> = mutableListOf()) = MockEngine { request ->
+        asked += request.headers[HttpHeaders.Authorization]
+        val because = reason?.let { ""","reason":"$it"""" } ?: ""
+        respond(
+            """{"error":"This account may not use the meal planner yet. Ask the person who runs this server."$because}""",
+            HttpStatusCode.Forbidden,
+            headersOf(HttpHeaders.ContentType, "application/json"),
+        )
+    }
+
+    @Test
+    fun aLoginTheServerRefusesEndsTheSessionSayingWhy() = runTest {
+        for ((reason, why) in listOf(LoginRefusal.NOT_IN_GROUP to LoggedOut.NOT_ALLOWED, LoginRefusal.NO_GROUPS to LoggedOut.NO_GROUPS)) {
+            val storage = MemorySettingsStorage().apply { saveSession(Session("ann", "good", Long.MAX_VALUE)) }
+            val forms = mutableListOf<Map<String, String>>()
+            val logins = exchange(storage, fakeProvider(forms))
+            var ended = false
+            val api = ApiClient(server, storage.session(), refusing(reason), loginRefused = { token, r -> ended = logins.loginRefused(token, r) }) {
+                logins.renew(server.url, it)
+            }
+
+            val failed = load { api.me() } as Load.Failed
+            assertEquals(403, failed.status, reason)
+            assertTrue(ended, reason)
+            assertEquals(null, storage.session(), reason)
+            assertEquals(why, storage.loggedOut(), reason)
+            assertTrue(forms.isEmpty(), "$reason: a 403 is not renewed, it is the account")
+            assertFalse(logins.claimAutoOpen(serverKnown = true), "$reason: the login screen says why, under no login page")
+            api.close()
+        }
+    }
+
+    @Test
+    fun aRefusalOfAnotherSessionOrAnotherForbiddenAnswerEndsNothing() = runTest {
+        // Logged in again meanwhile, perhaps as someone else: the answer for the old token leaves the new session alone.
+        val storage = MemorySettingsStorage().apply { saveSession(Session("bob", "his", Long.MAX_VALUE)) }
+        val logins = exchange(storage, fakeProvider(mutableListOf()))
+        val old = ApiClient(server, Session("ann", "hers", Long.MAX_VALUE), refusing(LoginRefusal.NOT_IN_GROUP), loginRefused = logins::loginRefused)
+        assertEquals(403, (load { old.me() } as Load.Failed).status)
+        assertEquals("bob", storage.session()?.accessToken)
+        assertEquals(null, storage.loggedOut())
+
+        // A 403 that is about what was asked, not about the login, is shown where it was asked.
+        for (reason in listOf(null, "something_else")) {
+            val api = ApiClient(server, storage.session(), refusing(reason), loginRefused = logins::loginRefused)
+            assertEquals("This account may not use the meal planner yet. Ask the person who runs this server.", (load { api.me() } as Load.Failed).message)
+            assertEquals("bob", storage.session()?.accessToken, "$reason")
+            api.close()
+        }
+        old.close()
+    }
+
+    @Test
+    fun theBackgroundCheckEndsNoSessionTheServerRefuses() = runTest {
+        // Nobody is there to read why: the screens find out at their next request, and end it then.
+        val storage = MemorySettingsStorage().apply { saveSession(Session("ann", "good", Long.MAX_VALUE)) }
+        val asked = mutableListOf<String?>()
+        val logins = exchange(storage, fakeProvider(mutableListOf()))
+        assertEquals(null, askWhatIsDue(storage, logins, server, refusing(LoginRefusal.NOT_IN_GROUP, asked)))
+        assertEquals(listOf<String?>("Bearer ann"), asked)
+        assertEquals("ann", storage.session()?.accessToken)
     }
 }

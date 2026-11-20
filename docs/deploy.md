@@ -28,6 +28,101 @@ Gatus checks `/health`.
    `MEALPLANNER_OWNER` and `MEALPLANNER_ANDROID_CERTS` (the release key's certificate fingerprint, for
    the App Link).
 
+## Who may use it (the group `mealplanner`)
+
+> **Not run on the real server.** Nothing below was run against the homelab's Authelia or LLDAP. The server side
+> was tested with signed tokens in `:server:test`, and end to end against the stand-in
+> (`scripts/dev-oidc-provider.py --users`, see README "Run the server locally"). What is said about Authelia comes
+> from its documentation and source (the `master` branch, read on 2026-11-20), not from the version that runs here:
+> check each step as it says.
+
+Today every account in Authelia (LLDAP) may use the meal planner. `MEALPLANNER_OIDC_GROUP` (issue 314) lets in only
+the members of one group, which the request-and-approve registration of issue 314 needs: approving a person is
+putting them in `mealplanner`. Two places check it: Authelia, when someone logs in to the client, and the server, on
+every request (Authelia's check applies to logins only, not to renewals). The server's check is unset, and changes
+nothing, until step 4.
+
+**The Authelia lines**, for `local/authelia/configuration.yml` in the Ansible repo. Keep what the client has; add the
+`groups` scope, the claims policy and the authorization policy:
+
+```yaml
+identity_providers:
+  oidc:
+    claims_policies:
+      mealplanner:
+        # Authelia gives the groups at the userinfo endpoint only; the server reads them from the access token.
+        access_token: ['groups']
+    authorization_policies:
+      mealplanner:
+        default_policy: 'deny'
+        rules:
+          - policy: 'two_factor'          # what the client asks for now
+            subject: 'group:mealplanner'
+    clients:
+      - client_id: 'mealplanner'
+        # ... everything it has now, and:
+        scopes: ['openid', 'profile', 'email', 'offline_access', 'groups']
+        claims_policy: 'mealplanner'
+        authorization_policy: 'mealplanner'   # step 3; until then keep the one it has
+```
+
+The scope is `groups`; the claim is `groups`, an array of the account's group names, which the server reads from the
+access token (`access_token_signed_response_alg: RS256`, as now). Authelia reads the groups from LLDAP again for every
+token it issues, a renewal too.
+
+**Switching it on, in this order.** Each step can stay as it is for days; nobody is locked out by steps 1 and 2.
+
+1. **Everyone who uses it, in the group.** In LLDAP, add every person who uses the meal planner to `mealplanner` (the
+   group exists). Who has an account in the meal planner: on the server, as the database's owner (see "Which user"),
+   `sqlite3 -readonly <docker_config_dir>/mealplanner/mealplanner.db "select username from appUser"`. Check: each of
+   those user names is a member of `mealplanner` in LLDAP's web page (Groups, `mealplanner`).
+2. **The scope and the claims policy.** Add the `groups` scope and `claims_policy: 'mealplanner'` to the client, and
+   the `claims_policies` block; deploy Authelia (`ansible-playbook -Kk docker/authelia.yml`). Nothing changes for the
+   apps: they ask for the `groups` scope only once the server names it (step 4). Check: logging in on the web client
+   still works; `docker logs authelia` shows no error about the client or the claims policy.
+3. **The authorization policy.** Add the `authorization_policies` block and `authorization_policy: 'mealplanner'` to the
+   client; deploy Authelia. From now on a person outside the group is refused on Authelia's page when logging in
+   (`access_denied`); sessions from before keep renewing. Check: log in as a member on the web client (works), and as
+   an account outside the group, if you have one to test with (refused by Authelia).
+4. **The server.** Add `MEALPLANNER_OIDC_GROUP: mealplanner` to the container's `env` in `docker/mealplanner.yml`;
+   deploy (`ansible-playbook -Kk docker/mealplanner.yml`). Every session from before ends once: its tokens were made
+   without the `groups` scope, so the server answers them `no_groups`. The app (from the release after this change)
+   ends the session and asks to log in again; an installed v0.1.9 shows the server's sentence ("This login does not
+   say which groups the account is in. Log out and log in again; ...") where a screen fails to load, until the user
+   chooses Settings, Log out, then Log in. Logging in again works: every app asks for the scopes the server names.
+   Check: `curl -s https://mealplanner.<DOMAIN>/api/auth/config` lists `"groups"`; log out and in on the web client
+   and the app, and the screens load. If a member still gets "does not say which groups" after logging in again,
+   the access token has no `groups` claim: step 2 is not in effect (go back, below, and look at the claims policy).
+   `docker logs mealplanner 2>&1 | grep '403 Forbidden'` shows the requests refused.
+
+**Going back.** Remove `MEALPLANNER_OIDC_GROUP` from the container's `env` and deploy: at once every account of
+Authelia may use the server again, with or without the claim, and no session needs a new login. To open the login
+to everyone at Authelia too, remove `authorization_policy: 'mealplanner'` from the client (or put back the one it had)
+and deploy Authelia. The scope and the claims policy can stay; they change nothing without the server setting.
+
+**Adding and removing a person** (until the registration of issue 314 does it): add them to `mealplanner` in LLDAP;
+they can log in at once. Taking them out of the group stops them at their next renewal, at most an access token's life
+later (Authelia's `lifespans.access_token`, an hour by default); they then see "This account may not use the meal
+planner yet." Their data stays, and is theirs again if they are put back. Deleting the LLDAP account ends their
+renewals as well. Do not give a deleted person's user name to someone else: Authelia keeps one `sub` per user name (its
+table of opaque identifiers), and the meal planner knows an account by its `sub`, so the new person would log in to
+the old one's data, which stays (not checked against the running Authelia).
+
+**Other services behind Authelia.** Once people can ask for an account themselves (the next part of issue 314), an
+account exists in LLDAP before anyone approved it. That account must open nothing. Check in
+`local/authelia/configuration.yml` before registration is switched on:
+
+- `access_control.default_policy` is `deny`, and every `access_control.rules` entry for a service is limited to a group
+  (`subject: 'group:...'`). A rule with only a `domain` and `policy: one_factor` or `two_factor` lets any account of
+  LLDAP in, a waiting one too.
+- Every other OpenID Connect client has an `authorization_policy` limited to a group. A client without one uses
+  `two_factor` for every account.
+- The services that check groups themselves (with the groups from Authelia's headers or tokens) do not let in an
+  account in no group.
+
+`grep -n -E "default_policy|subject|authorization_policy|client_id|domain" local/authelia/configuration.yml` lists
+the lines to read.
+
 ## The cooking site
 
 `COOKING_REPO_URL` (set in the container's `env`, with `COOKING_REPO_PATH` for where its clone goes) is the

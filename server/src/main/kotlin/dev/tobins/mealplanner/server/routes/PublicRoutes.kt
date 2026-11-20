@@ -10,6 +10,7 @@ import dev.tobins.mealplanner.server.TokenVerifier
 import dev.tobins.mealplanner.server.appIntentUrl
 import dev.tobins.mealplanner.server.appReturnPage
 import dev.tobins.mealplanner.server.assetLinks
+import dev.tobins.mealplanner.server.loginScopes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.http.content.staticResources
@@ -47,8 +48,10 @@ fun Route.publicRoutes(config: ServerConfig, verifier: TokenVerifier, offers: Of
         }
     }
 
-    // Unauthenticated: where and how clients log in.
-    get("/api/auth/config") { call.respond(verifier.clientConfig()) }
+    // Unauthenticated: where and how clients log in. The scopes follow the server's group setting, not the
+    // provider: an installed app asks for whatever scopes it is told, so it sends the groups scope once the
+    // setting is on, and never before.
+    get("/api/auth/config") { call.respond(verifier.clientConfig().copy(scopes = loginScopes(config.oidcGroup))) }
 
     // The Android app's login redirect (Authelia only allows http(s) redirects). Android opens
     // the app for it directly once assetlinks.json vouches for the app; otherwise the browser

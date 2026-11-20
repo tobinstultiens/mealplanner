@@ -108,8 +108,9 @@ class AccountsTest {
      */
     private var today: java.time.LocalDate = java.time.LocalDate.parse("2026-11-16")
 
-    private fun ApplicationTestBuilder.start() {
-        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+    /** [group]: only its members may log in (`MEALPLANNER_OIDC_GROUP`); null, as by default, any account. */
+    private fun ApplicationTestBuilder.start(group: String? = null) {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null, oidcGroup = group)
         application {
             module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens, today = { today })
         }
@@ -1178,6 +1179,33 @@ class AccountsTest {
         eat("bob", 1)
         assertEquals(0.0 to null, shown("bob"))
         assertEquals(400.0 to 100.0, shown("alice"))
+    }
+
+    @Test
+    fun withTheGroupCheckMembersStayApartAndOutsidersReachNothing() = testApplication {
+        start(group = "mealplanner")
+        val alice = clientFor("alice~mealplanner")
+        val bob = clientFor("bob~family~mealplanner")
+        val stew = alice.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+
+        // Bob is a member too, and still sees none of Alice's.
+        assertEquals(emptyList(), bob.get("/api/recipes").body<List<RecipeSummary>>())
+        assertEquals(HttpStatusCode.NotFound, bob.get("/api/recipes/${stew.id}").status)
+        assertEquals(HttpStatusCode.NotFound, bob.delete("/api/recipes/${stew.id}").status)
+
+        // Eve has an account at the provider, outside the group: refused before any account is looked up, so the id
+        // of Alice's recipe gets her nothing either way, and her login is not made into an account.
+        for (eve in listOf(clientFor("eve~family"), clientFor("eve"))) {
+            assertEquals(HttpStatusCode.Forbidden, eve.get("/api/recipes/${stew.id}").status)
+            assertEquals(HttpStatusCode.Forbidden, eve.put("/api/recipes/${stew.id}") { setBody(recipe.copy(title = "Eve's now")) }.status)
+            assertEquals(HttpStatusCode.Forbidden, eve.put("/api/recipes/${stew.id}/rating") { setBody(RatingInput(1)) }.status)
+            assertEquals(HttpStatusCode.Forbidden, eve.delete("/api/recipes/${stew.id}").status)
+        }
+        val alices = alice.get("/api/recipes/${stew.id}").body<RecipeDetail>()
+        assertEquals("Alice's stew", alices.summary.title)
+        assertNull(alices.summary.rating)
+        assertEquals(Me("alice", "Alice"), alice.get("/api/me").body<Me>())
+        assertEquals(Me("bob", "Bob"), bob.get("/api/me").body<Me>())
     }
 
     @Test
