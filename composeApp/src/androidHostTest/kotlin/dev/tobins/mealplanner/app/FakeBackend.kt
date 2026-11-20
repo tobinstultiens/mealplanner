@@ -89,6 +89,8 @@ class FakeBackend(
     private val prepped: Boolean = false,
     /** The week with half a serving of the chickpea salad prepped as a side next to three meals (issue 234, step 2). */
     private val sides: Boolean = false,
+    /** The week of [sides] with the salad's Thursday lunch eaten as the meal itself instead of as a side (issue 269). */
+    private val mixed: Boolean = false,
     /** The week holding only Monday's lunch of the chicken thighs prepped the Sunday before ([tailPrep]), not planned yet (issue 263). */
     private val tailOnly: Boolean = false,
 ) : AutoCloseable {
@@ -268,7 +270,7 @@ class FakeBackend(
                 index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true, fibreG = 12.6)
                 else -> meal
             }
-        }.map { meal -> if (prepped) prepped(meal) else meal }.map { meal -> if (sides) withSide(meal) else meal }.map { meal ->
+        }.map { meal -> if (prepped) prepped(meal) else meal }.map { meal -> if (sides || mixed) withSide(meal) else meal }.map { meal ->
             // What the server says to cook: Friday's lentil soup also feeds Saturday's lunch, which cooks nothing; the prep's Monday dinner cooks the batch.
             meal.copy(cookPortions = when {
                 meal.prep != null -> if (meal.leftover) 0.0 else meal.prep!!.portions
@@ -284,21 +286,29 @@ class FakeBackend(
 
     /**
      * The chickpea salad prepped as a side of half a serving: made today (Wednesday) with the dinner, which goes over the day's
-     * calories with it, and eaten next to Thursday's lunch and Friday's lentil soup.
+     * calories with it, and eaten next to Thursday's lunch and Friday's lentil soup; of a [mixed] batch, Thursday's lunch is
+     * a serving of the salad itself.
      */
     private val sidePrep = MealPrep(
         id = 2, madeOn = TODAY, lastDay = plusDays(TODAY, 3), vacuum = false,
         meals = listOf(2 to MealSlot.DINNER, 3 to MealSlot.LUNCH, 4 to MealSlot.DINNER).map { (day, slot) ->
-            PrepMeal(plusDays(WEEK_START, day), slot, 0.5, MealStatus.PLANNED, side = true)
+            val asMeal = mixed && day == 3
+            PrepMeal(plusDays(WEEK_START, day), slot, if (asMeal) 1.0 else 0.5, MealStatus.PLANNED, side = !asMeal)
         },
     )
 
-    /** [meal] as the week of [sides] has it: with half a serving of the salad next to it, or as it was. */
+    /** [meal] as the week of [sides] has it: with half a serving of the salad next to it, the salad itself for a [mixed] batch, or as it was. */
     private fun withSide(meal: PlannedMeal): PlannedMeal {
         val date = plusDays(WEEK_START, meal.day)
-        if (sidePrep.meals.none { it.date == date && it.slot == meal.slot }) return meal
+        val share = sidePrep.meals.firstOrNull { it.date == date && it.slot == meal.slot } ?: return meal
+        if (!share.side) {
+            return meal(meal.day, meal.slot, 2, "Chickpea salad with feta and roasted peppers", 640.0, 42.0, 11.4)
+                .copy(leftover = true, locked = true, prep = sidePrep)
+        }
         val prepDay = date == sidePrep.madeOn
-        val side = MealSide(2, "Chickpea salad with feta and roasted peppers", 0.5, 320.0, 21.0, 5.7, cost = 1.2, cookPortions = if (prepDay) 1.5 else 0.0, prep = sidePrep)
+        val side = MealSide(
+            2, "Chickpea salad with feta and roasted peppers", 0.5, 320.0, 21.0, 5.7, cost = 1.2, cookPortions = if (prepDay) sidePrep.portions else 0.0, prep = sidePrep,
+        )
         return meal.copy(side = side)
     }
 

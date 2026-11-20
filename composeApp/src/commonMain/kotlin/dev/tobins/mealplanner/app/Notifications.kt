@@ -231,13 +231,28 @@ private fun throwAwayNotification(facts: NotificationFacts, told: Set<Long>, t: 
     return DueNotification(NotificationKind.THROW_AWAY, title, text, Opening(Route.TabRoute(Tab.PLAN), week = mondayOf(day)), toldAs, tag)
 }
 
-/** `Throw away 1 portion of Chili con carne`, or of a side; null when nothing of the batch was left in the box. */
+/**
+ * `Throw away 1 portion of Chili con carne`, or of sides, or `Throw away 1 portion and 2 sides of …` of a batch eaten both
+ * ways (issue 269); null when nothing of the batch was left in the box.
+ */
 private fun PrepPastLastDay.throwAwayText(t: Strings): String? =
-    left.takeIf { it > 0 }?.let { t.plural(if (side) Plural.THROW_AWAY_SIDES else Plural.THROW_AWAY_PORTIONS, it, title) }
+    sharesText(left, leftSides, Plural.THROW_AWAY_PORTIONS, Plural.THROW_AWAY_SIDES, Msg.THROW_AWAY_MIXED, t)
 
-/** `1 portion of Chili con carne was not marked: eaten, or to throw away?`; null when every meal of it was marked. */
+/** `1 portion of Chili con carne was not marked: eaten, or to throw away?`, or of sides, or both; null when every meal of it was marked. */
 private fun PrepPastLastDay.unmarkedText(t: Strings): String? =
-    unmarked.takeIf { it > 0 }?.let { t.plural(if (side) Plural.UNMARKED_SIDES else Plural.UNMARKED_PORTIONS, it, title) }
+    sharesText(unmarked, unmarkedSides, Plural.UNMARKED_PORTIONS, Plural.UNMARKED_SIDES, Msg.UNMARKED_MIXED, t)
+
+/**
+ * [shares] of [this] batch, [sides] of them sides, in the words of [portions] when none is a side, of [ofSides] when all
+ * are, and of [both] with each counted when some are; null for none. Each share is told as what it is, not as what most
+ * of the batch is.
+ */
+private fun PrepPastLastDay.sharesText(shares: Int, sides: Int, portions: Plural, ofSides: Plural, both: Msg, t: Strings): String? = when {
+    shares <= 0 -> null
+    sides == 0 -> t.plural(portions, shares, title)
+    sides == shares -> t.plural(ofSides, shares, title)
+    else -> t(both, t.plural(Plural.PORTIONS, shares - sides), t.plural(Plural.SIDES, sides), title)
+}
 
 /**
  * The batches told of on the server's day [date], from what was remembered of the kind ([told], as

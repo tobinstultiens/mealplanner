@@ -251,6 +251,7 @@ class ReleasedAppTest {
         http.readsALateTick(chicken.id)
         http.readsAWeekWithAPrepOf(mine.summary.id)
         http.readsAWeekWithASideOf(mine.summary.id)
+        http.readsAWeekWithABatchOfMealsAndSidesOf(mine.summary.id)
 
         // The day, a log entry and weights.
         val date = "2026-11-17"
@@ -376,6 +377,37 @@ class ReleasedAppTest {
         val removal = delete("/api/plans/$week/meals/${hosts[0].day}/${hosts[0].slot}")
         assertEquals(HttpStatusCode.Conflict, removal.status)
         assertTrue(removal.bodyAsText().contains("(a side)"), removal.bodyAsText())
+    }
+
+    /**
+     * Recipe [recipeId] prepped in a newer app as one batch eaten partly as meals and partly as a side (issue 269): the meal
+     * of Saturday's and Sunday's lunch, and a quarter of a serving next to Saturday's dinner. The installed app, which knows
+     * neither sides nor a batch of both, reads the week with the lunches as a meal and its leftovers, Saturday's cooking the
+     * whole batch, the side's too, and Saturday's dinner with its main as it was; it marks Sunday's lunch eaten and not
+     * again, reads the day, what is due and the list, and gets a sentence naming the side for removing Saturday's lunch.
+     */
+    private suspend fun HttpClient.readsAWeekWithABatchOfMealsAndSidesOf(recipeId: Long) {
+        val host = read<WeekPlan>("/api/plans/$week").days[5].meals.single { it.slot == MealSlot.DINNER }
+        assertEquals(MealStatus.PLANNED, host.status)
+        val shares = """[{"date":"2026-11-21","slot":"LUNCH"},{"date":"2026-11-21","slot":"DINNER","side":0.25},{"date":"2026-11-22","slot":"LUNCH"}]"""
+        val days = post("/api/plans/$week/preps") { setBody("""{"recipeId":$recipeId,"madeOn":"2026-11-21","meals":$shares}""") }.read<WeekPlan>().days
+
+        val saturday = days[5].meals.single { it.slot == MealSlot.LUNCH }
+        val sunday = days[6].meals.single { it.slot == MealSlot.LUNCH }
+        val dinner = days[5].meals.single { it.slot == MealSlot.DINNER }
+        assertEquals(listOf(recipeId, recipeId), listOf(saturday.recipeId, sunday.recipeId))
+        assertEquals(listOf(false to true, true to true), listOf(saturday, sunday).map { it.leftover to it.locked })
+        assertEquals(listOf(saturday.portions + 0.25 + sunday.portions, 0.0), listOf(saturday.cookPortions, sunday.cookPortions))
+        assertEquals(Triple(host.recipeId, host.portions, host.kcal), Triple(dinner.recipeId, dinner.portions, dinner.kcal), "the side's meal shows its main")
+        val lunch = "/api/plans/$week/meals/6/LUNCH"
+        assertEquals(MealStatus.EATEN, put("$lunch/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>().days[6].meals.single { it.slot == MealSlot.LUNCH }.status)
+        put("$lunch/status") { setBody(MealStatus.PLANNED) }.read<WeekPlan>()
+        assertTrue(read<DayView>("/api/days/2026-11-22").meals.single { it.slot == MealSlot.LUNCH }.leftover)
+        read<NotificationFacts>("/api/notifications")
+        read<ShoppingList>("/api/plans/$week/shopping")
+        val removal = delete("/api/plans/$week/meals/5/LUNCH")
+        assertEquals(HttpStatusCode.Conflict, removal.status)
+        assertTrue(removal.bodyAsText().contains("Saturday dinner (a side), Sunday lunch"), removal.bodyAsText())
     }
 
     /**

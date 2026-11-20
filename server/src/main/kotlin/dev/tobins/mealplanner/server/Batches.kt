@@ -98,14 +98,15 @@ class Batch(
      * What may still be in a box once the batch's last day is over (issue 264): the shares of skipped meals not eaten
      * elsewhere (a moved share is 0 where it was skipped, and its meal's where it went), and the meals still planned,
      * which may have been eaten without being marked. Null when nothing may be: every share eaten, or the batch never
-     * made, as nothing of a batch that was never cooked is in a box.
+     * made, as nothing of a batch that was never cooked is in a box. Meals and sides are counted together and the sides
+     * also apart, as one batch may be both (issue 269).
      */
     fun pastLastDay(): PrepPastLastDay? {
         if (!made) return null
         val inBox = meals.filter { it.share > 0.0 }
-        val left = inBox.count { it.meal.status == MealStatus.SKIPPED }
+        val left = inBox.filter { it.meal.status == MealStatus.SKIPPED }
         val unmarked = inBox.filter { it.meal.status == MealStatus.PLANNED }
-        if (left == 0 && unmarked.isEmpty()) return null
+        if (left.isEmpty() && unmarked.isEmpty()) return null
         return PrepPastLastDay(
             prepId = id,
             recipeId = recipeId,
@@ -113,9 +114,11 @@ class Batch(
             madeOn = madeOn.toString(),
             lastDay = lastDay.toString(),
             side = meals.all { it.side },
-            left = left,
+            left = left.size,
             unmarked = unmarked.size,
             firstUnmarked = unmarked.firstOrNull()?.date?.toString(),
+            leftSides = left.count { it.side },
+            unmarkedSides = unmarked.count { it.side },
         )
     }
 

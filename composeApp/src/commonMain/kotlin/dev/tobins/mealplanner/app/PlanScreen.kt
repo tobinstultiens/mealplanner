@@ -48,6 +48,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.SpareMove
 import dev.tobins.mealplanner.api.WeekPlan
@@ -98,6 +99,8 @@ fun PlanScreen(
     var prepping by remember { mutableStateOf<PrepChoice?>(null) }
     LaunchedEffect(prepping != null) { if (prepping != null) prepsStarted++ }
     var removingPrep by remember { mutableStateOf<Pair<String, MealPrep>?>(null) }
+    // The meal a side is being added to from a batch still to make (issue 269), with those batches and the new prep instead.
+    var addingSide by remember { mutableStateOf<AddingSide?>(null) }
     var spares by remember { mutableStateOf<List<SparePortion>>(emptyList()) }
     val preppable = myRecipes?.let(::preppable).orEmpty()
 
@@ -182,6 +185,24 @@ fun PlanScreen(
                     state = result
                     prepping = null
                     refreshSpares()
+                    null
+                }
+                is Load.Failed -> failureSentence(result)
+                Load.Loading -> null
+            }
+        }
+    }
+
+    addingSide?.let { adding ->
+        AddSideDialog(
+            adding.slot, adding.batches,
+            onDismiss = { addingSide = null },
+            onNewPrep = { addingSide = null; prepping = adding.newPrep },
+        ) { batch, portions ->
+            when (val result = load { api.addSide(weekStart, batch.prep.id, adding.slot.copy(side = portions)) }) {
+                is Load.Ready -> {
+                    state = result
+                    addingSide = null
                     null
                 }
                 is Load.Failed -> failureSentence(result)
@@ -306,6 +327,7 @@ fun PlanScreen(
                                 enabled = !busy,
                                 pictures = pictures,
                                 preppable = preppable.mapTo(HashSet()) { it.id },
+                                growable = { meal -> growable(plan, meal, today) },
                                 onOpenRecipe = { meal -> onOpenRecipe(meal.recipeId, meal.toCook(weekStart)) },
                                 onOpenSide = { meal, side -> onOpenRecipe(side.recipeId, side.toCook(meal.status == MealStatus.SKIPPED)) },
                                 onReroll = { meal -> change { api.rerollMeal(weekStart, meal.day, meal.slot) } },
@@ -327,7 +349,10 @@ fun PlanScreen(
                                 onRemovePrep = { title, prep -> removingPrep = title to prep },
                                 onAddSide = { meal ->
                                     val date = plusDays(weekStart, meal.day)
-                                    prepping = PrepChoice(preppable.singleOrNull(), madeOn = date, firstDay = today, side = SIDE_PORTIONS.last()).with().toggled(date, meal.slot)
+                                    val newPrep = PrepChoice(preppable.singleOrNull(), madeOn = date, firstDay = today, side = SIDE_PORTIONS.last()).with().toggled(date, meal.slot)
+                                    // A batch still to make can take the side; without one, the Prep dialog makes a new batch, as before.
+                                    val batches = growable(plan, meal, today)
+                                    if (batches.isEmpty()) prepping = newPrep else addingSide = AddingSide(PrepSlot(date, meal.slot), batches, newPrep)
                                 },
                                 onRemoveSide = { meal -> change { api.removeSide(weekStart, meal.day, meal.slot) } },
                             )
@@ -338,6 +363,9 @@ fun PlanScreen(
         }
     }
 }
+
+/** A side being added next to the meal at [slot] from one of [batches] (issue 269), or else from [newPrep], a new batch. */
+private data class AddingSide(val slot: PrepSlot, val batches: List<GrowableBatch>, val newPrep: PrepChoice)
 
 @Composable
 private fun DayCard(
@@ -351,6 +379,8 @@ private fun DayCard(
     pictures: Map<Long, String>,
     /** The recipes a prep can be made of, by id. */
     preppable: Set<Long>,
+    /** The batches still to make a side next to a meal can be taken from ([growable]). */
+    growable: (PlannedMeal) -> List<GrowableBatch>,
     onOpenRecipe: (PlannedMeal) -> Unit,
     onReroll: (PlannedMeal) -> Unit,
     onGenerate: (PlannedMeal) -> Unit,
@@ -442,7 +472,7 @@ private fun DayCard(
                                 if (side != null) {
                                     DropdownMenuItem(text = { Text(t(Msg.REMOVE_SIDE)) }, onClick = { menu = false; onRemoveSide(meal) })
                                     DropdownMenuItem(text = { Text(t(Msg.REMOVE_SIDE_PREP)) }, onClick = { menu = false; onRemovePrep(side.title, side.prep) })
-                                } else if (preppable.isNotEmpty() && lunchOrDinner && meal.status == MealStatus.PLANNED && day.date >= today) {
+                                } else if ((preppable.isNotEmpty() || growable(meal).isNotEmpty()) && lunchOrDinner && meal.status == MealStatus.PLANNED && day.date >= today) {
                                     // A side goes next to a meal still to eat, from today on, as a batch is made for the days to come.
                                     DropdownMenuItem(text = { Text(t(Msg.ADD_SIDE)) }, onClick = { menu = false; onAddSide(meal) })
                                 }

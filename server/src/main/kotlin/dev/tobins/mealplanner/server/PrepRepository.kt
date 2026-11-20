@@ -16,8 +16,9 @@ import java.time.LocalDate
 
 /**
  * One account's prepped meals (issue 234): a recipe made once and eaten over several days, started by hand
- * only, as the slots' meals or as sides next to them (step 2). Making, removing and the share of a skipped meal
- * are here; how the plan, the shopping list and the stock count a batch is [PlanRepository]'s ([Batch]).
+ * only, as the slots' meals, as sides next to them (step 2), or both (issue 269). Making, growing by a side, removing
+ * and the share of a skipped meal are here; how the plan, the shopping list and the stock count a batch is
+ * [PlanRepository]'s ([Batch]).
  */
 class PrepRepository(
     private val db: Database,
@@ -39,9 +40,10 @@ class PrepRepository(
      * a dinner's leftover lunch goes with it. The made-on day is today or later: a batch can't be cooked in the past, and
      * the app offers no such day (issue 263). Answers the week starting [weekStart], the one the app shows.
      *
-     * With [PrepInput.side] the batch is eaten as a side of that many servings (a quarter or half) next to the meal
-     * in each slot instead ([requireRoomForSide]): the meal keeps its main and its portion, and the batch is the
-     * sides' sum. The batch is then made with the side on the made-on day, and shows only next to meals.
+     * A slot with a [PrepSlot.side] eats the batch as a side of that many servings (a quarter or half) next to its meal
+     * instead ([requireRoomForSide]): the meal keeps its main and its portion. One batch may be eaten so in some slots
+     * and as the meal in others (issue 269); it is the sum of all its shares, and made with its first, a meal or a side,
+     * on the made-on day. [PrepInput.side], as apps before issue 269 send it, makes every slot such a side.
      */
     fun create(weekStart: String, input: PrepInput): WeekPlan {
         val shown = parseWeekStart(weekStart)
@@ -50,7 +52,9 @@ class PrepRepository(
         require(input.meals.size >= 2) { "a prep is eaten in at least two meals" }
         require(places.distinct().size == places.size) { "each meal at most once" }
         require(input.meals.all { it.slot == MealSlot.LUNCH || it.slot == MealSlot.DINNER }) { "a prep is eaten at lunch or dinner" }
-        require(input.side == null || input.side in SIDE_PORTIONS) { "a side is a quarter or half a serving" }
+        require(input.side == null || input.meals.all { it.side == null }) { "a side is given for every meal or for each, not both" }
+        val sides = input.meals.map { it.side ?: input.side }
+        require(sides.all { it == null || it in SIDE_PORTIONS }) { "a side is a quarter or half a serving" }
         val dates = input.meals.map { Batch.parseDate(it.date) }
         require(dates.min() == madeOn) { "the first meal is on the day it is made" }
         if (madeOn < today()) throw ConflictException("${Batch.dayName(madeOn)} has passed: a prep is made today or later")
@@ -65,17 +69,19 @@ class PrepRepository(
         val range = profiles.portions()
         db.writing {
             val weeks = places.map { it.first }.distinct().associateWith { plans.meals(it) }
-            val side = input.side
-            for ((week, day, slot) in places) {
+            for ((place, side) in places.zip(sides)) {
+                val (week, day, slot) = place
                 if (side != null) requireRoomForSide(week, weeks.getValue(week), day, slot) else requireRoom(week, weeks.getValue(week), day, slot)
             }
             q.insertPrep(userId, input.recipeId, madeOn.toString(), lastDay.toString(), if (input.vacuum) 1 else 0)
             val prepId = q.lastPrepId().executeAsOne()
-            if (side != null) {
-                for ((week, day, slot) in places) q.insertSidePortion(userId, week.toString(), day.toLong(), slot.name, prepId, side)
-                return@writing
-            }
-            for ((week, day, slot) in places) {
+            for ((place, side) in places.zip(sides)) {
+                val (week, day, slot) = place
+                if (side != null) {
+                    q.insertSidePortion(userId, week.toString(), day.toLong(), slot.name, prepId, side)
+                    continue
+                }
+                // A slot of the prep, a side's too, is not the leftover lunch that goes with a dinner it replaces.
                 val taken = places.filter { it.first == week }.map { it.second to it.third }.toSet()
                 plans.leftoversToReplace(week, weeks.getValue(week), day, slot)?.takeIf { (it.day to it.slot) !in taken }
                     ?.let { plans.deleteMeal(week, it.day, it.slot) }
@@ -130,6 +136,39 @@ class PrepRepository(
             q.deleteSidePortion(userId, start.toString(), day.toLong(), slot.name)
         }
         return plans.view(start)
+    }
+
+    /**
+     * Adds a side of [PrepSlot.side] servings of batch [id] next to the meal in [side]'s slot (issue 269): the batch grows
+     * by it, and is bought and cooked with it. Only while the batch is still to make, as what was made can't grow: not
+     * once one of its meals was eaten. The slot is after the batch's first share, which stays the one that makes it, up
+     * to its last day, today or later, and has a meal still to eat without a side that is not of this batch itself
+     * ([requireRoomForSide]). A batch of another account is not there (404). Answers the week starting [weekStart].
+     */
+    fun addSide(weekStart: String, id: Long, side: PrepSlot): WeekPlan {
+        val shown = parseWeekStart(weekStart)
+        val portions = side.side
+        require(portions != null && portions in SIDE_PORTIONS) { "a side is a quarter or half a serving" }
+        require(side.slot == MealSlot.LUNCH || side.slot == MealSlot.DINNER) { "a prep is eaten at lunch or dinner" }
+        val (week, day, slot) = Batch.placeOf(side)
+        val date = week.plusDays(day.toLong())
+        db.writing {
+            val batch = batch(id)
+            if (batch.made) throw ConflictException("This prepped batch was made already: it can't take another side")
+            if (date < today()) throw ConflictException("${Batch.dayName(date)} has passed: a side is added today or later")
+            if (date > batch.lastDay) throw ConflictException("\"${batch.title}\" keeps until ${Batch.dayName(batch.lastDay)}")
+            val first = batch.meals.firstOrNull() ?: throw NotFoundException("No prep with id $id")
+            if (!after(date, slot, first)) {
+                throw ConflictException("It is made with ${Batch.slotName(first.date, first.meal.slot)}: a side of it comes after that")
+            }
+            val meals = plans.meals(week)
+            requireRoomForSide(week, meals, day, slot)
+            if (meals.any { it.day == day && it.slot == slot && it.prep?.id == id }) {
+                throw ConflictException("${Batch.slotName(date, slot)} is a meal of this batch already")
+            }
+            q.insertSidePortion(userId, week.toString(), day.toLong(), slot.name, id, portions)
+        }
+        return plans.view(shown)
     }
 
     /**
@@ -219,11 +258,13 @@ class PrepRepository(
 
     /**
      * Why [batch], made already, can't be removed, in the words of how it is eaten: a batch eaten as sides speaks of its
-     * sides, which are skipped with their meals (issue 263).
+     * sides, which are skipped with their meals (issue 263), and one eaten both ways of both (issue 269).
      */
-    private fun madeAlready(batch: Batch): String =
-        if (batch.meals.all { it.side }) "This prepped side was made already: mark the meals you do not eat it with skipped instead"
-        else "This prepped batch was made already: mark the meals you do not eat skipped instead"
+    private fun madeAlready(batch: Batch): String = when {
+        batch.meals.all { it.side } -> "This prepped side was made already: mark the meals you do not eat it with skipped instead"
+        batch.meals.none { it.side } -> "This prepped batch was made already: mark the meals you do not eat skipped instead"
+        else -> "This prepped batch was made already: mark the meals you do not eat, or do not eat it with, skipped instead"
+    }
 
     /** Batch [id] of this account; a [NotFoundException] for any other. */
     private fun batch(id: Long): Batch = Batch.load(db, userId, listOf(id))[id] ?: throw NotFoundException("No prep with id $id")
@@ -267,7 +308,7 @@ class PrepRepository(
     }
 
     /**
-     * Refuses a slot for a side of a new batch unless it has a meal still to eat without a side: a side goes next to a
+     * Refuses a slot for a side of a batch unless it has a meal still to eat without a side: a side goes next to a
      * meal's main, which it neither replaces nor resizes, and is eaten or skipped with it.
      */
     private fun requireRoomForSide(week: LocalDate, meals: List<PlannedMeal>, day: Int, slot: MealSlot) {
