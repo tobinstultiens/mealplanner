@@ -11,8 +11,14 @@ import java.time.LocalDate
  * so the packs) of `prices/ah-regular-prices-2026-11-19.csv`, looked up on that day.
  */
 object RealRecipeFixture {
+    /** The recipes as candidates with their fresh uses, and the names of the ingredients (by id) for saying what a plan leaves. */
+    class Real(val candidates: List<PlanCandidate>, val names: Map<Long, String>)
+
     /** The recipes as candidates with their fresh uses; null, after saying so, when [cooking] or [nevo] is missing. */
-    fun candidates(cooking: File, nevo: File): List<PlanCandidate>? {
+    fun candidates(cooking: File, nevo: File): List<PlanCandidate>? = load(cooking, nevo)?.candidates
+
+    /** As [candidates], with the names of the ingredients. */
+    fun load(cooking: File, nevo: File): Real? {
         if (!File(cooking, "content").isDirectory || !nevo.isFile) {
             println("Cooking repo at ${cooking.absolutePath} or NEVO file at ${nevo.absolutePath} not found; skipping")
             return null
@@ -42,6 +48,6 @@ object RealRecipeFixture {
         val pricing = prices.pricing(ingredients, week, week.plusDays(6))
         val candidates = recipes.planCandidates(prices = pricing, freshPacks = packs)
         println("${candidates.size} candidates, ${candidates.count { it.freshUses.isNotEmpty() }} with fresh uses, ${packs.size} fresh ingredients with a pack")
-        return candidates
+        return Real(candidates, ingredients.list().associate { it.id to it.name })
     }
 }

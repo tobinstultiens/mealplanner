@@ -588,6 +588,23 @@ class WeekPlannerTest {
     }
 
     @Test
+    fun anotherRecipeForADinnerPrefersTheOneThatUsesTheRestOfAnOpenPack() {
+        // Three dinners alike but for the tub: recipe 19, locked on day 0, opened it; recipe 10 takes from it, recipe 11 does not.
+        val snacksAndBreakfasts = pantryOfRecipes.filter { DINNER !in it.slots }
+        val dinners = listOf(10L, 11L, 19L).map { candidate(it, DINNER, kcal = 600.0, protein = 45.0) }
+        val withTub = snacksAndBreakfasts + dinners.map { if (it.recipeId == 11L) it else it.copy(freshUses = listOf(tub)) }
+        val withoutTub = snacksAndBreakfasts + dinners
+        // The dinner of day 0 locked, as a reroll of day 1's dinner leaves it, with the recipe it replaces excluded.
+        val locked = listOf(PlannedMeal(0, DINNER, 19, "Recipe 19", 0.75, 650.0, 40.0, locked = true))
+        fun dinnerOfDay1(candidates: List<PlanCandidate>, seed: Long) =
+            WeekPlanner.plan(PlanRequest(targets, candidates, locked = locked, excluded = setOf(19L), seed = seed)).first { it.day == 1 && it.slot == DINNER }.recipeId
+
+        val seeds = 0L until 20L
+        assertTrue(seeds.all { dinnerOfDay1(withTub, it) == 10L }, "with the tub open, recipe 10 is picked every time")
+        assertTrue(seeds.any { dinnerOfDay1(withoutTub, it) == 11L }, "without it, recipe 11 is picked too")
+    }
+
+    @Test
     fun aRecipeThatOpensANewPackForASmallAmountLosesToAnEqualOne() {
         fun weeksCooked(candidates: List<PlanCandidate>, id: Long, weights: PackWeights) = (0L until 20L).count { seed ->
             WeekPlanner.plan(PlanRequest(targets, candidates, packWeights = weights, seed = seed)).any { it.recipeId == id && !it.leftover }

@@ -130,12 +130,14 @@ class RecipeRepository(
     /**
      * One recipe as a plan candidate, even with incomplete nutrition (used when the user
      * puts a recipe in a slot themselves). Null when the recipe has no amounts at all.
-     * Callers make sure it is one of my recipes first ([requireMine]).
+     * Callers make sure it is one of my recipes first ([requireMine]). With [freshPacks] (and the ingredients
+     * [onHand]) it has its [PlanCandidate.freshUses] as [planCandidates] gives them: for the packs a week opened.
      */
-    fun candidate(id: Long): PlanCandidate? {
+    fun candidate(id: Long, freshPacks: Map<Long, Pack> = emptyMap(), onHand: Set<Long> = emptySet()): PlanCandidate? {
         val row = q.selectById(userId, id).executeAsOneOrNull() ?: return null
         val resolve = ingredients.resolver()
-        val nutrition = nutritionOf(row, linesOf(id), resolve) ?: return null
+        val lines = linesOf(id)
+        val nutrition = nutritionOf(row, lines, resolve) ?: return null
         return PlanCandidate(
             recipeId = row.id,
             title = row.title,
@@ -144,6 +146,7 @@ class RecipeRepository(
             kcal = nutrition.perServing.kcal ?: 0.0,
             proteinG = nutrition.perServing.proteinG ?: 0.0,
             fibreG = nutrition.perServing.fibreG ?: 0.0,
+            freshUses = if (freshPacks.isEmpty()) emptyList() else freshUsesOf(row.servings!!.toInt(), lines, resolve, freshPacks, onHand),
         )
     }
 

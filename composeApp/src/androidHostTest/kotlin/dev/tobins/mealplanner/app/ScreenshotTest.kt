@@ -310,6 +310,8 @@ enum class Shot(
     val mixed: Boolean = false,
     /** The fake backend's week holding only a lunch of last week's batch (issue 263). */
     val tailOnly: Boolean = false,
+    /** The fake backend's week leaving five fresh ingredients over (issue 244). */
+    val weekRest: Boolean = false,
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
     val dutch: Boolean = false,
     val heightDp: Int = 640,
@@ -319,10 +321,10 @@ enum class Shot(
     val content: @Composable (ApiClient, ServerSettings) -> Unit,
 ) {
     TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
-    PLAN(heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN(weekRest = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     // Fibre next to kcal and protein in Dutch, where the totals are longest (#223).
     TODAY_NL(dutch = true, heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
-    PLAN_NL(dutch = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_NL(weekRest = true, dutch = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     // A prep made on Monday's dinner, eaten until Thursday, with Wednesday's skipped lunch still in the box (issue 234).
     PLAN_PREP(prepped = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     PLAN_PREP_NL(prepped = true, dutch = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
@@ -573,7 +575,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     val compose = createEmptyComposeRule()
 
     private val backend = FakeBackend(
-        shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, mixed = shot.mixed, tailOnly = shot.tailOnly,
+        shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, mixed = shot.mixed, tailOnly = shot.tailOnly, weekRest = shot.weekRest,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)

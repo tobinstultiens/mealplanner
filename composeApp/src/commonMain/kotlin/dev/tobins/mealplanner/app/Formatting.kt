@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.WeekRest
 import dev.tobins.mealplanner.recipes.IngredientLine
 import kotlin.math.roundToLong
 
@@ -83,6 +84,21 @@ fun formatGrams(grams: Double?, locale: FormatLocale): String {
 fun formatEuro(amount: Double, locale: FormatLocale): String {
     val cents = (amount * 100).roundToLong()
     return "€${cents / 100}${locale.decimalSeparator}${(cents % 100).toString().padStart(2, '0')}"
+}
+
+/** How many leftovers the line under the week's cost names before it says "and 2 more". */
+const val REST_NAMED = 3
+
+/**
+ * What the week leaves of fresh ingredients, as the Plan says it under the week's cost (issue 244): the euros of all
+ * of it and the [REST_NAMED] largest named, `About €2.40 of fresh ingredients left over: 100 g crème fraîche, 60 g
+ * coriander and 2 more`. Null when there is none.
+ */
+fun restLine(rest: List<WeekRest>, strings: Strings): String? {
+    if (rest.isEmpty()) return null
+    val named = rest.take(REST_NAMED).joinToString(", ") { formatGrams(it.grams, strings.locale) + " " + it.ingredient.replaceFirstChar { c -> c.lowercase() } }
+    val list = if (rest.size > REST_NAMED) strings(Msg.WEEK_REST_MORE, named, rest.size - REST_NAMED) else named
+    return strings(Msg.WEEK_REST, formatEuro(rest.sumOf { it.euros }, strings.locale), list)
 }
 
 /** `AH: voor 3.49`, `Lidl: €4.29 (was €5.49)`: the deal in a few words. */

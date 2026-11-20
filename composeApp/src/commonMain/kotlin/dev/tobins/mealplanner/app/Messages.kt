@@ -214,6 +214,9 @@ enum class Msg(private val english: String, private val dutch: String) {
     DAILY_TARGET_FIBRE("Daily target: {0} kcal · {1} g protein · {2} g fibre", "Dagdoel: {0} kcal · {1} g eiwit · {2} g vezels"),
     WEEK_COST("≈ {0} for the week's meals", "≈ {0} voor de maaltijden van deze week"),
     WEEK_COST_SAVED("≈ {0} for the week's meals, {1} saved by offers", "≈ {0} voor de maaltijden van deze week, {1} bespaard met aanbiedingen"),
+    // The fresh ingredients the week leaves over (issue 244): {0} is the euros, {1} the list; MORE ends a long list.
+    WEEK_REST("About {0} of fresh ingredients left over: {1}", "Ongeveer {0} aan verse ingrediënten over: {1}"),
+    WEEK_REST_MORE("{0} and {1} more", "{0} en nog {1}"),
     REPLAN("Replan unlocked meals", "Plan niet-vergrendelde maaltijden opnieuw"),
     PLAN_WEEK("Plan this week", "Plan deze week"),
     NO_RECIPES_FOR(

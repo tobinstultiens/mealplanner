@@ -169,6 +169,15 @@ opens a 500 g pack for 10 g is wary: 9.8 euros of rest, 1.96 off its score). The
 not chosen because Thursday could use its tub, only the penalty guesses that the rest may not be finished.
 Leftover lunches open nothing and the priorities do not change the term.
 
+The Plan tells what the week leaves over (issue 244, `WeekPlan.rest`, `OpenPacks.smallRestsOf`): the same replay over
+the meals as the shopping list buys them (a prepped batch is one purchase of all its portions, sides included, on the
+day it is made; a skipped meal buys nothing), and the rest of every pack closed at the end. A rest is told only when it
+is under half of the pack it is left of, as bought: each pack opened is judged by itself, so an ingredient whose week
+opens two packs adds up the rests of those under half (a pack opened on Monday and another on Saturday, each left
+with a quarter, tell half a pack's worth; one left with 70 percent is not counted). Pieces and litres are grams of the
+pack by then (`PackSize.grams` with the weight per piece or per ml), so the half is of weight. A rest worth under
+5 cents is left out. The app shows the euros of all rests and names the three largest ("and 2 more").
+
 A pack written in pieces ("3 stuks", "per stuk") is counted through the ingredient's weight per piece
 (`gramsPerPiece`), which the issue had left out of scope; 10 of the 43 covered ingredients depend on it (bell pepper,
 cucumber, egg, lime, mango, onion, red onion, romaine lettuce, baguette, bread roll). Three more (yoghurt, milk,
