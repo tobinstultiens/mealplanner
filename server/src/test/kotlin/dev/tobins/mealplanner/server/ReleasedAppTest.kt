@@ -25,6 +25,7 @@ import dev.tobins.mealplanner.released.api.MealStatus
 import dev.tobins.mealplanner.released.api.NotificationFacts
 import dev.tobins.mealplanner.released.api.OffersState
 import dev.tobins.mealplanner.released.api.Pantry
+import dev.tobins.mealplanner.released.api.PlannedMeal
 import dev.tobins.mealplanner.released.api.PricesState
 import dev.tobins.mealplanner.released.api.Profile
 import dev.tobins.mealplanner.released.api.ProfileState
@@ -316,6 +317,13 @@ class ReleasedAppTest {
     }
 
     /**
+     * What a meal shows of its main: its own fields, without those a later release added for a side. Spelled out so
+     * the test holds whichever release is frozen (a frozen [PlannedMeal] that knows sides has one more field than one
+     * that does not, and a comparison of whole meals would then differ by exactly the side).
+     */
+    private fun PlannedMeal.main() = listOf(day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status, cost, cookPortions, fibreG)
+
+    /**
      * Recipe [recipeId], which keeps since [readsAWeekWithAPrepOf], eaten in a newer app as a side of half a serving next to
      * two planned lunches or dinners of the week (issue 234, step 2): the installed app reads the week and the day with
      * each meal's main as it was, marks the later one eaten and not again, reads what is due and the list, and gets a
@@ -331,7 +339,11 @@ class ReleasedAppTest {
         assertTrue(made.bodyAsText().contains("\"side\""), "a newer app sees the sides")
 
         val after = made.read<WeekPlan>().days.flatMap { it.meals }
-        assertEquals(hosts, hosts.map { host -> after.single { it.day == host.day && it.slot == host.slot } }, "each meal shows its main as it was")
+        assertEquals(
+            hosts.map { it.main() },
+            hosts.map { host -> after.single { it.day == host.day && it.slot == host.slot }.main() },
+            "each meal shows its main as it was",
+        )
         assertTrue(read<DayView>("/api/days/${date(hosts[0].day)}").meals.any { it.slot == hosts[0].slot && it.recipeId == hosts[0].recipeId })
         val later = "/api/plans/$week/meals/${hosts[1].day}/${hosts[1].slot}"
         assertEquals(MealStatus.EATEN, put("$later/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>().days[hosts[1].day].meals.single { it.slot == hosts[1].slot }.status)
