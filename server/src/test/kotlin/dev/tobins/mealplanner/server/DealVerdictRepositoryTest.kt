@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OfferExclusionRequest
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
@@ -98,6 +99,34 @@ class DealVerdictRepositoryTest {
         // Only at the stores he shops at.
         assertEquals(emptyList(), verdicts(bob, shops = setOf(Store.JUMBO, Store.LIDL)))
         assertEquals(listOf("Zeekraal"), verdicts(alice).map { it.ingredient })
+    }
+
+    /**
+     * "Not this ingredient" (issue 316): an offer the account excluded gets no verdict for that ingredient, in any pack,
+     * and its history is read with the same exclusions: an offer that is another of the account's ingredients then is
+     * judged by its whole history as that one. Another account's verdicts stay as they were.
+     */
+    @Test
+    fun anOfferTheAccountSaidIsNotItsIngredientIsJudgedForNoneOrForTheOneItIsInstead() {
+        val alice = users.resolve(Identity("sub-alice", "alice")).id
+        val bob = users.resolve(Identity("sub-bob", "bob")).id
+        val catalogue = IngredientRepository(db, foods, alice)
+        val samphire = catalogue.create(IngredientInput("Zeekraal")).id
+        // The longer term wins: before the exclusion the offer is this one's.
+        val seaVegetables = catalogue.create(IngredientInput("Sea vegetables")).id.also { catalogue.map(MappingRequest("ah zeekraal", ingredientId = it)) }
+        IngredientRepository(db, foods, bob).create(IngredientInput("Zeekraal"))
+        recordTenWeeks()
+        val exclusions = OfferExclusionRepository(db, alice, catalogue)
+        assertEquals(listOf("Sea vegetables"), verdicts(alice).map { it.ingredient })
+
+        exclusions.exclude(OfferExclusionRequest(Store.AH, "AH Zeekraal 200 gram", seaVegetables))
+
+        val verdict = verdicts(alice).single()
+        assertEquals("Zeekraal" to Verdict.WORSE_THAN_USUAL, verdict.ingredient to verdict.verdict, verdict.summary)
+        assertEquals(3, verdict.earlier.size, "its history came along: ${verdict.earlier}")
+        exclusions.exclude(OfferExclusionRequest(Store.AH, "AH Zeekraal", samphire))
+        assertEquals(emptyList(), verdicts(alice))
+        assertEquals(listOf("Zeekraal" to Verdict.WORSE_THAN_USUAL), verdicts(bob).map { it.ingredient to it.verdict })
     }
 
     /** Issue 197: "now" is what the store shows today, not what its dates say. */

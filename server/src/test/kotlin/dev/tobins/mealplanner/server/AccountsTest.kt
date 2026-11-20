@@ -29,6 +29,8 @@ import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OfferExclusionRequest
+import dev.tobins.mealplanner.api.OfferExclusions
 import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.PlanPriority
@@ -680,6 +682,63 @@ class AccountsTest {
         // Her own choice of stores is what limits hers.
         alice.put("/api/shops") { setBody(ShopsSetting(listOf(Store.LIDL))) }
         assertEquals(emptyList(), alice.verdicts())
+    }
+
+    /**
+     * "Not this ingredient" (issue 316): an exclusion is the account's own. Another account's offers, verdicts and
+     * exclusions stay as they were; it can neither exclude with the account's ingredient nor take its exclusion back;
+     * and the shared offers and price history are not touched, now or at the next refresh.
+     */
+    @Test
+    fun anExclusionChangesNothingForAnotherAccountNorTheSharedOffersAndHistory() = testApplication {
+        val today = serverToday()
+        val samphire = Offer(Store.AH, "AH Zeekraal 100 gram", "1+1 gratis", category = "Groente, aardappelen", validFrom = today.toString(), validUntil = today.plusDays(6).toString())
+        val ah = object : OfferSource {
+            override val store = Store.AH
+            override suspend fun fetch() = listOf(samphire)
+        }
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = listOf(ah), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        suspend fun HttpClient.matched() = get("/api/offers").body<OffersState>().offers.map { it.ingredientName }
+        suspend fun HttpClient.verdicts() = get("/api/offers/verdicts").body<DealVerdicts>().verdicts.map { it.ingredient }
+        suspend fun HttpClient.exclusions() = get("/api/offers/exclusions").body<OfferExclusions>().exclusions.map { it.ingredientId }
+        suspend fun HttpClient.takeBack(request: OfferExclusionRequest) = delete("/api/offers/exclusions") {
+            url.parameters.append("store", request.store.name)
+            url.parameters.append("title", request.title)
+            url.parameters.append("ingredientId", request.ingredientId.toString())
+        }
+        fun shared() = db.planQueries.selectOffersValidOn(today.toString()).executeAsList() to db.priceHistoryQueries.selectOfferHistory().executeAsList()
+
+        val hers = alice.post("/api/ingredients") { setBody(IngredientInput("Zeekraal")) }.body<Ingredient>()
+        val his = bob.post("/api/ingredients") { setBody(IngredientInput("Zeekraal")) }.body<Ingredient>()
+        alice.post("/api/offers/refresh")
+        val before = shared()
+        val herExclusion = OfferExclusionRequest(Store.AH, samphire.title, hers.id)
+
+        // Bob can't exclude with her ingredient: a 404, as for one that does not exist.
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/offers/exclusions") { setBody(herExclusion) }.status)
+        assertEquals(listOf("Zeekraal") to listOf("Zeekraal"), alice.matched() to alice.verdicts())
+        assertEquals(HttpStatusCode.OK, alice.put("/api/offers/exclusions") { setBody(herExclusion) }.status)
+
+        assertEquals(listOf<String?>(null) to emptyList<String>(), alice.matched() to alice.verdicts())
+        assertEquals(listOf("Zeekraal") to listOf("Zeekraal"), bob.matched() to bob.verdicts())
+        assertEquals(emptyList(), bob.exclusions())
+        // Taking hers back is no request of his: it answers his own list and leaves hers.
+        assertEquals(HttpStatusCode.OK, bob.takeBack(herExclusion).status)
+        assertEquals(listOf(hers.id), alice.exclusions())
+        // His own exclusion of the offer is his, and hers taken back is hers.
+        bob.put("/api/offers/exclusions") { setBody(herExclusion.copy(ingredientId = his.id)) }
+        alice.takeBack(herExclusion)
+        assertEquals(listOf("Zeekraal") to listOf<String?>(null), alice.matched() to bob.matched())
+        assertEquals(listOf(his.id), bob.exclusions())
+
+        assertEquals(before, shared(), "the shared offers and history as they were")
+        alice.post("/api/offers/refresh")
+        assertEquals(listOf("Zeekraal"), db.priceHistoryQueries.selectOfferHistory().executeAsList().map { it.ingredient }, "recorded with every account's names, as before")
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/offers/exclusions").status)
     }
 
     @Test

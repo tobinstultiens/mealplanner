@@ -1,0 +1,14 @@
+-- Version 23 -> 24: "Not this ingredient" (issue 316). The offers an account said are not one of its ingredients are rows of
+-- a table of their own; no table is rebuilt and no row is touched: an account has no exclusion until it makes one.
+
+CREATE TABLE offerExclusion (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    store TEXT NOT NULL,
+    titleKey TEXT NOT NULL,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    excludedAt TEXT NOT NULL,
+    PRIMARY KEY (userId, store, titleKey, ingredientId)
+);
+
+CREATE INDEX offerExclusion_ingredient ON offerExclusion(ingredientId);

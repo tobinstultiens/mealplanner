@@ -68,6 +68,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLParameter
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
@@ -255,6 +256,7 @@ class ReleasedAppTest {
         assertTrue(http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(list.items.first().key, true)) }.read<ShoppingList>().items.first().checked)
         http.readsARowAskedForAgain(chicken.id)
         http.readsALateTick(chicken.id)
+        http.readsOffersAndTheListAfterAnExclusion()
         http.readsAWeekWithAPrepOf(mine.summary.id)
         http.readsAWeekWithASideOf(mine.summary.id)
         http.readsAWeekWithABatchOfMealsAndSidesOf(mine.summary.id)
@@ -267,6 +269,27 @@ class ReleasedAppTest {
         http.put("/api/weights/$date") { setBody(90.5) }.read<WeightLog>()
         assertTrue(http.read<WeightLog>("/api/weights").entries.isNotEmpty())
         http.delete("/api/weights/$date").read<WeightLog>()
+    }
+
+    /**
+     * An offer said in a newer app not to be its ingredient ("Not this ingredient", issue 316): the installed app reads the
+     * offers and the shopping list as before, without the match; taken back, the match is there again.
+     */
+    private suspend fun HttpClient.readsOffersAndTheListAfterAnExclusion() {
+        val offers = "/api/offers?date=2026-11-17"
+        val shopping = "/api/plans/$week/shopping"
+        val (row, deal) = read<ShoppingList>(shopping).items.firstNotNullOf { item -> item.offers.firstOrNull()?.let { item to it } }
+        val ingredientId = row.key.removePrefix("i").toLong()
+        fun OffersState.ingredientOf() = this.offers.single { it.store == deal.store && it.title == deal.title }.ingredientId
+        assertEquals(ingredientId, read<OffersState>(offers).ingredientOf())
+        val excluded = put("/api/offers/exclusions") { setBody("""{"store":"${deal.store}","title":"${deal.title}","ingredientId":$ingredientId}""") }
+        assertTrue(excluded.status.isSuccess(), excluded.bodyAsText())
+
+        assertEquals(null, read<OffersState>(offers).ingredientOf())
+        assertTrue(read<ShoppingList>(shopping).items.single { it.key == row.key }.offers.none { it.title == deal.title })
+        val takenBack = delete("/api/offers/exclusions?store=${deal.store}&title=${deal.title.encodeURLParameter()}&ingredientId=$ingredientId")
+        assertTrue(takenBack.status.isSuccess(), takenBack.bodyAsText())
+        assertEquals(ingredientId, read<OffersState>(offers).ingredientOf())
     }
 
     /** A topping of ingredient [ingredientId] set on recipe [recipeId] in a newer app (issue 226): the installed app reads the recipe as before. */

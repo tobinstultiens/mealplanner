@@ -32,6 +32,7 @@ class UserScope(
     val sections = ShopSections(ingredients, prices)
     val shoppingAdvice = ShoppingAdviceRepository(db, accountId)
     val dealVerdicts = DealVerdictRepository(db, offers, ingredients, shops::inUse)
+    val offerExclusions = OfferExclusionRepository(db, accountId, ingredients)
     val plans by lazy {
         PlanRepository(
             db, accountId, recipes, profiles, stock,

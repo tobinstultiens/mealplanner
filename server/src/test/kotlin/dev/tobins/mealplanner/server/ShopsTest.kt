@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OfferExclusionRequest
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingList
@@ -154,6 +155,10 @@ class ShopsTest {
         assertEquals(listOf("Chicken fillet"), user.generation!!.context(GenerateRequest(), today).onOffer)
         user.shops.save(ShopsSetting(listOf(Store.AH, Store.LIDL)))
         assertEquals(emptyList(), user.generation!!.context(GenerateRequest(), today).onOffer, "Jumbo's offer is not named to Claude")
+        // Back at Jumbo, an offer the account said is not its chicken is not named either ("Not this ingredient", issue 316).
+        user.shops.save(ShopsSetting(null))
+        user.offerExclusions.exclude(OfferExclusionRequest(Store.JUMBO, "Jumbo Kipfilet 1 kg", chicken.id))
+        assertEquals(emptyList(), user.generation!!.context(GenerateRequest(), today).onOffer, "excluded")
     }
 
     @Test

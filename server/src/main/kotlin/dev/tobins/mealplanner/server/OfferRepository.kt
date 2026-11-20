@@ -10,6 +10,7 @@ import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.LidlGuard
 import dev.tobins.mealplanner.server.offers.OfferMatcher
 import dev.tobins.mealplanner.server.offers.OfferSource
+import dev.tobins.mealplanner.server.offers.OfferTerms
 import dev.tobins.mealplanner.server.offers.StoreImages
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -25,17 +26,17 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
 
     /**
      * Offers valid at some point between [from] and [until], grouped by the catalogue
-     * ingredient they are for. [terms] are each ingredient's names and aliases.
+     * ingredient they are for. [terms] are one account's ([IngredientRepository.matchTerms]).
      */
-    fun byIngredient(from: LocalDate, until: LocalDate, terms: Map<Long, List<String>>): Map<Long, List<Offer>> =
+    fun byIngredient(from: LocalDate, until: LocalDate, terms: OfferTerms): Map<Long, List<Offer>> =
         OfferMatcher(terms).group(q.selectOffersOverlapping(until = until.toString(), from = from.toString()).executeAsList().map { it.toOffer() })
 
     /**
      * Offers valid on [date] with the store statuses. With [terms] (see [byIngredient])
      * each offer also names the ingredient it matches.
      */
-    fun state(date: LocalDate = serverToday(), terms: Map<Long, List<String>>? = null, names: Map<Long, String> = emptyMap()): OffersState {
-        val matcher = terms?.let(::OfferMatcher)
+    fun state(date: LocalDate = serverToday(), terms: OfferTerms? = null, names: Map<Long, String> = emptyMap()): OffersState {
+        val matcher = terms?.let { OfferMatcher(it) }
         val counts = q.countOffers().executeAsList().associate { it.store to it.n.toInt() }
         val recorded = q.selectSources().executeAsList().associateBy { it.store }
         return OffersState(

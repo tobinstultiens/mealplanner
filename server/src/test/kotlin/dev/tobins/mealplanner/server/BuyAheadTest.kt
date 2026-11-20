@@ -9,6 +9,7 @@ import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OfferExclusionRequest
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepInput
@@ -319,6 +320,29 @@ class BuyAheadTest {
         // One already on hand by hand is not advised.
         http.put("/api/pantry/on-hand/${http.ingredient("Olive oil").id}")
         assertEquals(listOf("White rice"), http.list().stockUp.map { it.name })
+    }
+
+    /** "Not this ingredient" (issue 316): an offer the account excluded is no reason to buy ahead or to stock up. */
+    @Test
+    fun anOfferTheAccountSaidIsNotItsIngredientIsNoAdviceToBuyAheadOrStockUp() = testApplication {
+        val http = start().ready()
+        val before = http.list()
+        assertEquals(listOf("Chicken fillet"), before.buyAhead.map { it.name })
+        assertEquals(listOf("Olive oil", "White rice"), before.stockUp.map { it.name })
+        val chicken = OfferExclusionRequest(Store.JUMBO, "Jumbo Kipfilet 1 kg", http.ingredient("Chicken fillet").id)
+        val oil = OfferExclusionRequest(Store.JUMBO, "Jumbo Olijfolie 1 l", http.ingredient("Olive oil").id)
+
+        for (exclusion in listOf(chicken, oil)) assertEquals(HttpStatusCode.OK, http.put("/api/offers/exclusions") { setBody(exclusion) }.status)
+
+        val after = http.list()
+        assertEquals(emptyList(), after.buyAhead)
+        assertEquals(listOf("White rice"), after.stockUp.map { it.name })
+        http.delete("/api/offers/exclusions") {
+            url.parameters.append("store", "JUMBO")
+            url.parameters.append("title", chicken.title)
+            url.parameters.append("ingredientId", chicken.ingredientId.toString())
+        }
+        assertEquals(listOf("Chicken fillet"), http.list().buyAhead.map { it.name }, "taken back, the offer counts again")
     }
 
     @Test
