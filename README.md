@@ -429,14 +429,21 @@ background from the Light/Dark choice in Settings, which `index.html` reads from
 The ingredients and steps of a recipe can be selected and copied, on Android too. A new fragment typed or pasted
 into the address of an open page is followed (`hashchange`, `Address.wasmJs.kt`) as a tapped notification is on
 Android: the screen opens, and what holds unsaved typing (the profile, the recipe editor) stays in front of it.
-Every history entry the app makes carries a mark in `history.state`; the browser's Back and Forward between
-those go to the back handlers (selecting first, then the screen, "Discard your changes?" asking again) and an
-entry without the mark is an address the user made. A Back that no handler answers puts the screen's own
-address back instead of showing that of the stale entry. Without a login a typed address is not followed.
+Every history entry the app makes carries its place in `history.state`, and its address is the screen that was
+open on it. Back goes to the innermost back handler first (selecting, then the screen, "Discard your changes?"
+asking again); when none answers, the screen of the entry stepped to opens, so Back after a typed address closes
+what it opened (a recipe: to its tab) and then returns to the screen before it, and Forward opens the screens
+again (a Forward never calls a back handler). Closing a screen from inside the app leaves its entry behind; it
+then carries the address of the screen that replaced it. An entry without a place is an address the user made.
+After a login round trip the entry before the app's is the login page: a guard entry is pushed on top, and a
+Back onto the entry the login returned to stays on the screen, so Back never reaches the login page.
+Without a login a typed address is not followed.
 A second browser tab left on the login screen takes a login made in another tab (the `storage` event).
 On a wide window a wheel turned over the empty margins scrolls the column (`MarginWheel.wasmJs.kt`: the event is
 sent on from the middle of the column). The focus ring shows only while the keyboard was the last thing used
-and stays inside the window. The recipe picker's search field has the focus when it opens, in the browser only.
+and stays inside the window. The recipe picker's search field has the focus when it opens, in the browser only. Tab out of a text field leaves
+the page's focus on `body`, where Enter and Space reach nothing; it is given back to the app (`PageBehaviour.wasmJs.kt`).
+`<html lang>` follows the app's language.
 The few texts that say "phone" or "tap" have browser wording (`runsInBrowser()`): Settings' picture hint
 and the store headers; others ("Tap Refresh") are not yet changed. Product pictures: AH and Lidl load, Jumbo's
 do not (no CORS headers, see "Product pictures" in `docs/data-sources.md`): that is the letter tile, not a fault.

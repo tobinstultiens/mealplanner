@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import kotlinx.browser.document
+import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.events.Event
@@ -49,6 +50,7 @@ internal fun showCrashPage(details: String, language: Language) {
         existing.querySelector("pre")?.let { it.textContent = it.textContent + "\n\n" + details }
         return
     }
+    followChosenTheme()
     val page = element("div", CRASH_PAGE_ID)
     page.setAttribute("role", "alert")
     page.style.cssText = "position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;" +
@@ -83,4 +85,16 @@ private fun element(tag: String, id: String? = null): HTMLElement {
     val created = document.createElement(tag) as HTMLElement
     if (id != null) created.id = id
     return created
+}
+
+/**
+ * The page's colours come from `data-theme`, which `index.html` sets from the Light/Dark choice once when the page
+ * loads; a choice made since then is read here, so that the page is not light in a dark app.
+ */
+private fun followChosenTheme() {
+    val root = document.documentElement ?: return
+    when (val chosen = localStorage.getItem("theme")) {
+        "LIGHT", "DARK" -> root.setAttribute("data-theme", chosen.lowercase())
+        else -> root.removeAttribute("data-theme")
+    }
 }

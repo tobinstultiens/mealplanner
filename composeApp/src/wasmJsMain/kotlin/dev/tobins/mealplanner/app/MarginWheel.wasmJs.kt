@@ -26,7 +26,8 @@ import org.w3c.dom.events.EventTarget
                 bubbles: true, cancelable: true, composed: true,
             });
             copy.forwardedFromMargin = true;
-            e.target.dispatchEvent(copy);
+            // The first element of the path is the canvas inside the shadow root; the event's target is only its host.
+            e.composedPath()[0].dispatchEvent(copy);
         };
         target.addEventListener('wheel', forward, { capture: true, passive: false });
         return () => target.removeEventListener('wheel', forward, { capture: true });

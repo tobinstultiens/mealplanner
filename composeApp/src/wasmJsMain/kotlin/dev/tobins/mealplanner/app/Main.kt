@@ -12,7 +12,10 @@ import org.w3c.dom.events.Event
 private object LocalStorageSettings : SettingsStorage {
     override fun get(key: String): String? = localStorage.getItem(key)
 
-    override fun set(key: String, value: String) = localStorage.setItem(key, value)
+    override fun set(key: String, value: String) {
+        localStorage.setItem(key, value)
+        showPageLanguage(Strings.of(appLanguage(), deviceLocaleTag()).language)
+    }
 
     override fun remove(key: String) = localStorage.removeItem(key)
 
@@ -39,6 +42,9 @@ private object SameTabLogin : LoginLauncher {
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
+    keepFocusInPage()
+    listenForBack()
+    showPageLanguage(Strings.of(LocalStorageSettings.appLanguage(), deviceLocaleTag()).language)
     installCrashPage { Strings.of(LocalStorageSettings.appLanguage(), deviceLocaleTag()).language }
     // The web client is served by the server itself, so the API lives at the same address.
     val defaults = ServerSettings(url = window.location.origin)
@@ -53,7 +59,7 @@ fun main() {
         window.sessionStorage.removeItem(ROUTE_AFTER_LOGIN)
         window.history.replaceState(null, "", window.location.pathname + route)
     }
-    claimStartEntry()
+    claimStartEntry(afterLogin = callback != null)
     forwardWheelFromMargins(window, ContentColumnWidthDp)
     ComposeViewport(document.body!!) {
         App(defaults, LocalStorageSettings, SameTabLogin, logins, routes = AddressRoutes)

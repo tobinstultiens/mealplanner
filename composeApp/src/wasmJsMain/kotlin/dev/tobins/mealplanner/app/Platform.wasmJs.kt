@@ -20,16 +20,20 @@ private var backListening = false
 
 /**
  * One `popstate` listener for all handlers: a back goes to the innermost one (the last composed) only, so that
- * leaving a selection does not also close the screen it is on.
+ * leaving a selection does not also close the screen it is on. Started with the page, since a Back after a
+ * reload has no handler yet and must still be answered.
  */
-private fun listenForBack() {
+internal fun listenForBack() {
     if (backListening) return
     backListening = true
     window.addEventListener("popstate") {
         // A typed address is not a back; [watchAddress] reports it.
         if (!onAppEntry()) return@addEventListener
-        val handler = backEntries.maxByOrNull { it.order }?.onBack?.value
-        if (handler != null) handler() else restoreShownAddress()
+        steppedToEntry {
+            val handler = backEntries.maxByOrNull { it.order }?.onBack?.value
+            handler?.invoke()
+            handler != null
+        }
     }
 }
 
@@ -47,7 +51,6 @@ actual fun BackHandler(enabled: Boolean, rearm: Int, onBack: () -> Unit) {
     val order = remember { nextBackOrder++ }
     DisposableEffect(enabled, rearm) {
         if (!enabled) return@DisposableEffect onDispose {}
-        listenForBack()
         pushBackEntry()
         val entry = BackEntry(order, currentOnBack)
         backEntries += entry
