@@ -320,80 +320,90 @@ internal fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, t
     val t = LocalStrings.current
     val more = item.moreNeeded()
     val toBuy = item.toBuyText(t)
-    Row(
-        Modifier.fillMaxWidth()
-            .toggleable(item.done, role = Role.Checkbox, onValueChange = { onToggle() })
-            .heightIn(min = if (shoppingMode) 64.dp else 56.dp)
-            .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(checked = item.done, onCheckedChange = null, modifier = Modifier.padding(12.dp))
-        ProductPicture(item.pictureUrl(offer, shops), item.name, size = if (shoppingMode) 56.dp else 48.dp, dimmed = item.done)
-        Column(Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp)) {
-            Text(
-                item.nameText(t),
-                style = if (shoppingMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-                textDecoration = if (item.done) TextDecoration.LineThrough else null,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            // Bought, and the plan changed since: say how much is still to buy.
-            if (more != null) {
-                Text(more.text(t), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            }
-            // Not ticked yet, and less than the week's need is left to buy: what is at home, or that meals are done, and what that leaves.
-            if (toBuy != null) {
-                Text(toBuy, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            }
-            // Stock-up advice is for no meal in particular; a provisional buy-ahead meal is only an example.
-            if (item.sourceMeals.isNotEmpty()) {
+    Column(Modifier.fillMaxWidth().toggleable(item.done, role = Role.Checkbox, onValueChange = { onToggle() })) {
+        Row(
+            Modifier.fillMaxWidth()
+                .heightIn(min = if (shoppingMode) 64.dp else 56.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = item.done, onCheckedChange = null, modifier = Modifier.padding(12.dp))
+            ProductPicture(item.pictureUrl(offer, shops), item.name, size = if (shoppingMode) 56.dp else 48.dp, dimmed = item.done)
+            Column(Modifier.weight(1f).padding(start = 12.dp, top = 6.dp, bottom = 6.dp)) {
                 Text(
-                    item.sourceMeals.joinToString().let { if (suggested) t(Msg.SUGGESTED_MEALS, it) else it },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    item.nameText(t),
+                    style = if (shoppingMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
+                    textDecoration = if (item.done) TextDecoration.LineThrough else null,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-        }
-        // An own item has no amount and no offer; in shopping mode its row has the one tap target.
-        if (onRemove != null) {
-            if (!shoppingMode) {
-                IconButton(onClick = onRemove) { Icon(AppIcons.Close, t(Msg.EXTRA_REMOVE, item.name)) }
-            }
-            return@Row
-        }
-        Column(Modifier.padding(horizontal = 12.dp).widthIn(max = 128.dp), horizontalAlignment = Alignment.End) {
-            // Long amounts such as "200 g + 1 bag" wrap rather than squeeze the name.
-            Text(item.amountText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), textAlign = TextAlign.End)
-            if (offer != null) {
-                // Packs for what is still to buy; a ticked row has none, as what was bought is not known in packs.
-                item.packsStillToBuy(offer)?.let {
+                // Bought, and the plan changed since: say how much is still to buy.
+                if (more != null) {
+                    Text(more.text(t), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+                // Not ticked yet, and less than the week's need is left to buy: what is at home, or that meals are done, and what that leaves.
+                if (toBuy != null) {
+                    Text(toBuy, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+                // Stock-up advice is for no meal in particular; a provisional buy-ahead meal is only an example.
+                if (item.sourceMeals.isNotEmpty()) {
                     Text(
-                        it.text(t),
-                        style = MaterialTheme.typography.bodySmall.numeric(),
+                        item.sourceMeals.joinToString().let { if (suggested) t(Msg.SUGGESTED_MEALS, it) else it },
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.End,
-                    )
-                }
-                // A tap shows the full deal; the rest of the row keeps ticking. The badge looks small
-                // but its touch area is 48 dp, as Material asks.
-                Box(
-                    Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                        .clickable(role = Role.Button, onClickLabel = t(Msg.SHOW_DEAL), onClick = onOfferClick),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        offer.badgeText(t, today),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        softWrap = false,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
+            // An own item has no amount and no offer; in shopping mode its row has the one tap target.
+            if (onRemove != null) {
+                if (!shoppingMode) {
+                    IconButton(onClick = onRemove) { Icon(AppIcons.Close, t(Msg.EXTRA_REMOVE, item.name)) }
+                }
+                return@Row
+            }
+            Column(Modifier.padding(horizontal = 12.dp).widthIn(max = 128.dp), horizontalAlignment = Alignment.End) {
+                // Long amounts such as "200 g + 1 bag" wrap rather than squeeze the name.
+                Text(item.amountText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), textAlign = TextAlign.End)
+                if (offer != null) {
+                    // Packs for what is still to buy; a ticked row has none, as what was bought is not known in packs.
+                    item.packsStillToBuy(offer)?.let {
+                        Text(
+                            it.text(t),
+                            style = MaterialTheme.typography.bodySmall.numeric(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.End,
+                        )
+                    }
+                    // A tap shows the full deal and its verdict; the rest of the row keeps ticking. The badge
+                    // looks small but its touch area is 48 dp, as Material asks.
+                    Box(
+                        Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .clickable(role = Role.Button, onClickLabel = t(Msg.SHOW_DEAL), onClick = onOfferClick),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            offer.badgeText(t, today),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            // It fits on one line but at the largest font, where it wraps rather than be cut off.
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
+        // Whether the chip's deal is a good one, in a few words, on a line of its own under the chip: the row's whole
+        // width, so the words wrap between words only and take no room from the name. Nothing while the history is short.
+        if (onRemove == null) {
+            VerdictLabel(
+                offer?.verdict,
+                Modifier.fillMaxWidth().padding(start = 16.dp + 48.dp, end = 16.dp, bottom = 6.dp),
+                textAlign = TextAlign.End,
+            )
         }
     }
 }

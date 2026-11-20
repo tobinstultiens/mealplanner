@@ -3,7 +3,12 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.api.VerdictKind
+import dev.tobins.mealplanner.api.VerdictMeasure
+import dev.tobins.mealplanner.server.history.Measure
 import dev.tobins.mealplanner.server.history.Verdict
 import dev.tobins.mealplanner.server.offers.OfferSource
 import kotlinx.coroutines.runBlocking
@@ -116,6 +121,82 @@ class DealVerdictRepositoryTest {
         assertEquals(listOf(Triple(2.29, "2026-11-19", true)), verdict.earlier.map { Triple(it.price, it.from, it.endedEarly) })
         assertEquals(Verdict.NOT_ENOUGH_HISTORY, verdict.verdict, verdict.summary)
         assertEquals(false, "Also on offer now" in verdict.summary, verdict.summary)
+    }
+
+    /**
+     * Jumbo's chicken on offer in weeks 2, 5 and 8 for 5,99 and now for 4,99, each time with its pack written another
+     * way: weighed a little differently, or with a footnote. Read as written, each text would be a pack of its own with
+     * no earlier offer, and the verdict "not enough history" (issue 118, step c).
+     */
+    private fun recordChickenWeighedEachWeek() = recordTenWeeks(Store.JUMBO) { n ->
+        val (pack, price) = when (n / 7) {
+            1 -> "Bak ca. 460 gram" to 5.99
+            4 -> "Bak ca. 455 gram<br />M.u.v. Biologisch" to 5.99
+            7 -> "Bak ca. 445 gram<br />M.u.v. Biologisch<br /><br />" to 5.99
+            TODAY / 7 -> "Bak ca. 450 gram" to 4.99
+            else -> null to null
+        }
+        val monday = serverDay(night(n - n % 7)).toString()
+        val sunday = serverDay(night(n - n % 7 + 6)).toString()
+        val chicken = pack?.let { Offer(Store.JUMBO, "Jumbo Kipfilet", "voor ${price.toString().replace('.', ',')}", price, packSize = it, validFrom = monday, validUntil = sunday) }
+        listOfNotNull(chicken, Offer(Store.JUMBO, "Jumbo Jong belegen kaas", "25% korting", validFrom = monday, validUntil = sunday))
+    }
+
+    @Test
+    fun aPackWrittenAnotherWayEachWeekIsStillOnePack() {
+        val alice = users.resolve(Identity("sub-alice", "alice")).id
+        IngredientRepository(db, foods, alice).create(IngredientInput("Kipfilet"))
+        recordChickenWeighedEachWeek()
+
+        val verdict = verdicts(alice).single()
+        assertEquals(Verdict.REAL_DEAL, verdict.verdict, verdict.summary)
+        assertEquals(listOf("2026-09-21", "2026-10-12", "2026-11-02"), verdict.earlier.map { it.from })
+        assertEquals(setOf("bak ca. 445 gram"), (verdict.earlier.map { it.pack } + verdict.lowest!!.pack).toSet(), "known by the lightest of them")
+        assertEquals(false, "in this pack" in verdict.summary, "no other pack: " + verdict.summary)
+    }
+
+    @Test
+    fun theAppGetsTheVerdictsWithTheOffersAndTheShoppingList() {
+        val alice = users.resolve(Identity("sub-alice", "alice")).id
+        val ingredients = IngredientRepository(db, foods, alice)
+        ingredients.create(IngredientInput("Kipfilet"))
+        recordChickenWeighedEachWeek()
+        val repository = DealVerdictRepository(db, OfferRepository(db, emptyList()), ingredients) { Store.entries.toSet() }
+        val state = OfferRepository(db, emptyList()).state(serverDay(night(TODAY)))
+        val chicken = state.offers.single { it.title == "Jumbo Kipfilet" }
+
+        val judged = repository.on(state, night(TODAY)).offers.associate { it.title to it.verdict }
+        val verdict = judged.getValue("Jumbo Kipfilet")!!
+        assertEquals(VerdictKind.REAL_DEAL to VerdictMeasure.PER_KG, verdict.verdict to verdict.measure)
+        assertEquals(listOf("2026-11-02", "2026-10-12", "2026-09-21"), verdict.earlier.map { it.from }, "newest first")
+        assertEquals(null, verdict.lastAsCheap, "the lowest so far")
+        assertEquals(TODAY + 1 to 56, verdict.daysRead to verdict.daysNeeded)
+        assertEquals(null, judged.getValue("Jumbo Jong belegen kaas"), "no ingredient of hers: no verdict")
+
+        // The shopping list's offers are matched by what the store published, whatever the server added to them.
+        val row = ShoppingItem("i1", "Kipfilet", 450.0, null, "Meat", emptyList(), onHand = false, checked = false, offers = listOf(chicken.copy(paidShare = 0.83, ingredientId = null)))
+        val list = repository.on(ShoppingList("2026-11-16", listOf(row), emptyList(), stockUp = listOf(row.copy(key = "stock:i1"))), night(TODAY))
+        assertEquals(listOf(VerdictKind.REAL_DEAL, VerdictKind.REAL_DEAL), (list.items + list.stockUp).map { it.offers.single().verdict?.verdict })
+        assertEquals(0.83, list.items.single().offers.single().paidShare)
+    }
+
+    /** The app's verdicts are the server's by name: a value added to one and not the other would fail every answer judged. */
+    @Test
+    fun theAppsVerdictsAndMeasuresAreTheServersOwn() {
+        assertEquals(Verdict.entries.map { it.name }, VerdictKind.entries.map { it.name })
+        assertEquals(Measure.entries.map { it.name }, VerdictMeasure.entries.map { it.name })
+    }
+
+    @Test
+    fun aVerdictThatCannotBeWorkedOutLeavesTheAnswerAsItWas() {
+        val alice = users.resolve(Identity("sub-alice", "alice")).id
+        val ingredients = IngredientRepository(db, foods, alice)
+        ingredients.create(IngredientInput("Kipfilet"))
+        recordChickenWeighedEachWeek()
+        val broken = DealVerdictRepository(db, OfferRepository(db, emptyList()), ingredients) { error("the stores could not be read") }
+        val state = OfferRepository(db, emptyList()).state(serverDay(night(TODAY)))
+
+        assertEquals(state, broken.on(state, night(TODAY)))
     }
 
     private companion object {

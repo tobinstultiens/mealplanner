@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.pricing.DealTerms
 import app.cash.sqldelight.db.QueryResult
@@ -46,10 +47,12 @@ class DealVerdictRealDataTest {
         println("== As recorded")
         val real = open(original)
         report(real.db, real.account, real.now, real.verdicts())
+        real.forTheApp()
         System.getenv("PRICE_HISTORY_NEXT_DB")?.let(::File)?.let { next ->
             println("\n== As recorded, and the next database's offers as one more night")
             val twoNights = open(original, next = next)
             report(twoNights.db, twoNights.account, twoNights.now, twoNights.verdicts())
+            twoNights.forTheApp()
         }
 
         println("\n== With twelve weeks of made-up history before it")
@@ -58,9 +61,11 @@ class DealVerdictRealDataTest {
         val shown = madeUp.verdicts()
         report(madeUp.db, madeUp.account, madeUp.now, shown)
         println("\nThe products given a made-up history:")
+        val forTheApp = madeUp.forTheApp()
         for ((scenario, offer) in products) {
             val verdict = shown.verdicts.firstOrNull { it.store == offer.store && it.title == offer.title }
             println("- [$scenario] ${offer.store.label}, ${offer.title} (${offer.packSize ?: "no pack size"}), ${dealOf(offer.deal)}: ${verdict?.verdict}\n  ${verdict?.summary}")
+            forTheApp.offers.firstOrNull { it.store == offer.store && it.title == offer.title && it.packSize == offer.packSize }?.verdict?.let { println("  the app's: $it") }
         }
 
         println("\n== A made-up year: what a call costs")
@@ -102,6 +107,8 @@ class DealVerdictRealDataTest {
             println("Reading the rows of all ${products.values.sumOf { it.size }} products valid today: $read rows in $ms ms")
         }
         repeat(3) { year.verdicts() }
+        // What every answer that carries the shopping list adds, ticks included: the verdicts on the account's offers.
+        repeat(5) { year.forTheApp() }
     }
 
     private class Opened(val driver: SqlDriver, val db: Database, val account: Long, val now: Instant) {
@@ -112,6 +119,20 @@ class DealVerdictRealDataTest {
             val ms = measureTimeMillis { verdicts = repository.current(now) }
             println("Read ${verdicts.verdicts.size} verdicts in $ms ms")
             return verdicts
+        }
+
+        /** Today's offers as the app gets them (`/api/offers`), with what their verdicts would show and how long they took. */
+        fun forTheApp(): OffersState {
+            val ingredients = IngredientRepository(db, FoodRepository(db), account)
+            val repository = DealVerdictRepository(db, OfferRepository(db, emptyList()), ingredients, ShopsRepository(db, account)::inUse)
+            val state = OfferRepository(db, emptyList()).state(serverDay(now), ingredients.matchTerms(), ingredients.list().associate { it.id to it.name })
+            lateinit var judged: OffersState
+            val ms = measureTimeMillis { judged = repository.on(state, now) }
+            val verdicts = judged.offers.mapNotNull { it.verdict }
+            println("For the app: ${verdicts.size} of ${judged.offers.size} offers judged in $ms ms, by verdict " + verdicts.groupingBy { it.verdict }.eachCount())
+            val named = verdicts.flatMap { v -> v.alongside + v.earlier + listOfNotNull(v.cheaperNow, v.lastAsCheap, v.cheaperPack?.offer) }.mapNotNull { it.packName }
+            println("Packs named in them: " + named.distinct().sorted())
+            return judged
         }
     }
 

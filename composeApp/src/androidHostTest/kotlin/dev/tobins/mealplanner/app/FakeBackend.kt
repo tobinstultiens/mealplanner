@@ -3,6 +3,12 @@ package dev.tobins.mealplanner.app
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import dev.tobins.mealplanner.api.BatchToMake
+import dev.tobins.mealplanner.api.CheaperPack
+import dev.tobins.mealplanner.api.PastOffer
+import dev.tobins.mealplanner.api.PriceRaise
+import dev.tobins.mealplanner.api.PriceVerdict
+import dev.tobins.mealplanner.api.VerdictKind
+import dev.tobins.mealplanner.api.VerdictMeasure
 import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.DailyTargets
 import dev.tobins.mealplanner.api.WeekPlanning
@@ -132,6 +138,11 @@ class FakeBackend(
     private val planning: Boolean = false,
     /** With [planning], an account with no dinner to suggest, as one whose rotation has none that makes a dinner. */
     nothingToSuggest: Boolean = false,
+    /**
+     * The offers' verdicts once weeks of price history are recorded (issue 118): one of each kind the screens show.
+     * Without it every judged offer is "too new to judge", as in the first eight weeks.
+     */
+    private val laterVerdicts: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -281,7 +292,7 @@ class FakeBackend(
                 changes += "POST $path"
                 json.encodeToString(plan(parts[2]))
             }
-            parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(shopping(parts[2]))
+            parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(judged(shopping(parts[2])))
             path == "/api/offers" -> json.encodeToString(if (emptyOffers) OffersState(emptyList(), emptyList()) else offers)
             path == "/api/prices" -> json.encodeToString(if (emptyPrices) PricesState(emptyList(), emptyList(), null) else prices)
             (method == "PUT" || method == "DELETE") && path.startsWith("/api/weights/") -> changeWeights(method, path.substringAfterLast('/'), sent)
@@ -592,7 +603,7 @@ class FakeBackend(
                 // The eaten breakfast is no longer named as its source: only the meals still to cook are.
                 item(
                     "oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries",
-                    offers = listOf(offerList[3].copy(paidShare = 0.79)), regularPrice = 0.76, onHand = true, onHandGrams = 200.0, toComeGrams = 300.0,
+                    offers = listOf(offerList[3].copy(paidShare = 0.79, ingredientName = "Rolled oats")), regularPrice = 0.76, onHand = true, onHandGrams = 200.0, toComeGrams = 300.0,
                 ).let { it.copy(recipes = listOf("Porridge with banana") + it.recipes, toComeRecipes = listOf("Overnight oats with blueberries")) },
                 // Own items, typed by hand: one the server filed under a section, one it could not place.
                 item("x:1", "Coffee", null, null, ShopSection.DRINKS, null),
@@ -831,8 +842,63 @@ class FakeBackend(
         Offer(Store.AH, "Bio havermout met een heel lange productnaam voor de test", "voor 1,49", 1.49, 1.89, "500 g", null, "2026-11-16", "2026-11-22"),
     )
 
+    /**
+     * What the server's price history says of an offer valid today ([Offer.verdict]), by its title. Early on, two days
+     * into the history, every one is too new to judge. Later the pepper is a real deal; the chicken usually cheaper, its
+     * kilo pack cheapest per kg before; the feta better than usual next to a Lidl price; the oats always on offer; the
+     * minced beef no real discount after a raise; the rice cheaper another way; the rest the usual deal. The oats are no
+     * ingredient on the Offers screen, so not judged there.
+     */
+    private fun verdictOf(offer: Offer): PriceVerdict? {
+        if (offer.validFrom > TODAY || offer.validUntil < TODAY) return null
+        if (!laterVerdicts) return PriceVerdict(VerdictKind.NOT_ENOUGH_HISTORY, daysRead = 2, daysNeeded = 56)
+        fun past(from: String, until: String, deal: String?, value: Double, price: Double? = null, endedEarly: Boolean = false) =
+            PastOffer(from, until, deal, price, value = value, endedEarly = endedEarly)
+        val known = PriceVerdict(daysRead = 70, daysNeeded = 56)
+        return when (offer.title) {
+            "Rode paprika 500 g" -> known.copy(
+                verdict = VerdictKind.REAL_DEAL, measure = VerdictMeasure.PER_KG, value = 4.48, typical = 4.99,
+                earlier = listOf(
+                    past("2026-11-02", "2026-11-08", "voor 2,49", 4.98),
+                    past("2026-10-12", "2026-10-18", "2 voor 5,00", 5.00),
+                    past("2026-09-21", "2026-09-27", "25% korting", 4.98),
+                ),
+            )
+            "Kipdijfilet 600 g" -> known.copy(
+                verdict = VerdictKind.WORSE_THAN_USUAL, measure = VerdictMeasure.PER_KG, value = 7.50, typical = 6.65,
+                lastAsCheap = past("2026-11-02", "2026-11-08", "1+1 gratis", 4.99),
+                cheaperPack = CheaperPack(PastOffer("2026-10-19", "2026-10-25", "voor 5,99", 5.99, "1 kg", 5.99), VerdictMeasure.PER_KG, now = false),
+                earlier = listOf(
+                    past("2026-11-02", "2026-11-08", "1+1 gratis", 4.99),
+                    past("2026-10-19", "2026-10-25", "2 voor 8,00", 6.65, endedEarly = true),
+                    past("2026-09-28", "2026-10-04", "25% korting", 7.49),
+                ),
+            )
+            "Griekse feta 200 g" -> known.copy(
+                verdict = VerdictKind.USUAL_DEAL, measure = VerdictMeasure.PER_KG, value = 4.48, typical = 5.20, betterThanUsual = true,
+                lastAsCheap = past("2026-10-19", "2026-10-25", "1+1 gratis", 4.20),
+                alongside = listOf(PastOffer("2026-11-16", "2026-11-22", null, 2.29, "400 g")),
+            )
+            "Bio havermout met een heel lange productnaam voor de test" -> known.copy(verdict = VerdictKind.ALWAYS_ON_OFFER).takeIf { offer.ingredientName != null }
+            "Rundergehakt 500 g" -> known.copy(verdict = VerdictKind.NOT_A_DEAL, measure = VerdictMeasure.PAID_SHARE, value = 0.98, raise = PriceRaise(3.29, 3.69))
+            "Basmati rijst 1 kg" -> known.copy(
+                verdict = VerdictKind.CHEAPER_ANOTHER_WAY, measure = VerdictMeasure.PER_KG, value = 1.15,
+                cheaperNow = PastOffer("2026-11-16", "2026-11-22", "2 voor 1,80", value = 0.90),
+            )
+            else -> known.copy(verdict = VerdictKind.USUAL_DEAL, measure = VerdictMeasure.PAID_SHARE, value = 0.75, typical = 0.75)
+        }
+    }
+
+    private fun Offer.judged() = copy(verdict = verdictOf(this))
+
+    /** [list] as the server sends it: its offers with their verdicts, wherever they are on it. */
+    private fun judged(list: ShoppingList): ShoppingList {
+        fun List<ShoppingItem>.judged() = map { item -> item.copy(offers = item.offers.map { it.judged() }) }
+        return list.copy(items = list.items.judged(), buyAhead = list.buyAhead.judged(), stockUp = list.stockUp.judged(), noLongerNeeded = list.noLongerNeeded.judged())
+    }
+
     private val offers = OffersState(
-        offers = offerList,
+        offers = offerList.map { it.judged() },
         sources = listOf(
             OfferSourceStatus(Store.AH, "2026-11-17T06:00:00Z", 2, null),
             OfferSourceStatus(Store.JUMBO, "2026-11-17T06:00:00Z", 1, null),

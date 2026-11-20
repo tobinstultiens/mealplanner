@@ -17,6 +17,8 @@ import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.OfferSource
+import dev.tobins.mealplanner.shopping.PREFER_FITTING_OFFER
+import dev.tobins.mealplanner.shopping.savingToday
 import dev.tobins.mealplanner.released.api.ShoppingList as ReleasedShoppingList
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -160,6 +162,30 @@ class TickSavingTest {
         assertEquals(1500.0, again.boughtGrams)
         assertEquals(2.5, assertNotNull(again.boughtSaving), 1e-9)
         assertEquals(Store.JUMBO, again.boughtOfferStore)
+    }
+
+    /**
+     * Issue 105, switched on by the owner ([PREFER_FITTING_OFFER]): 450 g of chicken is one pack of 500 g, so "1+1 gratis"
+     * saves nothing on it, and the 300 g packs at a quarter off save €1.13. A tick keeps that, also one the installed app
+     * (v0.1.9) sends, whose own header still goes by the rule from before, which kept no saving for such a row.
+     */
+    @Test
+    fun aTickKeepsWhatTheSmallerFittingOfferSaves() = testApplication {
+        val http = start()
+        jumbo.offers = listOf(
+            Offer(Store.JUMBO, "Jumbo Kipfilet 500 g", "1+1 gratis", packSize = "500 g", validFrom = week, validUntil = "2026-11-22"),
+            Offer(Store.JUMBO, "Jumbo Kipfilet 300 g", "25% korting", packSize = "300 g", validFrom = week, validUntil = "2026-11-22"),
+        )
+        http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
+        http.post("/api/offers/refresh")
+        val key = "i${http.post("/api/ingredients") { setBody(IngredientInput("Kipfilet", pricePerKg = 10.0)) }.body<Ingredient>().id}"
+        http.dine(0, 450.0)
+        val row = http.chicken()
+        assertNull(row.savingToday(Store.entries.toSet(), monday, preferFitting = false), "the rule from before saved nothing")
+
+        val ticked = tick(monday, key)
+        assertEquals(1.125, assertNotNull(ticked.boughtSaving), 1e-9)
+        assertEquals(Store.JUMBO, ticked.boughtOfferStore)
     }
 
     @Test

@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server.routes
 
 import dev.tobins.mealplanner.server.OfferRepository
 import dev.tobins.mealplanner.server.PriceRepository
+import dev.tobins.mealplanner.server.serverDay
 import dev.tobins.mealplanner.server.serverToday
 import dev.tobins.mealplanner.server.user
 import io.ktor.server.response.respond
@@ -19,10 +20,14 @@ fun Route.offerRoutes(offers: OfferRepository, prices: PriceRepository) {
         val date = call.request.queryParameters["date"]?.let {
             runCatching { LocalDate.parse(it) }.getOrElse { throw IllegalArgumentException("date must be an ISO date") }
         } ?: serverToday()
-        call.respond(call.user.ingredients.let { offers.state(date, it.matchTerms(), it.list().associate { i -> i.id to i.name }) })
+        val state = call.user.ingredients.let { offers.state(date, it.matchTerms(), it.list().associate { i -> i.id to i.name }) }
+        // A verdict is about today: the offers of another day go without.
+        val now = Instant.now()
+        call.respond(if (date == serverDay(now)) call.user.dealVerdicts.on(state, now) else state)
     }
 
-    // Whether each of the account's offers is a good deal, by its price history; for reading, no app uses it yet.
+    // Whether each of the account's offers is a good deal, by its price history, with what it rests on: for reading
+    // the verdicts; the app gets them with the offers and the shopping list (Offer.verdict).
     get("/api/offers/verdicts") { call.respond(call.user.dealVerdicts.current(Instant.now())) }
 
     // Fetches every store now, regardless of when it was last fetched.

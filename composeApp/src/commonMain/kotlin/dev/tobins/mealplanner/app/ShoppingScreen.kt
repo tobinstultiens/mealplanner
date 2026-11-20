@@ -103,6 +103,9 @@ internal fun ShoppingScreen(
         session.shown(notice)
     }
     technicalDetails?.let { DetailsDialog(t(Msg.DETAILS), it) { technicalDetails = null } }
+    // A row's price history, opened from its deal's snackbar: the row's name and its offers.
+    var priceHistory by remember { mutableStateOf<Pair<String, List<Offer>>?>(null) }
+    priceHistory?.let { (name, offers) -> VerdictHistoryDialog(name, offers) { priceHistory = null } }
 
     /** Sets one item's tick: shown at once, the server hears of it in the background. */
     fun tick(key: String, checked: Boolean) = session.tick(key, checked)
@@ -255,7 +258,14 @@ internal fun ShoppingScreen(
                     onOfferClick = {
                         scope.launch {
                             snackbar.currentSnackbarData?.dismiss()
-                            snackbar.showSnackbar(item.dealText(shops, today, t))
+                            // With earlier offers to list, the snackbar opens them, as it has no room for a list.
+                            val history = item.historyOffers(shops, today)
+                            val answer = snackbar.showSnackbar(
+                                item.dealText(shops, today, t),
+                                actionLabel = if (history.isEmpty()) null else t(Msg.VERDICT_HISTORY),
+                                duration = if (history.isEmpty()) SnackbarDuration.Short else SnackbarDuration.Long,
+                            )
+                            if (answer == SnackbarResult.ActionPerformed) priceHistory = item.name to history
                         }
                     },
                 )

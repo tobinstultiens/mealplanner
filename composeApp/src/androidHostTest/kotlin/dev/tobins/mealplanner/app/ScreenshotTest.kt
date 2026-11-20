@@ -29,6 +29,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import dev.tobins.mealplanner.api.Offer
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,6 +41,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -89,6 +94,14 @@ import kotlin.time.Instant
 /** One way of looking at a screen: light or dark, how wide the phone is, and the font scale in the settings. */
 data class Look(val dark: Boolean, val widthDp: Int, val fontScale: Float) {
     val name get() = "${if (dark) "dark" else "light"}-${widthDp}dp-x$fontScale"
+}
+
+/** The body of the "Price history" dialog of the chicken's row ([VerdictHistoryDialog]), as a dialog is a window of its own. */
+@Composable
+private fun priceHistory(api: ApiClient) {
+    var offers by remember { mutableStateOf<List<Offer>>(emptyList()) }
+    LaunchedEffect(Unit) { offers = api.shoppingList(FakeBackend.WEEK_START).items.single { it.key == "chicken" }.historyOffers(Store.entries.toSet(), FakeBackend.TODAY) }
+    Box(Modifier.padding(24.dp)) { VerdictHistory(offers) }
 }
 
 @Composable
@@ -366,6 +379,12 @@ enum class Shot(
     val profile: Profile? = null,
     /** A font scale of its own instead of the look's, for a size a screen must survive that the looks do not cover. */
     val fontScale: Float? = null,
+    /** The fake backend's offers judged by weeks of price history (issue 118); without it, every one is too new to judge. */
+    val laterVerdicts: Boolean = false,
+    /** A text to tap once it is shown, and a text to wait for after it, such as a snackbar's. */
+    val tap: Pair<String, String>? = null,
+    /** A text the picture must show, waited for before it is taken: one that comes from the last answer the screen needs. */
+    val shows: String? = null,
     val content: @Composable (ApiClient, ServerSettings) -> Unit,
 ) {
     TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
@@ -466,6 +485,22 @@ enum class Shot(
     SHOPPING_EMPTY(emptyWeek = true, content = { api, _ -> shopping(api, shoppingMode = false) }),
     SHOPPING_STORES(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE) }),
     SHOPPING_AT_JUMBO(heightDp = 1500, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE, store = Store.JUMBO) }),
+    // The price verdicts under the deals (issue 118), weeks into the history, by section and per store, in both languages and at the largest font.
+    SHOPPING_VERDICTS(laterVerdicts = true, shows = "Real deal", heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_VERDICTS_NL(laterVerdicts = true, shows = "Echte aanbieding", dutch = true, heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_VERDICTS_X2(laterVerdicts = true, shows = "No real discount", fontScale = 2.0f, heightDp = 6400, content = { api, _ -> shopping(api, shoppingMode = false) }),
+    // In Dutch, whose words are longest ("aanbieding", "goedkoper"), down to the buy-ahead and stock-up rows.
+    SHOPPING_VERDICTS_X2_NL(laterVerdicts = true, dutch = true, shows = "Geen echte korting", fontScale = 2.0f, heightDp = 7000, content = { api, _ -> shopping(api, shoppingMode = false) }),
+    // "Price history" from a deal's snackbar: the dialog's body with the chicken's offer, its verdict and its earlier offers.
+    SHOPPING_PRICE_HISTORY(laterVerdicts = true, shows = "Earlier offers", heightDp = 500, content = { api, _ -> priceHistory(api) }),
+    SHOPPING_PRICE_HISTORY_NL(laterVerdicts = true, dutch = true, shows = "Eerdere aanbiedingen", heightDp = 500, content = { api, _ -> priceHistory(api) }),
+    SHOPPING_PRICE_HISTORY_X2(laterVerdicts = true, fontScale = 2.0f, shows = "Earlier offers", heightDp = 1100, content = { api, _ -> priceHistory(api) }),
+    SHOPPING_VERDICTS_STORES(laterVerdicts = true, shows = "Real deal", heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE) }),
+    SHOPPING_VERDICTS_MODE_NL(laterVerdicts = true, shows = "Echte aanbieding", dutch = true, heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = true) }),
+    // A tap on the chicken's deal: the deal, its verdict and the cheaper pack, in the snackbar. Early on, the pepper's: too new to judge.
+    SHOPPING_VERDICT_DETAIL(laterVerdicts = true, heightDp = 900, tap = "Jumbo €4.50" to "Usually cheaper:", content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_VERDICT_DETAIL_NL(laterVerdicts = true, dutch = true, heightDp = 900, tap = "Jumbo €4,50" to "Meestal goedkoper:", content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_VERDICT_EARLY(heightDp = 900, tap = "AH €2.24" to "Too new to judge", content = { api, _ -> shopping(api, shoppingMode = false) }),
     RECIPES(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}) }),
     RECIPES_ROTATION(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}, initialChoice = RotationChoice.IN_ROTATION) }),
     RECIPES_NOT_IN_ROTATION(heightDp = 800, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}, initialChoice = RotationChoice.OUT_OF_ROTATION) }),
@@ -523,6 +558,13 @@ enum class Shot(
     COOK_MODE_DONE(heightDp = 1400, content = { api, _ -> cookModeTicked(api, setOf(0, 1, 2, 3, 4), setOf(0, 1, 2), eatable = true) }),
     OFFERS(heightDp = 800, content = { api, _ -> OffersScreen(api, {}, {}) }),
     OFFERS_EMPTY(emptyOffers = true, content = { api, _ -> OffersScreen(api, {}, {}) }),
+    // The price verdicts (issue 118). Early, two days into the history: no offer says anything until it is opened.
+    OFFERS_VERDICTS_EARLY(shows = "Too new to judge", heightDp = 800, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Rode paprika 500 g")) }),
+    // Weeks later: a real deal, one usually cheaper (opened: its line, the cheaper pack and its history), one better than usual.
+    OFFERS_VERDICTS(laterVerdicts = true, shows = "Usually cheaper:", heightDp = 900, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
+    OFFERS_VERDICTS_NL(laterVerdicts = true, shows = "Meestal goedkoper:", dutch = true, heightDp = 900, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
+    OFFERS_VERDICTS_X2(laterVerdicts = true, shows = "Usually cheaper:", fontScale = 2.0f, heightDp = 1700, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
+    OFFERS_VERDICTS_X2_NL(laterVerdicts = true, shows = "Meestal goedkoper:", dutch = true, fontScale = 2.0f, heightDp = 1800, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
@@ -661,6 +703,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         standardMeals = shot.standardMeals,
         planning = shot.planning,
         nothingToSuggest = shot.nothingToSuggest,
+        laterVerdicts = shot.laterVerdicts,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)
@@ -699,12 +742,24 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
                 compose.onNodeWithTag(FOCUSED).performKeyInput { pressKey(Key.ShiftLeft) }
                 compose.waitForIdle()
             }
+            // Each comes from more than one answer (the list, the account's stores): wait for the node itself.
+            shot.shows?.let { waitForText(it) }
+            shot.tap?.let { (target, shown) ->
+                waitForText(target)
+                compose.onNodeWithText(target).performClick()
+                waitForText(shown)
+                compose.waitForIdle()
+            }
             compose.onNodeWithTag(FRAME).captureRoboImage(
                 filePath = "src/androidHostTest/screenshots/${shot.name.lowercase()}_${look.name}.png",
                 roborazziOptions = options(),
             )
         }
     }
+
+    /** Waits until a node shows [text] (in part). */
+    private fun waitForText(text: String) =
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText(text, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
 
     @Composable
     private fun Frame(content: @Composable () -> Unit) {

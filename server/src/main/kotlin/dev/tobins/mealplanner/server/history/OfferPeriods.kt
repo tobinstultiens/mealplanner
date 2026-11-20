@@ -80,9 +80,12 @@ data class OfferPeriod(
     )
 }
 
-/** An offer of today, as a verdict compares it with its history. */
-data class CurrentOffer(val offer: Offer) {
-    val identity = OfferSighting(offer).identity
+/**
+ * An offer of today, as a verdict compares it with its history; its [pack] is the text it is known by among its
+ * product's packs ([SamePacks]), by default its own.
+ */
+data class CurrentOffer(val offer: Offer, val pack: String = ProductKey.of(offer).pack) {
+    val identity = OfferSighting(offer).identity.let { it.copy(product = it.product.copy(pack = pack)) }
     val measures = Measures.of(offer)
     val validFrom: LocalDate = LocalDate.parse(offer.validFrom)
     val validUntil: LocalDate = LocalDate.parse(offer.validUntil)
