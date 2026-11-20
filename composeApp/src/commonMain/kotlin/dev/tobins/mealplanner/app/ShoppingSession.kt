@@ -445,7 +445,7 @@ internal class ShoppingSession(
             // Ticks of this session that are still to go are sent in their own turn.
             val waiting = cache.pending(week) - ticks[week]?.unsent.orEmpty()
             for ((key, checked) in waiting) {
-                when (val result = timed { server.check(week, key, checked, advisedGrams(week, key, checked)) }) {
+                when (val result = sendLate(week, key, checked)) {
                     is Load.Ready -> cache.confirm(result.value, nowIso(), key, checked)
                     is Load.Failed -> when {
                         result.refused -> {
@@ -468,6 +468,20 @@ internal class ShoppingSession(
     }
 
     /**
+     * Sends a tick that waited (made offline, or not answered at the time), with what the row showed
+     * when it was ticked ([ShoppingCache.shown]), for the server to remember in place of what the row
+     * says now: the weight, and the saving of an offer that may have ended since. A server from before
+     * that refuses the field it does not know (400): the tick goes again without it, as the server
+     * took ticks before.
+     */
+    private suspend fun sendLate(week: String, key: String, checked: Boolean): Load<ShoppingList> {
+        val shown = if (checked) cache.shown(week, key) else null
+        val result = timed { server.check(week, key, checked, advisedGrams(week, key, checked), shown) }
+        if (shown == null || result !is Load.Failed || result.status != 400) return result
+        return timed { server.check(week, key, checked, advisedGrams(week, key, checked)) }
+    }
+
+    /**
      * For ticking off a buy-ahead or stock-up item: the grams the list advised buying when it was
      * ticked ([ShoppingCache.advised]). A tick made offline goes out later, when the server may have
      * new offers and no longer advise it; with this it still knows how much was bought. Null for
@@ -484,6 +498,7 @@ internal class ShoppingSession(
             cache,
             send = { key, checked -> timed { server.check(week, key, checked, advisedGrams(week, key, checked)) } },
             isOffline = { offlineSince != null },
+            today = today,
             show = { display(week, it) },
             offline = { _, _ ->
                 // The first tick without an answer shows the line that says the list is offline.

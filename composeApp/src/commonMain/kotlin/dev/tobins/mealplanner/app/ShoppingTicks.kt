@@ -33,6 +33,8 @@ internal class ShoppingTicks(
     private val offline: (key: String, checked: Boolean) -> Unit,
     private val rejected: (message: String) -> Unit,
     private val turn: Mutex = Mutex(),
+    /** The day it is, for what a row shows when ticked ([ShoppingCache.choose]). */
+    private val today: () -> String = ::todayIso,
 ) {
     private var base: ShoppingList? = null
 
@@ -57,7 +59,7 @@ internal class ShoppingTicks(
     /** The user ticks or un-ticks [key]: kept, shown now, sent in turn. */
     fun choose(key: String, checked: Boolean) {
         val current = base ?: return
-        cache.choose(weekStart, key, checked)
+        cache.choose(weekStart, key, checked, today())
         wanted[key] = checked
         waiting[key] = checked
         show(overlay(current))

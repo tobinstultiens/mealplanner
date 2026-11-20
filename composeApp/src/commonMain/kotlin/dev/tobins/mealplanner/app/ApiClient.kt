@@ -247,11 +247,11 @@ class ApiClient(
 
     suspend fun shoppingList(weekStart: String): ShoppingList = http.get("api/plans/$weekStart/shopping").body()
 
-    /** Ticks an item off or back on; [grams] is what the list advised buying of a buy-ahead or stock-up item. */
-    suspend fun setShoppingChecked(weekStart: String, key: String, checked: Boolean, grams: Double? = null): ShoppingList =
+    /** Ticks an item off or back on; [grams] is what the list advised buying of a buy-ahead or stock-up item, [shown] what the phone showed of a row when it made the tick that is sent late. */
+    suspend fun setShoppingChecked(weekStart: String, key: String, checked: Boolean, grams: Double? = null, shown: ShoppingCheck.Shown? = null): ShoppingList =
         http.put("api/plans/$weekStart/shopping") {
             contentType(ContentType.Application.Json)
-            setBody(ShoppingCheck(key, checked, grams))
+            setBody(ShoppingCheck(key, checked, grams, shown))
         }.body()
 
     /** Ticks the ticked row [key] again for what it needs now, in one step; null from a server from before that. */

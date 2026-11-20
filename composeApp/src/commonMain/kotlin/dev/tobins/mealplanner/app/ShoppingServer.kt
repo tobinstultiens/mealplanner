@@ -3,14 +3,15 @@ package dev.tobins.mealplanner.app
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
+import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 
 /** What the shopping list needs from the server; failures come back as [Load.Failed], never thrown. */
 internal interface ShoppingServer {
     suspend fun list(weekStart: String): Load<ShoppingList>
 
-    /** [grams]: what the list advised buying, for ticking off a buy-ahead or stock-up item; null otherwise. */
-    suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?): Load<ShoppingList>
+    /** [grams]: what the list advised buying, for ticking off a buy-ahead or stock-up item; null otherwise. [shown]: what the phone showed of the row, for a tick sent late. */
+    suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?, shown: ShoppingCheck.Shown? = null): Load<ShoppingList>
 
     suspend fun dismiss(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): Load<ShoppingList>
 
@@ -31,8 +32,8 @@ internal interface ShoppingServer {
 internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServer {
     override suspend fun list(weekStart: String) = load { shoppingList(weekStart) }
 
-    override suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?) =
-        load { setShoppingChecked(weekStart, key, checked, grams) }
+    override suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?, shown: ShoppingCheck.Shown?) =
+        load { setShoppingChecked(weekStart, key, checked, grams, shown) }
 
     override suspend fun dismiss(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean) =
         load { setShoppingDismissed(weekStart, group, dismissed) }

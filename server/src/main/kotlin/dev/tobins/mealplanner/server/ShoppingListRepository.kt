@@ -337,8 +337,8 @@ class ShoppingListRepository(
      * that back (see [StockRepository.putOnHandFrom]). An own item ticked off is bought in this
      * week ([setBought]).
      * A row of what the meals need remembers what it says as it is ticked ([neededRow]), and what its
-     * offer saves then ([savingNow]): at the moment the server stores the tick, also for one the app
-     * sent late, as a tick does not say when it was made. Ticking a ticked one again keeps what it said
+     * offer saves then ([savingNow]): at the moment the server stores the tick, except for one the app
+     * sent late, which says what it showed ([ShoppingCheck.shown], within bounds). Ticking a ticked one again keeps what it said
      * and saved first. A key no list has is refused; one that names no row of this week's list (an
      * app's list from before the plan changed) is ticked all the same, as it always was, and remembers
      * nothing.
@@ -356,18 +356,28 @@ class ShoppingListRepository(
         val row = if (check.checked) neededRow(start, key) else null
         db.writing {
             onHandFromTick(start, key, check.checked, bought)
-            if (check.checked) insertTick(start, key, row) else q.deleteCheck(userId, start.toString(), key.toString())
+            if (check.checked) insertTick(start, key, row, check.shown) else q.deleteCheck(userId, start.toString(), key.toString())
         }
         return get(weekStart)
     }
 
     /**
      * Stores the tick of [key] with what [row] says, the weight the known part when not all could be
-     * weighed, and what it saves now ([savingNow]); a tick there already stays as it is.
+     * weighed, and what it saves now ([savingNow]); a tick there already stays as it is. A tick sent
+     * late brings what the phone [shown] of the row, which replaces those parts that are within its
+     * bounds ([gramsFor], [piecesFor], [savingFor]); the row's name is always the server's.
      */
-    private fun insertTick(start: LocalDate, key: ShoppingKey, row: ShoppingItem?) {
-        val saving = row?.savingNow()
-        q.insertCheck(userId, start.toString(), key.toString(), row?.name, row?.let { it.grams ?: it.knownGrams }, row?.pieces, saving?.euros, saving?.store?.name)
+    private fun insertTick(start: LocalDate, key: ShoppingKey, row: ShoppingItem?, shown: ShoppingCheck.Shown? = null) {
+        val grams = row?.let { shown?.gramsFor(it) ?: it.grams ?: it.knownGrams }
+        val pieces = row?.let { shown?.piecesFor(it) ?: it.pieces }
+        val saving = row?.let { savingKept(it, shown) }
+        q.insertCheck(userId, start.toString(), key.toString(), row?.name, grams, pieces, saving?.euros, saving?.store?.name)
+    }
+
+    /** The saving a tick of [row] keeps: the phone's [shown] one when it is to be believed, else what the row saves now. */
+    private fun savingKept(row: ShoppingItem, shown: ShoppingCheck.Shown?): Saving {
+        val sent = shown?.savingFor(row, today()) ?: return row.savingNow()
+        return Saving(sent, shown.savingStore?.takeIf { sent > 0 })
     }
 
     /**

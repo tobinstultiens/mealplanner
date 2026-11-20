@@ -40,6 +40,7 @@ import dev.tobins.mealplanner.released.api.SectionChoice
 import dev.tobins.mealplanner.released.api.Sex
 import dev.tobins.mealplanner.released.api.Store as ReleasedStore
 import dev.tobins.mealplanner.released.api.ShoppingCheck
+import dev.tobins.mealplanner.released.api.ShoppingItem
 import dev.tobins.mealplanner.released.api.ShoppingList
 import dev.tobins.mealplanner.released.api.ShopsSetting
 import dev.tobins.mealplanner.released.api.SyncResult
@@ -247,6 +248,7 @@ class ReleasedAppTest {
         assertTrue(list.items.isNotEmpty())
         assertTrue(http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(list.items.first().key, true)) }.read<ShoppingList>().items.first().checked)
         http.readsARowAskedForAgain(chicken.id)
+        http.readsALateTick(chicken.id)
         http.readsAWeekWithAPrepOf(mine.summary.id)
         http.readsAWeekWithASideOf(mine.summary.id)
 
@@ -279,6 +281,27 @@ class ReleasedAppTest {
         assertTrue(more.status.isSuccess(), more.bodyAsText())
         val asked = read<ShoppingList>("/api/plans/$week/shopping").items.single { it.key == key }
         assertTrue(asked.checked && asked.grams!! > bought.grams!!, "${asked.grams} after ${bought.grams}")
+    }
+
+    /**
+     * Ingredient [ingredientId], on the list, ticked as an installed app does after it was offline (its tick says nothing of
+     * what the row showed), then by a newer app that does (issue 116): the installed app reads the row either way, and the
+     * newer one's tick stores what that app showed.
+     */
+    private suspend fun HttpClient.readsALateTick(ingredientId: Long) {
+        val key = "i$ingredientId"
+        suspend fun tick(body: String): ShoppingItem {
+            val answer = put("/api/plans/$week/shopping") { setBody(body) }
+            assertTrue(answer.status.isSuccess(), answer.bodyAsText())
+            return answer.read<ShoppingList>().items.single { it.key == key }
+        }
+        suspend fun tickAsInstalled(checked: Boolean) = tick(releasedJson.encodeToString(ShoppingCheck(key, checked)))
+        tickAsInstalled(false)
+        val old = tickAsInstalled(true)
+        assertTrue(old.checked && old.boughtGrams != null, "$old")
+        tickAsInstalled(false)
+        val shown = tick("""{"key":"$key","checked":true,"shown":{"grams":${old.boughtGrams!! / 2},"saving":0.0,"tickedOn":"2026-11-16"}}""")
+        assertEquals(true to old.boughtGrams!! / 2, shown.checked to shown.boughtGrams)
     }
 
     /**

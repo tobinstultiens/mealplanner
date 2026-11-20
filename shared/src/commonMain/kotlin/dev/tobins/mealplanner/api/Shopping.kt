@@ -197,10 +197,54 @@ data class ShoppingCheck(
      */
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val grams: Double? = null,
+    /**
+     * For a tick that is sent late (made offline, sent later; issue 116): what the phone showed of the
+     * row when it was ticked. The server remembers these in place of what the row says when the tick
+     * arrives, within the bounds of [Shown]. Never sent for a tick that goes out at once, nor when
+     * null, so that a server from before it, which refuses fields it does not know, still takes
+     * every other tick; the app sends the tick again without it when such a server refuses it.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val shown: Shown? = null,
 ) {
+    /**
+     * A row of what the week's meals need as the phone showed it when ticked. Every field is optional,
+     * and one that fails its bound is left out: the tick is stored all the same, with what the server
+     * itself works out for that part. They count only for a row the server's list still has.
+     */
+    @Serializable
+    data class Shown(
+        /** The weight the row said ([ShoppingItem.grams], or [ShoppingItem.knownGrams]): above 0, at most [MAX_GRAMS], and at most [AMOUNT_FACTOR] times what the row says now. */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val grams: Double? = null,
+        /** The pieces the row said ([ShoppingItem.pieces]): above 0, and at most [AMOUNT_FACTOR] times what the row says now, which must have pieces. */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val pieces: Double? = null,
+        /**
+         * The euros the row's offer saved when ticked, as the phone counted it ([dev.tobins.mealplanner.shopping.savingToday]);
+         * 0 when nothing. At least 0 and at most the row's regular price (the saving of the whole need
+         * cannot exceed what it costs). Counts only with a valid [tickedOn] before the server's day, as
+         * an offer that ended since is what it is for; a tick of today is worked out by the server.
+         */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val saving: Double? = null,
+        /** The store of the offer [saving] was saved with; null when it saved nothing. */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val savingStore: Store? = null,
+        /** The day (ISO date, the phone's) the row was ticked: at most a day after the server's, at most [MAX_DAYS_LATE] before it. */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val tickedOn: String? = null,
+    )
+
     companion object {
         /** More than any household buys of one ingredient at once: a few packs, not a pallet. */
         const val MAX_GRAMS = 10_000.0
+
+        /** How much more (or less) a row may have said than it says now: a plan changes, but not tenfold between two phones. */
+        const val AMOUNT_FACTOR = 2.0
+
+        /** The phone keeps its ticks for four weeks of lists, so a tick older than eight weeks is not one of its own. */
+        const val MAX_DAYS_LATE = 56
     }
 }
 

@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.shopping.bestOffer
@@ -73,7 +74,23 @@ fun ShoppingItem.dealText(shops: Set<Store>, today: String, strings: Strings): S
 fun savingOf(items: List<ShoppingItem>, shops: Set<Store>, today: String): Double? =
     items.mapNotNull { it.savingCounted(shops, today) }.sum().takeIf { it >= 0.005 }
 
-/** The items whose group is at [store] ([groupStore]), and what they save ([savingOf]). */
+/**
+ * What this row of the list shows as it is ticked on [today], for the server to remember when the tick
+ * reaches it late ([ShoppingCheck.Shown]): the weight and pieces it says, and what its offer saves at the
+ * account's [shops] ([savingToday]), with the store of that offer when it saves anything.
+ */
+internal fun ShoppingItem.shownAtTick(shops: Set<Store>, today: String): ShoppingCheck.Shown {
+    val saving = savingToday(shops, today) ?: 0.0
+    return ShoppingCheck.Shown(
+        grams = grams ?: knownGrams,
+        pieces = pieces,
+        saving = saving,
+        savingStore = savingOffer(shops, today)?.store?.takeIf { saving > 0 },
+        tickedOn = today,
+    )
+}
+
+/** The items whose group is at [store]([groupStore]), and what they save ([savingOf]). */
 data class StoreGroup(val store: Store, val items: List<ShoppingItem>, val saving: Double? = null) {
     /** `Jumbo · 5 items on offer`. */
     fun title(strings: Strings): String = strings.plural(Plural.STORE_ITEMS_ON_OFFER, items.size, store.shortName())

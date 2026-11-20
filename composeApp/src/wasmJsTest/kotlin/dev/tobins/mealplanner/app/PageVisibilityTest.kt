@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
+import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -58,7 +59,7 @@ class PageVisibilityTest {
         var lists = 0
         private fun noItems(week: String) = Load.Ready(ShoppingList(week, listOf(), staples = listOf()))
         override suspend fun list(weekStart: String): Load<ShoppingList> = noItems(weekStart).also { lists++ }
-        override suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?) = noItems(weekStart)
+        override suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?, shown: ShoppingCheck.Shown?) = noItems(weekStart)
         override suspend fun dismiss(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean) = noItems(weekStart)
         override suspend fun addExtra(weekStart: String, name: String) = noItems(weekStart)
         override suspend fun removeExtra(weekStart: String, id: Long) = noItems(weekStart)

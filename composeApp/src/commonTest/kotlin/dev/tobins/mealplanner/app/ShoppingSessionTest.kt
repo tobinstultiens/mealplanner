@@ -1,7 +1,10 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
+import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.ShoppingList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -62,11 +65,19 @@ class ShoppingSessionTest {
             return listAnswer ?: Load.Ready(listFor(weekStart))
         }
 
-        override suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?): Load<ShoppingList> {
+        /** What the phone showed of each row, as sent with its tick: null when nothing was sent. */
+        val sentShown = mutableListOf<Pair<String, ShoppingCheck.Shown?>>()
+
+        /** True for a server from before ticks said what they showed: it refuses a request with the field (400) and stores nothing. */
+        var refusesShown = false
+
+        override suspend fun check(weekStart: String, key: String, checked: Boolean, grams: Double?, shown: ShoppingCheck.Shown?): Load<ShoppingList> {
             asked += "check $weekStart $key"
             if (unreachable) return Load.Failed("Unable to resolve host")
             if (key in hanging) awaitCancellation()
             delay(latency)
+            if (refusesShown && shown != null) return Load.Failed("Encountered an unknown key 'shown'", 400)
+            sentShown += key to shown
             ticks += Triple(weekStart, key, checked)
             sentGrams += key to grams
             answer?.let { return it(key, checked) }
@@ -512,6 +523,109 @@ class ShoppingSessionTest {
         session.tick("stock:i7", false)
         settle()
         assertEquals("stock:i7" to null, server.sentGrams.last())
+    }
+
+    /** A kilo of chicken, €10, with a quarter off at Jumbo until the 17th: it saves €2.50 on the 16th and nothing on the 18th. */
+    private val chicken = ShoppingItem(
+        "i1", "Chicken", 1000.0, null, "Meat", listOf("Curry"), onHand = false, checked = false, regularPrice = 10.0,
+        offers = listOf(Offer(Store.JUMBO, "Kipfilet 1 kg", "25% korting", packSize = "1 kg", paidShare = 0.75, validFrom = monday, validUntil = "2026-11-17")),
+        toComeGrams = 1000.0,
+    )
+
+    @Test
+    fun anOfflineTickSendsWhatTheRowShowedWhenItWasTicked() = runTest {
+        server.lists[monday] = listWith(chicken)
+        var day = monday
+        val session = session(today = { day })
+        session.resume()
+        settle()
+        server.unreachable = true
+        session.tick("i1", true)
+        settle()
+        assertEquals(emptyList(), server.sentShown, "nothing went out")
+
+        // Sent the day after the offer ended: it says what was showing on Monday.
+        day = "2026-11-18"
+        server.unreachable = false
+        session.retry()
+        settle()
+        val shown = ShoppingCheck.Shown(grams = 1000.0, saving = 2.5, savingStore = Store.JUMBO, tickedOn = monday)
+        assertEquals(listOf<Pair<String, ShoppingCheck.Shown?>>("i1" to shown), server.sentShown)
+        assertEquals(emptyMap(), pending())
+        assertNull(ShoppingCache(storage).shown(monday, "i1"), "forgotten once the server has the tick")
+    }
+
+    @Test
+    fun aTickSentAtOnceSendsNothingOfWhatItShowed() = runTest {
+        server.lists[monday] = listWith(chicken)
+        val session = session(today = { monday })
+        session.resume()
+        settle()
+        session.tick("i1", true)
+        settle()
+        assertEquals(listOf<Pair<String, ShoppingCheck.Shown?>>("i1" to null), server.sentShown)
+    }
+
+    @Test
+    fun aTickWithoutAnAnswerKeepsWhatItShowedUntilItIsSent() = runTest {
+        server.lists[monday] = listWith(chicken)
+        val session = session(today = { monday })
+        session.resume()
+        settle()
+        server.hanging += "i1"
+        session.tick("i1", true)
+        settle()
+        // The app is closed and opened later: what the row showed is stored with the tick.
+        assertEquals(2.5, ShoppingCache(storage).shown(monday, "i1")?.saving)
+        assertEquals(mapOf("i1" to true), pending())
+    }
+
+    @Test
+    fun anUnTickAndAnOwnItemSendNothingOfWhatTheyShowed() = runTest {
+        server.lists[monday] = listWith(chicken.copy(checked = true), chicken.copy(key = "x:1", name = "Coffee"))
+        val session = session(today = { monday })
+        session.resume()
+        settle()
+        server.unreachable = true
+        session.tick("i1", false)
+        session.tick("x:1", true)
+        settle()
+        assertNull(ShoppingCache(storage).shown(monday, "i1"))
+        assertNull(ShoppingCache(storage).shown(monday, "x:1"))
+    }
+
+    @Test
+    fun aServerFromBeforeItGetsTheLateTickWithoutWhatItShowed() = runTest {
+        server.lists[monday] = listWith(chicken)
+        server.refusesShown = true
+        var day = monday
+        val session = session(today = { day })
+        session.resume()
+        settle()
+        server.unreachable = true
+        session.tick("i1", true)
+        settle()
+        day = "2026-11-18"
+        server.unreachable = false
+        session.retry()
+        settle()
+        assertEquals(listOf<Pair<String, ShoppingCheck.Shown?>>("i1" to null), server.sentShown, "taken the second time, as it was before")
+        assertEquals(emptyMap(), pending())
+        assertEquals(0, session.stuckTicks)
+        assertTrue(session.notices.isEmpty())
+    }
+
+    @Test
+    fun aStoredTickFromBeforeItGoesOutAsBefore() = runTest {
+        server.lists[monday] = listWith(chicken)
+        // An entry of an earlier version of the app: no shown.
+        val list = kotlinx.serialization.json.Json.encodeToString(listWith(chicken))
+        storage.set("shopping.$monday", """{"list":$list,"savedAt":"2026-11-16T10:00:00Z","pending":{"i1":true}}""")
+        storage.set("shopping.weeks", monday)
+        val session = session()
+        session.resume()
+        settle()
+        assertEquals(listOf<Pair<String, ShoppingCheck.Shown?>>("i1" to null), server.sentShown)
     }
 
     @Test
