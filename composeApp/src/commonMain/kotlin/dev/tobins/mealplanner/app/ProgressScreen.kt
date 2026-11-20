@@ -307,7 +307,7 @@ private fun WeightChart(entries: List<WeightEntry>) {
         SectionHeader(t(Msg.WEIGHT_TREND_CHART))
         Text(
             selected?.let { entries[it] }?.let { t(Msg.CHART_SELECTED, dayLabel(it.date, t.locale), kg(it.kg, t.locale), kg(it.trendKg, t.locale)) }
-                ?: t(Msg.CHART_HINT),
+                ?: t.onWeb(Msg.CHART_HINT, Msg.CHART_HINT_BROWSER),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

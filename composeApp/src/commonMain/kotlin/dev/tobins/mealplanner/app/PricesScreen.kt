@@ -78,7 +78,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                             Text(
                                 when {
                                     prices.refreshing -> t(Msg.PRICES_LOOKING)
-                                    prices.fetchedAt == null -> t(Msg.PRICES_NONE)
+                                    prices.fetchedAt == null -> t.onWeb(Msg.PRICES_NONE, Msg.PRICES_NONE_BROWSER)
                                     else -> t.plural(Plural.PRICES_SUMMARY, prices.prices.size, dayMonthLabel(prices.fetchedAt!!.take(10), t.locale))
                                 },
                                 style = MaterialTheme.typography.bodyMedium,

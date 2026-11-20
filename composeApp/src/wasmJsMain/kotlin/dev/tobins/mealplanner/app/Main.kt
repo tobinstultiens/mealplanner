@@ -61,6 +61,7 @@ fun main() {
     }
     claimStartEntry(afterLogin = callback != null)
     forwardWheelFromMargins(window, ContentColumnWidthDp)
+    scrollWithKeys(window)
     ComposeViewport(document.body!!) {
         App(defaults, LocalStorageSettings, SameTabLogin, logins, routes = AddressRoutes)
     }

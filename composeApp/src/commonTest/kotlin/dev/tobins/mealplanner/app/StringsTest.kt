@@ -43,6 +43,24 @@ class StringsTest {
     }
 
     @Test
+    fun theBrowserWordingClicksWhereThePhoneTaps() {
+        val browserTexts = Msg.entries.filter { it.name.endsWith("_BROWSER") }
+        assertTrue(browserTexts.isNotEmpty())
+        for (msg in browserTexts) {
+            assertTrue(!Regex("\\btap", RegexOption.IGNORE_CASE).containsMatchIn(msg.text(Language.ENGLISH)), "$msg says tap in a browser")
+            assertTrue(!Regex("\\btik\\b", RegexOption.IGNORE_CASE).containsMatchIn(msg.text(Language.DUTCH)), "$msg says tik in a browser")
+            val phone = Msg.valueOf(msg.name.removeSuffix("_BROWSER"))
+            assertEquals(placeholders(phone.text(Language.ENGLISH)), placeholders(msg.text(Language.ENGLISH)), "$msg and $phone differ in placeholders")
+        }
+    }
+
+    @Test
+    fun aTextForBothUsesTheWordingOfWhereTheAppRuns() {
+        val expected = if (runsInBrowser()) "No offers fetched yet. Click Refresh." else "No offers fetched yet. Tap Refresh."
+        assertEquals(expected, Strings.English.onWeb(Msg.NO_OFFERS_YET, Msg.NO_OFFERS_YET_BROWSER))
+    }
+
+    @Test
     fun aDutchTextThatEqualsTheEnglishOneIsOnPurpose() {
         // A translation that was never written would pass the test above as a copy of the English text.
         val untranslated = Msg.entries.filter { it.text(Language.ENGLISH) == it.text(Language.DUTCH) }

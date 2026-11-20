@@ -80,5 +80,7 @@ actual fun productImageLoader(context: coil3.PlatformContext): coil3.ImageLoader
 
 actual fun runsInBrowser(): Boolean = false
 
+internal actual fun isTextField(left: Float, right: Float, bottom: Float): Boolean = false
+
 /** OkHttp reports a failed connection as an IOException already. */
 internal actual fun connectionFailure(cause: Throwable): kotlinx.io.IOException? = null

@@ -15,7 +15,7 @@ import org.w3c.dom.events.Event
  * The address of an entry is the screen that was open on it, so a Back that no back handler answers, and every
  * Forward, go to that screen. The entry the app returns to from the login page is the "base" (":base" after its
  * place): the entry before it is the login page, which Back must not reach, so a guard entry is pushed on top
- * and a Back onto the base stays on the screen.
+ * and a Back onto the base steps forward to it again, staying on the screen.
  */
 
 private const val ENTRY = "mealplanner"
@@ -77,39 +77,66 @@ internal fun claimStartEntry(afterLogin: Boolean) {
     if (afterLogin) pushAppEntry(window.location.href)
 }
 
-/** The address a step has just opened, and when: the screen it opens is already on the entry stepped to. */
+/**
+ * The address of the screen a Back or Forward has just opened: that screen is already on the entry stepped to, so
+ * its back handlers must not push another one. This ends as soon as the screen can be something else than what the
+ * step opened: a later step, the app showing another address, or the user's own input (a click or a key can turn
+ * on a handler, selecting for one, and that is something new to go back from). No clock is involved, so a screen
+ * that takes long to appear is still the one the step opened.
+ */
 private var steppedTo: String? = null
-private var steppedToAt = 0.0
 
-/** How long after a step the screen it opens is still taken to be the one on the entry stepped to (it draws within a frame or two). */
-private const val STEP_SETTLES_MS = 1000
+/** Whether the input listeners that end [steppedTo] are installed. */
+private var listeningForInput = false
+
+private fun listenForInput() {
+    if (listeningForInput) return
+    listeningForInput = true
+    val listener: (Event) -> Unit = { steppedTo = null }
+    // Capturing, so that it runs before the app's own handling of the same click or key.
+    window.addEventListener("pointerdown", listener, true)
+    window.addEventListener("keydown", listener, true)
+}
+
+/** The place of the guard entry that a Back onto the base entry is stepping forward to again; see [steppedToEntry]. */
+private var returningToGuard: Int? = null
 
 /**
  * Pushes a history entry for a back handler, showing the screen's own address and not that of the entry it was
- * reached from. Not when a Back or Forward has just opened that screen (all its handlers, as a screen can have
+ * reached from. Not for the screen a Back or Forward has just opened (all its handlers, as a screen can have
  * several): the entry stepped to is its entry, and a new one would cut off the entries ahead of it.
  */
 internal fun pushBackEntry() {
     val address = shownAddress ?: window.location.href
-    val justOpened = steppedTo == address && window.performance.now() - steppedToAt < STEP_SETTLES_MS
-    if (!justOpened) pushAppEntry(address)
+    if (steppedTo != address) pushAppEntry(address)
 }
 
 /**
  * A Back or Forward to an entry of the app. A Back goes to the innermost back handler when there is one ([answered]
- * runs it and says whether there was). Otherwise the screen that was open on that entry opens, as its address says;
- * a Back onto the base entry stays on the screen and puts a new guard entry on top.
+ * runs it and says whether there was). Otherwise the screen that was open on that entry opens, as its address says.
+ * A Back onto the base entry stays on the screen and steps forward again to the guard entry above it, which is
+ * still there: a new guard entry would cut off the entries ahead, and a Forward after that Back would do nothing.
  */
 internal fun steppedToEntry(answered: () -> Boolean) {
+    steppedTo = null
     val before = place
     readEntry()
+    if (returningToGuard == place) {
+        // The step forward to the guard: the screen stays, and the guard takes its address.
+        returningToGuard = null
+        return replaceAppEntry(shownAddress ?: window.location.hash)
+    }
+    returningToGuard = null
     val back = place < before
     if (back && answered()) return
-    if (back && onBase) return pushBackEntry()
+    if (back && onBase) {
+        returningToGuard = place + 1
+        return window.history.forward()
+    }
     val hash = window.location.hash
     if (hash == shownAddress) return
     steppedTo = hash
-    steppedToAt = window.performance.now()
+    listenForInput()
     openAddress?.invoke(hash)
 }
 
@@ -122,6 +149,7 @@ internal object AddressRoutes : RouteStore {
 
     override fun write(hash: String) {
         shownAddress = hash
+        if (hash != steppedTo) steppedTo = null
         replaceAppEntry(hash)
     }
 

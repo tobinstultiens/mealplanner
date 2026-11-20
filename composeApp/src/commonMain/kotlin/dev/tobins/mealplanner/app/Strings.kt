@@ -28,6 +28,9 @@ class Strings private constructor(val language: Language, val locale: FormatLoca
     /** The text of [msg]; `{0}`, `{1}` in it are replaced by [args] in order. */
     operator fun invoke(msg: Msg, vararg args: Any?): String = fill(msg.text(language), args)
 
+    /** The text of [msg] on a phone and of [browser] in a browser, where a "tap" is a "click" and the wording differs. */
+    fun onWeb(msg: Msg, browser: Msg, vararg args: Any?): String = this(if (runsInBrowser()) browser else msg, *args)
+
     /** The form of [plural] for [count], which is also `{0}` in the text; [args] fill `{1}` and up. */
     fun plural(plural: Plural, count: Int, vararg args: Any?): String =
         fill(plural.text(language, count), arrayOf<Any?>(count, *args))

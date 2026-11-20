@@ -56,6 +56,13 @@ internal expect fun rememberAppFront(): AppFront
  */
 expect fun productImageLoader(context: PlatformContext): ImageLoader
 
+/**
+ * Whether the focused control whose bounds in the window are [left], [right] and [bottom] (pixels) is a text field.
+ * The browser knows: it keeps an editable element for every text field, laid over it. Android does not say, and
+ * the focus ring is drawn around its text fields as around every control.
+ */
+internal expect fun isTextField(left: Float, right: Float, bottom: Float): Boolean
+
 /** True in the browser, where a picture can only be drawn when its host sends CORS headers. */
 expect fun runsInBrowser(): Boolean
 

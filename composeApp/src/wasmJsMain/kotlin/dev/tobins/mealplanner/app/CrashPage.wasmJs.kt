@@ -84,7 +84,19 @@ internal fun showCrashPage(details: String, language: Language) {
     page.append(card)
     document.body?.append(page)
     reload.focus()
+    keepFocusInside(page, reload)
 }
+
+/**
+ * A click on the page's empty area leaves the focus on nothing (the browser puts it on `body`), and the page
+ * behind would take it. Whenever the focus is lost to anything outside [page], [fallback] gets it back.
+ */
+@JsFun(
+    """(page, fallback) => page.addEventListener('focusout', () => setTimeout(() => {
+        if (!page.contains(document.activeElement)) fallback.focus();
+    }, 0))""",
+)
+private external fun keepFocusInside(page: JsAny, fallback: JsAny)
 
 private fun element(tag: String, id: String? = null): HTMLElement {
     val created = document.createElement(tag) as HTMLElement

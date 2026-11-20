@@ -502,9 +502,11 @@ Checked by hand (login, all five tabs, light and dark, 360 px and 1280 px wide, 
 button, mouse wheel, keyboard focus) in Chromium 157, and in Firefox 160 (login and two tabs only).
 The open screen is part of the address (`/#/recipes/12`, `#/offers`, `#/settings`; see `Routes.kt`), so a
 reload or a shared link comes back to it; an unknown address is the Today tab, and without a login the login
-shows first and the address is restored when it returns. The address changes without adding history entries, so
-the back button works as before; Android does not use routes. Keyboard focus is shown by a ring in the theme's
-primary colour (`FocusRing.kt`), on Android with a keyboard too. Before the app has started the page takes its
+shows first and the address is restored when it returns. Showing another screen rewrites the address of the
+history entry the page is on and adds none; the entries come from the back handlers (below), and Android does
+not use routes. Keyboard focus is shown by a ring in the theme's
+primary colour (`FocusRing.kt`), on Android with a keyboard too; a text field in the browser keeps Material's own
+focus line and gets no ring, which would run through its label. Before the app has started the page takes its
 background from the Light/Dark choice in Settings, which `index.html` reads from `localStorage` (key `theme`).
 The ingredients and steps of a recipe can be selected and copied, on Android too. A new fragment typed or pasted
 into the address of an open page is followed (`hashchange`, `Address.wasmJs.kt`) as a tapped notification is on
@@ -516,9 +518,14 @@ what it opened (a recipe: to its tab) and then returns to the screen before it, 
 again (a Forward never calls a back handler). Closing a screen from inside the app leaves its entry behind; it
 then carries the address of the screen that replaced it. An entry without a place is an address the user made.
 After a login round trip the entry before the app's is the login page: a guard entry is pushed on top, and a
-Back onto the entry the login returned to stays on the screen, so Back never reaches the login page.
+Back onto the entry the login returned to stays on the screen (the page steps forward to the guard entry again, so
+the Forward list is kept), and Back never reaches the login page. The screen a Back or Forward opened does not push an entry for
+its back handlers, until the user's next click or key or another screen: no time limit decides it.
 Without a login a typed address is not followed.
 A second browser tab left on the login screen takes a login made in another tab (the `storage` event).
+Home, End, Page Up and Page Down scroll the open list (`ScrollKeys.wasmJs.kt`; not in a text field). With the
+crash page up the focus stays on its Reload button. The texts that say "tap" on a phone say "click" in the browser
+(the `_BROWSER` messages, chosen with `Strings.onWeb`).
 On a wide window a wheel turned over the empty margins scrolls the column (`MarginWheel.wasmJs.kt`: the event is
 sent on from the middle of the column). The focus ring shows only while the keyboard was the last thing used
 and stays inside the window. The recipe picker's search field has the focus when it opens, in the browser only. Tab out of a text field leaves
