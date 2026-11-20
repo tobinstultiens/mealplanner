@@ -74,6 +74,14 @@ class PrepScreensTest {
         api = ApiClient(backend.settings)
     }
 
+    /** Uses the fake backend's week with a batch of the chickpea salad still to make, which a side can be added to. */
+    private fun withGrowingBatch() {
+        api.close()
+        backend.close()
+        backend = FakeBackend(false, false, false, false, growing = true)
+        api = ApiClient(backend.settings)
+    }
+
     private fun showRecipe(id: Long) = compose.setContent {
         CompositionLocalProvider(LocalStrings provides Strings.English) { RecipeDetailScreen(api, id, null, onBack = {}, onEdit = {}) }
     }
@@ -146,6 +154,31 @@ class PrepScreensTest {
         waitFor("Made on")
         compose.onNode(friday).assertIsSelected()
         compose.onNode(hasAnyAncestor(isDialog()) and hasClickAction() and hasText("Wed 18 Nov")).assertIsNotSelected()
+    }
+
+    @Test
+    fun anOpenAddSideDialogKeepsItsChoicesWhenTheActivityIsMadeAgain() {
+        withGrowingBatch()
+        showPlan()
+        // Friday's dinner (the lentil soup) can take a side of the salad batch made today.
+        waitFor("Overnight oats")
+        compose.onNode(hasScrollAction()).performScrollToIndex(5)
+        waitFor("Fri 20 Nov")
+        val dayTop = compose.onNodeWithText("Fri 20 Nov").fetchSemanticsNode().boundsInRoot.top
+        val buttons = compose.onAllNodesWithContentDescription("Swap dinner").fetchSemanticsNodes()
+        // The first dinner button below the day's heading is its own (the list is lazy).
+        val own = buttons.withIndex().filter { it.value.boundsInRoot.top > dayTop }.minBy { it.value.boundsInRoot.top }.index
+        compose.onAllNodesWithContentDescription("Swap dinner")[own].performClick()
+        waitFor("Add a prepped side…")
+        compose.onNodeWithText("Add a prepped side…").performClick()
+        // The dialog starts at half a serving, the larger of the two; a quarter is chosen instead.
+        val quarter = hasAnyAncestor(isDialog()) and hasClickAction() and hasText("0.25", substring = true)
+        waitFor("Add")
+        compose.onNode(quarter).performClick()
+        compose.onNode(quarter).assertIsSelected()
+
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNode(quarter).assertIsSelected()
     }
 
     @Test

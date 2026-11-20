@@ -316,7 +316,7 @@ never prepped), and while a choice is saved both numbers wait for the answer.
 The Prep dialog also asks how it is eaten: "The meal", or "A side" of 0.25 or 0.5 servings, which is how each lunch
 or dinner picked next is eaten, so one batch can be the meal on some days and a side of either size on others (issue
 269); each picked one says so ("Lunch · side 0.5"). As a side, only lunches and dinners with a meal still to eat and no
-side yet can be picked (of the week shown and the next); one picked another way can always be taken off. "Add a
+side yet, whose main is of another recipe than the batch, can be picked (of the week shown and the next); one picked another way can always be taken off. "Add a
 prepped side…" in such a meal's menu offers the account's batches that are still to make, made before the meal
 and keeping until its day at least, of another recipe than the meal's, to take a side of 0.25 or 0.5 servings from,
 which makes that batch larger: also one made the week before with no share in the week shown (`batchesToMake`; from a
