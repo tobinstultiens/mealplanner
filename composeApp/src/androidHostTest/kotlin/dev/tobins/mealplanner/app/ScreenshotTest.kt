@@ -45,6 +45,7 @@ import androidx.test.core.app.ActivityScenario
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot
@@ -172,8 +173,8 @@ private fun prepMixedChoices() {
 @Composable
 private fun addSideChoices() {
     val batches = listOf(
-        GrowableBatch(MealPrep(1, FakeBackend.TODAY, plusDays(FakeBackend.TODAY, 3), false, emptyList()), keepingRecipe.id, keepingRecipe.title),
-        GrowableBatch(MealPrep(2, FakeBackend.WEEK_START, plusDays(FakeBackend.WEEK_START, 4), false, emptyList()), 2, "Chickpea salad with feta and roasted peppers"),
+        BatchToMake(keepingRecipe.id, keepingRecipe.title, MealPrep(1, FakeBackend.TODAY, plusDays(FakeBackend.TODAY, 3), false, emptyList())),
+        BatchToMake(2, "Chickpea salad with feta and roasted peppers", MealPrep(2, FakeBackend.WEEK_START, plusDays(FakeBackend.WEEK_START, 4), false, emptyList())),
     )
     val slot = PrepSlot(plusDays(FakeBackend.TODAY, 2), MealSlot.DINNER)
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -312,6 +313,8 @@ enum class Shot(
     val tailOnly: Boolean = false,
     /** The fake backend's week leaving five fresh ingredients over (issue 244). */
     val weekRest: Boolean = false,
+    /** The prep of [prepped] kept vacuum sealed (issue 263). */
+    val vacuum: Boolean = false,
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
     val dutch: Boolean = false,
     val heightDp: Int = 640,
@@ -328,6 +331,11 @@ enum class Shot(
     // A prep made on Monday's dinner, eaten until Thursday, with Wednesday's skipped lunch still in the box (issue 234).
     PLAN_PREP(prepped = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     PLAN_PREP_NL(prepped = true, dutch = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // The same prep kept vacuum sealed, which its labels say next to the meal's buttons (issue 263): in both languages, and
+    // at the largest font, where the label is longest for its room.
+    PLAN_PREP_VACUUM(prepped = true, vacuum = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_PREP_VACUUM_NL(prepped = true, vacuum = true, dutch = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_PREP_VACUUM_X2(prepped = true, vacuum = true, heightDp = 4600, fontScale = 2.0f, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     // The Prep dialog's body, as a dialog is a window of its own: in both languages, and at the largest font.
     PREP_CHOICES(heightDp = 1300, content = { _, _ -> prepChoices() }),
     PREP_CHOICES_NL(dutch = true, heightDp = 1550, content = { _, _ -> prepChoices() }),
@@ -576,6 +584,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
 
     private val backend = FakeBackend(
         shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, mixed = shot.mixed, tailOnly = shot.tailOnly, weekRest = shot.weekRest,
+        vacuum = shot.vacuum,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)

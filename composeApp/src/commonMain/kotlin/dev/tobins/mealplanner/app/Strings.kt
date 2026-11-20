@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.PlannedMeal
@@ -37,7 +38,8 @@ class Strings private constructor(val language: Language, val locale: FormatLoca
 
     /**
      * A planned meal's slot as a small heading: `Dinner`, `Dinner · leftovers`, `Lunch · leftovers · adjusted`; of a
-     * prepped batch (issue 234) `Dinner · prep day` where it is made and `Lunch · prepped Tue 17 Nov` after.
+     * prepped batch (issue 234) `Dinner · prep day` where it is made and `Lunch · prepped Tue 17 Nov` after, with
+     * `· vacuum sealed` for a batch kept so ([sealed]).
      */
     fun mealLabel(meal: PlannedMeal): String =
         slot(meal.slot, capitalised = true)
@@ -50,11 +52,21 @@ class Strings private constructor(val language: Language, val locale: FormatLoca
                     else -> name
                 }
             }
+            .let { sealed(it, meal.prep) }
             .let { if (meal.adjusted) this(Msg.MEAL_ADJUSTED, it) else it }
 
-    /** How the side next to the meal at [date]'s [slot] is labelled: "Side · prep day" where its batch is made, "Side · prepped Mon 16 Nov" after. */
+    /**
+     * How the side next to the meal at [date]'s [slot] is labelled: "Side · prep day" where its batch is made, "Side · prepped
+     * Mon 16 Nov" after, with `· vacuum sealed` for a batch kept so ([sealed]).
+     */
     fun sideLabel(side: MealSide, date: String, slot: MealSlot): String =
-        if (side.isPrepDay(date, slot)) this(Msg.SIDE_PREP_DAY) else this(Msg.SIDE_PREPPED, dayLabel(side.prep.madeOn, locale))
+        sealed(if (side.isPrepDay(date, slot)) this(Msg.SIDE_PREP_DAY) else this(Msg.SIDE_PREPPED, dayLabel(side.prep.madeOn, locale)), side.prep)
+
+    /**
+     * [label] with `· vacuum sealed` when [prep] is kept so (issue 263): on the day it is made, how to keep it; after, which
+     * of the boxes it is, as a sealed batch keeps longer than one in a box.
+     */
+    private fun sealed(label: String, prep: MealPrep?): String = if (prep?.vacuum == true) this(Msg.PREP_LABEL_VACUUM, label) else label
 
     /**
      * What is wrong with a profile, as the shared calculator words it (`weightKg must be between 30 and 300`),

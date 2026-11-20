@@ -211,8 +211,10 @@ private fun dinnerNotification(dinner: DinnerToday, date: String, t: Strings): D
  * The batches of [facts] whose last day was the day before and that were not told of yet ([told]), as one notification
  * (issue 264): one batch with portions left says to throw them away in its title; otherwise the title is the kind's and
  * the text says it of each. A batch past its day for longer is left out, whatever the server says: the box was to go
- * the morning after. Tapping it opens the Plan on the week of the first meal not marked, where it can be marked, or
- * else on the week the first batch was made.
+ * the morning after. Tapping it opens the Plan where there is something to do (issue 263): on the week of the first meal
+ * not marked, where it can be marked, else on that of the first skipped share left in the box, the one to throw away,
+ * which may be the week after the batch was made; on the week the first batch was made only from a server that does not
+ * say where its shares are.
  */
 private fun throwAwayNotification(facts: NotificationFacts, told: Set<Long>, t: Strings): DueNotification? {
     val batches = facts.prepsPastLastDay.filter { it.prepId !in told && daysBetween(it.lastDay, facts.date) == 1 }
@@ -225,7 +227,7 @@ private fun throwAwayNotification(facts: NotificationFacts, told: Set<Long>, t: 
         val sentences = batches.flatMap { listOfNotNull(it.throwAwayText(t)?.let { line -> "$line." }, it.unmarkedText(t)) }
         t(Msg.NOTIFY_THROW_AWAY) to (sentences + kept).joinToString(" ")
     }
-    val day = batches.firstNotNullOfOrNull { it.firstUnmarked } ?: first.madeOn
+    val day = batches.firstNotNullOfOrNull { it.firstUnmarked } ?: batches.firstNotNullOfOrNull { it.firstLeft } ?: first.madeOn
     val toldAs = facts.date + ":" + (told + batches.map { it.prepId }).sorted().joinToString(",")
     val tag = NotificationKind.THROW_AWAY.key + ":" + facts.date + ":" + batches.map { it.prepId }.sorted().joinToString(",")
     return DueNotification(NotificationKind.THROW_AWAY, title, text, Opening(Route.TabRoute(Tab.PLAN), week = mondayOf(day)), toldAs, tag)

@@ -4,15 +4,21 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKeeps
@@ -72,8 +78,10 @@ class PrepScreensTest {
         CompositionLocalProvider(LocalStrings provides Strings.English) { RecipeDetailScreen(api, id, null, onBack = {}, onEdit = {}) }
     }
 
+    private val restoration by lazy { StateRestorationTester(compose) }
+
     private fun showPlan() {
-        compose.setContent { CompositionLocalProvider(LocalStrings provides Strings.English) { PlanScreen(api, { _, _ -> }, {}, {}, {}) } }
+        restoration.setContent { CompositionLocalProvider(LocalStrings provides Strings.English) { PlanScreen(api, { _, _ -> }, {}, {}, {}) } }
         waitFor("Prep a recipe…")
     }
 
@@ -121,6 +129,41 @@ class PrepScreensTest {
             (hasText("Slow-cooked chicken thighs with coconut, lemon and spinach") or hasText("Pick a recipe that keeps."))
         compose.onNode(recipeButton).performClick()
         waitFor("Lentil soup")
+    }
+
+    @Test
+    fun anOpenPrepDialogKeepsItsChoicesWhenTheActivityIsMadeAgain() {
+        showPlan()
+        compose.onNodeWithText("Prep a recipe…").performClick()
+        waitFor("Made on")
+        // Made on Friday instead of today, which the dialog opened with.
+        val friday = hasAnyAncestor(isDialog()) and hasClickAction() and hasText("Fri 20 Nov")
+        compose.onNode(friday).performClick()
+        compose.onNode(friday).assertIsSelected()
+
+        // Font size, dark mode or rotation: Android makes the activity again (issue 263).
+        restoration.emulateSavedInstanceStateRestore()
+        waitFor("Made on")
+        compose.onNode(friday).assertIsSelected()
+        compose.onNode(hasAnyAncestor(isDialog()) and hasClickAction() and hasText("Wed 18 Nov")).assertIsNotSelected()
+    }
+
+    @Test
+    fun anOpenRemovePrepDialogStaysWhenTheActivityIsMadeAgain() {
+        withPrep()
+        showPlan()
+        // Monday's dinner makes the batch: its menu removes the prep. Its day comes after the plan's head and the box card.
+        waitFor("Eat it on…")
+        compose.onNode(hasScrollAction()).performScrollToIndex(2)
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithContentDescription("Swap dinner").fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodesWithContentDescription("Swap dinner")[0].performClick()
+        compose.onNodeWithText("Remove the prep…").performClick()
+        val title = "Remove the prep of Slow-cooked chicken thighs with coconut, lemon and spinach?"
+        waitFor(title)
+
+        restoration.emulateSavedInstanceStateRestore()
+        waitFor(title)
+        compose.onNode(hasAnyAncestor(isDialog()) and hasText("Remove")).assertExists()
     }
 
     @Test

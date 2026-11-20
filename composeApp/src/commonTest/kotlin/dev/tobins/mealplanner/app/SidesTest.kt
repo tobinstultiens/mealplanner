@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.DailyTargets
 import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSide
@@ -92,6 +93,10 @@ class SidesTest {
         assertEquals("Side · prep day", english.sideLabel(made, "2026-11-17", DINNER))
         assertEquals("Side · prepped Tue 17 Nov", english.sideLabel(made, "2026-11-18", LUNCH))
         assertEquals("Bijgerecht · geprept di 17 nov", Strings.Dutch.sideLabel(made, "2026-11-18", LUNCH))
+        // A batch kept vacuum sealed says so (issue 263).
+        val sealed = made.copy(prep = made.prep.copy(vacuum = true))
+        assertEquals("Side · prep day · vacuum sealed", english.sideLabel(sealed, "2026-11-17", DINNER))
+        assertEquals("Bijgerecht · geprept di 17 nov · vacuüm", Strings.Dutch.sideLabel(sealed, "2026-11-18", LUNCH))
         assertEquals("Tue 17 Nov dinner (side), Wed 18 Nov lunch (side)", prepMealsText(prep, english))
         assertEquals("0.5 servings · 225 kcal · 30 g protein · 2 g fibre", made.macrosText(english).replace('\u00A0', ' '))
         assertEquals("With the side: 925 kcal · 44 g protein · 5 g fibre", meal(1, DINNER, made).withSideText(english).replace('\u00A0', ' '))
@@ -187,6 +192,24 @@ class SidesTest {
         assertEquals(emptyList(), growable(made, days[2].meals.single { it.slot == DINNER }, "2026-11-16"), "a batch made already")
         val salad = days[2].meals.single { it.slot == DINNER }.copy(recipeId = 1)
         assertEquals(emptyList(), growable(week, salad, "2026-11-16"), "never one recipe twice on a plate")
+    }
+
+    @Test
+    fun aSideCanBeAddedToABatchOfTheAccountWithNoShareInTheWeekShown() {
+        // Issue 263: next week, with bowls only; the soup made on Sunday the 22nd for its lunch and dinner keeps until Wednesday.
+        val soup = MealPrep(
+            9, "2026-11-22", "2026-11-25", vacuum = false,
+            listOf(PrepMeal("2026-11-22", LUNCH, 1.25, MealStatus.PLANNED), PrepMeal("2026-11-22", DINNER, 1.5, MealStatus.PLANNED)),
+        )
+        val days = (0..6).map { day -> PlanDay("2026-11-${23 + day}", listOf(LUNCH, DINNER).map { meal(day, it) }, 0.0, 0.0) }
+        val week = WeekPlan("2026-11-23", DailyTargets(2000, 120), days, emptyList(), batchesToMake = listOf(BatchToMake(3, "Soup", soup)))
+        fun takes(day: Int, slot: MealSlot) = growable(week, days[day].meals.single { it.slot == slot }, "2026-11-20").map { it.prep.id to it.title }
+
+        assertEquals(listOf(9L to "Soup"), takes(0, LUNCH), "made the week before, with no share in this one")
+        assertEquals(listOf(9L to "Soup"), takes(2, DINNER), "on its last day")
+        assertEquals(emptyList(), takes(3, LUNCH), "past its last day")
+        // A server from before issue 263 sends none: only the batches with a share in the week shown, as before.
+        assertEquals(emptyList(), growable(week.copy(batchesToMake = emptyList()), days[0].meals.first(), "2026-11-20"))
     }
 
     @Test

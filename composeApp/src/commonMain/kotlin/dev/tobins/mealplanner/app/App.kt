@@ -185,6 +185,17 @@ fun App(
         (previousKeys - openKeys).forEach(screenStates::removeState)
         previousKeys = openKeys
     }
+    // Whoever logs in next may be someone else: once logged out, no screen keeps the place it had for the account before,
+    // nor does the Plan the week a notification asked for (issue 263). The login screen keeps what was typed in it. Only
+    // on logging out, not on a start without a login, which may be a notification's opening that the login comes before.
+    var wasLoggedIn by remember { mutableStateOf(loggedIn) }
+    LaunchedEffect(loggedIn) {
+        if (wasLoggedIn && !loggedIn) {
+            (Tab.entries.map { "tab:${it.slug}" } + openKeys).forEach(screenStates::removeState)
+            planWeek = null
+        }
+        wasLoggedIn = loggedIn
+    }
     // The address follows the open screen, so that a reload comes back to it.
     val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen, bankOpen, adjusting)
 

@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.DailyTargets
 import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSide
@@ -53,6 +54,10 @@ import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.SpareMove
 import dev.tobins.mealplanner.api.WeekPlan
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.PairSerializer
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
 import kotlin.math.roundToInt
 
 /** The week plan: one card per day with its meals and totals against the targets. */
@@ -96,11 +101,12 @@ fun PlanScreen(
     // The slot a recipe is being chosen for: a planned meal's or an empty one's.
     var choosingFor by remember { mutableStateOf<Pair<Int, MealSlot>?>(null) }
     // The prep being made (issue 234), the prep being removed with the title of its recipe, and the shares of skipped prepped meals still in the box.
-    var prepping by remember { mutableStateOf<PrepChoice?>(null) }
+    // The dialogs stay open across a re-created activity, as the screen keeps its place (issue 263).
+    var prepping by rememberSaveable(stateSaver = jsonSaver(PrepChoice.serializer().nullable)) { mutableStateOf(null) }
     LaunchedEffect(prepping != null) { if (prepping != null) prepsStarted++ }
-    var removingPrep by remember { mutableStateOf<Pair<String, MealPrep>?>(null) }
+    var removingPrep by rememberSaveable(stateSaver = jsonSaver(PairSerializer(String.serializer(), MealPrep.serializer()).nullable)) { mutableStateOf(null) }
     // The meal a side is being added to from a batch still to make (issue 269), with those batches and the new prep instead.
-    var addingSide by remember { mutableStateOf<AddingSide?>(null) }
+    var addingSide by rememberSaveable(stateSaver = jsonSaver(AddingSide.serializer().nullable)) { mutableStateOf(null) }
     var spares by remember { mutableStateOf<List<SparePortion>>(emptyList()) }
     val preppable = myRecipes?.let(::preppable).orEmpty()
 
@@ -253,7 +259,7 @@ fun PlanScreen(
             is Load.Ready -> {
                 val plan = current.value
                 val hasMeals = plan.days.any { it.meals.isNotEmpty() }
-                // Meals of last week's batch alone do not plan the week: its slots are not missing recipes yet.
+                // Meals of prepped batches alone, made this week or last, do not plan the week: its slots are not missing recipes yet.
                 val planned = plan.hasOwnMeals
                 LazyColumn(
                     Modifier.padding(padding).fillMaxSize(),
@@ -366,7 +372,8 @@ fun PlanScreen(
 }
 
 /** A side being added next to the meal at [slot] from one of [batches] (issue 269), or else from [newPrep], a new batch. */
-private data class AddingSide(val slot: PrepSlot, val batches: List<GrowableBatch>, val newPrep: PrepChoice)
+@Serializable
+private data class AddingSide(val slot: PrepSlot, val batches: List<BatchToMake>, val newPrep: PrepChoice)
 
 @Composable
 private fun DayCard(
@@ -381,7 +388,7 @@ private fun DayCard(
     /** The recipes a prep can be made of, by id. */
     preppable: Set<Long>,
     /** The batches still to make a side next to a meal can be taken from ([growable]). */
-    growable: (PlannedMeal) -> List<GrowableBatch>,
+    growable: (PlannedMeal) -> List<BatchToMake>,
     onOpenRecipe: (PlannedMeal) -> Unit,
     onReroll: (PlannedMeal) -> Unit,
     onGenerate: (PlannedMeal) -> Unit,

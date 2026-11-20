@@ -71,7 +71,7 @@ class PrepRepository(
             val weeks = places.map { it.first }.distinct().associateWith { plans.meals(it) }
             for ((place, side) in places.zip(sides)) {
                 val (week, day, slot) = place
-                if (side != null) requireRoomForSide(week, weeks.getValue(week), day, slot) else requireRoom(week, weeks.getValue(week), day, slot)
+                if (side != null) requireRoomForSide(week, weeks.getValue(week), day, slot, input.recipeId) else requireRoom(week, weeks.getValue(week), day, slot)
             }
             q.insertPrep(userId, input.recipeId, madeOn.toString(), lastDay.toString(), if (input.vacuum) 1 else 0)
             val prepId = q.lastPrepId().executeAsOne()
@@ -167,13 +167,13 @@ class PrepRepository(
                 throw ConflictException("It is made with ${Batch.slotName(first.date, first.meal.slot)}: a side of it comes after that")
             }
             val meals = plans.meals(week)
-            requireRoomForSide(week, meals, day, slot)
             if (meals.any { it.day == day && it.slot == slot && it.prep?.id == id }) {
                 throw ConflictException("${Batch.slotName(date, slot)} is a meal of this batch already")
             }
             if (batch.mealAt(date, slot)?.boxed == true) {
                 throw ConflictException("${Batch.slotName(date, slot)} holds a skipped share of this batch in the box already")
             }
+            requireRoomForSide(week, meals, day, slot, batch.recipeId)
             q.insertSidePortion(userId, week.toString(), day.toLong(), slot.name, id, portions)
         }
         return plans.view(shown)
@@ -244,7 +244,7 @@ class PrepRepository(
             val meals = plans.meals(week)
             val old = from.ref
             if (from.side) {
-                if (!hasRoomForSide(meals, day, slot, batch.id)) throw ConflictException("${Batch.slotName(target, slot)} has no meal still to eat without a side")
+                if (!hasRoomForSide(meals, day, slot, batch)) throw ConflictException("${Batch.slotName(target, slot)} has no meal of another recipe still to eat without a side")
                 q.insertSidePortion(userId, week.toString(), day.toLong(), slot.name, batch.id, from.share)
                 // The batch is still made on its made-on day, with that meal's side, as with a meal of a batch.
                 if (batch.isCook(old.week, from.meal, side = true)) {
@@ -303,7 +303,7 @@ class PrepRepository(
             listOf(MealSlot.LUNCH, MealSlot.DINNER).filter { slot -> after(date, slot, skipped) }.map { PrepSlot(date.toString(), it) }
         }.filter { slot ->
             val (week, day, mealSlot) = Batch.placeOf(slot)
-            if (skipped.side) hasRoomForSide(weekOf(week), day, mealSlot, batch.id) else hasRoom(week, weekOf(week), day, mealSlot, batch.id)
+            if (skipped.side) hasRoomForSide(weekOf(week), day, mealSlot, batch) else hasRoom(week, weekOf(week), day, mealSlot, batch.id)
         }.toList()
 
     /** Whether [slot] holds no meal, in its week as [weekOf] gives it: a free lunch or dinner to propose for a share ([SparePortion.proposed]). */
@@ -327,23 +327,28 @@ class PrepRepository(
             plans.whyKeepsItsRecipe(week, meal, meals) == null && plans.box(week, day, slot) == null
     }
 
-    /** Whether a slot can take a side of batch [batchId]: its meal is still to eat, has no side, and is not of that batch itself. */
-    private fun hasRoomForSide(meals: List<PlannedMeal>, day: Int, slot: MealSlot, batchId: Long): Boolean {
+    /**
+     * Whether a slot can take a side of [batch]: its meal is still to eat, has no side, and is neither of that batch itself
+     * nor of its recipe, as [requireRoomForSide] has it.
+     */
+    private fun hasRoomForSide(meals: List<PlannedMeal>, day: Int, slot: MealSlot, batch: Batch): Boolean {
         val meal = meals.firstOrNull { it.day == day && it.slot == slot } ?: return false
-        return meal.status == MealStatus.PLANNED && meal.side == null && meal.prep?.id != batchId
+        return meal.status == MealStatus.PLANNED && meal.side == null && meal.prep?.id != batch.id && meal.recipeId != batch.recipeId
     }
 
     /**
-     * Refuses a slot for a side of a batch unless it has a meal still to eat without a side: a side goes next to a
-     * meal's main, which it neither replaces nor resizes, and is eaten or skipped with it.
+     * Refuses a slot for a side of a batch of recipe [recipeId] unless it has a meal still to eat without a side, whose main
+     * is another recipe: a side goes next to a meal's main, which it neither replaces nor resizes, and is eaten or skipped
+     * with it; and no plate holds one recipe twice, as a reroll never makes it (issue 263).
      */
-    private fun requireRoomForSide(week: LocalDate, meals: List<PlannedMeal>, day: Int, slot: MealSlot) {
+    private fun requireRoomForSide(week: LocalDate, meals: List<PlannedMeal>, day: Int, slot: MealSlot, recipeId: Long) {
         val meal = meals.firstOrNull { it.day == day && it.slot == slot }
         val name = Batch.slotName(week.plusDays(day.toLong()), slot)
         when {
             meal == null -> throw ConflictException("$name has no meal for a side to go with")
             meal.status != MealStatus.PLANNED -> throw ConflictException("$name was ${meal.status.name.lowercase()} already")
             meal.side != null -> throw ConflictException("$name has a side already")
+            meal.recipeId == recipeId -> throw ConflictException("$name is \"${meal.title}\" already: its side is another recipe")
         }
     }
 

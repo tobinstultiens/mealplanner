@@ -124,6 +124,7 @@ class Batch(
             firstUnmarked = unmarked.firstOrNull()?.date?.toString(),
             leftSides = left.count { it.side },
             unmarkedSides = unmarked.count { it.side },
+            firstLeft = left.firstOrNull()?.date?.toString(),
         )
     }
 

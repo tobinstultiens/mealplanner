@@ -96,6 +96,8 @@ class FakeBackend(
     private val tailOnly: Boolean = false,
     /** The week says what fresh ingredients it leaves over (issue 244): five rests, so the line says "and 2 more". */
     private val weekRest: Boolean = false,
+    /** The prep of [prepped] kept vacuum sealed rather than in a box, which its labels say (issue 263). */
+    private val vacuum: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -320,7 +322,7 @@ class FakeBackend(
      * dinner, in a box for three days. Wednesday's lunch was skipped, so its share is in the box ([spare]).
      */
     private val prep = MealPrep(
-        id = 1, madeOn = WEEK_START, lastDay = plusDays(WEEK_START, 3), vacuum = false,
+        id = 1, madeOn = WEEK_START, lastDay = plusDays(WEEK_START, 3), vacuum = vacuum,
         meals = listOf(0 to MealSlot.DINNER, 1 to MealSlot.LUNCH, 2 to MealSlot.LUNCH, 3 to MealSlot.DINNER).map { (day, slot) ->
             PrepMeal(plusDays(WEEK_START, day), slot, 1.0, if (day == 2) MealStatus.SKIPPED else MealStatus.PLANNED)
         },
