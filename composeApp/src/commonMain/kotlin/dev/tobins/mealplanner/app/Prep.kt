@@ -133,11 +133,12 @@ fun prepMealsText(prep: MealPrep, t: Strings): String =
     }
 
 /**
- * Whether [this] week has meals of its own: not only those of a batch made in an earlier week, which are there before the
- * week is planned (issue 263). Only such a week is planned already, and only its empty slots say a recipe is missing.
+ * Whether [this] week has meals of its own: not only those of prepped batches, made in it or in an earlier week, which are
+ * there before the week is planned (issue 263). Only such a week is planned already, and only its empty slots say a recipe
+ * is missing: before that, the server's empty slots are merely those the batches leave.
  */
 val WeekPlan.hasOwnMeals: Boolean
-    get() = days.any { day -> day.meals.any { meal -> meal.prep.let { it == null || it.madeOn >= weekStart } } }
+    get() = days.any { day -> day.meals.any { it.prep == null } }
 
 /**
  * The shares in the box ([spares], those of [today]) the week starting [weekStart] shows a card for: the weeks from today's
