@@ -215,8 +215,9 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   The made-on day's meal cooks the whole batch (`cookPortions`, so the recipe and cook mode show the batch's
   amounts), also when that meal itself was skipped; the later ones are `leftover` with nothing to cook. Each day
   counts its own portion, on the Plan and on Today. Generating or replanning keeps them and plans around them: a
-  prepped dinner leaves no leftover lunch, and every meal or side of a batch in the week counts as a use of its recipe
-  (also those of a batch made the week before), so the planner does not plan that recipe again next to it.
+  prepped dinner leaves no leftover lunch, and the recipe of a batch in the week (as meals or sides, also one made the
+  week before) is planned again only when no other recipe fits the slot, even when that means repeating the others
+  in a small rotation; then every meal or side of the batch counts as a use of it.
   The made-on day's meal can be neither replaced nor removed on its own (409, naming the later meals: `DELETE
   /api/plans/{weekStart}/preps/{id}` removes the prep with all its meals, in every week, after the app named
   them); a later meal can, which makes the batch smaller, until the batch is made. Unlocking a prepped meal is a 409.
@@ -242,7 +243,9 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   notification, buying ahead, whose suggested dinners are then no more than the dinners those meals leave free).
   Its shopping list buys nothing for them and says which week's list did (`ShoppingList.preppedBoughtIn`).
   Today's "Dinner today" notification is only for a dinner with something to cook: not for a prepped later dinner,
-  unless a side's batch is made next to it that evening, when it is about the side (`DinnerToday.side`); the dinner
+  unless a side's batch is made next to it that evening, when it is about the side (`DinnerToday.side`: its tap opens
+  the side's recipe with the dinner's place, and as a side follows its meal, cook mode's "Mark as eaten" marks the
+  dinner, side and all); the dinner
   that makes a batch says so (`DinnerToday.prep`), so its recipe speaks of the prep's later meals.
   A shortfall warning ("What was in a meal") counts what the batch took for its meals of the next week in the week
   it was made, whose stock it was cooked from.
@@ -285,8 +288,9 @@ as written. A skipped meal's share still in the box today is a card above the da
 in (not on a week that is over): when it was skipped and until when it keeps (on its last day "eat it today or throw
 it away"), a button that eats it in the next free lunch or dinner within the days it keeps in one tap, as the server
 proposes it (an empty one, in whichever week; for a side a meal still to eat without one), none when no lunch or dinner
-is free, and "Eat it on…" with the others, where taking the place of a planned meal is the user's choice. A week whose only meals are of last week's batch still reads "Plan this week", and
-its Shopping says the meals were bought with last week's list. "Keeps once made" is only on a meal (a building block is
+is free, and "Eat it on…" with the others, where taking the place of a planned meal is the user's choice. A week whose only meals are of prepped batches, made in it or in the week before, still reads "Plan this
+week" and names no slot as lacking recipes; a week holding only last week's batch has a Shopping that says the meals
+were bought with last week's list. "Keeps once made" is only on a meal (a building block is
 never prepped), and while a choice is saved both numbers wait for the answer.
 
 The Prep dialog also asks how it is eaten: "The meal", or "A side" of 0.25 or 0.5 servings, when only lunches and

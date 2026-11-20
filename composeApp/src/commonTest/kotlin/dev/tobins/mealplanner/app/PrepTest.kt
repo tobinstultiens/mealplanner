@@ -140,12 +140,15 @@ class PrepTest {
     }
 
     @Test
-    fun aWeekWithOnlyMealsOfLastWeeksBatchIsStillToPlan() {
+    fun aWeekWithOnlyMealsOfPreppedBatchesIsStillToPlan() {
         val lastWeeks = prep.copy(madeOn = "2026-11-15")
         val tail = PlannedMeal(0, LUNCH, 1, "Salad", 1.25, 500.0, 33.0, leftover = true, locked = true, prep = lastWeeks)
         assertEquals(false, week(tail).hasOwnMeals, "only last week's batch")
         assertEquals(true, week(tail, PlannedMeal(1, DINNER, 9, "Rice bowl", 1.0, 700.0, 30.0)).hasOwnMeals)
-        assertEquals(true, week(PlannedMeal(1, DINNER, 1, "Salad", 1.5, 600.0, 40.0, locked = true, prep = prep)).hasOwnMeals, "a batch made this week")
+        // A batch made this week, prepped before the week was planned (the emulator run of #270): its other slots are still to plan.
+        val thisWeeks = PlannedMeal(1, DINNER, 1, "Salad", 1.5, 600.0, 40.0, locked = true, prep = prep)
+        assertEquals(false, week(thisWeeks).hasOwnMeals, "only a batch made this week")
+        assertEquals(true, week(thisWeeks, PlannedMeal(2, LUNCH, 9, "Rice bowl", 1.0, 700.0, 30.0)).hasOwnMeals)
         assertEquals(false, week().hasOwnMeals)
     }
 

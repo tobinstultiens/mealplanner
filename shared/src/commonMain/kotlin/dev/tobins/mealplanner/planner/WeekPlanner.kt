@@ -77,9 +77,10 @@ data class PlanRequest(
  * - A breakfast or snack slot with no suitable recipe stays empty.
  * - An excluded recipe is never planned, not even as a pinned routine or as leftovers;
  *   only locked meals keep it.
- * - The meals of a prepped batch ([PlannedMeal.prep]) come locked and leave no leftover lunch. Each of them, and
- *   each side of a batch next to a meal ([PlannedMeal.side]), counts as a use of its recipe ([uses]), also the
- *   later ones and those of a batch made the week before: the recipe fills those meals already.
+ * - The meals of a prepped batch ([PlannedMeal.prep]) come locked and leave no leftover lunch. A recipe of a batch in
+ *   the week, eaten as its meals or as sides ([PlannedMeal.side]), also one made the week before, fills those meals
+ *   already: it is planned again only when no other recipe fits the slot ([prepped]), and then each of its meals counts
+ *   as a use ([uses]).
  */
 object WeekPlanner {
     fun plan(request: PlanRequest): List<PlannedMeal> {
@@ -147,7 +148,9 @@ object WeekPlanner {
     ): PlanCandidate? {
         // The packs the meals before this one opened; none to look at when no recipe says what it uses.
         val packs = if (request.candidates.any { it.freshUses.isNotEmpty() }) OpenPacks.before(meals, byId, day, budgetSlot) else null
-        return usable.filter { slot in it.slots && isAMeal(it, budgetSlot, request.targets, request.portions) }.maxByOrNull { candidate ->
+        val fitting = usable.filter { slot in it.slots && isAMeal(it, budgetSlot, request.targets, request.portions) }
+        val prepped = prepped(meals)
+        return fitting.filter { it.recipeId !in prepped }.ifEmpty { fitting }.maxByOrNull { candidate ->
             score(
                 candidate, budgetSlot, request,
                 uses = uses(candidate.recipeId, meals),
@@ -168,6 +171,14 @@ object WeekPlanner {
      * no use of its own: it comes with the dinner. Every meal or side of a prepped batch is: the batch was made for
      * all of them, so planning its recipe once more would fill much of the week with one recipe (issue 263).
      */
+    /**
+     * The recipes of the prepped batches in [meals], as meals or as sides: a recipe the owner made a batch of this week is
+     * not planned again while another recipe fits the slot (issue 263). A penalty alone was not enough: with a small
+     * rotation every recipe is repeated, and a batch's meals weigh no more than another recipe's repeats.
+     */
+    private fun prepped(meals: List<PlannedMeal>): Set<Long> =
+        meals.mapNotNullTo(HashSet()) { meal -> meal.recipeId.takeIf { meal.prep != null } } + meals.mapNotNull { it.side?.recipeId }
+
     private fun uses(recipeId: Long, meals: List<PlannedMeal>): Int =
         meals.count { it.recipeId == recipeId && (!it.leftover || it.prep != null) } + meals.count { it.side?.recipeId == recipeId }
 

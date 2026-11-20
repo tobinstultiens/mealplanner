@@ -182,6 +182,38 @@ class WeekPlannerTest {
         assertEquals(withSides, withSides.map { plan.at(it.day, it.slot) })
     }
 
+    /**
+     * The recipes of the emulator run of #270 (issue 263), as the server made them candidates: four that fill a dinner at
+     * 2720 kcal a day, and a stir fry too light to. Lunches are cooked from them too, so every one is repeated in a week.
+     */
+    private val runOf270 = listOf(
+        PlanCandidate(2, "Chicken curry", setOf(LUNCH, DINNER), 4, 483.125, 39.9875, fibreG = 2.0375),
+        PlanCandidate(1, "Chili con carne", setOf(LUNCH, DINNER), 4, 434.5, 33.075, fibreG = 11.425),
+        PlanCandidate(4, "Pasta bolognese", setOf(LUNCH, DINNER), 4, 510.75, 28.725, fibreG = 3.75),
+        PlanCandidate(6, "Salmon with potatoes", setOf(LUNCH, DINNER), 2, 559.5, 38.9, fibreG = 8.5),
+        PlanCandidate(5, "Veggie stir fry", setOf(LUNCH, DINNER), 4, 215.0, 6.7, fibreG = 4.8),
+    )
+
+    /** The chili of that run, made on Friday's dinner and eaten on Saturday's and on next Monday's. */
+    private val chiliBatch: List<PlannedMeal> = MealPrep(
+        id = 1, madeOn = "2026-11-20", lastDay = "2026-11-24", vacuum = false,
+        meals = listOf("2026-11-20", "2026-11-21", "2026-11-23").map { PrepMeal(it, DINNER, 1.5, MealStatus.PLANNED) },
+    ).let { prep -> listOf(4, 5).map { day -> PlannedMeal(day, DINNER, 1, "Chili con carne", 1.5, 651.75, 49.6, leftover = day == 5, locked = true, prep = prep) } }
+
+    @Test
+    fun aRecipePreppedThisWeekIsPlannedAgainOnlyWhenNoOtherRecipeFitsTheSlot() {
+        val run = PlanRequest(DailyTargets(2720, 145, 38), runOf270, locked = chiliBatch, portions = PortionRange(0.75, 1.5))
+        for (seed in 0L until 20L) {
+            val plan = WeekPlanner.plan(run.copy(seed = seed))
+            // The other three are repeated instead: a repeat can't be helped, but the chili fills its batch's meals already.
+            assertEquals(chiliBatch, plan.filter { it.recipeId == 1L }, "seed $seed: ${plan.filter { it.recipeId == 1L }}")
+            assertEquals(7, plan.count { it.slot == DINNER })
+        }
+        // With nothing else that fits a dinner, the chili is planned again rather than a dinner left empty.
+        val onlyChili = WeekPlanner.plan(run.copy(candidates = runOf270.filter { it.recipeId in setOf(1L, 5L) }))
+        assertEquals(7, onlyChili.count { it.slot == DINNER && it.recipeId == 1L })
+    }
+
     @Test
     fun excludedAndRecentRecipesAreAvoided() {
         val plan = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes, excluded = setOf(10L), recent = setOf(11L)))

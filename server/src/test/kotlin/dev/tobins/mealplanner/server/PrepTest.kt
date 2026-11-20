@@ -255,6 +255,25 @@ class PrepTest {
         assertEquals(1.25 * 450, http.get("/api/days/2026-11-18").body<DayView>().eatenKcal, 1e-9)
     }
 
+    /**
+     * Issue 263, the emulator run of #270: with a rotation too small for a week without repeats, replanning repeats the other
+     * recipes rather than plan the prepped one again next to its batch, whichever seed.
+     */
+    @Test
+    fun replanningAroundABatchRepeatsAnotherRecipeRatherThanThePreppedOne() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        // The salad (rich in protein, so the planner's favourite) in the rotation with the three rice bowls: 14 lunches and dinners for four recipes.
+        http.put("/api/recipes/${k.salad.id}/rotation") { setBody(RotationInput(true)) }
+        val batch = listOf("2026-11-20" to DINNER, "2026-11-21" to DINNER)
+        http.prep(k.salad.id, "2026-11-20", *batch.toTypedArray())
+        repeat(8) {
+            val meals = http.post("/api/plans/$week/generate").body<WeekPlan>().days.flatMap { day -> day.meals.map { day.date to it } }
+            assertEquals(batch, meals.filter { it.second.recipeId == k.salad.id }.map { it.first to it.second.slot }, "the salad only in its batch")
+            assertEquals(7, meals.count { it.second.slot == DINNER })
+        }
+    }
+
     @Test
     fun generatingAndReplanningPlanAroundAPrepAndCountItOnce() = testApplication {
         val http = start()

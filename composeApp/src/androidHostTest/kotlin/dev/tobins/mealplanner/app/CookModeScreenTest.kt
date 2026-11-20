@@ -13,6 +13,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import dev.tobins.mealplanner.api.MealSlot
+import kotlin.time.Instant
+import kotlin.time.Clock
+import kotlinx.datetime.TimeZone
+import dev.tobins.mealplanner.api.NotificationFacts
+import dev.tobins.mealplanner.api.DinnerToday
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -169,5 +174,28 @@ class CookModeScreenTest {
         compose.onNodeWithText("Prepped on Mon 16 Nov: nothing to cook").assertExists()
         compose.onNodeWithText("In this meal: 1.25 servings").assertExists()
         compose.onNodeWithText("Ingredients").assertDoesNotExist()
+    }
+
+    /**
+     * Issue 263: "Tonight's side" opens the side's recipe with its dinner's place, as the notification planner makes it. A
+     * side follows its meal (the owner's decision), so "Mark as eaten" marks the dinner, and its side with it.
+     */
+    @Test
+    fun theSideOfTonightsNotificationMarksItsDinnerEaten() {
+        val storage = MemorySettingsStorage().apply { saveNotificationOn(NotificationKind.DINNER_TODAY, true) }
+        val clock = object : Clock {
+            override fun now() = Instant.parse("2026-11-21T16:00:00Z")
+        }
+        val facts = NotificationFacts("2026-11-21", dinner = DinnerToday(4, "Slow-cooked chicken thighs", 0.5, 1.5, "2026-11-16", 5, prep = true, side = true))
+        val side = NotificationPlanner(storage, clock, TimeZone.UTC).due(facts, null, Strings.English).single().opening?.meal
+        show(side)
+        waitFor("Cook 1.5 servings: 0.5 now, 1 for the prep's later meals")
+        tapStep(1)
+        tapStep(2)
+        tapStep(3)
+        compose.onNodeWithText("Mark as eaten").performScrollTo().performClick()
+
+        compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it.contains("/status") } }
+        assertEquals("PUT /api/plans/2026-11-16/meals/5/DINNER/status \"EATEN\"", backend.changes.single { it.contains("/status") })
     }
 }
