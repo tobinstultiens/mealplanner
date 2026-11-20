@@ -1,7 +1,6 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.ActivityLevel
-import dev.tobins.mealplanner.api.ManyAddedInput
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.Profile
@@ -13,7 +12,6 @@ import dev.tobins.mealplanner.planner.WeekPlanner
 import dev.tobins.mealplanner.planner.OpenPacks
 import dev.tobins.mealplanner.targets.TargetCalculator
 import java.io.File
-import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -54,38 +52,7 @@ class PackRestMeasurementTest {
     }
 
     /** The recipes as candidates with their fresh uses. */
-    private fun fixture(): List<PlanCandidate>? {
-        if (!File(cooking, "content").isDirectory || !nevo.isFile) {
-            println("Cooking repo at ${cooking.absolutePath} or NEVO file at ${nevo.absolutePath} not found; skipping")
-            return null
-        }
-        val db = openDatabase("jdbc:sqlite::memory:").second
-        val foods = FoodRepository(db)
-        foods.importNevo(nevo)
-        val userId = UserRepository(db).resolve(Identity("measure", "measure")).id
-        val ingredients = IngredientRepository(db, foods, userId)
-        ingredients.applySeed()
-        val offers = OfferRepository(db, emptyList())
-        val prices = PriceRepository(db, null, foods, offers)
-        val rows = parseDelimited(checkNotNull(javaClass.getResource("/prices/ah-regular-prices-2026-11-19.csv")).readText(), ',').drop(1)
-        for (row in rows) {
-            val (name, packSize, packPrice, perKg) = row
-            db.priceQueries.upsertPrice(
-                name, "AH", name, packSize.ifBlank { null }, packPrice.toDoubleOrNull(), perKg.toDouble(), "2026-11-19T00:00:00Z",
-                row[4].ifBlank { null }, row[5].ifBlank { null }, null,
-            )
-        }
-        val recipes = RecipeRepository(db, ingredients, userId) { from, until -> prices.pricing(ingredients, from, until) }
-        recipes.syncCookingSite(checkNotNull(CookingSiteReader(cooking).readAll()))
-        recipes.setAdded(ManyAddedInput(recipes.bank().map { it.id }, added = true))
-        val sections = ShopSections(ingredients, prices)
-        val packs = prices.freshPacks(ingredients, sections.keepsByIngredient(sections.byIngredient()))
-        val week = LocalDate.of(2026, 11, 16)
-        val pricing = prices.pricing(ingredients, week, week.plusDays(6))
-        val candidates = recipes.planCandidates(prices = pricing, freshPacks = packs)
-        println("${candidates.size} candidates, ${candidates.count { it.freshUses.isNotEmpty() }} with fresh uses, ${packs.size} fresh ingredients with a pack")
-        return candidates
-    }
+    private fun fixture(): List<PlanCandidate>? = RealRecipeFixture.candidates(cooking, nevo)
 
     /** Plans 50 seeds with the pack term at [weights], measuring the rest at the real euros. */
     private fun fifty(candidates: List<PlanCandidate>, weights: PackWeights): List<Measure> {

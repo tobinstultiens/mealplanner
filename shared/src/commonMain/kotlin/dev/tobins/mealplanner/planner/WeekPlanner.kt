@@ -52,6 +52,15 @@ data class PlanRequest(
     val packWeights: PackWeights = PackWeights(),
     /** What the profile has the planner weigh most ([WeekPlanner]'s score). */
     val priority: PlanPriority = PlanPriority.BALANCED,
+    /**
+     * A cap on how far over its slot's calorie share a meal may be after sizing, as a fraction (0.5: at most half
+     * as much again), for the planner to pick on its own; a recipe above it is not a candidate for the slot, as one
+     * that cannot reach half of the share is not. Null, the default, is no cap. Pinned routines and locked meals
+     * are not capped. Here for the measurement of issue 241, not yet part of what the planner does.
+     */
+    val overShareCap: Double? = null,
+    /** Told of every pick the planner makes on its own, for measuring it; null, the default, is nobody. */
+    val onPick: ((Pick) -> Unit)? = null,
     /** Same seed, same plan. */
     val seed: Long = 0,
 ) {
@@ -61,6 +70,22 @@ data class PlanRequest(
             .let { if (it.isEmpty()) null else it[it.size / 2] }
     }
 }
+
+/**
+ * One pick of the planner: what won [slot] on [day] with which [score], and the best of the others, so that a
+ * measurement can see by how much the runner-up lost. [budgetSlot] differs from [slot] for a lunch cooked from a
+ * dinner recipe. [fitting] is how many recipes were in the running.
+ */
+data class Pick(
+    val day: Int,
+    val slot: MealSlot,
+    val budgetSlot: MealSlot,
+    val chosen: PlanCandidate,
+    val score: Double,
+    val runnerUp: PlanCandidate?,
+    val runnerUpScore: Double,
+    val fitting: Int,
+)
 
 /**
  * Fills a week of meals so that each day lands near the calorie target and reaches
@@ -94,8 +119,9 @@ object WeekPlanner {
             // An excluded pin is being swapped out on a reroll: the planner chooses instead.
             val pinned = request.routines[slot]?.takeIf { it !in request.excluded }
                 ?.let { id -> request.candidates.firstOrNull { it.recipeId == id } }
-            val routine = pinned ?: usable.filter { slot in it.slots }
-                .maxByOrNull { score(it, slot, request, uses = 0, sameTagAsYesterday = false, jitter = random.nextDouble()) }
+            val routine = pinned ?: best(
+                usable.filter { slot in it.slots && withinCap(it, slot, request) }, 0, slot, slot, request,
+            ) { score(it, slot, request, uses = 0, sameTagAsYesterday = false, jitter = random.nextDouble()) }
                 ?: continue
             for (day in 0 until request.days) {
                 if (!taken(day, slot)) meals += meal(routine, day, slot, request)
@@ -148,9 +174,11 @@ object WeekPlanner {
     ): PlanCandidate? {
         // The packs the meals before this one opened; none to look at when no recipe says what it uses.
         val packs = if (request.candidates.any { it.freshUses.isNotEmpty() }) OpenPacks.before(meals, byId, day, budgetSlot) else null
-        val fitting = usable.filter { slot in it.slots && isAMeal(it, budgetSlot, request.targets, request.portions) }
+        val fitting = usable.filter {
+            slot in it.slots && isAMeal(it, budgetSlot, request.targets, request.portions) && withinCap(it, budgetSlot, request)
+        }
         val prepped = prepped(meals)
-        return fitting.filter { it.recipeId !in prepped }.ifEmpty { fitting }.maxByOrNull { candidate ->
+        return best(fitting.filter { it.recipeId !in prepped }.ifEmpty { fitting }, day, slot, budgetSlot, request) { candidate ->
             score(
                 candidate, budgetSlot, request,
                 uses = uses(candidate.recipeId, meals),
@@ -164,6 +192,34 @@ object WeekPlanner {
                 } ?: 0.0,
             )
         }
+    }
+
+    /**
+     * The best of [pool] by [rate], the first of equals; tells the request's [PlanRequest.onPick] what the best and the
+     * runner-up scored. Every candidate is rated once, in order, as before, so the same seed gives the same plan.
+     */
+    private fun best(
+        pool: List<PlanCandidate>,
+        day: Int,
+        slot: MealSlot,
+        budgetSlot: MealSlot,
+        request: PlanRequest,
+        rate: (PlanCandidate) -> Double,
+    ): PlanCandidate? {
+        val rated = pool.map { it to rate(it) }
+        val winner = rated.maxByOrNull { it.second } ?: return null
+        request.onPick?.let { tell ->
+            val second = rated.filter { it !== winner }.maxByOrNull { it.second }
+            tell(Pick(day, slot, budgetSlot, winner.first, winner.second, second?.first, second?.second ?: Double.NaN, rated.size))
+        }
+        return winner.first
+    }
+
+    /** False when the request caps how far over [slot]'s share a meal may be ([PlanRequest.overShareCap]) and [candidate] goes over it. */
+    private fun withinCap(candidate: PlanCandidate, slot: MealSlot, request: PlanRequest): Boolean {
+        val cap = request.overShareCap ?: return true
+        val budget = request.targets.kcal * slot.share
+        return candidate.kcal * portionsFor(candidate, slot, request.targets, request.portions) <= (1 + cap) * budget
     }
 
     /**
