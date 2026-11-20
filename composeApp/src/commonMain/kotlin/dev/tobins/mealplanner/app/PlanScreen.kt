@@ -327,6 +327,7 @@ fun PlanScreen(
                             DayCard(
                                 day = day,
                                 dayIndex = index,
+                                dayBefore = plan.days.getOrNull(index - 1)?.meals.orEmpty(),
                                 today = today,
                                 targets = plan.targets,
                                 // A slot is offered on every day that has no meal in it.
@@ -379,6 +380,8 @@ private data class AddingSide(val slot: PrepSlot, val batches: List<BatchToMake>
 private fun DayCard(
     day: PlanDay,
     dayIndex: Int,
+    /** The meals of the day before in this plan, for what its dinner says of a leftover lunch ([whyKept]). */
+    dayBefore: List<PlannedMeal>,
     /** Today's ISO date: a prep is not made on a day that has passed. */
     today: String,
     targets: DailyTargets,
@@ -420,6 +423,7 @@ private fun DayCard(
                 Text(t(Msg.NOTHING_PLANNED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             for (meal in day.meals) {
+                val kept = meal.whyKept(day.date, dayBefore)
                 // The whole meal opens its recipe; the two icon buttons take their own taps.
                 Column(Modifier.fillMaxWidth().clickable { onOpenRecipe(meal) }) {
                     // The title gets the full width left of the icon buttons; the numbers sit below.
@@ -436,6 +440,10 @@ private fun DayCard(
                                 overflow = TextOverflow.Ellipsis,
                                 textDecoration = if (meal.status == MealStatus.SKIPPED) TextDecoration.LineThrough else null,
                             )
+                            // As Today marks it: the Plan is where one sees which meals of the week are done.
+                            if (meal.status == MealStatus.EATEN) {
+                                Text(t(Msg.STATUS_EATEN_MARK), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            }
                         }
                         // A meal with a photo shows it before the buttons; one without has nothing there.
                         recipePicture(pictures[meal.recipeId])?.let { RecipePhoto(it, Modifier.padding(top = 4.dp, end = Spacing.Related).size(48.dp)) }
@@ -454,34 +462,45 @@ private fun DayCard(
                                 onClick = { menu = true },
                                 enabled = enabled,
                             )
-                            // A locked meal (one the user chose, or locked) keeps its recipe: only choosing or leaving it out is left.
+                            // Only what the server does for this meal: one that keeps its recipe ([kept]) says why it has no other, rather than offer what is refused.
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(text = { Text(t(Msg.ANOTHER_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onReroll(meal) })
-                                DropdownMenuItem(text = { Text(t(Msg.CHOOSE_RECIPE)) }, onClick = { menu = false; onChoose(meal.day, meal.slot) })
+                                kept?.let { DropdownMenuItem(text = { Text(t(keptMessage(it))) }, enabled = false, onClick = {}) }
+                                if (kept == null) {
+                                    // A locked meal (one the user chose, or locked) keeps its recipe: only choosing or leaving it out is left.
+                                    DropdownMenuItem(text = { Text(t(Msg.ANOTHER_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onReroll(meal) })
+                                    DropdownMenuItem(text = { Text(t(Msg.CHOOSE_RECIPE)) }, onClick = { menu = false; onChoose(meal.day, meal.slot) })
+                                }
                                 // A skipped meal counts for nothing, so there is nothing in it to adjust.
                                 DropdownMenuItem(
                                     text = { Text(t(Msg.ADJUST_WHAT_WAS_IN_IT)) },
                                     enabled = meal.status != MealStatus.SKIPPED,
                                     onClick = { menu = false; onAdjust(meal) },
                                 )
-                                DropdownMenuItem(
-                                    text = { Text(if (meal.status == MealStatus.SKIPPED) t(Msg.EAT_AFTER_ALL) else t(Msg.NOT_EATING_THIS)) },
-                                    onClick = { menu = false; onToggleSkipped(meal) },
-                                )
+                                // A prepped meal whose share is eaten in another meal has nothing left to eat: it stays skipped.
+                                if (!meal.shareGone(day.date)) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (meal.status == MealStatus.SKIPPED) t(Msg.EAT_AFTER_ALL) else t(Msg.NOT_EATING_THIS)) },
+                                        onClick = { menu = false; onToggleSkipped(meal) },
+                                    )
+                                }
                                 // Left out for a skipped meal, where it would be greyed with no reason: eat it after all first.
-                                if (meal.status != MealStatus.SKIPPED) {
+                                if (kept == null && meal.status != MealStatus.SKIPPED) {
                                     DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onGenerate(meal) })
                                 }
                                 val lunchOrDinner = meal.slot == MealSlot.LUNCH || meal.slot == MealSlot.DINNER
                                 val prep = meal.prep
+                                // Removing a prep is always answered: the dialog says what goes, or that a made batch stays.
                                 if (prep != null) {
                                     DropdownMenuItem(text = { Text(t(Msg.REMOVE_PREP)) }, onClick = { menu = false; onRemovePrep(meal.title, prep) })
-                                } else if (meal.recipeId in preppable && lunchOrDinner && day.date >= today) {
+                                } else if (kept == null && meal.recipeId in preppable && lunchOrDinner && day.date >= today) {
                                     DropdownMenuItem(text = { Text(t(Msg.PREP_THIS_RECIPE)) }, onClick = { menu = false; onPrep(meal) })
                                 }
                                 val side = meal.side
                                 if (side != null) {
-                                    DropdownMenuItem(text = { Text(t(Msg.REMOVE_SIDE)) }, onClick = { menu = false; onRemoveSide(meal) })
+                                    // A side of a made batch, or one that makes it, goes with its prep only.
+                                    if (!meal.sideStays(day.date)) {
+                                        DropdownMenuItem(text = { Text(t(Msg.REMOVE_SIDE)) }, onClick = { menu = false; onRemoveSide(meal) })
+                                    }
                                     DropdownMenuItem(text = { Text(t(Msg.REMOVE_SIDE_PREP)) }, onClick = { menu = false; onRemovePrep(side.title, side.prep) })
                                 } else if ((preppable.isNotEmpty() || growable(meal).isNotEmpty()) && lunchOrDinner && meal.status == MealStatus.PLANNED && day.date >= today) {
                                     // A side goes next to a meal still to eat, from today on, as a batch is made for the days to come.
@@ -519,4 +538,12 @@ private fun dayTotals(day: PlanDay, targets: DailyTargets, t: Strings): String {
         if (fibre == null || fibreTarget == null) t(Msg.DAY_TOTALS, kcal, targets.kcal, protein, targets.proteinG)
         else t(Msg.DAY_TOTALS_FIBRE, kcal, targets.kcal, protein, targets.proteinG, fibre.roundToInt(), fibreTarget),
     )
+}
+
+/** What the menu of a meal that keeps its recipe says instead of offering another ([WhyKept]). */
+private fun keptMessage(why: WhyKept): Msg = when (why) {
+    WhyKept.EATEN -> Msg.KEPT_EATEN
+    WhyKept.DINNER_EATEN -> Msg.KEPT_DINNER_EATEN
+    WhyKept.BATCH_MADE -> Msg.KEPT_BATCH_MADE
+    WhyKept.MAKES_BATCH -> Msg.KEPT_MAKES_BATCH
 }

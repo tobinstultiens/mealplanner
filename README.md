@@ -289,6 +289,14 @@ them, or one batch partly each way (issue 269). Only by hand: the planner never 
   meal's share whose slot a standard meal took ("Standard meals"). What a side takes from the stock is kept under its
   meal apart from the main's (`stockUse.role`, version 21), and so is what a share in the box took.
 
+**Eaten meals on the Plan (issue 191).** A meal marked eaten shows "✓ Eaten" on the Plan as it does on Today (a skipped one is
+struck through). The menu behind its swap button offers only what the server does: for a meal that keeps its recipe (eaten;
+the leftover lunch of an eaten dinner; any meal of a prep that was made; the meal that makes a prep) it has no "Another
+recipe", "Choose a recipe…", "Write a new recipe…" or "Prep this recipe…" (each answers 409), and says why in a greyed first
+line; "Remove the prep…" stays, as its dialog explains what goes or that a made batch stays. A side of a made batch, or one that
+makes it, has no "Remove the side" but "Remove the side's prep…"; a prepped meal whose share is eaten elsewhere has no "Eat it
+after all". A Monday lunch whose dinner is in last week's plan is still offered what the server may refuse, and its 409 says why.
+
 **In the app.** A recipe's settings have "Keeps once made": in a box and vacuum sealed, each "not prepped" or 1 to 7
 days. On the Plan, "Prep a recipe…" under the replan button, or "Prep this recipe…" in the menu of a lunch or dinner
 whose recipe keeps (that day and meal already chosen, from today on), opens the Prep dialog: the recipe, the day it is
