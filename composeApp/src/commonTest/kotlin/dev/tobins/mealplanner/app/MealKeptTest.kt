@@ -85,4 +85,28 @@ class MealKeptTest {
         assertFalse(meal(0, DINNER, prep = gone).shareGone("2026-11-16"))
         assertFalse(meal(1, LUNCH, MealStatus.SKIPPED).shareGone("2026-11-17"), "no prep")
     }
+
+    @Test
+    fun aDinnerMovesToAnotherDayUnlessItStaysOnItsDayAndSaysWhy() {
+        val dinner = meal(0, DINNER, recipe = 5)
+        val leftovers = meal(1, LUNCH, leftover = true, recipe = 5)
+        fun whyStays(meal: PlannedMeal, after: List<PlannedMeal> = listOf(leftovers), today: String = "2026-11-16") =
+            meal.whyStays("2026-11-16", emptyList(), after, today)
+
+        assertNull(whyStays(dinner))
+        assertNull(whyStays(dinner.copy(status = MealStatus.SKIPPED)), "a skipped dinner moves too")
+        assertNull(whyStays(dinner.copy(locked = true)), "a locked one keeps its lock")
+        assertNull(whyStays(dinner, after = listOf(meal(1, LUNCH, recipe = 7))), "the next lunch is no leftovers of it")
+        assertEquals(WhyStays.PASSED, whyStays(dinner, today = "2026-11-17"), "its day has passed")
+        assertEquals(WhyStays.EATEN, whyStays(dinner.copy(status = MealStatus.EATEN)))
+        val batch = prep(share("2026-11-16", DINNER), share("2026-11-17", DINNER))
+        assertEquals(WhyStays.MAKES_BATCH, whyStays(dinner.copy(prep = batch)))
+        assertEquals(WhyStays.PREPPED, meal(1, DINNER, prep = batch, leftover = true).whyStays("2026-11-17", emptyList(), emptyList(), "2026-11-16"))
+        assertEquals(WhyStays.SIDE, whyStays(dinner.copy(side = MealSide(9, "Salad", 0.5, 200.0, 10.0, cookPortions = 0.0, prep = prep()))))
+        for (stuck in listOf(leftovers.copy(locked = true), leftovers.copy(status = MealStatus.SKIPPED), leftovers.copy(status = MealStatus.EATEN))) {
+            assertEquals(WhyStays.LEFTOVERS, whyStays(dinner, after = listOf(stuck)), "its leftovers can't follow: $stuck")
+        }
+        assertTrue(dinner.canMove("2026-11-16", emptyList(), listOf(leftovers), "2026-11-16"))
+        assertFalse(meal(0, LUNCH).canMove("2026-11-16", emptyList(), emptyList(), "2026-11-16"), "only dinners move")
+    }
 }

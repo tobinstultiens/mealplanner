@@ -5,6 +5,15 @@ import com.sun.net.httpserver.HttpServer
 import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.DailyTargets
+import dev.tobins.mealplanner.api.WeekPlanning
+import dev.tobins.mealplanner.api.SuggestionOffer
+import dev.tobins.mealplanner.api.SuggestionGround
+import dev.tobins.mealplanner.api.PlanningTotals
+import dev.tobins.mealplanner.api.PackRestUse
+import dev.tobins.mealplanner.api.HiddenRecipe
+import dev.tobins.mealplanner.api.DinnerSuggestions
+import dev.tobins.mealplanner.api.DinnerSuggestion
+import dev.tobins.mealplanner.api.DinnerPick
 import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.FoodDataset
 import dev.tobins.mealplanner.api.Ingredient
@@ -116,6 +125,13 @@ class FakeBackend(
      * from before standard meals.
      */
     private val standardMeals: Boolean = false,
+    /**
+     * The planning screen (issue 255): the lentil soup and the shakshuka chosen for the week's dinners and the tuna salad
+     * hidden, with [suggestions] to choose from. Without it the server is one from before the planning screen.
+     */
+    private val planning: Boolean = false,
+    /** With [planning], an account with no dinner to suggest, as one whose rotation has none that makes a dinner. */
+    nothingToSuggest: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -184,7 +200,7 @@ class FakeBackend(
         requests += "$requestMethod ${requestURI.path}"
         var status = 200
         val body = try {
-            route(requestMethod, requestURI.path, sent)
+            route(requestMethod, requestURI.path, sent, queryOf(requestURI.rawQuery))
         } catch (e: Refusal) {
             status = e.status
             """{"error":${json.encodeToString(e.message)}}"""
@@ -206,8 +222,13 @@ class FakeBackend(
     /** What the server answers with an error and its sentence, as `{"error": "..."}`. */
     private class Refusal(val status: Int, message: String) : Exception(message)
 
-    private fun route(method: String, path: String, sent: String): String? {
+    /** The parameters of a query string, `count=6&seen=1%2C2`, decoded. */
+    private fun queryOf(raw: String?): Map<String, String> = raw.orEmpty().split('&').filter { '=' in it }
+        .associate { it.substringBefore('=') to java.net.URLDecoder.decode(it.substringAfter('='), "UTF-8") }
+
+    private fun route(method: String, path: String, sent: String, query: Map<String, String> = emptyMap()): String? {
         val parts = path.trim('/').split('/')
+        if (parts.getOrNull(1) == "plans" && (parts.getOrNull(3) == "planning" || parts.lastOrNull() == "move")) return planningRoute(method, path, sent, query)
         if (parts.getOrNull(1) == "recipes" && method != "GET") return changeRecipes(method, parts, sent)
         return when {
             path == "/api/me" -> json.encodeToString(Me("anna", "Anna"))
@@ -250,8 +271,16 @@ class FakeBackend(
             }
             // A meal taken out of the plan: the week as it was, as the test reads what was sent.
             method == "DELETE" && parts.size == 6 && parts[1] == "plans" && parts[3] == "meals" -> { changes += "DELETE $path"; json.encodeToString(plan(parts[2])) }
-            // Choosing a recipe for a meal: the plan, which already has such a choice.
-            parts.size == 6 && parts[1] == "plans" && parts[3] == "meals" -> json.encodeToString(plan(parts[2]))
+            // Choosing a recipe for a meal: the plan, which already has such a choice; the test reads what was sent.
+            parts.size == 6 && parts[1] == "plans" && parts[3] == "meals" -> {
+                if (method == "PUT") changes += "PUT $path $sent"
+                json.encodeToString(plan(parts[2]))
+            }
+            // Planning the week in one go, as a server from before the planning screen does it (issue 255): the week as it was.
+            method == "POST" && parts.size == 4 && parts[1] == "plans" && parts[3] == "generate" -> {
+                changes += "POST $path"
+                json.encodeToString(plan(parts[2]))
+            }
             parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(shopping(parts[2]))
             path == "/api/offers" -> json.encodeToString(if (emptyOffers) OffersState(emptyList(), emptyList()) else offers)
             path == "/api/prices" -> json.encodeToString(if (emptyPrices) PricesState(emptyList(), emptyList(), null) else prices)
@@ -426,6 +455,7 @@ class FakeBackend(
         days = (0..6).map { if (emptyWeek) PlanDay(plusDays(weekStart, it), emptyList(), 0.0, 0.0, 0.0) else planDay(it) },
         emptySlots = if (emptyWeek) MealSlot.entries else emptyList(),
         batchesToMake = if (growing) listOf(BatchToMake(2, "Chickpea salad with feta and roasted peppers", growingPrep)) else emptyList(),
+        dinnersChosen = if (planning) picks.size else 0,
         cost = if (emptyWeek) null else 61.40,
         costWithoutOffers = if (emptyWeek) null else 68.95,
         rest = if (emptyWeek || !weekRest) emptyList() else listOf(
@@ -844,6 +874,107 @@ class FakeBackend(
         weights = weights.copy(entries = entries)
         entries.lastOrNull()?.let { newest -> profile = profile?.copy(weightKg = newest.kg) }
         return json.encodeToString(weights)
+    }
+
+
+    // --- The planning screen (issue 255), with [planning]
+
+    /** The recipes chosen for the week's dinners, in the order they were, and those hidden for it. */
+    val picks: MutableList<Long> = java.util.Collections.synchronizedList(mutableListOf(5L, 6L))
+    private val hidden: MutableList<Long> = java.util.Collections.synchronizedList(mutableListOf(3L))
+
+    /** While set, Done answers 409 with this sentence, as the server does when a chosen dinner can no longer be planned. */
+    @Volatile
+    var doneRefusal: String? = null
+
+    /** False for an account with no dinner to suggest ([nothingToSuggest]); a test may switch it. */
+    @Volatile
+    var suggesting = !nothingToSuggest
+
+    private fun suggestion(id: Long, title: String, vararg grounds: SuggestionGround, kcal: Double = 640.0, protein: Double = 42.0, price: Double = 2.35, saving: Double = 0.0) =
+        DinnerSuggestion(id, title, grounds.toList(), 1.25, kcal * 1.25, protein * 1.25, 7.5, price, saving)
+
+    /** What the server suggests, in the mixed order it sends them: on offer, what is there, favourites and recipes not tried yet, in turn. */
+    private val suggestions = listOf(
+        suggestion(21, "Gochujang chicken thighs with rice and quick-pickled cucumber", SuggestionGround.ON_OFFER, saving = 0.85)
+            .copy(offers = listOf(SuggestionOffer("Chicken thigh fillet", Store.AH, "AH Kippendijfilet", "25% korting", 0.85))),
+        suggestion(22, "Spinach and feta pie", SuggestionGround.USES_WHAT_IS_THERE).copy(onHand = listOf("Feta")),
+        suggestion(2, "Chickpea salad with feta and roasted peppers", SuggestionGround.FAVOURITE).copy(rating = 5, weeksSinceEaten = 4),
+        suggestion(24, "Miso salmon traybake", SuggestionGround.NOT_TRIED_YET, price = 4.10),
+        suggestion(25, "Beef chilli", SuggestionGround.ON_OFFER, saving = 0.60)
+            .copy(offers = listOf(SuggestionOffer("Minced beef", Store.JUMBO, "Jumbo Rundergehakt 500 g", "2 voor 7,50", 0.60))),
+        suggestion(26, "Pasta with spinach and lemon", SuggestionGround.USES_WHAT_IS_THERE).copy(packRests = listOf(PackRestUse("Spinach", "Lentil soup"))),
+        suggestion(27, "Thai green curry", SuggestionGround.FAVOURITE).copy(rating = 4),
+        suggestion(28, "Fish tacos", SuggestionGround.NOT_TRIED_YET),
+        suggestion(29, "Pork tenderloin with apples", SuggestionGround.ON_OFFER, SuggestionGround.NOT_TRIED_YET, saving = 1.10)
+            .copy(offers = listOf(SuggestionOffer("Pork tenderloin", Store.LIDL, "Varkenshaas", null, 1.10))),
+        suggestion(30, "Mushroom risotto", SuggestionGround.FAVOURITE).copy(weeksSinceEaten = 6),
+    )
+
+    private fun titleOf(id: Long) = suggestions.firstOrNull { it.recipeId == id }?.title ?: row(id).title
+
+    /**
+     * The week's planning: the open days (Monday and Tuesday have passed, Thursday's dinner is skipped and Friday's locked,
+     * so Wednesday, Saturday and Sunday are left), the choices and the strip.
+     */
+    private fun planningOf(weekStart: String): WeekPlanning {
+        val chosen = picks.toList().map { id -> DinnerPick(id, titleOf(id), 1.25, 812.5, 51.0, 9.0, 3.40, 3.90) }
+        return WeekPlanning(
+            weekStart, targets, openDays = listOf(2, 5, 6), picks = chosen,
+            notThisWeek = hidden.toList().map { HiddenRecipe(it, titleOf(it)) },
+            totals = PlanningTotals(
+                meals = 3 + 2 * chosen.size, cost = 7.80 + chosen.sumOf { 2 * it.cost!! }, costWithoutOffers = 8.40 + chosen.sumOf { 2 * it.costWithoutOffers!! },
+                kcal = 2080.0 + chosen.sumOf { 2 * it.kcal }, proteinG = 121.0 + chosen.sumOf { 2 * it.proteinG }, fibreG = 26.0 + chosen.sumOf { 2 * it.fibreG!! },
+                targetKcal = 1890.0 + 1428.0 * chosen.size, targetProteinG = 117.0 + 88.4 * chosen.size, targetFibreG = 27.0 + 20.4 * chosen.size,
+            ),
+        )
+    }
+
+    /** The next suggestions, as the server pages them; a search finds every meal of mine whose title has each word. */
+    private fun suggestionsOf(query: Map<String, String>): DinnerSuggestions {
+        val count = query["count"]?.toInt() ?: 6
+        val seen = query["seen"].orEmpty().split(',').mapNotNull { it.toLongOrNull() }.toSet()
+        val words = query["q"]?.lowercase()?.split(' ')?.filter { it.isNotEmpty() }
+        val pool = if (words == null) {
+            suggestions.filter { suggesting && it.recipeId !in picks && it.recipeId !in hidden }
+        } else {
+            val meals = mine().filter { it.kind == RecipeKind.MEAL && suggestions.none { s -> s.recipeId == it.id } }
+                .map { DinnerSuggestion(it.id, it.title, emptyList(), 1.25, 760.0, 45.0, 6.0, 2.40, 0.30) }
+            (suggestions + meals).filter { s -> words.all { it in s.title.lowercase() } }
+        }.filter { it.recipeId !in seen }
+        return DinnerSuggestions(pool.take(count), pool.size > count)
+    }
+
+    private fun planningRoute(method: String, path: String, sent: String, query: Map<String, String>): String? {
+        if (!planning) return null
+        val parts = path.trim('/').split('/')
+        val week = parts[2]
+        if (parts.last() == "move") {
+            changes += "POST $path $sent"
+            return json.encodeToString(plan(week))
+        }
+        return when {
+            method == "GET" && parts.size == 4 -> json.encodeToString(planningOf(week))
+            method == "GET" && parts.size == 5 && parts[4] == "suggestions" -> json.encodeToString(suggestionsOf(query))
+            method == "POST" && parts.size == 5 && parts[4] == "done" -> {
+                doneRefusal?.let { throw Refusal(409, it) }
+                changes += "POST $path"
+                picks.clear()
+                json.encodeToString(plan(week))
+            }
+            parts.size == 6 && (parts[4] == "picks" || parts[4] == "not-this-week") -> {
+                changes += "$method $path"
+                val id = parts[5].toLong()
+                val (list, other) = if (parts[4] == "picks") picks to hidden else hidden to picks
+                list.remove(id)
+                if (method == "PUT") {
+                    list += id
+                    other.remove(id)
+                }
+                json.encodeToString(planningOf(week))
+            }
+            else -> null
+        }
     }
 
     companion object {

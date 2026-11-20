@@ -2,6 +2,8 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.Health
 import dev.tobins.mealplanner.api.DayView
+import dev.tobins.mealplanner.api.DinnerMove
+import dev.tobins.mealplanner.api.DinnerSuggestions
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodDataset
 import dev.tobins.mealplanner.api.GenerateRequest
@@ -22,6 +24,7 @@ import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.PricesState
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.WeekPlanning
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RatingInput
@@ -509,6 +512,37 @@ class ApiClient(
             contentType(ContentType.Application.Json)
             setBody(StandardChoice(recipeId, eaten))
         }.body()
+
+    /** The planning screen of the week starting [weekStart] (issue 255); null from a server before it, which plans in one go. */
+    suspend fun planning(weekStart: String): WeekPlanning? = unlessUnknown { http.get("api/plans/$weekStart/planning").body<WeekPlanning>() }
+
+    /**
+     * The next [count] suggestions for the week's dinners, leaving out the recipes [seen] already ("Show others"); with a
+     * [query], every meal of mine whose title has each of its words ("Something else").
+     */
+    suspend fun dinnerSuggestions(weekStart: String, seen: Collection<Long>, count: Int, query: String? = null): DinnerSuggestions =
+        http.get("api/plans/$weekStart/planning/suggestions") {
+            parameter("count", count)
+            if (seen.isNotEmpty()) parameter("seen", seen.joinToString(","))
+            query?.let { parameter("q", it) }
+        }.body()
+
+    /** Chooses recipe [recipeId] for the week's dinners, or with [chosen] false takes it out again. */
+    suspend fun chooseDinner(weekStart: String, recipeId: Long, chosen: Boolean): WeekPlanning =
+        if (chosen) http.put("api/plans/$weekStart/planning/picks/$recipeId").body() else http.delete("api/plans/$weekStart/planning/picks/$recipeId").body()
+
+    /** Hides recipe [recipeId] from the week's suggestions ("Not this week"), or with [hidden] false shows it again. */
+    suspend fun hideForWeek(weekStart: String, recipeId: Long, hidden: Boolean): WeekPlanning =
+        if (hidden) http.put("api/plans/$weekStart/planning/not-this-week/$recipeId").body() else http.delete("api/plans/$weekStart/planning/not-this-week/$recipeId").body()
+
+    /** Plans the week with the dinners chosen for it ("Done", or "Fill the rest"), and returns the plan. */
+    suspend fun planningDone(weekStart: String): WeekPlan = http.post("api/plans/$weekStart/planning/done").body()
+
+    /** Moves the dinner of [day] to [toDay], swapping it with the dinner there; the server refuses one that stays (409). */
+    suspend fun moveDinner(weekStart: String, day: Int, toDay: Int): WeekPlan = http.post("api/plans/$weekStart/meals/$day/${MealSlot.DINNER.name}/move") {
+        contentType(ContentType.Application.Json)
+        setBody(DinnerMove(toDay))
+    }.body()
 
     fun close() = http.close()
 }

@@ -1,6 +1,8 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -77,6 +80,8 @@ fun PlanScreen(
     onAdjust: (MealPlace) -> Unit = {},
     /** The week (its Monday) to show first instead of this week: the one a tapped notification asks for. */
     startWeek: String? = null,
+    /** Whether to open the planning screen of [startWeek] (issue 255), as the "Plan next week" notification asks. */
+    startPlanning: Boolean = false,
 ) {
     val t = LocalStrings.current
     val today = rememberToday()
@@ -115,6 +120,11 @@ fun PlanScreen(
     // The week's standard meals (issue 265), for the skip sheet and the picker, and the meal just skipped with those it offers.
     var standard by remember(weekStart) { mutableStateOf<StandardMeals?>(null) }
     var skipped by remember { mutableStateOf<Pair<PlannedMeal, List<StandardMeal>>?>(null) }
+    // The week being planned on the planning screen (issue 255), the dinner "Another recipe" suggests others for, and the dinner
+    // being moved to another day. They stay open across a re-created activity, as the screen keeps its place.
+    var planningWeek by rememberSaveable { mutableStateOf(startWeek.takeIf { startPlanning }) }
+    var anotherFor by rememberSaveable(stateSaver = jsonSaver(PlannedMeal.serializer().nullable)) { mutableStateOf(null) }
+    var moving by rememberSaveable(stateSaver = jsonSaver(PlannedMeal.serializer().nullable)) { mutableStateOf(null) }
 
     /** Asks for the shares in the box today again; a failure leaves the card as it was, as the plan says what went wrong. */
     suspend fun refreshSpares() {
@@ -170,6 +180,45 @@ fun PlanScreen(
                 Load.Loading -> Unit
             }
             busy = false
+        }
+    }
+
+    /** Shows [plan], which a screen opened over this one made, and what follows from it. */
+    fun showPlanned(plan: WeekPlan) {
+        weekStart = plan.weekStart
+        state = Load.Ready(plan)
+        scope.launch {
+            refreshSpares()
+            refreshStandard()
+        }
+    }
+
+    planningWeek?.let { week ->
+        BackHandler(enabled = true) { planningWeek = null; reload++ }
+        PlanningScreen(
+            api, week,
+            onBack = { planningWeek = null; reload++ },
+            onPlanned = { plan ->
+                planningWeek = null
+                showPlanned(plan)
+            },
+            onOpenRecipes = { planningWeek = null; onOpenRecipes() },
+        )
+        return
+    }
+    anotherFor?.let { meal ->
+        BackHandler(enabled = true) { anotherFor = null }
+        AnotherDinnerScreen(api, weekStart, meal, onBack = { anotherFor = null }) { plan ->
+            anotherFor = null
+            showPlanned(plan)
+        }
+        return
+    }
+
+    moving?.let { meal ->
+        MoveDinnerDialog(meal, (state as? Load.Ready)?.value, today, onDismiss = { moving = null }) { toDay ->
+            moving = null
+            change { api.moveDinner(weekStart, meal.day, toDay) }
         }
     }
 
@@ -326,8 +375,9 @@ fun PlanScreen(
                                 )
                             }
                             restLine(plan.rest, t)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                            Button(enabled = !busy, onClick = { change { api.generatePlan(weekStart) } }) {
-                                Text(if (planned) t(Msg.REPLAN) else t(Msg.PLAN_WEEK))
+                            // The planning screen (issue 255) in place of planning in one go; with dinners chosen and not on days yet, it goes on.
+                            Button(enabled = !busy, onClick = { planningWeek = weekStart }) {
+                                Text(if (plan.dinnersChosen > 0) t.plural(Plural.CONTINUE_PLANNING, plan.dinnersChosen) else t(Msg.PLAN_THE_WEEK))
                             }
                             // A prep is made today or later: a week that is over has no day for it.
                             val days = prepDays(weekStart, today)
@@ -367,6 +417,7 @@ fun PlanScreen(
                                 day = day,
                                 dayIndex = index,
                                 dayBefore = plan.days.getOrNull(index - 1)?.meals.orEmpty(),
+                                dayAfter = plan.days.getOrNull(index + 1)?.meals.orEmpty(),
                                 today = today,
                                 targets = plan.targets,
                                 // A slot is offered on every day that has no meal in it.
@@ -377,7 +428,11 @@ fun PlanScreen(
                                 growable = { meal -> growable(plan, meal, today) },
                                 onOpenRecipe = { meal -> onOpenRecipe(meal.recipeId, meal.toCook(weekStart)) },
                                 onOpenSide = { meal, side -> onOpenRecipe(side.recipeId, side.toCook(meal.status == MealStatus.SKIPPED)) },
-                                onReroll = { meal -> change { api.rerollMeal(weekStart, meal.day, meal.slot) } },
+                                // A dinner gets the suggestions of the planning screen for it (issue 255); another meal, the planner's next choice.
+                                onReroll = { meal ->
+                                    if (meal.slot == MealSlot.DINNER) anotherFor = meal else change { api.rerollMeal(weekStart, meal.day, meal.slot) }
+                                },
+                                onMove = { meal -> moving = meal },
                                 onGenerate = { meal -> generatingFor = meal },
                                 onChoose = { day, slot -> choosingFor = day to slot },
                                 onToggleSkipped = { meal ->
@@ -429,6 +484,8 @@ private fun DayCard(
     dayIndex: Int,
     /** The meals of the day before in this plan, for what its dinner says of a leftover lunch ([whyKept]). */
     dayBefore: List<PlannedMeal>,
+    /** The meals of the day after, for whether a dinner's leftover lunch can follow it to another day ([canMove]). */
+    dayAfter: List<PlannedMeal>,
     /** Today's ISO date: a prep is not made on a day that has passed. */
     today: String,
     targets: DailyTargets,
@@ -441,6 +498,8 @@ private fun DayCard(
     growable: (PlannedMeal) -> List<BatchToMake>,
     onOpenRecipe: (PlannedMeal) -> Unit,
     onReroll: (PlannedMeal) -> Unit,
+    /** Moves a dinner to another day (issue 255). */
+    onMove: (PlannedMeal) -> Unit,
     onGenerate: (PlannedMeal) -> Unit,
     onChoose: (Int, MealSlot) -> Unit,
     onToggleSkipped: (PlannedMeal) -> Unit,
@@ -516,9 +575,18 @@ private fun DayCard(
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 kept?.let { DropdownMenuItem(text = { Text(t(keptMessage(it))) }, enabled = false, onClick = {}) }
                                 if (kept == null) {
-                                    // A locked meal (one the user chose, or locked) keeps its recipe: only choosing or leaving it out is left.
-                                    DropdownMenuItem(text = { Text(t(Msg.ANOTHER_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onReroll(meal) })
+                                    // A locked meal (one the user chose, or locked) keeps its recipe: only choosing or leaving it out is left. A
+                                    // dinner's "Another recipe" opens suggestions to choose from, which a locked one may take too (issue 255).
+                                    DropdownMenuItem(
+                                        text = { Text(t(Msg.ANOTHER_RECIPE)) },
+                                        enabled = !meal.locked || meal.slot == MealSlot.DINNER,
+                                        onClick = { menu = false; onReroll(meal) },
+                                    )
                                     DropdownMenuItem(text = { Text(t(Msg.CHOOSE_RECIPE)) }, onClick = { menu = false; onChoose(meal.day, meal.slot) })
+                                }
+                                // Only a dinner the server lets move: not one that keeps its recipe, of a prep, with a side, or whose leftovers can't follow.
+                                if (meal.canMove(day.date, dayBefore, dayAfter, today)) {
+                                    DropdownMenuItem(text = { Text(t(Msg.MOVE_TO_DAY)) }, onClick = { menu = false; onMove(meal) })
                                 }
                                 // A skipped meal counts for nothing, so there is nothing in it to adjust.
                                 DropdownMenuItem(
@@ -594,10 +662,59 @@ private fun dayTotals(day: PlanDay, targets: DailyTargets, t: Strings): String {
     )
 }
 
+/** Why a dinner stays on its day, as the move dialog says it ([WhyStays]). */
+private fun whyStaysMessage(why: WhyStays): Msg = when (why) {
+    WhyStays.PASSED -> Msg.MOVE_DAY_PASSED
+    WhyStays.EATEN -> Msg.MOVE_WHY_EATEN
+    WhyStays.BATCH_MADE -> Msg.MOVE_WHY_BATCH_MADE
+    WhyStays.MAKES_BATCH -> Msg.MOVE_WHY_MAKES_BATCH
+    WhyStays.PREPPED -> Msg.MOVE_WHY_PREPPED
+    WhyStays.SIDE -> Msg.MOVE_WHY_SIDE
+    WhyStays.LEFTOVERS -> Msg.MOVE_WHY_LEFTOVERS
+}
+
 /** What the menu of a meal that keeps its recipe says instead of offering another ([WhyKept]). */
 private fun keptMessage(why: WhyKept): Msg = when (why) {
     WhyKept.EATEN -> Msg.KEPT_EATEN
     WhyKept.DINNER_EATEN -> Msg.KEPT_DINNER_EATEN
     WhyKept.BATCH_MADE -> Msg.KEPT_BATCH_MADE
     WhyKept.MAKES_BATCH -> Msg.KEPT_MAKES_BATCH
+}
+
+/**
+ * Where to move [meal], a dinner of [plan], to (issue 255): the other days of the week, each with the dinner it would swap
+ * with, or none. A day before [today] has passed, and a day whose dinner stays where it is ([whyStays]) says why; neither
+ * can be chosen.
+ */
+@Composable
+private fun MoveDinnerDialog(meal: PlannedMeal, plan: WeekPlan?, today: String, onDismiss: () -> Unit, onMove: (Int) -> Unit) {
+    val t = LocalStrings.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(t(Msg.MOVE_TITLE, meal.title)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                plan?.days?.forEachIndexed { index, day ->
+                    if (index == meal.day) return@forEachIndexed
+                    val there = day.meals.firstOrNull { it.slot == MealSlot.DINNER }
+                    val why = there?.whyStays(day.date, plan.days.getOrNull(index - 1)?.meals.orEmpty(), plan.days.getOrNull(index + 1)?.meals.orEmpty(), today)
+                    val stays = day.date < today || why != null
+                    val what = when {
+                        day.date < today -> t(Msg.MOVE_DAY_PASSED)
+                        there == null -> t(Msg.MOVE_NO_DINNER)
+                        why != null -> t(Msg.MOVE_STAYS, there.title, t(whyStaysMessage(why)))
+                        else -> t(Msg.MOVE_SWAPS, there.title)
+                    }
+                    TextButton(enabled = !stays, onClick = { onMove(index) }, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(dayLabel(day.date, t.locale))
+                            Text(what, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+    )
 }

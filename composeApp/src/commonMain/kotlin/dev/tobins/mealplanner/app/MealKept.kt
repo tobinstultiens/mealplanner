@@ -60,3 +60,51 @@ fun PlannedMeal.shareGone(date: String): Boolean {
     val ofBatch = prep?.meals?.firstOrNull { it.date == date && it.slot == slot && !it.side } ?: return false
     return status == MealStatus.SKIPPED && ofBatch.portions == 0.0
 }
+
+/** Why a dinner stays on its day rather than move to another (issue 255), as the server refuses a move. */
+enum class WhyStays {
+    /** Its day has passed: dinners move only between today and the days after it. */
+    PASSED,
+
+    /** It was eaten ([WhyKept.EATEN]). */
+    EATEN,
+
+    /** It is of a prepped batch that was made ([WhyKept.BATCH_MADE]). */
+    BATCH_MADE,
+
+    /** It makes a prepped batch ([WhyKept.MAKES_BATCH]). */
+    MAKES_BATCH,
+
+    /** A later meal of a batch still to make: the batch's meals are on its days. */
+    PREPPED,
+
+    /** It has a prepped side, which is eaten with it on its day. */
+    SIDE,
+
+    /** Its leftover lunch is eaten, skipped, locked or has a side, so it can't follow. */
+    LEFTOVERS,
+}
+
+/**
+ * Why this dinner, on the day [date], stays on its day (issue 255), as the server says it (`PlanRepository.whyStaysOnItsDay`
+ * and the past days of `moveDinner`), or null when it may move or give its day to another dinner. [dayBefore] and [dayAfter]
+ * are the meals of the days around it, for its own [whyKept] and its leftover lunch; [today] is today's ISO date. A skipped
+ * prepped meal's share in the box under it, which the plan does not show, the server refuses with a sentence of its own.
+ */
+fun PlannedMeal.whyStays(date: String, dayBefore: List<PlannedMeal>, dayAfter: List<PlannedMeal>, today: String): WhyStays? {
+    if (date < today) return WhyStays.PASSED
+    when (whyKept(date, dayBefore)) {
+        WhyKept.EATEN, WhyKept.DINNER_EATEN -> return WhyStays.EATEN
+        WhyKept.BATCH_MADE -> return WhyStays.BATCH_MADE
+        WhyKept.MAKES_BATCH -> return WhyStays.MAKES_BATCH
+        null -> Unit
+    }
+    if (prep != null) return WhyStays.PREPPED
+    if (side != null) return WhyStays.SIDE
+    val leftovers = dayAfter.firstOrNull { it.slot == MealSlot.LUNCH && it.leftover && it.prep == null && it.recipeId == recipeId }
+    return WhyStays.LEFTOVERS.takeIf { leftovers != null && (leftovers.status != MealStatus.PLANNED || leftovers.locked || leftovers.side != null) }
+}
+
+/** Whether this meal is a dinner that may move to another day ([whyStays]). */
+fun PlannedMeal.canMove(date: String, dayBefore: List<PlannedMeal>, dayAfter: List<PlannedMeal>, today: String): Boolean =
+    slot == MealSlot.DINNER && whyStays(date, dayBefore, dayAfter, today) == null

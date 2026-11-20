@@ -49,6 +49,7 @@ import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PrepMeal
 import dev.tobins.mealplanner.api.PrepSlot
@@ -112,6 +113,9 @@ private val sampleProfile = Profile(
 
 /** Controls of three kinds; the test gives the one tagged [FOCUSED] keyboard focus, to see the ring on each. */
 /** The recipe picker's body for a dinner, over the fake backend's recipes: a dialog is a window the picture does not include. */
+/** Monday's dinner of the fake week, which "Another recipe" suggests others for (issue 255). */
+private val sampleDinner = PlannedMeal(0, MealSlot.DINNER, 4, "Slow-cooked chicken thighs with coconut, lemon and spinach", 1.0, 810.0, 55.0)
+
 /** The chicken thighs as the Prep dialog offers them: three days in a box, six vacuum sealed. */
 private val keepingRecipe = RecipeSummary(
     4, "Slow-cooked chicken thighs with coconut, lemon and spinach", "Dinner", emptyList(), 2, RecipeSource.COOKING_SITE, RecipeKind.MEAL,
@@ -352,6 +356,10 @@ enum class Shot(
     val vacuum: Boolean = false,
     /** The fake backend's week with standard meals and today's lunch skipped (issue 265). */
     val standardMeals: Boolean = false,
+    /** The fake backend's planning of the week (issue 255): two dinners chosen, a recipe hidden, suggestions on every ground. */
+    val planning: Boolean = false,
+    /** That planning with no dinner to suggest. */
+    val nothingToSuggest: Boolean = false,
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
     val dutch: Boolean = false,
     val heightDp: Int = 640,
@@ -362,6 +370,21 @@ enum class Shot(
 ) {
     TODAY(heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     PLAN(weekRest = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // The planning screen (issue 255): the dinners left to choose, the strip, the two chosen, six suggestions with their
+    // reasons, "Show others", the recipe hidden and "Fill the rest"; in Dutch, and at the largest font in both languages.
+    PLANNING(planning = true, heightDp = 2900, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
+    PLANNING_NL(planning = true, dutch = true, heightDp = 3000, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
+    PLANNING_X2(planning = true, heightDp = 5600, fontScale = 2.0f, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
+    PLANNING_X2_NL(planning = true, dutch = true, heightDp = 6000, fontScale = 2.0f, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
+    // Nothing to suggest: why, and the way to the recipes, in both languages.
+    PLANNING_NOTHING(planning = true, nothingToSuggest = true, heightDp = 1200, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}, onOpenRecipes = {}) }),
+    PLANNING_NOTHING_NL(planning = true, nothingToSuggest = true, dutch = true, heightDp = 1300, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}, onOpenRecipes = {}) }),
+    // "Another recipe" for Monday's dinner: the same suggestions to choose from, and the planner's own choice.
+    ANOTHER_DINNER(planning = true, heightDp = 2500, content = { api, _ -> AnotherDinnerScreen(api, FakeBackend.WEEK_START, sampleDinner, {}, {}) }),
+    ANOTHER_DINNER_NL(planning = true, dutch = true, heightDp = 2600, content = { api, _ -> AnotherDinnerScreen(api, FakeBackend.WEEK_START, sampleDinner, {}, {}) }),
+    // The top of the Plan of a week with dinners chosen and not on days yet: "Continue planning", in both languages.
+    PLAN_CONTINUE(planning = true, heightDp = 700, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_CONTINUE_NL(planning = true, dutch = true, heightDp = 700, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     // Fibre next to kcal and protein in Dutch, where the totals are longest (#223).
     TODAY_NL(dutch = true, heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     PLAN_NL(weekRest = true, dutch = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
@@ -636,6 +659,8 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, mixed = shot.mixed, tailOnly = shot.tailOnly, weekRest = shot.weekRest,
         vacuum = shot.vacuum,
         standardMeals = shot.standardMeals,
+        planning = shot.planning,
+        nothingToSuggest = shot.nothingToSuggest,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)

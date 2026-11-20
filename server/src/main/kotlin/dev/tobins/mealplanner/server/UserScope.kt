@@ -39,6 +39,7 @@ class UserScope(
             pricing = { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) },
             shops = shops::inUse,
             freshPacks = { prices.freshPacks(ingredients, sections.keepsByIngredient(sections.byIngredient())) },
+            today = today,
         )
     }
     val preps by lazy { PrepRepository(db, accountId, plans, recipes, profiles, today) }

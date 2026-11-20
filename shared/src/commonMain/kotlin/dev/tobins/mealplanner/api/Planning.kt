@@ -29,7 +29,8 @@ data class WeekPlanning(
 /**
  * A dinner chosen for the week, not yet on a day: its numbers at the portion the planner gives a dinner of it, which
  * is the portion it has on the Plan once the week is planned. [cost] with the week's offers, [costWithoutOffers]
- * without; null when unknown.
+ * without; null when unknown. Not [plannable] when its recipe lost its amounts since it was chosen: it has no numbers
+ * (0), counts in no total, and "Done" refuses until it is taken out.
  */
 @Serializable
 data class DinnerPick(
@@ -41,6 +42,7 @@ data class DinnerPick(
     val fibreG: Double? = null,
     val cost: Double? = null,
     val costWithoutOffers: Double? = null,
+    val plannable: Boolean = true,
 )
 
 /** A recipe hidden from the week's suggestions ([WeekPlanning.notThisWeek]). */

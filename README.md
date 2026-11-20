@@ -193,18 +193,39 @@ then, rather than going back to the defaults.
 ## Planning the week
 
 The week's dinners can be chosen by hand from suggestions, after which the planner puts them on days and fills the
-rest (issue 255). The server has it all; the app's planning screen comes with the next app release. Everything is
-under `/api/plans/{weekStart}/planning` and per account:
+rest (issue 255). In the app, "Plan the week" on the Plan opens the planning screen (`PlanningScreen.kt`); there is
+no one-tap Generate any more, and "Fill the rest" with nothing chosen is what Generate did. The screen, titled "Plan the
+week" (short enough for the largest font), names the week and how many dinners are still to choose, shows the strip
+(the week's cost and saving "for 9 meals", as each chosen dinner counts with its leftover lunch, which is why one
+dinner of ≈ €3.07 is ≈ €6.14 for 2 meals there and on the Plan; and its calories, protein and fibre against what
+those meals should give: only shown, never a warning), the dinners chosen (each with a button to take it out; one
+whose recipe lost its amounts says so, as Done refuses until it is out), about six suggestion cards with a line per
+reason ("On offer: chicken thigh fillet at AH (25% korting)", "Uses what is there: feta", "Favourite: rated 5 of 5 ·
+not eaten for 4 weeks", "Not tried yet"), the price of a serving with the saving, and what the planner's portion gives.
+Tapping a card adds it; "Not this week" hides it, and the hidden recipes are listed with "Show again"; "Show others" asks
+for the next ones with those shown so far, and with nothing to suggest at all the screen says why (no dinner of the
+rotation fits that is not chosen or hidden) with "Open recipes"; "Something else" searches every meal of mine, a chosen
+one marked "✓ Chosen for this week". The button at the bottom says
+"Done" once every open day has a dinner chosen, "Fill the rest" before. While dinners are chosen and not on days, the
+Plan's button says "Continue planning: 2 dinners chosen" (`WeekPlan.dinnersChosen`). On the Plan, "Another recipe" on a
+dinner opens the same suggestions for that one meal, with "Let the planner choose" for one that is not locked; a
+dinner's menu has "Move to another day…" where the server lets it move (`canMove` and `whyStays` in `MealKept.kt`),
+listing the other days with the dinner it would swap with; a day that has passed, or whose dinner stays, is greyed and
+says why ("Lentil soup stays on its day: it was eaten"). The "Plan next week" notification opens the
+planning screen of next week. A server from before the screen answers 404, and the screen then plans the week in one
+go, as before. Everything is under `/api/plans/{weekStart}/planning` and per account:
 
-- `GET planning` (`WeekPlanning`): the days whose dinner is still to choose (`openDays`: those without a dinner the
-  week keeps when it is planned, which is one locked, prepped, eaten, skipped, with a prepped side or with a skipped
-  share in the box under it), the dinners chosen so far in the order they were, each at the portion the planner gives
+- `GET planning` (`WeekPlanning`): the days whose dinner is still to choose (`openDays`: today and the days after it
+  without a dinner the week keeps when it is planned, which is one locked, prepped, eaten, skipped, with a prepped side
+  or with a skipped share in the box under it; a day that has passed is no day to choose a dinner for, and of a week
+  wholly ahead every day counts), the dinners chosen so far in the order they were, each at the portion the planner gives
   a dinner of it, the recipes hidden for the week, and `totals`, the strip: what the week's kept meals and the chosen
   dinners (on the days they would get, with their leftover lunches) cost with and without offers, and their calories,
   protein and fibre against the share of the daily targets those meals stand for. They are summed by the Plan's own
   code, and after "Done" the Plan has those same meals with those same numbers.
 - `GET planning/suggestions` (`DinnerSuggestions`, 6 unless `?count=`, at most 50): recipes of the rotation the
-  planner would take as a dinner, each on at least one ground: **on offer** (an ingredient is on offer at one of the
+  planner would take as a dinner (a portion within the profile's range reaches at least half a dinner's share of the
+  calories; lighter recipes are never suggested, though the search finds them), each on at least one ground: **on offer** (an ingredient is on offer at one of the
   account's stores during the week and that takes at least 5 cents off a serving; each offer named with the store,
   its deal and what it alone saves), **uses what is there** (an ingredient on hand, or at least 5 cents' worth of the
   rest of a fresh pack a chosen dinner opens, named with that dinner), **favourite** (rated 4 or 5, or last eaten
@@ -214,7 +235,7 @@ under `/api/plans/{weekStart}/planning` and per account:
   open), without a day or chance, and mixed from the grounds in turn, in that order, so that a screen holds every
   ground that has recipes and none crowds out the others, however many it has. Each ground's best comes first in
   its turn; among those not tried yet, the rating comes first (unrated counting as 3) and the score after. A recipe of a batch prepped this
-  week comes only when no other is left. Chosen and hidden recipes are left out, and so are those in `?seen=12,15`:
+  week is not suggested while any other recipe is, as the planner plans it again only when nothing else fits. Chosen and hidden recipes are left out, and so are those in `?seen=12,15`:
   "Show others" sends the ids it showed. A cursor would skip or repeat recipes, as the order changes after every
   pick; the ids do not, and the server keeps no state per screen. With `?q=` it is a search ("Something else"):
   every meal of mine whose title has each word, in the rotation or not, best first, whatever its grounds.
@@ -223,15 +244,19 @@ under `/api/plans/{weekStart}/planning` and per account:
   They are stored as they are made (`planPick`), so leaving the screen or the app loses nothing, and
   `WeekPlan.dinnersChosen` says how many dinners are chosen and not yet on a day ("Continue planning"). Any of my
   recipes that is a meal with amounts can be chosen, whatever its calories: nothing is refused or warned about for
-  those. More dinners than open days is a 409. Hiding changes nothing in the rotation; a hidden recipe chosen is no
-  longer chosen. Both are forgotten once their week is over.
+  those. More dinners than open days is a 409. A chosen dinner whose recipe has since lost its amounts stays in
+  `picks`, with `plannable` false and no numbers, so that it can be taken out: Done refuses (409) until it is. Hiding
+  changes nothing in the rotation; a hidden recipe chosen is no longer chosen. Both are forgotten once their week is over.
 - `POST planning/done` ("Done", or "Fill the rest") answers the `WeekPlan`. Each chosen dinner goes on an open day of
   its own, locked as a recipe chosen by hand, with its leftover lunch the next day where that lunch is free. Of all
   the ways to put them on days, the one taken leaves the least rest of fresh packs, by the planner's own bookkeeping
   (`OpenPacks`), so dinners that share a pack land within the days it keeps; then the fewest leftovers without a
   lunch to go to (with a dinner for every day, one that leaves no leftovers goes on Sunday); then the fewest dinners with the same first tag as the
-  day before. Then the planner fills everything else as `generate` does, keeping what it keeps, with none of the
-  hidden recipes. With nothing chosen nor hidden it is `generate` itself, by the same code. The chosen dinners are
+  day before. A chosen dinner never goes on a day that has passed. Then the planner fills everything else as
+  `generate` does, keeping what it keeps, past days of the week too (an empty or replaceable meal of a day that has
+  passed is planned, as Generate has always done), and never plans a
+  hidden recipe: it is no candidate, though the planner still knows it (`PlanRequest.known`), so a kept dinner of it
+  keeps its leftover lunch. With nothing chosen nor hidden it is `generate` itself, by the same code. The chosen dinners are
   then no longer "chosen"; the hidden recipes stay hidden for the week.
 
 `POST /api/plans/{weekStart}/meals/{day}/DINNER/move` with `{"toDay": 3}` moves a dinner to another day of the week,
@@ -241,8 +266,12 @@ the planner would give it there; a day left without leftovers keeps a lunch of i
 leftovers pushed out, and else its lunch goes (it was the leftovers of the dinner that left). A lunch that is locked,
 eaten, skipped or has a side stays as it is. Refused (409, nothing changes) for a dinner that keeps its recipe (eaten,
 or of a batch made or that it makes, with the server's own sentences), a later meal of a prepped batch, one with a
-prepped side or a share in the box under it, and one whose leftover lunch can't follow; another slot than dinner, or
-the same day, is a 400.
+prepped side or a share in the box under it, and one whose leftover lunch can't follow, and to or from a day that has
+passed ("Tuesday 17 November has passed: a dinner moves only between today and the days after it"); another slot than
+dinner, or the same day, is a 400.
+
+"Another recipe" (`reroll`) leaves out the recipes hidden for the week, as Fill the rest does: they are no candidates,
+and known, so a kept dinner of one keeps its leftovers.
 
 The planner knows the recipes of locked meals that are not in the rotation (`PlanRequest.known`): such a dinner,
 chosen by hand, leaves its leftovers for the next lunch when the week is planned again, as a dinner of the rotation
@@ -661,7 +690,7 @@ the device; each kind is an Android notification channel of its own, so the syst
 |---|---|---|---|
 | App update | A newer release exists (release builds only), once per version | The app, which offers the update | On |
 | Offers ending | An offer at one of the account's stores ends today or tomorrow, for a row of this week's shopping list still to buy (not ticked, still needed by a meal, not covered by a known amount at home), or a buy-ahead or stock-up row not ticked or dismissed; once per day, one notification naming them all ("3 offers for your list end today") | Shopping | On |
-| Plan next week | On Saturday and Sunday, while next week has no meals, whatever the offers ("Next week has no plan yet"; it works for every store, since only Jumbo lists next week's offers early); once per week | Plan, on next week | On |
+| Plan next week | On Saturday and Sunday, while next week has no meals, whatever the offers ("Next week has no plan yet"; it works for every store, since only Jumbo lists next week's offers early); once per week | The planning screen of next week | On |
 | Weigh-in | The newest weigh-in is 7 or more days old and there is a profile; once per 7 days, until one is entered | Progress | Off |
 | Dinner today | Today has a planned dinner that is neither eaten nor skipped and something to cook: its main, or else a side's prepped batch made next to it that evening ("Tonight's side: …"); a dinner that makes a prepped batch says its servings are for tonight and the prep's later meals; once per day | The recipe, from that meal (its servings to cook; on a prep day for the prep's later meals) | Off |
 | Mark what you ate | A meal of today is still planned; once per day | Today | Off |
@@ -687,8 +716,9 @@ card says so with "Open Android settings", read again each time the app resumes.
 screen as a route (`Opening` in `Routes.kt`) with an id of its own, which `MainActivity` hands to the app once
 (`NotificationInbox`): from a closed app, from an open one, and after Android killed the process with the task still
 in Recents, when the tap arrives with the screens' saved state and opens its screen over them; the recipe editor and
-the profile stay in front when they are open, so nothing typed is lost. "Plan next week" opens the Plan on next
-week (the `Opening` carries the week, `PlanScreen` starts on it), afresh each time it is tapped.
+the profile stay in front when they are open, so nothing typed is lost. "Plan next week" opens the planning screen of
+next week (the `Opening` carries the week and `|planning`, `PlanScreen` starts on it), afresh each time it is tapped; one
+posted by an app before that opens the Plan on that week.
 
 Emulator on this machine (`avdmanager` stores devices under `~/.config/.android/avd`, where the
 emulator does not look by default; the emulator window needs X11, so on Wayland it runs through XWayland):

@@ -106,11 +106,15 @@ class RoutesTest {
     fun anOpeningReadsBackFromItsString() {
         val dinner = MealToCook(12, 1.5, 2.25, skipped = false, MealPlace("2026-11-16", 3, MealSlot.DINNER), planned = true)
         val nextWeek = Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-23")
-        for (opening in listOf(Opening(Route.TabRoute(Tab.SHOPPING)), Opening(Route.Recipe(12), dinner), Opening(Route.Recipe(12)), nextWeek)) {
+        val planning = nextWeek.copy(planning = true)
+        for (opening in listOf(Opening(Route.TabRoute(Tab.SHOPPING)), Opening(Route.Recipe(12), dinner), Opening(Route.Recipe(12)), nextWeek, planning)) {
             assertEquals(opening, parseOpening(opening.encoded), opening.encoded)
         }
         assertEquals("#/recipes/12|2026-11-16|3|DINNER|1.5|2.25", Opening(Route.Recipe(12), dinner).encoded)
         assertEquals("#/plan|2026-11-23", nextWeek.encoded)
+        // Its planning screen (issue 255); without a week there is nothing to plan, so the Plan opens as usual.
+        assertEquals("#/plan|2026-11-23|planning", planning.encoded)
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN)), parseOpening("#/plan|soon|planning"))
         // A week that is not a Monday's date is no week of the plan: the Plan opens as usual.
         assertEquals(Opening(Route.TabRoute(Tab.PLAN)), parseOpening("#/plan|2026-11-24"))
         assertEquals(Opening(Route.TabRoute(Tab.PLAN)), parseOpening("#/plan|soon"))

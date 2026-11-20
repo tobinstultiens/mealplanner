@@ -53,6 +53,8 @@ class PlanRepository(
     private val shops: () -> Set<Store> = { Store.entries.toSet() },
     /** The packs of the account's fresh ingredients, by ingredient id: the planner uses up the rest of an opened one. */
     private val freshPacks: () -> Map<Long, Pack> = { emptyMap() },
+    /** Today as the household sees it: a dinner moves only between today and the days after it (issue 255). */
+    private val today: () -> LocalDate = ::serverToday,
 ) {
     private val q = db.planQueries
     private val adjustments = MealAdjustments(db, userId, recipes, recipes.ingredients)
@@ -77,14 +79,15 @@ class PlanRepository(
      * Plans the week starting [start] as [generate] says, around the meals it keeps ([kept]) and the meals [chosen] makes
      * of them: the dinners chosen on the planning screen (issue 255), on their days. Every other meal is replaced by a
      * newly planned one. A chosen meal is stored as [chosen] has it, locked or not; a meal the planner adds, unlocked,
-     * and never of the recipes [excluded] (those hidden for the week). With nothing chosen nor excluded this is [generate]
-     * itself. In the caller's transaction, which takes the write lock.
+     * and never of the recipes [hidden] for the week ([leavingOut]). Every slot that is not kept is planned, on days that
+     * have passed too, as [generate] has always done. With nothing chosen nor hidden this is [generate] itself. In the
+     * caller's transaction, which takes the write lock.
      */
-    internal fun fillWeek(start: LocalDate, seed: Long, excluded: Set<Long> = emptySet(), chosen: (kept: List<PlannedMeal>) -> List<PlannedMeal>) {
+    internal fun fillWeek(start: LocalDate, seed: Long, hidden: Set<Long> = emptySet(), chosen: (kept: List<PlannedMeal>) -> List<PlannedMeal>) {
         val week = meals(start)
         val kept = kept(start, week)
         val placed = chosen(kept)
-        val planned = plan(request(start, locked = kept + placed, seed = seed).copy(excluded = excluded))
+        val planned = plan(request(start, locked = kept + placed, seed = seed).leavingOut(hidden))
         for (old in week.filterNot { it in kept }) q.deleteMeal(userId, start.toString(), old.day.toLong(), old.slot.name)
         val lockedByHand = placed.filter { it.locked }.mapTo(HashSet()) { it.day to it.slot }
         planned.filter { new -> kept.none { it.day == new.day && it.slot == new.slot } }
@@ -138,7 +141,8 @@ class PlanRepository(
             requireNotCooked(start, target, current)
             val replaced = listOfNotNull(target, leftoversToReplace(start, current, day, slot))
             val excluded = setOfNotNull(target.recipeId, target.side?.recipeId)
-            val planned = plan(request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = excluded))
+            // Nor one hidden for the week on the planning screen ("Not this week", issue 255), as Fill the rest leaves it out.
+            val planned = plan(request(start, locked = current - replaced.toSet(), seed = seed).copy(excluded = excluded).leavingOut(hiddenIn(start)))
             val replacement = planned.firstOrNull { it.day == day && it.slot == slot }
             if (replacement == null || replacement.recipeId == target.recipeId) throw ConflictException("No other recipe fits this meal")
             for (old in replaced) {
@@ -153,11 +157,15 @@ class PlanRepository(
      * Moves the dinner of [day] to [toDay] and the dinner there, if any, to [day] (issue 255), each as it is: its recipe,
      * portions, lock, status and what was in it. The lunches after the two days follow ([lunchesAfterMove]): each dinner's
      * leftover lunch goes with it, and a lunch of its own may take the place of leftovers that left. A
-     * [ConflictException] when either dinner stays on its day ([whyStaysOnItsDay]); nothing changes then.
+     * [ConflictException] when either dinner stays on its day ([whyStaysOnItsDay]), or either day has passed; nothing
+     * changes then.
      */
     fun moveDinner(weekStart: String, day: Int, toDay: Int): WeekPlan {
         require(toDay in 0 until DAYS && toDay != day) { "toDay must be another day of the week, 0 to 6" }
         val start = parseWeekStart(weekStart)
+        for (passed in listOf(day, toDay).map { start.plusDays(it.toLong()) }.filter { it < today() }) {
+            throw ConflictException("${Batch.dayName(passed)} has passed: a dinner moves only between today and the days after it")
+        }
         db.writing {
             val week = meals(start)
             val moving = week.firstOrNull { it.day == day && it.slot == MealSlot.DINNER } ?: throw NotFoundException("No dinner planned for day $day")
@@ -780,6 +788,21 @@ class PlanRepository(
             else -> null
         }
     }
+
+    /**
+     * This request without the recipes [hidden] for the week on the planning screen (issue 255): out of the candidates,
+     * so the planner never picks one, and known ([PlanRequest.known]) rather than excluded, so a kept dinner of one still
+     * leaves its leftovers for the next lunch, which an excluded recipe would not.
+     */
+    private fun PlanRequest.leavingOut(hidden: Set<Long>): PlanRequest {
+        if (hidden.isEmpty()) return this
+        val (notPicked, picked) = candidates.partition { it.recipeId in hidden }
+        return copy(candidates = picked, known = known + notPicked)
+    }
+
+    /** The recipes hidden for the week starting [start] on the planning screen ("Not this week", issue 255). */
+    private fun hiddenIn(start: LocalDate): Set<Long> =
+        q.selectPicks(userId, start.toString()).executeAsList().filter { it.refused != 0L }.mapTo(HashSet()) { it.recipeId }
 
     /**
      * What the planner plans the week starting [start] with, around the [locked] meals: with the recipes of those that are

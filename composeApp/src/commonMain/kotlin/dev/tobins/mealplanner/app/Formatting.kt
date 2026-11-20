@@ -108,7 +108,7 @@ fun Offer.shortText(strings: Strings): String {
     // A deal part that only restates the price ("Voor 1,09") is dropped when the price is shown.
     val dealParts = deal?.split(" · ")?.map { it.trim() }?.filter { it.isNotEmpty() && !(price != null && singlePriceDeal(it)) }.orEmpty()
     val what = (dealParts.map { it.lowercase().replaceFirstChar { c -> c.uppercase() } } + listOfNotNull(price)).joinToString(", ").ifEmpty { null }
-    return "${store.label.substringBefore(' ').let { if (it == "Albert") "AH" else it }}: ${what ?: strings(Msg.ON_OFFER)}"
+    return "${store.shortName()}: ${what ?: strings(Msg.ON_OFFER)}"
 }
 
 /** True for deals that only restate the price, such as "Voor 3.49". */

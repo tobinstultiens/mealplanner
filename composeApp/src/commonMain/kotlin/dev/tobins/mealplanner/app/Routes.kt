@@ -169,19 +169,24 @@ object NoRoutes : RouteStore {
 /**
  * A screen asked for from outside the app: a tapped notification (Android). [meal] is the planned meal a
  * recipe is opened from, so that it shows the servings to cook, as when it is opened from Today; [week] is
- * the week (its Monday) the Plan shows.
+ * the week (its Monday) the Plan shows, and with [planning] its planning screen (issue 255).
  */
-data class Opening(val route: Route, val meal: MealToCook? = null, val week: String? = null) {
+data class Opening(val route: Route, val meal: MealToCook? = null, val week: String? = null, val planning: Boolean = false) {
     /**
      * As one string, for an Android intent's extra: the route's address, and after it a [meal]'s place and
      * servings (`#/recipes/12|2026-11-16|3|DINNER|1.5|2.25`), with the day its prepped batch is made when it makes one
-     * (`…|6.0|2026-11-21`, issue 263), or the [week] (`#/plan|2026-11-23`). [parseOpening] reads it back.
+     * (`…|6.0|2026-11-21`, issue 263), or the [week] (`#/plan|2026-11-23`), with `|planning` for its planning screen.
+     * [parseOpening] reads it back.
      */
     val encoded: String
         get() = route.hash +
             (meal?.place?.let { "|${it.weekStart}|${it.day}|${it.slot.name}|${meal.portions}|${meal.cookPortions}" + (meal.prepMadeOn?.let { day -> "|$day" } ?: "") } ?: "") +
-            (week?.let { "|$it" } ?: "")
+            (week?.let { "|$it" } ?: "") + (if (week != null && planning) "|$PLANNING" else "")
 }
+
+/** The last part of an [Opening.encoded] that asks for the planning screen of its week. */
+private const val PLANNING = "planning"
+
 
 /**
  * The [Opening] of an [Opening.encoded] string; a meal or week that cannot be read is left out, so the recipe
@@ -190,8 +195,10 @@ data class Opening(val route: Route, val meal: MealToCook? = null, val week: Str
 fun parseOpening(text: String): Opening {
     val parts = text.split('|')
     val route = parseRoute(parts.first())
-    if (route == Route.TabRoute(Tab.PLAN) && parts.size == 2) {
-        return Opening(route, week = parts[1].takeIf { runCatching { mondayOf(it) == it }.getOrDefault(false) })
+    // A week, and from issue 255 on its planning screen; an app before that posted the week alone.
+    if (route == Route.TabRoute(Tab.PLAN) && parts.size in 2..3) {
+        val week = parts[1].takeIf { runCatching { mondayOf(it) == it }.getOrDefault(false) }
+        return Opening(route, week = week, planning = week != null && parts.getOrNull(2) == PLANNING)
     }
     val recipe = route as? Route.Recipe ?: return Opening(route)
     // Six parts, or seven with the day a prepped batch is made; one posted by an app before that has six.
