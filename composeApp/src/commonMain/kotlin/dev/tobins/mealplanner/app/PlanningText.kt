@@ -66,16 +66,17 @@ fun WeekPlanning.toChooseText(strings: Strings): String {
 
 /**
  * The strip's lines (issue 255): what the meals that stay and the dinners chosen cost, with what the offers save, and
- * their calories, protein and fibre against what those meals should give. Only shown, never a warning. Empty when no
- * meal counts yet.
+ * their calories, protein and fibre against what those meals should give. Only shown, never a warning. The cost says how
+ * many meals it is for, as a chosen dinner counts with its leftover lunch: one dinner of ≈ €3.07 is ≈ €6.14 for 2 meals,
+ * which is what the Plan shows once the week is planned. Empty when no meal counts yet.
  */
 fun PlanningTotals.lines(strings: Strings): List<String> {
     if (meals == 0) return emptyList()
     val locale = strings.locale
     val costLine = cost?.let { spent ->
         val saved = (costWithoutOffers ?: spent) - spent
-        if (saved >= 0.01) strings(Msg.PLANNING_COST_SAVED, formatEuro(spent, locale), formatEuro(saved, locale))
-        else strings(Msg.PLANNING_COST, formatEuro(spent, locale))
+        if (saved >= 0.01) strings.plural(Plural.PLANNING_COST_SAVED, meals, formatEuro(spent, locale), formatEuro(saved, locale))
+        else strings.plural(Plural.PLANNING_COST, meals, formatEuro(spent, locale))
     }
     fun whole(value: Double) = value.roundToLong()
     val fibreTarget = targetFibreG

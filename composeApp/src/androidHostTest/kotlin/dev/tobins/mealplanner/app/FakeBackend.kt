@@ -130,6 +130,8 @@ class FakeBackend(
      * hidden, with [suggestions] to choose from. Without it the server is one from before the planning screen.
      */
     private val planning: Boolean = false,
+    /** With [planning], an account with no dinner to suggest, as one whose rotation has none that makes a dinner. */
+    nothingToSuggest: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -885,6 +887,10 @@ class FakeBackend(
     @Volatile
     var doneRefusal: String? = null
 
+    /** False for an account with no dinner to suggest ([nothingToSuggest]); a test may switch it. */
+    @Volatile
+    var suggesting = !nothingToSuggest
+
     private fun suggestion(id: Long, title: String, vararg grounds: SuggestionGround, kcal: Double = 640.0, protein: Double = 42.0, price: Double = 2.35, saving: Double = 0.0) =
         DinnerSuggestion(id, title, grounds.toList(), 1.25, kcal * 1.25, protein * 1.25, 7.5, price, saving)
 
@@ -907,11 +913,14 @@ class FakeBackend(
 
     private fun titleOf(id: Long) = suggestions.firstOrNull { it.recipeId == id }?.title ?: row(id).title
 
-    /** The week's planning: the open days (Thursday's dinner is skipped and Friday's locked, so they stay), the choices and the strip. */
+    /**
+     * The week's planning: the open days (Monday and Tuesday have passed, Thursday's dinner is skipped and Friday's locked,
+     * so Wednesday, Saturday and Sunday are left), the choices and the strip.
+     */
     private fun planningOf(weekStart: String): WeekPlanning {
         val chosen = picks.toList().map { id -> DinnerPick(id, titleOf(id), 1.25, 812.5, 51.0, 9.0, 3.40, 3.90) }
         return WeekPlanning(
-            weekStart, targets, openDays = listOf(0, 1, 2, 5, 6), picks = chosen,
+            weekStart, targets, openDays = listOf(2, 5, 6), picks = chosen,
             notThisWeek = hidden.toList().map { HiddenRecipe(it, titleOf(it)) },
             totals = PlanningTotals(
                 meals = 3 + 2 * chosen.size, cost = 7.80 + chosen.sumOf { 2 * it.cost!! }, costWithoutOffers = 8.40 + chosen.sumOf { 2 * it.costWithoutOffers!! },
@@ -927,7 +936,7 @@ class FakeBackend(
         val seen = query["seen"].orEmpty().split(',').mapNotNull { it.toLongOrNull() }.toSet()
         val words = query["q"]?.lowercase()?.split(' ')?.filter { it.isNotEmpty() }
         val pool = if (words == null) {
-            suggestions.filter { it.recipeId !in picks && it.recipeId !in hidden }
+            suggestions.filter { suggesting && it.recipeId !in picks && it.recipeId !in hidden }
         } else {
             val meals = mine().filter { it.kind == RecipeKind.MEAL && suggestions.none { s -> s.recipeId == it.id } }
                 .map { DinnerSuggestion(it.id, it.title, emptyList(), 1.25, 760.0, 45.0, 6.0, 2.40, 0.30) }

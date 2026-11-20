@@ -1006,22 +1006,19 @@ enum class Msg(private val english: String, private val dutch: String) {
 
     // --- Planning the week (issue 255): the planning screen, its suggestions and strip, "Another recipe" for a dinner, moving a dinner
     PLAN_THE_WEEK("Plan the week", "Plan de week"),
-    PLANNING_TITLE("Plan the week of {0}", "Plan de week van {0}"),
     PLANNING_LOAD_FAILED("Could not load the planning", "De planning kon niet worden geladen"),
     PLANNING_OLD_SERVER(
         "This server plans the week in one go: update it to choose the dinners yourself.",
         "Deze server plant de week in één keer: werk hem bij om zelf het avondeten te kiezen.",
     ),
     PLANNING_ALL_CHOSEN("A dinner is chosen for every day that is open.", "Voor elke open dag is een avondeten gekozen."),
-    PLANNING_NO_OPEN_DAYS("Every day has a dinner that stays.", "Elke dag heeft al een avondeten dat blijft."),
+    PLANNING_NO_OPEN_DAYS("Every day from today on has a dinner that stays.", "Elke dag vanaf vandaag heeft al een avondeten dat blijft."),
     PLANNING_STRIP_TITLE("The week so far", "De week tot nu toe"),
     PLANNING_STRIP_NOTE(
         "The meals that stay and the dinners chosen, with their leftovers, against what those meals should give.",
         "De maaltijden die blijven en het gekozen avondeten, met restjes, tegenover wat die maaltijden zouden moeten geven.",
     ),
     PLANNING_STRIP_EMPTY("Nothing chosen yet: tap a suggestion to add it.", "Nog niets gekozen: tik op een suggestie om die toe te voegen."),
-    PLANNING_COST("≈ {0}", "≈ {0}"),
-    PLANNING_COST_SAVED("≈ {0}, {1} saved by offers", "≈ {0}, {1} bespaard met aanbiedingen"),
     PLANNING_TOTALS("{0} of {1} kcal · {2} of {3} g protein", "{0} van {1} kcal · {2} van {3} g eiwit"),
     PLANNING_TOTALS_FIBRE(
         "{0} of {1} kcal · {2} of {3} g protein · {4} of {5} g fibre",
@@ -1036,6 +1033,11 @@ enum class Msg(private val english: String, private val dutch: String) {
     PLANNING_SEARCH("Search my recipes", "Zoek in mijn recepten"),
     PLANNING_SEARCH_NONE("None of your meals has that in its title.", "Geen van je maaltijden heeft dat in de titel."),
     PLANNING_BACK_TO_SUGGESTIONS("Back to the suggestions", "Terug naar de suggesties"),
+    // No suggestion at all, before any was shown: why, and where to find more (the Recipes tab).
+    PLANNING_NONE(
+        "Nothing to suggest: none of your recipes in the rotation makes a dinner that is not chosen or set to Not this week already. Add recipes, or put yours in the rotation, under Recipes; Something else searches all of them.",
+        "Niets om voor te stellen: geen van je recepten in de rotatie geeft een avondeten dat nog niet gekozen of op Deze week niet gezet is. Voeg recepten toe, of zet de jouwe in de rotatie, onder Recepten; Iets anders zoekt in al je recepten.",
+    ),
     PLANNING_NO_MORE(
         "No more suggestions. Search all your recipes, or start again from the first.",
         "Geen suggesties meer. Zoek in al je recepten, of begin opnieuw bij de eerste.",
@@ -1046,6 +1048,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     PLANNING_DONE("Done", "Klaar"),
     PLANNING_FILL_REST("Fill the rest", "Vul de rest aan"),
     PLANNING_CHOOSE("Choose", "Kiezen"),
+    PLANNING_ALREADY_CHOSEN("✓ Chosen for this week", "✓ Gekozen voor deze week"),
     // A suggestion's reasons, one line each: {0} of ON_OFFER is the offers, each OFFER or OFFER_DEAL; of FAVOURITE, RATED and WEEKS.
     REASON_ON_OFFER("On offer: {0}", "In de aanbieding: {0}"),
     REASON_OFFER("{0} at {1}", "{0} bij {1}"),
@@ -1063,7 +1066,15 @@ enum class Msg(private val english: String, private val dutch: String) {
     MOVE_TITLE("Move {0} to", "{0} verplaatsen naar"),
     MOVE_SWAPS("swaps with {0}", "ruilt met {0}"),
     MOVE_NO_DINNER("no dinner yet", "nog geen avondeten"),
-    MOVE_STAYS("{0} stays on its day", "{0} blijft op zijn dag"),
+    // Why a day of the move dialog can't be chosen: {0} is the dinner there, {1} one of the MOVE_WHY reasons.
+    MOVE_STAYS("{0} stays on its day: {1}", "{0} blijft op zijn dag: {1}"),
+    MOVE_DAY_PASSED("this day has passed", "deze dag is voorbij"),
+    MOVE_WHY_EATEN("it was eaten", "het is gegeten"),
+    MOVE_WHY_BATCH_MADE("it is from a prep that was made", "het komt uit een prep die gemaakt is"),
+    MOVE_WHY_MAKES_BATCH("it makes a prep", "het maakt een prep"),
+    MOVE_WHY_PREPPED("it is a meal of a prep", "het hoort bij een prep"),
+    MOVE_WHY_SIDE("it has a prepped side", "het heeft een geprept bijgerecht"),
+    MOVE_WHY_LEFTOVERS("its leftovers can't follow it", "de restjes kunnen niet mee"),
 
     // --- end of messages
     ;
@@ -1096,6 +1107,12 @@ enum class Plural(
         "Verder plannen: {0} avondmaaltijd gekozen", "Verder plannen: {0} avondmaaltijden gekozen",
     ),
     REASON_WEEKS("not eaten for {0} week", "not eaten for {0} weeks", "{0} week niet gegeten", "{0} weken niet gegeten"),
+    /** The strip's cost (issue 255): {0} is how many meals it counts, a chosen dinner's leftover lunch among them; {1} the euros, {2} the saving. */
+    PLANNING_COST("≈ {1} for {0} meal", "≈ {1} for {0} meals", "≈ {1} voor {0} maaltijd", "≈ {1} voor {0} maaltijden"),
+    PLANNING_COST_SAVED(
+        "≈ {1} for {0} meal, {2} saved by offers", "≈ {1} for {0} meals, {2} saved by offers",
+        "≈ {1} voor {0} maaltijd, {2} bespaard met aanbiedingen", "≈ {1} voor {0} maaltijden, {2} bespaard met aanbiedingen",
+    ),
 
     /** For an amount that may be fractional, as [SERVINGS_AMOUNT]: `1.5 pieces`. */
     PIECES_AMOUNT("{1} piece", "{1} pieces", "{1} stuk", "{1} stuks"),

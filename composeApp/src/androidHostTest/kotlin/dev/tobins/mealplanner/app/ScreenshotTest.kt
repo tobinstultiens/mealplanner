@@ -358,6 +358,8 @@ enum class Shot(
     val standardMeals: Boolean = false,
     /** The fake backend's planning of the week (issue 255): two dinners chosen, a recipe hidden, suggestions on every ground. */
     val planning: Boolean = false,
+    /** That planning with no dinner to suggest. */
+    val nothingToSuggest: Boolean = false,
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
     val dutch: Boolean = false,
     val heightDp: Int = 640,
@@ -374,6 +376,9 @@ enum class Shot(
     PLANNING_NL(planning = true, dutch = true, heightDp = 3000, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
     PLANNING_X2(planning = true, heightDp = 5600, fontScale = 2.0f, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
     PLANNING_X2_NL(planning = true, dutch = true, heightDp = 6000, fontScale = 2.0f, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
+    // Nothing to suggest: why, and the way to the recipes, in both languages.
+    PLANNING_NOTHING(planning = true, nothingToSuggest = true, heightDp = 1200, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}, onOpenRecipes = {}) }),
+    PLANNING_NOTHING_NL(planning = true, nothingToSuggest = true, dutch = true, heightDp = 1300, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}, onOpenRecipes = {}) }),
     // "Another recipe" for Monday's dinner: the same suggestions to choose from, and the planner's own choice.
     ANOTHER_DINNER(planning = true, heightDp = 2500, content = { api, _ -> AnotherDinnerScreen(api, FakeBackend.WEEK_START, sampleDinner, {}, {}) }),
     ANOTHER_DINNER_NL(planning = true, dutch = true, heightDp = 2600, content = { api, _ -> AnotherDinnerScreen(api, FakeBackend.WEEK_START, sampleDinner, {}, {}) }),
@@ -655,6 +660,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         vacuum = shot.vacuum,
         standardMeals = shot.standardMeals,
         planning = shot.planning,
+        nothingToSuggest = shot.nothingToSuggest,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)

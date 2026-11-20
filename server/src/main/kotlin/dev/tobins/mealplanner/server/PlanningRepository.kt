@@ -77,7 +77,7 @@ class PlanningRepository(
             forgetEndedWeeks()
             val picked = rows(start).filter { it.refused == 0L }
             if (picked.none { it.recipeId == recipeId }) {
-                val open = openDays(plans.kept(start, plans.meals(start))).size
+                val open = openDays(start, plans.kept(start, plans.meals(start))).size
                 if (picked.size >= open) throw ConflictException(noDayLeft(open))
                 q.upsertPick(userId, start.toString(), recipeId, 0)
             }
@@ -130,7 +130,7 @@ class PlanningRepository(
                 if (picked.isEmpty()) return@fillWeek emptyList()
                 val every = plans.candidates(start, everyMeal = true).associateBy { it.recipeId }
                 val dinners = picked.map { row -> candidateOf(row.recipeId, every) ?: throw ConflictException("\"${row.title}\" has no amounts to plan with: take it out first") }
-                val days = openDays(kept)
+                val days = openDays(start, kept)
                 if (dinners.size > days.size) throw ConflictException(noDayLeft(days.size, chosen = dinners.size))
                 DinnerPool.place(dinners, days, kept, every, plans.request(start, locked = kept, seed = seed))
             }
@@ -149,7 +149,7 @@ class PlanningRepository(
     private fun planning(start: LocalDate): WeekPlanning {
         val week = Week(start)
         val costOf = plans.costsIn(start)
-        val days = openDays(week.kept)
+        val days = openDays(start, week.kept)
         val placed = DinnerPool.place(week.picked.take(days.size), days, week.kept, week.byId, week.request)
         val counted = plans.withNumbers(start, week.kept, placed, costOf)
         val (cost, costWithoutOffers) = plans.costOfWeek(counted, costOf)
@@ -253,6 +253,15 @@ class PlanningRepository(
             }.filter { (it.savingPerServing ?: LEAST_SAVING) >= LEAST_SAVING }.sortedByDescending { it.savingPerServing ?: 0.0 }
     }
 
+    /**
+     * The days of the week starting [start] that a chosen dinner can go on: today and the days after it, without a dinner
+     * among the week's [kept] meals. A day that has passed is no day to plan a dinner for; of a week wholly ahead, every
+     * day counts.
+     */
+    private fun openDays(start: LocalDate, kept: List<PlannedMeal>): List<Int> = (0 until PlanRepository.DAYS).filter { day ->
+        !start.plusDays(day.toLong()).isBefore(today()) && kept.none { it.day == day && it.slot == MealSlot.DINNER }
+    }
+
     /** The week's rows, picks and hidden recipes, in the order they were made. */
     private fun rows(start: LocalDate): List<SelectPicks> = q.selectPicks(userId, start.toString()).executeAsList()
 
@@ -276,15 +285,11 @@ class PlanningRepository(
         /** Euros a serving an offer must save to be named on a suggestion. */
         private const val LEAST_SAVING = 0.01
 
-        /** The days of a week without a dinner among its [kept] meals: those a chosen dinner can go on. */
-        private fun openDays(kept: List<PlannedMeal>): List<Int> =
-            (0 until PlanRepository.DAYS).filter { day -> kept.none { it.day == day && it.slot == MealSlot.DINNER } }
-
-        /** Why no more dinners can be chosen, or put on days, than the [open] days. */
+        /** Why no more dinners can be chosen, or put on days, than the [open] days (those from today on without a dinner). */
         private fun noDayLeft(open: Int, chosen: Int? = null): String = when {
-            open == 0 -> "Every day of this week has a dinner that stays, so there is no day for a chosen one"
-            chosen != null -> "$chosen dinners are chosen for $open days without a dinner: take ${chosen - open} out first"
-            else -> "Each of the $open days without a dinner has one chosen already: take one out first"
+            open == 0 -> "Every day of this week from today on has a dinner that stays, so there is no day for a chosen one"
+            chosen != null -> "$chosen dinners are chosen for $open days from today on without a dinner: take ${chosen - open} out first"
+            else -> "Each of the $open days from today on without a dinner has one chosen already: take one out first"
         }
     }
 }

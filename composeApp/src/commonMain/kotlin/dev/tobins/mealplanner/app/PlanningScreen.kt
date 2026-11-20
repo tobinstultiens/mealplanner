@@ -34,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.DinnerPick
@@ -59,7 +60,14 @@ private const val SEARCH_PAUSE_MS = 300L
  * warned about for its calories: the strip only shows. A server from before the screen plans the week in one go.
  */
 @Composable
-fun PlanningScreen(api: ApiClient, weekStart: String, onBack: () -> Unit, onPlanned: (WeekPlan) -> Unit) {
+fun PlanningScreen(
+    api: ApiClient,
+    weekStart: String,
+    onBack: () -> Unit,
+    onPlanned: (WeekPlan) -> Unit,
+    /** Opens the Recipes tab, where recipes are added and put in the rotation: offered when there is nothing to suggest. */
+    onOpenRecipes: (() -> Unit)? = null,
+) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -114,7 +122,8 @@ fun PlanningScreen(api: ApiClient, weekStart: String, onBack: () -> Unit, onPlan
 
     val ready = (planning as? Load.Ready)?.value
     SubScreen(
-        title = t(Msg.PLANNING_TITLE, dayMonthLabel(weekStart, t.locale)),
+        // Short enough for the top bar at the largest font; the week's date is the screen's first line.
+        title = t(Msg.PLAN_THE_WEEK),
         onBack = onBack,
         snackbar = snackbar,
         notice = {
@@ -145,7 +154,12 @@ fun PlanningScreen(api: ApiClient, weekStart: String, onBack: () -> Unit, onPlan
                         contentPadding = PaddingValues(Spacing.ScreenEdge),
                         verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                     ) {
-                        item(key = "toChoose") { Text(week.toChooseText(t), style = MaterialTheme.typography.titleMedium) }
+                        item(key = "toChoose") {
+                            Column {
+                                Text(t(Msg.WEEK_OF, dayMonthLabel(weekStart, t.locale)), style = MaterialTheme.typography.titleMedium)
+                                Text(week.toChooseText(t), style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
                         item(key = "strip") { PlanningStrip(week) }
                         if (week.picks.isNotEmpty()) {
                             item(key = "chosen") { SectionHeader(t(Msg.PLANNING_CHOSEN)) }
@@ -160,9 +174,12 @@ fun PlanningScreen(api: ApiClient, weekStart: String, onBack: () -> Unit, onPlan
                             onShowOthers = { suggestions -> seen = seen + suggestions.map { it.recipeId } },
                             onStartAgain = { seen = emptyList() },
                             onRetry = { rescored++ },
+                            onOpenRecipes = onOpenRecipes,
                         ) { suggestion ->
+                            // A search finds the dinners chosen too: marked so, as they are added already.
                             SuggestionCard(
                                 suggestion, pictures[suggestion.recipeId], t(Msg.ADD), enabled = !busy,
+                                chosen = week.picks.any { it.recipeId == suggestion.recipeId },
                                 onAction = { change { api.chooseDinner(weekStart, suggestion.recipeId, chosen = true) } },
                                 onNotThisWeek = { change { api.hideForWeek(weekStart, suggestion.recipeId, hidden = true) } },
                             )
@@ -256,8 +273,9 @@ fun AnotherDinnerScreen(api: ApiClient, weekStart: String, meal: PlannedMeal, on
 
 /**
  * The suggestions part of a screen: its header with "Something else" (or the search field and the way back), the cards
- * of [page], and under them "Show others" while there are more, or that there are none and "Start again" from the first.
- * [query] is the search typed, null without one.
+ * of [page], and under them "Show others" while there are more, or that there are no more and "Start again" from the
+ * first. With none shown yet ([canStartAgain] false), that there is nothing to suggest and why, with [onOpenRecipes]
+ * where recipes are added. [query] is the search typed, null without one.
  */
 internal fun LazyListScope.suggestionItems(
     page: Load<DinnerSuggestions>,
@@ -267,6 +285,7 @@ internal fun LazyListScope.suggestionItems(
     onShowOthers: (List<DinnerSuggestion>) -> Unit,
     onStartAgain: () -> Unit,
     onRetry: () -> Unit,
+    onOpenRecipes: (() -> Unit)? = null,
     card: @Composable (DinnerSuggestion) -> Unit,
 ) {
     item(key = "suggestionsHeader") {
@@ -293,6 +312,10 @@ internal fun LazyListScope.suggestionItems(
                 when {
                     page.value.more -> TextButton(onClick = { onShowOthers(suggestions) }) { Text(t(Msg.PLANNING_SHOW_OTHERS)) }
                     query != null -> if (suggestions.isEmpty()) Text(t(Msg.PLANNING_SEARCH_NONE), style = MaterialTheme.typography.bodyMedium)
+                    suggestions.isEmpty() && !canStartAgain -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                        Text(t(Msg.PLANNING_NONE), style = MaterialTheme.typography.bodyMedium)
+                        onOpenRecipes?.let { TextButton(onClick = it) { Text(t(Msg.OPEN_RECIPES)) } }
+                    }
                     else -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                         Text(t(Msg.PLANNING_NO_MORE), style = MaterialTheme.typography.bodyMedium)
                         if (canStartAgain) TextButton(onClick = onStartAgain) { Text(t(Msg.PLANNING_START_AGAIN)) }
@@ -343,7 +366,8 @@ private fun ChosenDinner(pick: DinnerPick, enabled: Boolean, onTakeOut: () -> Un
 
 /**
  * A suggested recipe: its title (and photo), why it is there, what it gives at the planner's portion and its price with
- * the saving. Tapping it, or [actionLabel], is [onAction]; "Not this week" hides it for the week.
+ * the saving. Tapping it, or [actionLabel], is [onAction]; "Not this week" hides it for the week. One [chosen] already,
+ * as a search finds it, says so in their place.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -354,9 +378,10 @@ internal fun SuggestionCard(
     enabled: Boolean,
     onAction: () -> Unit,
     onNotThisWeek: () -> Unit,
+    chosen: Boolean = false,
 ) {
     val t = LocalStrings.current
-    Card(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onAction)) {
+    Card(Modifier.fillMaxWidth().clickable(enabled = enabled && !chosen, onClick = onAction)) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             Row(verticalAlignment = Alignment.Top) {
                 Text(suggestion.title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -367,9 +392,13 @@ internal fun SuggestionCard(
             }
             MealNumbers(suggestion.numbersText(t), null)
             suggestion.priceText(t)?.let { Text(it, style = MaterialTheme.typography.bodySmall.numeric()) }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                Button(enabled = enabled, onClick = onAction) { Text(actionLabel) }
-                TextButton(enabled = enabled, onClick = onNotThisWeek) { Text(t(Msg.PLANNING_NOT_THIS_WEEK)) }
+            if (chosen) {
+                Text(t(Msg.PLANNING_ALREADY_CHOSEN), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                    Button(enabled = enabled, onClick = onAction) { Text(actionLabel) }
+                    TextButton(enabled = enabled, onClick = onNotThisWeek) { Text(t(Msg.PLANNING_NOT_THIS_WEEK)) }
+                }
             }
         }
     }
@@ -382,7 +411,8 @@ private fun HiddenRecipes(week: WeekPlanning, enabled: Boolean, onShowAgain: (Lo
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         SectionHeader(t(Msg.PLANNING_NOT_THIS_WEEK))
         for (hidden in week.notThisWeek) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // One row to a screen reader: the recipe, then its button.
+            Row(Modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
                 Text(hidden.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 TextButton(enabled = enabled, onClick = { onShowAgain(hidden.recipeId) }) { Text(t(Msg.PLANNING_SHOW_AGAIN)) }
             }

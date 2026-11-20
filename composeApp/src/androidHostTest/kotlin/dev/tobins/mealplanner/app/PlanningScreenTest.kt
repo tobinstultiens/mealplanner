@@ -2,20 +2,23 @@ package dev.tobins.mealplanner.app
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import dev.tobins.mealplanner.api.WeekPlan
 import org.junit.After
@@ -33,9 +36,11 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 
 /**
- * Planning the week from suggestions (issue 255), against the fake backend's planning: two dinners chosen (the lentil soup
- * and the shakshuka) of five open days, the tuna salad hidden, and ten suggestions on four grounds. Every test waits for
- * what it looks for, a node or a request the fake answered, and never for time.
+ * Planning the week from suggestions (issue 255), against the fake backend's planning: today is Wednesday, so of the days
+ * without a dinner that stays only Wednesday, Saturday and Sunday are open; the lentil soup and the shakshuka are chosen,
+ * the tuna salad hidden, and ten suggestions are on four grounds. As README "Screenshot tests" says of host tests, each
+ * waits for what it looks for, a node or a call the fake has answered, never for time; the Plan is driven through
+ * `PlanActions.kt`, and the planning screen's list is scrolled to a node, never to a position.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -48,9 +53,9 @@ class PlanningScreenTest {
     private var api = ApiClient(backend.settings)
     private val week = FakeBackend.WEEK_START
 
-    /** What the planning screen handed back when it planned the week, and how often it was left. */
+    /** What the planning screen handed back when it planned the week, and whether it opened the recipes. */
     private var planned: WeekPlan? = null
-    private var left = 0
+    private var openedRecipes = false
 
     @Before
     fun fixToday() {
@@ -76,7 +81,7 @@ class PlanningScreenTest {
 
     private fun showPlanning() = compose.setContent {
         CompositionLocalProvider(LocalStrings provides Strings.English) {
-            PlanningScreen(api, week, onBack = { left++ }, onPlanned = { planned = it })
+            PlanningScreen(api, week, onBack = {}, onPlanned = { planned = it }, onOpenRecipes = { openedRecipes = true })
         }
     }
 
@@ -93,8 +98,11 @@ class PlanningScreenTest {
 
     private fun waitFor(text: String) = compose.waitUntil(timeoutMillis = 10_000) { count(text) > 0 }
 
-    /** Waits until the fake was asked for [change], which starts with the method and the path, and answered it. */
-    private fun waitForChange(change: String) = compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it.startsWith(change) } }
+    /** Waits until the fake has answered [call], a method and a path, as `PUT /api/plans/…/picks/21`. */
+    private fun waitForAnswer(call: String) = compose.waitUntil(timeoutMillis = 10_000) { call in backend.answered }
+
+    /** The button [label] of the suggestion card titled [title]: the card is one node with all its texts. */
+    private fun buttonOfCard(label: String, title: String) = hasText(label) and hasAnyAncestor(hasText(title, substring = true))
 
     /** Scrolls the screen's list to the node with [text] once; fails when the list has none. */
     private fun scrollOnce(text: String) {
@@ -107,34 +115,21 @@ class PlanningScreenTest {
      */
     private fun scrollTo(text: String) = compose.waitUntil(timeoutMillis = 10_000) { runCatching { scrollOnce(text) }.isSuccess }
 
-    /** Opens the swap menu of the dinner under the day [label] of the Plan, as PlanMenuTest does. */
-    private fun openDinnerMenu(label: String, item: Int) {
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(list).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNode(list).performScrollToIndex(item)
-        waitFor(label)
-        compose.waitForIdle()
-        val dayTop = compose.onNodeWithText(label).fetchSemanticsNode().boundsInRoot.top
-        val buttons = compose.onAllNodesWithContentDescription("Swap dinner").fetchSemanticsNodes()
-        val own = buttons.withIndex().filter { it.value.boundsInRoot.top > dayTop }.minBy { it.value.boundsInRoot.top }.index
-        compose.onAllNodesWithContentDescription("Swap dinner")[own].performClick()
-        waitFor("Adjust what was in it")
-    }
-
     @Test
     fun planTheWeekOpensThePlanningScreenWhoseFillTheRestPlansTheWeekWithoutTheOneTapGenerate() {
         backend.picks.clear()
         showPlan()
-        waitFor("Plan the week")
+        compose.waitForPlan()
         assertEquals(0, count("Replan"), "no one-tap Generate")
 
         compose.onNodeWithText("Plan the week").performClick()
-        waitFor("Plan the week of 16 Nov")
+        // The title is short enough for the largest font; the week's date is the first line.
+        waitFor("Week of 16 Nov")
         waitFor("Fill the rest")
         compose.onNodeWithText("Fill the rest").performClick()
 
-        waitForChange("POST /api/plans/$week/planning/done")
-        // Back on the Plan with the week the server planned; never the old route.
-        waitFor("Plan the week")
+        waitForAnswer("POST /api/plans/$week/planning/done")
+        compose.waitForPlan()
         assertTrue(backend.requests.none { it.endsWith("/generate") }, "${backend.requests}")
     }
 
@@ -149,37 +144,36 @@ class PlanningScreenTest {
         scrollTo("Uses what is there: feta")
         scrollTo("Favourite: rated 5 of 5 · not eaten for 4 weeks")
         scrollTo("Not tried yet")
-        scrollTo("Beef chilli")
         scrollTo("On offer: minced beef at Jumbo (2 voor 7,50)")
         // Six on a screen: the seventh comes with "Show others".
         scrollTo("Show others")
-        assertEquals(0, count("Thai green curry"))
+        assertTrue(runCatching { scrollOnce("Thai green curry") }.isFailure, "the seventh is not on the first screen")
     }
 
     @Test
-    fun tappingACardAddsItToTheWeeksDinnersAndTheStripShowsHowTheWeekStands() {
+    fun onlyTheDaysFromTodayOnAreOpenAndTheStripSaysForHowManyMealsItsCostIs() {
         showPlanning()
-        waitFor("3 dinners still to choose")
-        waitFor("≈ €21.40, €2.60 saved by offers")
+        // Wednesday, Saturday and Sunday: Monday and Tuesday have passed, Thursday and Friday have dinners that stay.
+        waitFor("1 dinner still to choose")
+        waitFor("≈ €21.40 for 7 meals, €2.60 saved by offers")
 
         scrollTo("Gochujang chicken thighs")
         compose.onNodeWithText("Gochujang chicken thighs", substring = true).performClick()
 
-        waitForChange("PUT /api/plans/$week/planning/picks/21")
-        // The strip is above the cards: scrolled to, as the list composes only what is near the screen.
-        scrollTo("2 dinners still to choose")
-        scrollTo("≈ €28.20, €3.60 saved by offers")
-        // Among the chosen dinners, with the button that takes it out again.
+        waitForAnswer("PUT /api/plans/$week/planning/picks/21")
+        scrollTo("A dinner is chosen for every day that is open.")
+        // The strip counts each chosen dinner with its leftover lunch, and says so in its number of meals.
+        scrollTo("≈ €28.20 for 9 meals, €3.60 saved by offers")
+        waitFor("Done")
         val takeOut = hasContentDescription("Take Gochujang chicken thighs with rice and quick-pickled cucumber out")
         compose.onNode(list).performScrollToNode(takeOut)
         compose.onNode(takeOut).performClick()
-        waitForChange("DELETE /api/plans/$week/planning/picks/21")
+        waitForAnswer("DELETE /api/plans/$week/planning/picks/21")
     }
 
     @Test
     fun showOthersGivesTheNextOnesWithNoneShownBeforeAndStartAgainGoesBack() {
         showPlanning()
-        scrollTo("Gochujang chicken thighs")
         scrollTo("Show others")
         compose.onNodeWithText("Show others").performClick()
 
@@ -192,7 +186,18 @@ class PlanningScreenTest {
     }
 
     @Test
-    fun somethingElseSearchesEveryMealOfMineAndGoesBackToTheSuggestions() {
+    fun withNothingToSuggestTheScreenSaysWhyAndWhereToAddRecipes() {
+        use(FakeBackend(planning = true, nothingToSuggest = true))
+        showPlanning()
+
+        scrollTo("Nothing to suggest")
+        assertEquals(0, count("Start again"), "nothing was shown, so there is nothing to start again from")
+        compose.onNodeWithText("Open recipes").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { openedRecipes }
+    }
+
+    @Test
+    fun somethingElseSearchesEveryMealOfMineMarksTheChosenOnesAndGoesBack() {
         showPlanning()
         scrollTo("Something else")
         compose.onNodeWithText("Something else").performClick()
@@ -200,8 +205,15 @@ class PlanningScreenTest {
         compose.onNodeWithText("Search my recipes").performTextInput("tuna")
 
         // Out of the rotation and hidden this week, it is still found, as the only one with "tuna" in its title.
-        scrollTo("760\u00A0kcal")
+        scrollTo("760 kcal")
         assertTrue(runCatching { scrollOnce("Gochujang chicken thighs") }.isFailure, "what has no tuna in its title is not found")
+
+        // The lentil soup is chosen already: found, and marked so, with nothing to add.
+        compose.onNode(hasSetTextAction()).performTextClearance()
+        compose.onNode(hasSetTextAction()).performTextInput("lentil")
+        scrollTo("✓ Chosen for this week")
+        assertEquals(0, count("Add"), "a chosen dinner has no Add")
+
         // The way back is in the list's header, which a scroll leaves partly under the top bar: its click, not a tap there.
         scrollTo("Back to the suggestions")
         compose.onNodeWithText("Back to the suggestions").performSemanticsAction(SemanticsActions.OnClick)
@@ -212,32 +224,34 @@ class PlanningScreenTest {
     fun notThisWeekHidesTheRecipeAndShowAgainBringsItBack() {
         showPlanning()
         scrollTo("Gochujang chicken thighs")
-        compose.onAllNodesWithText("Not this week")[0].performClick()
+        compose.onNode(buttonOfCard("Not this week", "Gochujang chicken thighs")).performClick()
 
-        waitForChange("PUT /api/plans/$week/planning/not-this-week/21")
+        waitForAnswer("PUT /api/plans/$week/planning/not-this-week/21")
         scrollTo("Show again")
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Show again").fetchSemanticsNodes().size == 2 }
-        compose.onAllNodesWithText("Show again")[0].performClick()
-        waitForChange("DELETE /api/plans/$week/planning/not-this-week/3")
+        compose.onNode(hasText("Show again") and hasAnyAncestor(hasText("Tuna pasta salad"))).performClick()
+        waitForAnswer("DELETE /api/plans/$week/planning/not-this-week/3")
     }
 
     @Test
     fun thePlanOffersContinuePlanningAndTheChoicesAreThereAfterLeaving() {
         showPlan()
-        waitFor("Continue planning: 2 dinners chosen")
+        compose.waitForPlan()
         compose.onNodeWithText("Continue planning: 2 dinners chosen").performClick()
         scrollTo("Chosen dinners")
         scrollTo("Lentil soup")
         scrollTo("Shakshuka")
 
         compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitForPlan()
         waitFor("Continue planning: 2 dinners chosen")
     }
 
     @Test
     fun thePlanNextWeekNotificationOpensThePlanningScreenOfThatWeek() {
         showPlan(startWeek = "2026-11-23", startPlanning = true)
-        waitFor("Plan the week of 23 Nov")
+        waitFor("Week of 23 Nov")
+        waitFor("dinner still to choose")
     }
 
     @Test
@@ -256,47 +270,64 @@ class PlanningScreenTest {
         use(FakeBackend())
         showPlanning()
         waitFor("This server plans the week in one go")
-        compose.onNodeWithText("Plan the week").performClick()
+        // The button, not the screen's title of the same words.
+        compose.onNode(hasText("Plan the week") and hasClickAction()).performClick()
 
-        waitForChange("POST /api/plans/$week/generate")
+        waitForAnswer("POST /api/plans/$week/generate")
         compose.waitUntil(timeoutMillis = 10_000) { planned != null }
     }
 
     @Test
-    fun aDinnerMovesToAnotherDayAndADinnerThatStaysIsNoTarget() {
+    fun aDinnerMovesBetweenTheDaysFromTodayOnAndAGreyedDaySaysWhy() {
         use(FakeBackend(planning = true, dinnerEaten = true))
         showPlan()
-        openDinnerMenu("Mon 16 Nov", item = 1)
+        compose.waitForPlan()
+        compose.openSwapMenu("Wed 18 Nov", "dinner")
         compose.onNodeWithText("Move to another day…").performClick()
 
         waitFor("Move Slow-cooked chicken thighs with coconut, lemon and spinach to")
-        // Friday's lentil soup was eaten: it stays, so Monday's dinner can't take its day.
-        compose.onNodeWithText("Lentil soup stays on its day", substring = true).assertIsNotEnabled()
-        compose.onNode(hasText("Tue 17 Nov", substring = true) and hasText("swaps with", substring = true)).performClick()
+        // Monday and Tuesday have passed; Friday's lentil soup was eaten, so it stays: each greyed, with why.
+        compose.onNode(hasText("Mon 16 Nov", substring = true) and hasText("this day has passed", substring = true)).assertIsNotEnabled()
+        compose.onNode(hasText("Lentil soup stays on its day: it was eaten", substring = true)).assertIsNotEnabled()
+        // The dialog's list scrolls: the day is scrolled to before it is tapped.
+        compose.onNode(hasText("Sat 21 Nov", substring = true) and hasText("swaps with", substring = true)).performScrollTo().performClick()
 
-        waitForChange("POST /api/plans/$week/meals/0/DINNER/move {\"toDay\":1}")
+        waitForAnswer("POST /api/plans/$week/meals/2/DINNER/move")
+        assertTrue("POST /api/plans/$week/meals/2/DINNER/move {\"toDay\":5}" in backend.changes, "${backend.changes}")
+    }
+
+    @Test
+    fun aDinnerOnADayThatHasPassedOrEatenHasNoWayToMove() {
+        use(FakeBackend(planning = true, dinnerEaten = true))
+        showPlan()
+        compose.waitForPlan()
+        compose.openSwapMenu("Mon 16 Nov", "dinner")
+        assertEquals(0, count("Move to another day…"), "Monday has passed")
     }
 
     @Test
     fun anEatenDinnerHasNoWayToMove() {
         use(FakeBackend(planning = true, dinnerEaten = true))
         showPlan()
-        openDinnerMenu("Fri 20 Nov", item = 5)
+        compose.waitForPlan()
+        compose.openSwapMenu("Fri 20 Nov", "dinner")
         assertEquals(0, count("Move to another day…"))
     }
 
     @Test
     fun anotherRecipeOnADinnerOpensTheSuggestionsForThatMeal() {
         showPlan()
-        openDinnerMenu("Mon 16 Nov", item = 1)
+        compose.waitForPlan()
+        compose.openSwapMenu("Mon 16 Nov", "dinner")
         compose.onNodeWithText("Another recipe").performClick()
 
         waitFor("Another dinner for Mon 16 Nov")
         waitFor("Let the planner choose")
         scrollTo("Gochujang chicken thighs")
-        compose.onAllNodesWithText("Choose")[0].performClick()
+        compose.onNode(buttonOfCard("Choose", "Gochujang chicken thighs")).performClick()
 
-        waitForChange("PUT /api/plans/$week/meals/0/DINNER {\"recipeId\":21}")
-        waitFor("Continue planning")
+        waitForAnswer("PUT /api/plans/$week/meals/0/DINNER")
+        assertTrue("PUT /api/plans/$week/meals/0/DINNER {\"recipeId\":21}" in backend.changes, "${backend.changes}")
+        compose.waitForPlan()
     }
 }

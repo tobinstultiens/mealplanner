@@ -383,6 +383,55 @@ class PlanningTest {
     }
 
     @Test
+    fun daysThatHavePassedAreNoDaysToChooseForWhileFillTheRestPlansThemAsGenerateDoes() {
+        val dinners = (0..7).map(::beefDish)
+        // Opened on Thursday: Monday to Wednesday have passed.
+        today = start.plusDays(3)
+
+        assertEquals(listOf(3, 4, 5, 6), alice.planning.get(week).openDays)
+        assertEquals((0..6).toList(), alice.planning.get(nextWeek).openDays, "a week wholly ahead is as before")
+        dinners.take(4).forEach { alice.planning.pick(week, it) }
+        assertTrue(assertFailsWith<ConflictException> { alice.planning.pick(week, dinners[4]) }.message!!.contains("4 days from today on"))
+
+        val plan = alice.planning.done(week, seed = 6)
+
+        val dinnersOf = plan.meals().filter { it.slot == MealSlot.DINNER }
+        assertEquals(dinners.take(4).toSet(), dinnersOf.filter { it.locked }.mapTo(HashSet()) { it.recipeId })
+        assertTrue(dinnersOf.filter { it.locked }.all { it.day >= 3 }, "no chosen dinner on a day that has passed: $dinnersOf")
+        // The days that have passed are planned as Generate plans them: by the planner, unlocked.
+        assertEquals(listOf(0, 1, 2), dinnersOf.filter { !it.locked }.map { it.day })
+    }
+
+    @Test
+    fun aDinnerMovesNeitherToNorFromADayThatHasPassed() {
+        (0..6).forEach(::beefDish)
+        alice.plans.generate(week, seed = 2)
+        today = start.plusDays(3)
+
+        assertEquals(
+            "Tuesday 17 November has passed: a dinner moves only between today and the days after it",
+            assertFailsWith<ConflictException> { alice.plans.moveDinner(week, 1, 4) }.message,
+        )
+        assertTrue(assertFailsWith<ConflictException> { alice.plans.moveDinner(week, 4, 2) }.message!!.startsWith("Wednesday 18 November has passed"))
+        val moved = alice.plans.moveDinner(week, 4, 3).meals()
+        assertEquals(2, moved.count { it.slot == MealSlot.DINNER && it.day in 3..4 })
+    }
+
+    @Test
+    fun letThePlannerChooseLeavesOutTheRecipesHiddenForTheWeek() {
+        val (stew, hidden) = (0..1).map(::beefDish)
+        alice.plans.choose(week, 0, MealSlot.DINNER, stew)
+        alice.plans.setLocked(week, 0, MealSlot.DINNER, false)
+        alice.planning.hide(week, hidden)
+
+        // The hidden recipe is the only other one: there is none to give, as for a week with nothing else that fits.
+        val refused = assertFailsWith<ConflictException> { alice.plans.reroll(week, 0, MealSlot.DINNER, seed = 1) }
+        assertEquals("No other recipe fits this meal", refused.message)
+        alice.planning.unhide(week, hidden)
+        assertEquals(hidden, alice.plans.reroll(week, 0, MealSlot.DINNER, seed = 1).meals().single { it.day == 0 && it.slot == MealSlot.DINNER }.recipeId)
+    }
+
+    @Test
     fun noMoreDinnersCanBeChosenThanThereAreDaysToPutThemOn() {
         val dinners = (0..7).map(::beefDish)
         dinners.take(6).forEach { alice.planning.pick(week, it) }

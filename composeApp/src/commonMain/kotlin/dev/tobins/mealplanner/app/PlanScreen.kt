@@ -195,10 +195,15 @@ fun PlanScreen(
 
     planningWeek?.let { week ->
         BackHandler(enabled = true) { planningWeek = null; reload++ }
-        PlanningScreen(api, week, onBack = { planningWeek = null; reload++ }) { plan ->
-            planningWeek = null
-            showPlanned(plan)
-        }
+        PlanningScreen(
+            api, week,
+            onBack = { planningWeek = null; reload++ },
+            onPlanned = { plan ->
+                planningWeek = null
+                showPlanned(plan)
+            },
+            onOpenRecipes = { planningWeek = null; onOpenRecipes() },
+        )
         return
     }
     anotherFor?.let { meal ->
@@ -211,7 +216,7 @@ fun PlanScreen(
     }
 
     moving?.let { meal ->
-        MoveDinnerDialog(meal, (state as? Load.Ready)?.value, onDismiss = { moving = null }) { toDay ->
+        MoveDinnerDialog(meal, (state as? Load.Ready)?.value, today, onDismiss = { moving = null }) { toDay ->
             moving = null
             change { api.moveDinner(weekStart, meal.day, toDay) }
         }
@@ -580,7 +585,7 @@ private fun DayCard(
                                     DropdownMenuItem(text = { Text(t(Msg.CHOOSE_RECIPE)) }, onClick = { menu = false; onChoose(meal.day, meal.slot) })
                                 }
                                 // Only a dinner the server lets move: not one that keeps its recipe, of a prep, with a side, or whose leftovers can't follow.
-                                if (meal.canMove(day.date, dayBefore, dayAfter)) {
+                                if (meal.canMove(day.date, dayBefore, dayAfter, today)) {
                                     DropdownMenuItem(text = { Text(t(Msg.MOVE_TO_DAY)) }, onClick = { menu = false; onMove(meal) })
                                 }
                                 // A skipped meal counts for nothing, so there is nothing in it to adjust.
@@ -657,6 +662,17 @@ private fun dayTotals(day: PlanDay, targets: DailyTargets, t: Strings): String {
     )
 }
 
+/** Why a dinner stays on its day, as the move dialog says it ([WhyStays]). */
+private fun whyStaysMessage(why: WhyStays): Msg = when (why) {
+    WhyStays.PASSED -> Msg.MOVE_DAY_PASSED
+    WhyStays.EATEN -> Msg.MOVE_WHY_EATEN
+    WhyStays.BATCH_MADE -> Msg.MOVE_WHY_BATCH_MADE
+    WhyStays.MAKES_BATCH -> Msg.MOVE_WHY_MAKES_BATCH
+    WhyStays.PREPPED -> Msg.MOVE_WHY_PREPPED
+    WhyStays.SIDE -> Msg.MOVE_WHY_SIDE
+    WhyStays.LEFTOVERS -> Msg.MOVE_WHY_LEFTOVERS
+}
+
 /** What the menu of a meal that keeps its recipe says instead of offering another ([WhyKept]). */
 private fun keptMessage(why: WhyKept): Msg = when (why) {
     WhyKept.EATEN -> Msg.KEPT_EATEN
@@ -667,10 +683,11 @@ private fun keptMessage(why: WhyKept): Msg = when (why) {
 
 /**
  * Where to move [meal], a dinner of [plan], to (issue 255): the other days of the week, each with the dinner it would swap
- * with, or none; a day whose dinner stays where it is ([canMove]) says so and can't be chosen.
+ * with, or none. A day before [today] has passed, and a day whose dinner stays where it is ([whyStays]) says why; neither
+ * can be chosen.
  */
 @Composable
-private fun MoveDinnerDialog(meal: PlannedMeal, plan: WeekPlan?, onDismiss: () -> Unit, onMove: (Int) -> Unit) {
+private fun MoveDinnerDialog(meal: PlannedMeal, plan: WeekPlan?, today: String, onDismiss: () -> Unit, onMove: (Int) -> Unit) {
     val t = LocalStrings.current
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -680,10 +697,12 @@ private fun MoveDinnerDialog(meal: PlannedMeal, plan: WeekPlan?, onDismiss: () -
                 plan?.days?.forEachIndexed { index, day ->
                     if (index == meal.day) return@forEachIndexed
                     val there = day.meals.firstOrNull { it.slot == MealSlot.DINNER }
-                    val stays = there != null && !there.canMove(day.date, plan.days.getOrNull(index - 1)?.meals.orEmpty(), plan.days.getOrNull(index + 1)?.meals.orEmpty())
+                    val why = there?.whyStays(day.date, plan.days.getOrNull(index - 1)?.meals.orEmpty(), plan.days.getOrNull(index + 1)?.meals.orEmpty(), today)
+                    val stays = day.date < today || why != null
                     val what = when {
+                        day.date < today -> t(Msg.MOVE_DAY_PASSED)
                         there == null -> t(Msg.MOVE_NO_DINNER)
-                        stays -> t(Msg.MOVE_STAYS, there.title)
+                        why != null -> t(Msg.MOVE_STAYS, there.title, t(whyStaysMessage(why)))
                         else -> t(Msg.MOVE_SWAPS, there.title)
                     }
                     TextButton(enabled = !stays, onClick = { onMove(index) }, modifier = Modifier.fillMaxWidth()) {

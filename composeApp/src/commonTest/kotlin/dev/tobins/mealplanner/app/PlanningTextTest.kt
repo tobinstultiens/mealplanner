@@ -75,7 +75,7 @@ class PlanningTextTest {
         assertEquals("3 dinners still to choose", week(5, 2).toChooseText(english))
         assertEquals("Nog 1 avondmaaltijd te kiezen", week(5, 4).toChooseText(dutch))
         assertEquals("A dinner is chosen for every day that is open.", week(5, 5).toChooseText(english))
-        assertEquals("Every day has a dinner that stays.", week(0, 0).toChooseText(english))
+        assertEquals("Every day from today on has a dinner that stays.", week(0, 0).toChooseText(english))
         assertEquals(listOf(false, true, true), listOf(week(5, 4), week(5, 5), week(0, 0)).map { it.complete })
     }
 
@@ -84,10 +84,11 @@ class PlanningTextTest {
         val totals = PlanningTotals(7, 21.4, 24.0, 5330.2, 325.4, 44.0, 6174.0, 383.8, 67.8)
 
         assertEquals(
-            listOf("≈ €21.40, €2.60 saved by offers", "5330 of 6174 kcal · 325 of 384 g protein · 44 of 68 g fibre"),
+            listOf("≈ €21.40 for 7 meals, €2.60 saved by offers", "5330 of 6174 kcal · 325 of 384 g protein · 44 of 68 g fibre"),
             totals.lines(english).map { it.plain() },
         )
-        assertEquals("≈ €21.40", totals.copy(costWithoutOffers = 21.4).lines(english).first(), "no saving to tell")
+        assertEquals("≈ €21.40 for 7 meals", totals.copy(costWithoutOffers = 21.4).lines(english).first(), "no saving to tell")
+        assertEquals("≈ €6,14 voor 2 maaltijden", totals.copy(meals = 2, cost = 6.14, costWithoutOffers = 6.14).lines(dutch).first(), "a dinner and its leftover lunch")
         assertEquals(1, totals.copy(cost = null, targetFibreG = null).lines(english).size, "without a cost, the numbers only")
         assertTrue(totals.copy(meals = 0).lines(english).isEmpty(), "nothing counted yet")
     }
