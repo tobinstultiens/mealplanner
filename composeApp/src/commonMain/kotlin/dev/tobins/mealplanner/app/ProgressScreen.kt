@@ -19,7 +19,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,13 +75,44 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
 
     LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.weights() } }
 
-    fun change(action: suspend () -> WeightLog) {
-        scope.launch {
-            when (val result = load(action)) {
-                is Load.Ready -> state = result
-                is Load.Failed -> snackbar.showSnackbar(failureSentence(result))
-                Load.Loading -> Unit
+    /** Set once the last weigh-in is removed: the profile keeps its weight, which the log can no longer say. */
+    var keptProfileWeight by remember { mutableStateOf(false) }
+
+    /** Runs a change of the log and shows its result; true when it went through. */
+    suspend fun apply(action: suspend () -> WeightLog): Boolean =
+        when (val result = load(action)) {
+            is Load.Ready -> {
+                state = result
+                if (result.value.entries.isNotEmpty()) keptProfileWeight = false
+                true
             }
+            is Load.Failed -> {
+                snackbar.showSnackbar(failureSentence(result))
+                false
+            }
+            Load.Loading -> false
+        }
+
+    fun change(action: suspend () -> WeightLog) {
+        scope.launch { apply(action) }
+    }
+
+    /**
+     * Removes a weigh-in and offers to put it back for a few seconds: removing the newest one changes the
+     * profile's weight and with it the targets, so a mis-tap must be cheap. Putting it back is a new weigh-in
+     * for its day, and the server's rule for the newest weigh-in makes the profile follow again.
+     */
+    fun remove(entry: WeightEntry) {
+        scope.launch {
+            if (!apply { api.deleteWeight(entry.date) }) return@launch
+            keptProfileWeight = (state as? Load.Ready)?.value?.entries?.isEmpty() == true
+            snackbar.currentSnackbarData?.dismiss()
+            val answer = snackbar.showSnackbar(
+                t(Msg.WEIGHING_REMOVED, dayLabel(entry.date, t.locale)),
+                actionLabel = t(Msg.UNDO),
+                duration = SnackbarDuration.Short,
+            )
+            if (answer == SnackbarResult.ActionPerformed) apply { api.setWeight(entry.date, entry.kg) }
         }
     }
 
@@ -124,6 +157,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                     }
 
                     if (log.entries.isEmpty()) {
+                        if (keptProfileWeight) KeptWeightNote(onOpenProfile)
                         Text(
                             t(Msg.WEIGH_HINT),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -160,11 +194,26 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                                 Text(dayLabel(entry.date, t.locale))
                                 Text(t(Msg.WEIGHING_ROW, kg(entry.kg, t.locale), kg(entry.trendKg, t.locale)), style = MaterialTheme.typography.bodyMedium.numeric())
                             }
-                            TextButton(onClick = { change { api.deleteWeight(entry.date) } }) { Text(t(Msg.REMOVE)) }
+                            TextButton(onClick = { remove(entry) }) { Text(t(Msg.REMOVE)) }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Said after the only weigh-in was removed: what the profile weighs stays, as what it was before the first
+ * weigh-in is not stored. The way to the profile is next to it, for a weigh-in that was a typing mistake.
+ */
+@Composable
+internal fun KeptWeightNote(onOpenProfile: () -> Unit) {
+    val t = LocalStrings.current
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+            Text(t(Msg.WEIGHT_KEPT))
+            TextButton(onClick = onOpenProfile) { Text(t(Msg.OPEN_PROFILE)) }
         }
     }
 }

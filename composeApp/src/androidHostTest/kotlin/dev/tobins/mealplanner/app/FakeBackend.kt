@@ -201,6 +201,7 @@ class FakeBackend(
             parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(shopping(parts[2]))
             path == "/api/offers" -> json.encodeToString(if (emptyOffers) OffersState(emptyList(), emptyList()) else offers)
             path == "/api/prices" -> json.encodeToString(if (emptyPrices) PricesState(emptyList(), emptyList(), null) else prices)
+            (method == "PUT" || method == "DELETE") && path.startsWith("/api/weights/") -> changeWeights(method, path.substringAfterLast('/'), sent)
             path == "/api/weights" -> json.encodeToString(weights)
             path == "/api/ingredients" -> json.encodeToString(ingredients)
             path == "/api/pantry" -> json.encodeToString(pantry)
@@ -724,11 +725,27 @@ class FakeBackend(
         fetchedAt = "2026-11-17T06:00:00Z",
     )
 
-    private val weights = WeightLog(
+    /** The weight log the server holds; a test may set it before the screen loads. */
+    @Volatile
+    var weights = WeightLog(
         entries = (0..9).map { WeightEntry(plusDays("2026-11-09", it), 82.4 - it * 0.08 + (it % 3) * 0.15, 82.4 - it * 0.09) },
         actualKgPerWeek = 0.2,
         suggestion = TargetSuggestion(2100, 1950, 0.2, 0.5),
     )
+
+    /**
+     * `PUT` and `DELETE /api/weights/{date}`: the log with that day set or removed (a trend of its own is
+     * not worked out: the reading stands for it), and the profile's weight following the newest weigh-in,
+     * as on the server. Returns the log.
+     */
+    private fun changeWeights(method: String, date: String, sent: String): String {
+        changes += "$method /api/weights/$date $sent"
+        val others = weights.entries.filter { it.date != date }
+        val entries = if (method == "PUT") (others + sent.trim().toDouble().let { WeightEntry(date, it, it) }).sortedBy { it.date } else others
+        weights = weights.copy(entries = entries)
+        entries.lastOrNull()?.let { newest -> profile = profile?.copy(weightKg = newest.kg) }
+        return json.encodeToString(weights)
+    }
 
     companion object {
         /** The day all pictures are taken on: a Wednesday. */

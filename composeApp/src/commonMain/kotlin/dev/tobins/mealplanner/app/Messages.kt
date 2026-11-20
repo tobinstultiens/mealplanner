@@ -684,6 +684,11 @@ enum class Msg(private val english: String, private val dutch: String) {
     ),
     TARGET_NOW("Calorie target is now {0} kcal", "Je caloriedoel is nu {0} kcal"),
     TARGET_CHANGE_FAILED("Could not change the target", "Het doel kon niet worden aangepast"),
+    WEIGHING_REMOVED("Weigh-in of {0} removed", "Meting van {0} verwijderd"),
+    WEIGHT_KEPT(
+        "Your last weigh-in is removed. Your profile keeps the weight it has now: if a mistyped weigh-in set it, correct it on the profile.",
+        "Je laatste meting is verwijderd. Je profiel houdt het gewicht dat het nu heeft: als een verkeerd getypte meting het zette, verbeter het dan in je profiel.",
+    ),
     WEIGHINGS("Weighings", "Metingen"),
     WEIGHING_ROW("{0}  ·  trend {1}", "{0}  ·  trend {1}"),
     TREND_WEIGHT("Trend weight", "Trendgewicht"),

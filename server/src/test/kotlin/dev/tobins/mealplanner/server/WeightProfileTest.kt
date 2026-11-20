@@ -15,10 +15,13 @@ import io.ktor.client.request.get
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -36,9 +39,12 @@ class WeightProfileTest {
         put("/api/profile") { setBody(Profile(kg, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT)) }
     }
 
+    private lateinit var db: dev.tobins.mealplanner.server.db.Database
+
     private fun ApplicationTestBuilder.start(): HttpClient {
         val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
-        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
         return clientFor("alice")
     }
 
@@ -130,5 +136,38 @@ class WeightProfileTest {
         assertEquals(80.0, alice.profileKg())
         assertEquals(71.0, bob.profileKg())
         assertEquals(listOf(71.0), bob.get("/api/weights").body<WeightLog>().entries.map { it.kg })
+    }
+
+    /** Puts a profile into the database that the profile's own checks refuse (an age of 17, a weight of its own), so that giving it a weigh-in's weight fails. */
+    private fun spoilProfile(account: String) {
+        val id = db.userQueries.selectBySubject("sub-$account").executeAsOne().id
+        val spoiled = Json { encodeDefaults = true }.encodeToString(Profile(75.0, 180.0, 17, Sex.MALE, ActivityLevel.LIGHT))
+        db.userQueries.upsertUserMeta(id, "profile", spoiled)
+    }
+
+    private fun storedWeights(account: String): List<Pair<String, Double>> {
+        val id = db.userQueries.selectBySubject("sub-$account").executeAsOne().id
+        return db.trackingQueries.selectWeights(id).executeAsList().map { it.date to it.kg }
+    }
+
+    @Test
+    fun aWeighInIsNotKeptWhenTheProfileCannotTakeItsWeight() = testApplication {
+        val http = start().withProfile()
+        http.weigh("2026-11-10", 80.0)
+        spoilProfile("alice")
+
+        assertEquals(HttpStatusCode.BadRequest, http.put("/api/weights/2026-11-12") { setBody(82.0) }.status)
+        assertEquals(listOf("2026-11-10" to 80.0), storedWeights("alice"), "the weigh-in and the profile roll back together")
+    }
+
+    @Test
+    fun aRemovalIsNotKeptWhenTheProfileCannotFollow() = testApplication {
+        val http = start().withProfile()
+        http.weigh("2026-11-10", 80.0)
+        http.weigh("2026-11-12", 82.0)
+        spoilProfile("alice")
+
+        assertEquals(HttpStatusCode.BadRequest, http.delete("/api/weights/2026-11-12").status)
+        assertEquals(listOf("2026-11-10" to 80.0, "2026-11-12" to 82.0), storedWeights("alice"))
     }
 }
