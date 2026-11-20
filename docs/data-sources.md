@@ -133,8 +133,9 @@ cheap, the server keeps a regular price per kg for each ingredient (`PriceReposi
   shows the result with the product each price came from.
 - A product counts for an ingredient when the offer matcher would give it that ingredient, with
   two extra rules: words after "met", "with" or "in" are a side ingredient, and prepared products
-  (titles with a word ending in "saus", "mix", "sap", "smaak", "oven" and so on) don't count unless
-  the ingredient is itself one ("sojasaus").
+  (titles with a word ending in "saus", "mix", "sap", "smaak", "oven", "worst", "paté", "schnitzel"
+  and so on) don't count unless the ingredient is itself one ("sojasaus"). A three-letter word like
+  "kip" has no plain -s plural, so "Kips" (a liver sausage brand) is not chicken.
 - `priceBeforeBonus` is the regular price, also while the product is on offer. Per kg comes from
   the pack size (pieces need the ingredient's weight per piece), or else from the unit price text.
 - The product must sit in an AH aisle where the ingredient's kind of food is sold: its NEVO food

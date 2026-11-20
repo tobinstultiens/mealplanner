@@ -72,10 +72,12 @@ class OfferMatcher(terms: Map<Long, List<String>>) {
     /**
      * A word and its likely Dutch plurals: -s, -en, -n, a doubled vowel shortened
      * ("banaan" -> "bananen") and a final consonant doubled ("kip" -> "kippen").
+     * A short word of consonant, vowel, consonant takes no plain -s: "Kips" on a liver
+     * sausage is a brand, not chicken.
      */
     private fun forms(term: String): Set<String> = buildSet {
         add(term)
-        add(term + "s")
+        if (!isShortSyllable(term)) add(term + "s")
         add(term + "en")
         add(term + "n")
         if (term.length >= 3) {
@@ -90,7 +92,12 @@ class OfferMatcher(terms: Map<Long, List<String>>) {
         }
     }
 
+    private fun isShortSyllable(term: String): Boolean =
+        term.length == 3 && term[0] !in VOWELS && term[1] in VOWELS && term[2] !in VOWELS
+
     companion object {
+        private const val VOWELS = "aeiou"
+
         /**
          * Store categories of ready meals, cold cuts, snacks, pastry and drinks (AH and
          * Lidl names): a match there would be a false hint, such as "leverworst met augurk"
@@ -114,6 +121,8 @@ class OfferMatcher(terms: Map<Long, List<String>>) {
             "pizza", "marinade", "bouillon", "snack", "taart", "gebak", "smaak", "creme", "crème", "wafels", "crackers",
             "oats", "crunch", "hoemoes", "hummus", "pasta", "wok", "oven", "moes", "noodles", "pancake", "crispy",
             "crispies", "flavor", "flavour", "rösti", "rosti",
+            // Sausages, spreads and ready-made meat: "Kips snijleverworst" is not chicken.
+            "worst", "paté", "pate", "schnitzel", "burger", "shoarma", "cordon", "tonight", "drinkyoghurt",
         )
 
         internal fun words(text: String): List<String> =
