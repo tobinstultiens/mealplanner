@@ -208,6 +208,17 @@ private fun addedSnackbar() {
 }
 
 @Composable
+private fun removedWeighIn() {
+    val t = LocalStrings.current
+    val host = remember { SnackbarHostState() }
+    LaunchedEffect(host) { host.showSnackbar(t(Msg.WEIGHING_REMOVED, dayLabel("2026-11-12", t.locale)), actionLabel = t(Msg.UNDO)) }
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(16.dp)) { KeptWeightNote {} }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { AppSnackbarHost(host) }
+    }
+}
+
+@Composable
 private fun focusRing(focused: Int) {
     // Controls only take focus when the last input was the keyboard, as when someone tabs through the screen.
     @OptIn(ExperimentalComposeUiApi::class)
@@ -375,6 +386,10 @@ enum class Shot(
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
+    // After the only weigh-in was removed (issue 196): the note that the profile keeps its weight, and the undo snackbar, in both languages.
+    PROGRESS_KEPT(heightDp = 360, content = { _, _ -> removedWeighIn() }),
+    PROGRESS_KEPT_NL(dutch = true, heightDp = 400, content = { _, _ -> removedWeighIn() }),
+    PROGRESS_KEPT_X2(heightDp = 800, fontScale = 2.0f, content = { _, _ -> removedWeighIn() }),
     // The profile with a portion range, a priority and a fibre target of its own, in both languages: the range's fields side by side.
     PROFILE(heightDp = 1800, profile = sampleProfile, content = { api, _ -> ProfileScreen(api, {}) }),
     PROFILE_NL(dutch = true, heightDp = 1800, profile = sampleProfile, content = { api, _ -> ProfileScreen(api, {}) }),
