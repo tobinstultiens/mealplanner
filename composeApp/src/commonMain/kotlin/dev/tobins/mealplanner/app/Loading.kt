@@ -21,6 +21,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.io.IOException
 import kotlinx.serialization.SerializationException
 
+/**
+ * A failure whose [message] is a sentence the app wrote for the user (a login answer that does not match,
+ * a refusal the picker passes on). It stays as it is, while any other exception, a library's
+ * [IllegalStateException] included, is told in plain words by [failedFrom]. Throw this, not `error(...)`, for such sentences.
+ */
+internal class AppError(override val message: String) : IllegalStateException(message)
+
 /** Result of loading something from the server. */
 internal sealed interface Load<out T> {
     data object Loading : Load<Nothing>
@@ -50,6 +57,7 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
 
 /** What [e], thrown by a request, means for the user: the server's explanation, or a technical failure flagged as such. */
 internal suspend fun failedFrom(e: Throwable): Load.Failed {
+    if (e is AppError) return Load.Failed(e.message)
     if (e is ResponseException) {
         // The server explains errors as {"error": "..."}; fall back to the status line when there is none or it is empty.
         val reason = runCatching {
@@ -85,13 +93,11 @@ internal fun failureSentence(failed: Load.Failed, msg: Msg? = null): String {
 internal suspend fun failureOf(action: suspend () -> Unit): String? = (load(action) as? Load.Failed)?.let { failureSentence(it) }
 
 /**
- * Why [e], caught where the app did something other than [load], failed, as a fragment for inside a sentence.
- * An [IllegalStateException] is the app's own sentence (`error(...)`, `check(...)`) and stays; any other
- * exception goes through [failedFrom], so its text ("unexpected end of stream on http://...") is never shown.
- * A [CancellationException] is an [IllegalStateException] too, but comes from a library, not from the app.
+ * Why [e], caught where the app did something other than [load], failed, as a fragment for inside a sentence:
+ * an [AppError]'s own sentence, else the plain reason from [failedFrom], so an exception's text
+ * ("unexpected end of stream on http://...") is never shown.
  */
-internal suspend fun reasonOf(e: Throwable): String =
-    if (e is IllegalStateException && e !is CancellationException && !e.message.isNullOrBlank()) e.message!! else reasonOf(failedFrom(e))
+internal suspend fun reasonOf(e: Throwable): String = reasonOf(failedFrom(e))
 
 /** Why [failed] failed, as a fragment for inside a sentence: the server's explanation or a plain reason. */
 internal fun reasonOf(failed: Load.Failed): String = if (failed.technical) plainReason(failed) else failed.message

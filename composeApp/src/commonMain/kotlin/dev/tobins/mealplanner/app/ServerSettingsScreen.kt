@@ -289,7 +289,7 @@ private fun AppVersionSection(updater: UpdateInstaller) {
             scope.launch {
                 runCatching { AppUpdates.check(updater.currentVersion) }
                     .onSuccess { if (it == null) message = t(Msg.LATEST_VERSION) else found = it }
-                    .onFailure { message = sentence(t(Msg.CHECK_FAILED, reasonOf(it))) }
+                    .onFailure { message = updateCheckFailure(t, it) }
                 checking = false
             }
         }) { Text(if (checking) t(Msg.CHECKING) else t(Msg.CHECK_UPDATES)) }

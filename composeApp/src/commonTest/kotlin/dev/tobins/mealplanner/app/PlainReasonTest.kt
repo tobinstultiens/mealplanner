@@ -83,8 +83,9 @@ class FailureSentenceTest {
         val raw = IOException("unexpected end of stream on http://localhost:18081/api/x")
         assertEquals("Could not save: the server could not be reached.", failureSentence(failedFrom(raw), Msg.SAVE_FAILED))
         assertEquals("The server could not be reached.", sentence(reasonOf(raw)))
-        // The app's own sentences (error(...), check(...)) are not exception text and stay.
-        assertEquals("The login answer has no code", reasonOf(IllegalStateException("The login answer has no code")))
+        // The app's own sentences (an AppError) are not exception text and stay; a library's IllegalStateException is told in plain words.
+        assertEquals("The login answer has no code", reasonOf(AppError("The login answer has no code")))
+        assertEquals("Something went wrong.", sentence(reasonOf(IllegalStateException("HttpClient is closed"))))
         // A cancellation is one by type on every platform, but its text is a library's.
         assertEquals("Something went wrong.", sentence(reasonOf(CancellationException("Request timeout has expired [url=http://server/x]"))))
         Strings.current = Strings.Dutch

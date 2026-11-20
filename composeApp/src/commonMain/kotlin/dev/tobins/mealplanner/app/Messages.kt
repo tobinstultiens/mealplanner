@@ -314,7 +314,6 @@ enum class Msg(private val english: String, private val dutch: String) {
     KEEPS_FAILED("Could not save how long it keeps.", "Kon niet opslaan hoe lang het goed blijft."),
 
     PLAN_CHOOSE_FOR("Recipe for {0} on {1}", "Recept voor {0} op {1}"),
-    PLAN_CHOOSE_FAILED("The recipe could not be put in the plan.", "Het recept kon niet in het plan worden gezet."),
     PLAN_CHOOSE_UNSUPPORTED(
         "The server cannot put a chosen recipe in the plan yet. It is updated overnight; try again tomorrow.",
         "De server kan nog geen gekozen recept in het plan zetten. Hij wordt 's nachts bijgewerkt; probeer het morgen opnieuw.",
