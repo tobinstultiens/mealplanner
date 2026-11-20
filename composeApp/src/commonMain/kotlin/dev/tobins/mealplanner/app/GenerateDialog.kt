@@ -44,7 +44,7 @@ fun GenerateDialog(
     var slot by remember { mutableStateOf(fixedSlot ?: MealSlot.DINNER) }
     var wish by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<GenerationError?>(null) }
     val scope = rememberCoroutineScope()
 
     AlertDialog(
@@ -77,7 +77,10 @@ fun GenerateDialog(
                         Text(t(Msg.WRITING_RECIPE))
                     }
                 }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                error?.let { shown ->
+                    if (shown.details == null) Text(shown.summary, color = MaterialTheme.colorScheme.error)
+                    else ErrorBanner(shown.summary, shown.details, Modifier.fillMaxWidth())
+                }
             }
         },
         confirmButton = {
@@ -89,11 +92,7 @@ fun GenerateDialog(
                         is Load.Ready -> Unit
                         is Load.Failed -> {
                             busy = false
-                            error = when (result.status) {
-                                503 -> t(Msg.GEN_OFF)
-                                409 -> t(Msg.GEN_NEEDS_PROFILE)
-                                else -> failureSentence(result, Msg.GEN_FAILED)
-                            }
+                            error = generationError(t, result)
                         }
                         Load.Loading -> Unit
                     }
@@ -103,3 +102,20 @@ fun GenerateDialog(
         dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )
 }
+
+/** What the dialog says about a failed generation: a [summary], and the server's own sentence behind "Details" when the summary is ours. */
+internal class GenerationError(val summary: String, val details: String? = null)
+
+/**
+ * The server answers 503 both when recipe generation is not set up (`reason` "generation_off") and when
+ * a write waited too long for its turn; only the first is "this server does not write recipes", any other
+ * failure shows the server's own sentence. The setting's name stays behind "Details": the user cannot act on it.
+ */
+internal fun generationError(t: Strings, failed: Load.Failed): GenerationError = when {
+    failed.status == 503 && failed.reason == GENERATION_OFF -> GenerationError(t(Msg.GEN_OFF), failed.message)
+    failed.status == 409 -> GenerationError(t(Msg.GEN_NEEDS_PROFILE))
+    else -> GenerationError(failureSentence(failed, Msg.GEN_FAILED))
+}
+
+/** The `reason` of the server's 503 for a server that has no recipe generation. */
+private const val GENERATION_OFF = "generation_off"

@@ -11,6 +11,7 @@ import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.ToppingsInput
+import dev.tobins.mealplanner.server.respondGenerationOff
 import dev.tobins.mealplanner.server.CookingSync
 import dev.tobins.mealplanner.server.NotFoundException
 import dev.tobins.mealplanner.server.accountId
@@ -65,10 +66,7 @@ fun Route.recipeRoutes(cooking: CookingSync) {
 
     // Writes a new recipe with Claude and stores it. Takes up to a minute or so.
     post("/api/recipes/generate") {
-        val service = call.user.generation ?: return@post call.respond(
-            HttpStatusCode.ServiceUnavailable,
-            mapOf("error" to "Recipe generation is off: set ANTHROPIC_API_KEY on the server"),
-        )
+        val service = call.user.generation ?: return@post call.respondGenerationOff()
         call.respond(HttpStatusCode.Created, service.generate(call.receive<GenerateRequest>()))
     }
 

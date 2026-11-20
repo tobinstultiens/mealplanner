@@ -66,6 +66,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class PlanTest {
     private val nevo = listOf(
@@ -1021,7 +1024,13 @@ class PlanTest {
                 contentType(ContentType.Application.Json)
             }
         }
-        assertEquals(HttpStatusCode.ServiceUnavailable, http.post("/api/recipes/generate") { setBody(GenerateRequest()) }.status)
+        val off = http.post("/api/recipes/generate") { setBody(GenerateRequest()) }
+        assertEquals(HttpStatusCode.ServiceUnavailable, off.status)
+        // The app tells this 503 from a busy write's by the reason, not by the wording.
+        assertEquals("generation_off", Json.parseToJsonElement(off.bodyAsText()).jsonObject["reason"]?.jsonPrimitive?.content)
+        val offInPlan = http.post("/api/plans/$week/meals/0/dinner/generate")
+        assertEquals(HttpStatusCode.ServiceUnavailable, offInPlan.status)
+        assertEquals("generation_off", Json.parseToJsonElement(offInPlan.bodyAsText()).jsonObject["reason"]?.jsonPrimitive?.content)
     }
 
     @Test

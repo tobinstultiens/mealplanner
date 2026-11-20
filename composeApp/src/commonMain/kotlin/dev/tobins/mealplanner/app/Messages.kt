@@ -332,8 +332,8 @@ enum class Msg(private val english: String, private val dutch: String) {
     WISH_OPTIONAL("Wish (optional)", "Wens (optioneel)"),
     WRITING_RECIPE("Writing the recipe; this can take a minute.", "Het recept wordt geschreven; dit kan een minuut duren."),
     GEN_OFF(
-        "Recipe generation is off on the server: it needs an ANTHROPIC_API_KEY.",
-        "Recepten laten maken staat uit op de server: die heeft een ANTHROPIC_API_KEY nodig.",
+        "This server does not write recipes.",
+        "Deze server maakt geen recepten.",
     ),
     GEN_NEEDS_PROFILE("Set up your profile first; recipes are sized to your targets.", "Stel eerst je profiel in; recepten worden op je doelen afgestemd."),
     GEN_FAILED("Could not generate: {0}", "Het maken is niet gelukt: {0}"),

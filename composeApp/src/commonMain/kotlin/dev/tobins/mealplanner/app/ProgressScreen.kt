@@ -42,6 +42,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -68,6 +70,8 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
     var reload by remember { mutableIntStateOf(0) }
     val frontReturns = rememberFrontReturns()
     val scroll = rememberScrollState()
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     var weightText by remember { mutableStateOf("") }
     var dismissed by remember { mutableStateOf<TargetSuggestion?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -153,6 +157,9 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                         Button(enabled = value != null, onClick = {
                             change { api.setWeight(today, value!!) }
                             weightText = ""
+                            // The number pad would stay up over the tab bar once the weigh-in is saved.
+                            focus.clearFocus()
+                            keyboard?.hide()
                         }) { Text(t(Msg.SAVE)) }
                     }
 

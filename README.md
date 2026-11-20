@@ -753,7 +753,7 @@ installed side by side: they share the application id but not the signing key.
 | `COOKING_REPO_PATH` | `.runtime/cooking` with a URL | The server's checkout of that site; without `COOKING_REPO_URL` it is used as is (and synced only when asked) |
 | `COOKING_REPO_SHARED` | on | Set to `0` (or `off`, `false`) to keep the server's cooking site to the owner, as before issue 208; other accounts then set a site of their own or have none |
 | `COOKING_REPO_FETCH_INTERVAL_MINUTES` | `5` | The least time between two fetches of the server's cooking site, which any account's Sync asks for while the others' imports wait; a Sync within it imports the clone as it is. `0` fetches on every Sync. A value that is not a whole number of minutes stops the server at start |
-| `ANTHROPIC_API_KEY` | unset | Enables recipe generation (`POST /api/recipes/generate`) with Claude; pay per use |
+| `ANTHROPIC_API_KEY` | unset | Enables recipe generation (`POST /api/recipes/generate`) with Claude; pay per use. Without it both generate routes answer 503 `{"error": "...", "reason": "generation_off"}`; the optional `reason` lets the app tell this from the 503 of a write that waited too long, and say "This server does not write recipes" (the setting's name stays behind Details) |
 | `MEALPLANNER_MODEL` | `claude-opus-5-5` | Claude model for generation |
 | `MEALPLANNER_FETCH_OFFERS` | on | Set to `off` to stop fetching store offers and regular prices in the background |
 | `NEVO_CSV_PATH` | unset | NEVO main csv (`NEVO2025_v9.0.csv`). Imported on first start; `POST /api/foods/import` re-imports |

@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.shopping.bestOffer
 import kotlin.test.Test
@@ -27,6 +28,20 @@ class ShoppingModeTest {
         item("milk", "Dairy", checked = true),
         item("rice", "Tins"),
     )
+
+    @Test
+    fun theCountIsOfThisWeeksRowsAndATickedBuyAheadRowDoesNotMoveIt() {
+        val ahead = item("ahead:rice", "Tins")
+        // One row ticked of two, plus a buy-ahead and a stock-up row: the advice rows are not counted either way.
+        val list = ShoppingList("2026-11-16", listOf(item("leek", "Fruit & veg", checked = true), item("rice", "Tins")), staples = emptyList())
+        assertEquals("1 of 2 · 1 section to go", shoppingProgress(list, Strings.English))
+        val withAdvice = list.copy(buyAhead = listOf(ahead.copy(checked = true)), stockUp = listOf(item("stock:oil", "Oils")))
+        assertEquals("1 of 2 · 1 section to go", shoppingProgress(withAdvice, Strings.English))
+        assertEquals("1 van 2 · nog 1 afdeling", shoppingProgress(withAdvice, Strings.Dutch))
+        // An untouched buy-ahead row does not keep a finished list from saying so.
+        val done = ShoppingList("2026-11-16", items.map { it.copy(checked = true) }, staples = emptyList(), buyAhead = listOf(ahead))
+        assertEquals("All 5 ticked off", shoppingProgress(done, Strings.English))
+    }
 
     @Test
     fun outsideShoppingModeNothingMoves() {

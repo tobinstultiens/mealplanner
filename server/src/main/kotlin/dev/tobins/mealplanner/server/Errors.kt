@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.server.generation.GenerationException
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.log
 import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.statuspages.StatusPagesConfig
@@ -13,6 +14,19 @@ class NotFoundException(message: String) : RuntimeException(message)
 
 /** Thrown when a request cannot be carried out in the current state; mapped to 409. */
 class ConflictException(message: String) : RuntimeException(message)
+
+/**
+ * The machine-readable `reason` of the 503 answered when recipe generation is not set up, next to its
+ * sentence: the app tells it from the 503 of a busy write (a wording is not something to compare).
+ * An optional field; apps that do not know it read the `error` sentence only.
+ */
+const val GENERATION_OFF = "generation_off"
+
+/** Answers 503 "Recipe generation is off", for a server without an `ANTHROPIC_API_KEY`. */
+suspend fun ApplicationCall.respondGenerationOff() = respond(
+    HttpStatusCode.ServiceUnavailable,
+    mapOf("error" to "Recipe generation is off: set ANTHROPIC_API_KEY on the server", "reason" to GENERATION_OFF),
+)
 
 /** Maps what routes throw to a status and `{"error": ...}`. */
 fun StatusPagesConfig.errorMapping() {
