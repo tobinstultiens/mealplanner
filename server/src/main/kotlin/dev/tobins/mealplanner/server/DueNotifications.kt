@@ -37,9 +37,7 @@ class DueNotifications(
             offersEnding = offersEnding(day, weekStart),
             planNextWeek = planNextWeek(day, weekStart)?.toString(),
             weighIn = weighIn(day),
-            // Only a dinner with something to cook: not a later meal of a prepped batch, which was made on an earlier day.
-            dinner = meals.firstOrNull { it.slot == MealSlot.DINNER && it.status == MealStatus.PLANNED && (it.cookPortions ?: it.portions) > 0.0 }
-                ?.let { dinner(it, weekStart, index) },
+            dinner = meals.firstOrNull { it.slot == MealSlot.DINNER && it.status == MealStatus.PLANNED }?.let { dinner(it, weekStart, index) },
             mealsToMark = meals.count { it.status == MealStatus.PLANNED },
             prepsPastLastDay = preps.pastLastDay(day),
         )
@@ -99,8 +97,17 @@ class DueNotifications(
         return if (days >= WEIGH_IN_AFTER_DAYS) WeighInDue(last.toString(), days.toInt()) else null
     }
 
-    private fun dinner(meal: PlannedMeal, weekStart: LocalDate, index: Int) =
-        DinnerToday(meal.recipeId, meal.title, meal.portions, meal.cookPortions ?: meal.portions, weekStart.toString(), index)
+    /**
+     * Tonight's [meal], still to eat, as what there is to cook: its main, also when that makes a prepped batch ([DinnerToday.prep]);
+     * else, when the main cooks nothing (a later meal of a batch made on an earlier day), the side next to it when that is
+     * a batch made tonight ([DinnerToday.side], issue 263); null when nothing is cooked tonight.
+     */
+    private fun dinner(meal: PlannedMeal, weekStart: LocalDate, index: Int): DinnerToday? {
+        val cooks = meal.cookPortions ?: meal.portions
+        if (cooks > 0.0) return DinnerToday(meal.recipeId, meal.title, meal.portions, cooks, weekStart.toString(), index, prep = meal.prep != null)
+        val side = meal.side?.takeIf { it.cookPortions > 0.0 } ?: return null
+        return DinnerToday(side.recipeId, side.title, side.portions, side.cookPortions, weekStart.toString(), index, prep = true, side = true)
+    }
 
     companion object {
         /** A weigh-in this many days old is due again. */

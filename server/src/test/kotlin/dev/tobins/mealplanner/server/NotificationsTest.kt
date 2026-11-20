@@ -278,9 +278,30 @@ class NotificationsTest {
         val plan = http.post("/api/plans/$week/preps") { setBody(PrepInput(salad.id, "2026-11-17", meals = meals)) }.body<WeekPlan>()
         val portions = plan.days[1].meals.single().portions
 
-        assertEquals(DinnerToday(salad.id, "Chicken salad", portions, 2 * portions, week, 1), facts("2026-11-17").dinner, "Tuesday: cook the batch")
+        // The batch, said to be a prep, so the app speaks of its later meals rather than of tomorrow's lunch (issue 263).
+        assertEquals(DinnerToday(salad.id, "Chicken salad", portions, 2 * portions, week, 1, prep = true), facts("2026-11-17").dinner, "Tuesday: cook the batch")
         assertNull(facts("2026-11-18").dinner, "Wednesday's was made on Tuesday: nothing to cook")
         assertEquals(1, facts("2026-11-18").mealsToMark, "but it is still to mark")
+    }
+
+    /** Issue 263: a dinner whose main was made on an earlier day, with a side whose batch is made tonight, is due with the side. */
+    @Test
+    fun aDinnerWithNothingToCookButASideMadeTonightIsDueWithTheSide() = testApplication {
+        start()
+        val http = clientFor("t").ready()
+        suspend fun keeping(title: String, lines: String) = http.post("/api/recipes") { setBody(RecipeInput(title, 4, lines)) }.body<RecipeDetail>().summary
+            .also { http.put("/api/recipes/${it.id}/keeps") { setBody(RecipeKeeps(days = 2)) } }
+        val salad = keeping("Chicken salad", "1200 | g | kipfilet")
+        val lentils = keeping("Lentils", "400 | g | kipfilet")
+        http.prep(salad.id, "2026-11-17", "2026-11-17" to MealSlot.DINNER, "2026-11-18" to MealSlot.DINNER)
+        http.plan("t", day = 3, slot = "LUNCH")
+        // Half a serving of lentils next to Wednesday's dinner, which is made then, and Thursday's lunch.
+        http.prep(lentils.id, "2026-11-18", "2026-11-18" to MealSlot.DINNER, "2026-11-19" to MealSlot.LUNCH, side = 0.5)
+
+        assertEquals(DinnerToday(lentils.id, "Lentils", 0.5, 1.0, week, 2, prep = true, side = true), facts("2026-11-18").dinner)
+        assertEquals(true, facts("2026-11-17").dinner?.let { it.recipeId == salad.id && !it.side }, "Tuesday cooks the salad itself")
+        http.mark(2, "DINNER", MealStatus.SKIPPED)
+        assertNull(facts("2026-11-18").dinner, "a dinner skipped is not cooked, nor is its side")
     }
 
     @Test

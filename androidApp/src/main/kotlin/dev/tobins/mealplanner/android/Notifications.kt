@@ -129,14 +129,14 @@ class NotificationWorker(context: Context, params: WorkerParameters) : Coroutine
  * does not let the app post. The channel is made again each time, which renames it into the app's language
  * of now and keeps what the user set for it.
  */
-private fun post(context: Context, due: DueNotification, strings: Strings): Boolean {
+internal fun post(context: Context, due: DueNotification, strings: Strings): Boolean {
     if (!notificationsAllowed(context)) return false
     val manager = context.getSystemService(NotificationManager::class.java)
     manager.createNotificationChannel(NotificationChannel(due.kind.channel, strings(due.kind.title), NotificationManager.IMPORTANCE_DEFAULT))
     val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
     due.opening?.let(intent::putOpening)
-    // One request code per kind: Android would otherwise hand every notification the extras of the last one.
-    val open = PendingIntent.getActivity(context, due.kind.ordinal, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    // One request code per kind and tag: Android would otherwise hand every notification the extras of the last one.
+    val open = PendingIntent.getActivity(context, due.requestCode, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     val notification = Notification.Builder(context, due.kind.channel)
         .setSmallIcon(R.drawable.ic_stat_notification)
         .setContentTitle(due.title)
@@ -145,7 +145,8 @@ private fun post(context: Context, due: DueNotification, strings: Strings): Bool
         .setContentIntent(open)
         .setAutoCancel(true)
         .build()
-    // One notification per kind, the update's with the id it always had: a newer one of a kind replaces the older.
-    manager.notify(due.kind.ordinal + 1, notification)
+    // The kind's id, the update's the one it always had, and the tag of what it tells (issue 263): a newer one of a kind
+    // without a tag replaces the older, and a batch told later the same day goes next to the first.
+    manager.notify(due.tag, due.kind.ordinal + 1, notification)
     return true
 }

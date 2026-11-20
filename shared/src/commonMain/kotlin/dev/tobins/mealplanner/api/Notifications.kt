@@ -26,7 +26,10 @@ data class NotificationFacts(
     val planNextWeek: String? = null,
     /** The newest weigh-in, when it is 7 or more days old and the account has a profile; null otherwise. */
     val weighIn: WeighInDue? = null,
-    /** Today's dinner, when one is planned and neither eaten nor skipped; null otherwise. */
+    /**
+     * Today's dinner, when one is planned, neither eaten nor skipped, and something is cooked for it: its main, or else
+     * the side next to it when that is a prepped batch made tonight ([DinnerToday.side]); null otherwise.
+     */
     val dinner: DinnerToday? = null,
     /** How many of today's meals are still planned: neither eaten nor skipped. */
     val mealsToMark: Int = 0,
@@ -79,4 +82,14 @@ data class DinnerToday(
     /** The plan's week (its Monday, ISO) and the day in it, 0 for Monday. */
     val weekStart: String,
     val day: Int,
+    /**
+     * True when tonight's cooking makes a prepped batch (issue 234): [cookPortions] are for the prep's later meals too, not
+     * for tomorrow's leftover lunch (issue 263).
+     */
+    val prep: Boolean = false,
+    /**
+     * True when what is cooked tonight is the side next to the dinner, a prepped batch made tonight, while the dinner's
+     * main has nothing to cook (a later meal of another batch): the recipe, title and servings are the side's (issue 263).
+     */
+    val side: Boolean = false,
 )

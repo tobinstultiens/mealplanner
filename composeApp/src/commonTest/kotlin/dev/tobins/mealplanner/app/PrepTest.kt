@@ -130,21 +130,6 @@ class PrepTest {
     )
 
     @Test
-    fun theBoxCardProposesTheNextFreeLunchOrDinnerItKeepsFor() {
-        val room = listOf(PrepSlot("2026-11-18", DINNER), PrepSlot("2026-11-19", LUNCH), PrepSlot("2026-11-19", DINNER))
-        val spare = SparePortion(7, 1, "Salad", 1.25, PrepSlot("2026-11-18", LUNCH), lastDay = "2026-11-20", room = room)
-        // Wednesday's dinner holds a meal still to eat and Thursday's lunch is empty: the free one is proposed.
-        val wednesday = PlannedMeal(2, DINNER, 9, "Rice bowl", 1.0, 700.0, 30.0)
-        assertEquals(PrepSlot("2026-11-19", LUNCH), spare.proposal(listOf(week(wednesday, PlannedMeal(3, DINNER, 9, "Rice bowl", 1.0, 700.0, 30.0)))))
-        // Every one of them holds a meal (or its week is not known): the first with room, where it takes that meal's place.
-        val full = week(*room.map { PlannedMeal(daysBetween("2026-11-16", it.date), it.slot, 9, "Rice bowl", 1.0, 700.0, 30.0) }.toTypedArray())
-        assertEquals(PrepSlot("2026-11-18", DINNER), spare.proposal(listOf(full)))
-        assertEquals(PrepSlot("2026-11-18", DINNER), spare.proposal(emptyList()))
-        assertNull(spare.copy(room = emptyList()).proposal(listOf(full)), "no room, no proposal")
-        assertEquals("Eat it on Thu 19 Nov · lunch", Strings.English(Msg.SPARE_EAT_PROPOSED, slotLabel(PrepSlot("2026-11-19", LUNCH), Strings.English)))
-    }
-
-    @Test
     fun theBoxCardShowsOnlyOnTheWeeksTheShareCanStillBeEatenIn() {
         val spare = SparePortion(7, 1, "Salad", 1.25, PrepSlot("2026-11-21", LUNCH), lastDay = "2026-11-24", room = emptyList())
         val today = "2026-11-21"

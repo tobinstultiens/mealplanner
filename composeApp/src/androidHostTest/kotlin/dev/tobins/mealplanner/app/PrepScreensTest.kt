@@ -5,6 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -12,6 +13,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKeeps
 import org.junit.After
 import org.junit.Before
@@ -111,21 +114,35 @@ class PrepScreensTest {
         // The lentil soup comes to keep on another device while the Plan is open.
         backend.keepElsewhere(5, RecipeKeeps(days = 2))
         compose.onNodeWithText("Prep a recipe…").performClick()
-        // The only recipe that kept when the Plan opened is chosen; its menu lists the soup once my recipes are read again.
-        compose.onNode(hasText("Slow-cooked chicken thighs with coconut, lemon and spinach") and hasAnyAncestor(isDialog())).performClick()
+        // Opening the dialog reads my recipes again, whenever the Plan's first read of them came.
+        compose.waitUntil(timeoutMillis = 10_000) { backend.requests.count { it == "GET /api/recipes" } >= 2 }
+        // The recipe menu (its button names the recipe chosen, or asks for one) lists the soup.
+        val recipeButton = hasAnyAncestor(isDialog()) and hasClickAction() and
+            (hasText("Slow-cooked chicken thighs with coconut, lemon and spinach") or hasText("Pick a recipe that keeps."))
+        compose.onNode(recipeButton).performClick()
         waitFor("Lentil soup")
     }
 
     @Test
-    fun theBoxCardEatsTheShareInTheMealItProposesInOneTap() {
+    fun theBoxCardOffersNoOneTapPlaceWhenNoneIsFree() {
         withPrep()
         showPlan()
-        // Wednesday's dinner and Thursday's lunch have room; both hold a meal, so the first is proposed and the other is in the menu.
-        waitFor("Eat it on Wed 18 Nov · dinner")
+        // Wednesday's dinner and Thursday's lunch have room, but both hold a meal: replacing one is the user's choice from the menu.
+        waitFor("Eat it on…")
+        compose.onNodeWithText("Eat it on Wed 18 Nov", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Eat it on Thu 19 Nov", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun theBoxCardEatsTheShareInTheFreePlaceTheServerProposesInOneTap() {
+        withPrep()
+        backend.spareProposed = PrepSlot("2026-11-19", MealSlot.LUNCH)
+        showPlan()
+        waitFor("Eat it on Thu 19 Nov · lunch")
         compose.onNodeWithText("Eat it on…").assertExists()
-        compose.onNodeWithText("Eat it on Wed 18 Nov · dinner").performClick()
+        compose.onNodeWithText("Eat it on Thu 19 Nov · lunch").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it.startsWith("POST /api/plans/${FakeBackend.WEEK_START}/preps/1/spare") } }
         val sent = backend.changes.single { it.startsWith("POST /api/plans/${FakeBackend.WEEK_START}/preps/1/spare") }
-        assertTrue(""""to":{"date":"2026-11-18","slot":"DINNER"}""" in sent, sent)
+        assertTrue(""""to":{"date":"2026-11-19","slot":"LUNCH"}""" in sent, sent)
     }
 }

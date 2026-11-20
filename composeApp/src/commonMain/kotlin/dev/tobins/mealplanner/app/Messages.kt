@@ -910,6 +910,8 @@ enum class Msg(private val english: String, private val dutch: String) {
     WEIGH_IN_NOTIFICATION_TITLE("Time for a weigh-in", "Tijd om te wegen"),
     DINNER_NOTIFICATION_TITLE("Tonight: {0}", "Vanavond: {0}"),
     DINNER_NOTIFICATION_TEXT("{0} to cook", "{0} om te koken"),
+    DINNER_NOTIFICATION_PREP_TEXT("{0} to cook: tonight's and the prep's later meals", "{0} om te koken: voor vanavond en de latere maaltijden van de prep"),
+    DINNER_NOTIFICATION_SIDE_TITLE("Tonight's side: {0}", "Bijgerecht vanavond: {0}"),
     MEALS_TO_MARK_NOTIFICATION_TEXT("Mark what you ate.", "Geef aan wat je hebt gegeten."),
 
     // --- end of messages

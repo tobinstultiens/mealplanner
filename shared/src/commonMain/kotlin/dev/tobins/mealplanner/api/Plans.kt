@@ -177,6 +177,12 @@ data class SparePortion(
     val room: List<PrepSlot>,
     /** True when the share is a side, which goes next to the meal it is eaten with. */
     val side: Boolean = false,
+    /**
+     * The next free lunch or dinner of [room], which the app offers to eat it in with one tap (issue 263): the earliest
+     * that is empty, in whichever week; for a [side], the earliest of [room], as each is a meal still to eat without a
+     * side. Null when none is free: a meal planned there is only replaced by the user's own choice from [room].
+     */
+    val proposed: PrepSlot? = null,
 )
 
 /** Body of `POST /api/plans/{weekStart}/preps/{id}/spare`: eat the share of the skipped meal [from] in [to] instead. */

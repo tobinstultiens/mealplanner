@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.DinnerToday
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.NotificationFacts
 import dev.tobins.mealplanner.api.PrepPastLastDay
@@ -97,8 +98,19 @@ private fun SettingsStorage.told(kind: NotificationKind): String? = get("notifie
  * (null: the app as it is), and what is remembered of it once it is posted, so it is told once: the version,
  * the server's day, for "plan next week" the week, or for prepped food to throw away the server's day with every
  * batch told of on it ([toldBatches]).
+ *
+ * [tag] tells it apart from others of its kind in the tray (Android's notification tag, issue 263). Null for a kind whose
+ * newer notification makes the older one stale (yesterday's dinner, an older version), which it then replaces. Food to
+ * throw away is told per batch, so its tag names the batches it tells of: a batch told later the same day goes next to
+ * the first, and the same batches posted again update theirs.
  */
-data class DueNotification(val kind: NotificationKind, val title: String, val text: String, val opening: Opening?, val toldAs: String)
+data class DueNotification(val kind: NotificationKind, val title: String, val text: String, val opening: Opening?, val toldAs: String, val tag: String? = null) {
+    /**
+     * The request code of what a tap opens: one per kind and [tag], since Android hands every notification whose intent has
+     * the same code the extras of the last one. Without a tag, the kind's own, as it always was.
+     */
+    val requestCode: Int get() = tag?.let { NotificationKind.entries.size + (31 * kind.ordinal + it.hashCode()).mod(1 shl 24) } ?: kind.ordinal
+}
 
 /**
  * Decides which notifications a run of the background check posts: those whose switch is on, whose window
@@ -173,18 +185,27 @@ private fun dueNotifications(facts: NotificationFacts, told: Set<Long>, t: Strin
     facts.weighIn?.let { due ->
         DueNotification(NotificationKind.WEIGH_IN, t(Msg.WEIGH_IN_NOTIFICATION_TITLE), t.plural(Plural.LAST_WEIGH_IN, due.daysAgo), Opening(Route.TabRoute(Tab.PROGRESS)), facts.date)
     },
-    facts.dinner?.let { dinner ->
-        val meal = MealToCook(dinner.recipeId, dinner.portions, dinner.cookPortions, skipped = false, MealPlace(dinner.weekStart, dinner.day, MealSlot.DINNER), planned = true)
-        DueNotification(
-            NotificationKind.DINNER_TODAY, t(Msg.DINNER_NOTIFICATION_TITLE, dinner.title), t(Msg.DINNER_NOTIFICATION_TEXT, servingsText(dinner.cookPortions, t)),
-            Opening(Route.Recipe(dinner.recipeId), meal), facts.date,
-        )
-    },
+    facts.dinner?.let { dinner -> dinnerNotification(dinner, facts.date, t) },
     facts.mealsToMark.takeIf { it > 0 }?.let { count ->
         DueNotification(NotificationKind.MEALS_TO_MARK, t.plural(Plural.MEALS_TO_MARK, count), t(Msg.MEALS_TO_MARK_NOTIFICATION_TEXT), Opening(Route.TabRoute(Tab.TODAY)), facts.date)
     },
     throwAwayNotification(facts, told, t),
 )
+
+/**
+ * Tonight's [dinner] on the server's day [date]: what to cook, and a tap opens its recipe as the Plan does. A batch made
+ * tonight is cooked for the prep's later meals too, not for tomorrow's lunch, which the recipe says as it does from the
+ * Plan; a side made tonight next to a main with nothing to cook is named as the side (issue 263).
+ */
+private fun dinnerNotification(dinner: DinnerToday, date: String, t: Strings): DueNotification {
+    val meal = MealToCook(
+        dinner.recipeId, dinner.portions, dinner.cookPortions, skipped = false, MealPlace(dinner.weekStart, dinner.day, MealSlot.DINNER), planned = true,
+        prepMadeOn = date.takeIf { dinner.prep },
+    )
+    val title = t(if (dinner.side) Msg.DINNER_NOTIFICATION_SIDE_TITLE else Msg.DINNER_NOTIFICATION_TITLE, dinner.title)
+    val text = t(if (dinner.prep) Msg.DINNER_NOTIFICATION_PREP_TEXT else Msg.DINNER_NOTIFICATION_TEXT, servingsText(dinner.cookPortions, t))
+    return DueNotification(NotificationKind.DINNER_TODAY, title, text, Opening(Route.Recipe(dinner.recipeId), meal), date)
+}
 
 /**
  * The batches of [facts] whose last day was the day before and that were not told of yet ([told]), as one notification
@@ -206,7 +227,8 @@ private fun throwAwayNotification(facts: NotificationFacts, told: Set<Long>, t: 
     }
     val day = batches.firstNotNullOfOrNull { it.firstUnmarked } ?: first.madeOn
     val toldAs = facts.date + ":" + (told + batches.map { it.prepId }).sorted().joinToString(",")
-    return DueNotification(NotificationKind.THROW_AWAY, title, text, Opening(Route.TabRoute(Tab.PLAN), week = mondayOf(day)), toldAs)
+    val tag = NotificationKind.THROW_AWAY.key + ":" + facts.date + ":" + batches.map { it.prepId }.sorted().joinToString(",")
+    return DueNotification(NotificationKind.THROW_AWAY, title, text, Opening(Route.TabRoute(Tab.PLAN), week = mondayOf(day)), toldAs, tag)
 }
 
 /** `Throw away 1 portion of Chili con carne`, or of a side; null when nothing of the batch was left in the box. */

@@ -119,6 +119,16 @@ class RoutesTest {
         assertEquals(Opening(today), parseOpening("#/nowhere|x"))
     }
 
+    /** Issue 263: a dinner that makes a prepped batch opens its recipe with the batch, also from a tapped notification. */
+    @Test
+    fun anOpeningOfAPrepDayReadsBackWithTheDayTheBatchIsMade() {
+        val prepDay = Opening(Route.Recipe(12), MealToCook(12, 1.5, 6.0, skipped = false, MealPlace("2026-11-16", 5, MealSlot.DINNER), planned = true, prepMadeOn = "2026-11-21"))
+        assertEquals("#/recipes/12|2026-11-16|5|DINNER|1.5|6.0|2026-11-21", prepDay.encoded)
+        assertEquals(prepDay, parseOpening(prepDay.encoded))
+        // A day that is not a date leaves the recipe to open as written, as any meal that cannot be read does.
+        assertEquals(Opening(Route.Recipe(12)), parseOpening("#/recipes/12|2026-11-16|5|DINNER|1.5|6.0|tonight"))
+    }
+
     @Test
     fun anOpeningKeepsWhatHoldsUnsavedTypingInFront() {
         val shopping = Route.TabRoute(Tab.SHOPPING).openScreens()

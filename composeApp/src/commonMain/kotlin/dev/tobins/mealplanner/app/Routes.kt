@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
+import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -166,12 +167,12 @@ object NoRoutes : RouteStore {
 data class Opening(val route: Route, val meal: MealToCook? = null, val week: String? = null) {
     /**
      * As one string, for an Android intent's extra: the route's address, and after it a [meal]'s place and
-     * servings (`#/recipes/12|2026-11-16|3|DINNER|1.5|2.25`) or the [week] (`#/plan|2026-11-23`).
-     * [parseOpening] reads it back.
+     * servings (`#/recipes/12|2026-11-16|3|DINNER|1.5|2.25`), with the day its prepped batch is made when it makes one
+     * (`…|6.0|2026-11-21`, issue 263), or the [week] (`#/plan|2026-11-23`). [parseOpening] reads it back.
      */
     val encoded: String
         get() = route.hash +
-            (meal?.place?.let { "|${it.weekStart}|${it.day}|${it.slot.name}|${meal.portions}|${meal.cookPortions}" } ?: "") +
+            (meal?.place?.let { "|${it.weekStart}|${it.day}|${it.slot.name}|${meal.portions}|${meal.cookPortions}" + (meal.prepMadeOn?.let { day -> "|$day" } ?: "") } ?: "") +
             (week?.let { "|$it" } ?: "")
 }
 
@@ -186,10 +187,12 @@ fun parseOpening(text: String): Opening {
         return Opening(route, week = parts[1].takeIf { runCatching { mondayOf(it) == it }.getOrDefault(false) })
     }
     val recipe = route as? Route.Recipe ?: return Opening(route)
-    if (parts.size != 6) return Opening(route)
+    // Six parts, or seven with the day a prepped batch is made; one posted by an app before that has six.
+    if (parts.size != 6 && parts.size != 7) return Opening(route)
     val meal = runCatching {
         val place = MealPlace(parts[1], parts[2].toInt(), MealSlot.valueOf(parts[3]))
-        MealToCook(recipe.id, parts[4].toDouble(), parts[5].toDouble(), skipped = false, place = place, planned = true)
+        val prepMadeOn = parts.getOrNull(6)?.also { LocalDate.parse(it) }
+        MealToCook(recipe.id, parts[4].toDouble(), parts[5].toDouble(), skipped = false, place = place, planned = true, prepMadeOn = prepMadeOn)
     }.getOrNull()
     return Opening(route, meal)
 }
