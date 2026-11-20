@@ -1090,8 +1090,11 @@ enum class Plural(
     PACK_PIECES("{0} piece", "{0} pieces", "{0} stuk", "{0} stuks"),
 
     /** Planning the week (issue 255): the dinners left to choose, what Continue planning says, and a favourite's weeks. */
-    DINNERS_TO_CHOOSE("{0} dinner still to choose", "{0} dinners still to choose", "Nog {0} avondeten te kiezen", "Nog {0} avondeten te kiezen"),
-    CONTINUE_PLANNING("Continue planning: {0} dinner chosen", "Continue planning: {0} dinners chosen", "Verder plannen: {0} avondeten gekozen", "Verder plannen: {0} avondeten gekozen"),
+    DINNERS_TO_CHOOSE("{0} dinner still to choose", "{0} dinners still to choose", "Nog {0} avondmaaltijd te kiezen", "Nog {0} avondmaaltijden te kiezen"),
+    CONTINUE_PLANNING(
+        "Continue planning: {0} dinner chosen", "Continue planning: {0} dinners chosen",
+        "Verder plannen: {0} avondmaaltijd gekozen", "Verder plannen: {0} avondmaaltijden gekozen",
+    ),
     REASON_WEEKS("not eaten for {0} week", "not eaten for {0} weeks", "{0} week niet gegeten", "{0} weken niet gegeten"),
 
     /** For an amount that may be fractional, as [SERVINGS_AMOUNT]: `1.5 pieces`. */

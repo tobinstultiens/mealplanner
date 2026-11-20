@@ -73,7 +73,7 @@ class PlanningTextTest {
     @Test
     fun theDinnersLeftToChooseAndWhetherTheWeekIsDoneOrToFill() {
         assertEquals("3 dinners still to choose", week(5, 2).toChooseText(english))
-        assertEquals("Nog 1 avondeten te kiezen", week(5, 4).toChooseText(dutch))
+        assertEquals("Nog 1 avondmaaltijd te kiezen", week(5, 4).toChooseText(dutch))
         assertEquals("A dinner is chosen for every day that is open.", week(5, 5).toChooseText(english))
         assertEquals("Every day has a dinner that stays.", week(0, 0).toChooseText(english))
         assertEquals(listOf(false, true, true), listOf(week(5, 4), week(5, 5), week(0, 0)).map { it.complete })
