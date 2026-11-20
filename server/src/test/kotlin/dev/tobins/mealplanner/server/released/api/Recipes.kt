@@ -1,4 +1,4 @@
-// Frozen from v0.1.9 (e273653477d0addbc6702688ec2e111c6fe11c0a) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.10 (de4360a169911ad09794223687f4df8e42a3ebe4) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -47,6 +47,11 @@ data class RecipeSummary(
     val keepsDays: Int? = null,
     /** Days it keeps once made and vacuum sealed; null as [keepsDays]. */
     val keepsVacuumDays: Int? = null,
+    /**
+     * A standard meal (issue 265): one of my meals I can always make from what is at home, offered in one tap where a
+     * meal of one of its [mealSlots] falls away. The planner picks it as any other recipe. False from a server before them.
+     */
+    val standardMeal: Boolean = false,
 )
 
 /**
