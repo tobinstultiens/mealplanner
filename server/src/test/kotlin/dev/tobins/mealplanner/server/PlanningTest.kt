@@ -102,10 +102,20 @@ class PlanningTest {
         db.planQueries.insertOffer("JUMBO", "Jumbo Beef 1 kg", "50% korting", 5.0, 10.0, "1 kg", null, week, "2026-11-22", null, null)
     }
 
-    /** A four-serving lunch or dinner of mine of [lines], in the rotation unless said otherwise; its id. */
-    private fun recipe(title: String, lines: String, rotation: Boolean = true, scope: UserScope = alice): Long {
+    /** The meals of the history [recipe] writes so far, each in a slot of its own. */
+    private var pastMeals = 0
+
+    /**
+     * A four-serving lunch or dinner of mine of [lines], in the rotation unless said otherwise; its id. Unless it is to be
+     * one never [tried], it was eaten two weeks before [week]: neither last week's, nor a favourite again.
+     */
+    private fun recipe(title: String, lines: String, rotation: Boolean = true, tried: Boolean = true, scope: UserScope = alice): Long {
         val id = scope.recipes.create(RecipeInput(title, 4, lines, "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER))).summary.id
         if (!rotation) scope.recipes.setRotation(id, RotationInput(false))
+        if (tried) {
+            val (day, slot) = pastMeals % 7 to MealSlot.entries[pastMeals++ / 7]
+            db.planQueries.upsertMeal(scope.accountId, start.minusWeeks(2).toString(), day.toLong(), slot.name, id, title, 1.0, 600.0, 40.0, 0, 0, MealStatus.EATEN.name)
+        }
         return id
     }
 
@@ -181,6 +191,26 @@ class PlanningTest {
         assertTrue(first.any { it.recipeId in favourites && SuggestionGround.FAVOURITE in it.grounds })
         val there = first.single { it.recipeId == withLettuce }
         assertEquals(listOf(SuggestionGround.USES_WHAT_IS_THERE) to listOf("Lettuce"), there.grounds to there.onHand)
+    }
+
+    @Test
+    fun aRecipeNeverPlannedIsSuggestedAsNotTriedYetAndOffersDoNotCrowdItOut() {
+        (0..9).forEach(::chickenDish)
+        val (rated, unrated) = listOf("New stew", "New soup").map { recipe(it, "1600 | g | Beef", tried = false) }
+        alice.recipes.setRating(rated, 4)
+        val skippedOnly = recipe("Skipped stew", "1600 | g | Beef", tried = false)
+        db.planQueries.upsertMeal(alice.accountId, start.minusWeeks(1).toString(), 0, MealSlot.DINNER.name, skippedOnly, "Skipped stew", 1.0, 600.0, 40.0, 0, 0, MealStatus.SKIPPED.name)
+
+        val first = suggest()
+
+        val untried = first.filter { SuggestionGround.NOT_TRIED_YET in it.grounds }
+        assertEquals(listOf(rated, unrated, skippedOnly).toSet(), untried.map { it.recipeId }.toSet(), "only skipped is never eaten: $first")
+        assertTrue(untried.all { it.weeksSinceEaten == null })
+        assertEquals(rated, first.first { SuggestionGround.NOT_TRIED_YET in it.grounds }.recipeId, "rated first among them")
+        assertTrue(first.count { SuggestionGround.ON_OFFER in it.grounds } in 1..3, "the offers have their turns, no more: $first")
+        alice.planning.pick(week, unrated)
+        alice.planning.done(week, seed = 1)
+        assertTrue(suggest(weekStart = nextWeek, count = 50).none { it.recipeId == unrated && SuggestionGround.NOT_TRIED_YET in it.grounds }, "planned once, it is tried")
     }
 
     @Test
@@ -425,8 +455,10 @@ class PlanningTest {
         }
         ids.take(2).forEach { http.put("/api/recipes/$it/rating") { setBody(RatingInput(5)) } }
 
-        assertEquals(2, http.get("/api/plans/$week/planning/suggestions").body<DinnerSuggestions>().suggestions.size, "the rated two, the others have no ground")
-        assertEquals(1, http.get("/api/plans/$week/planning/suggestions?seen=${ids[0]}").body<DinnerSuggestions>().suggestions.size)
+        // None was ever planned: each is one not tried yet, the rated two favourites too.
+        val first = http.get("/api/plans/$week/planning/suggestions").body<DinnerSuggestions>()
+        assertEquals(6 to true, first.suggestions.size to first.more)
+        assertEquals(listOf(ids[0]), http.get("/api/plans/$week/planning/suggestions?seen=${ids.drop(1).joinToString(",")}").body<DinnerSuggestions>().suggestions.map { it.recipeId })
         assertEquals(3, http.get("/api/plans/$week/planning/suggestions?q=stew&count=3").body<DinnerSuggestions>().suggestions.size)
         assertEquals(HttpStatusCode.BadRequest, http.get("/api/plans/$week/planning/suggestions?seen=x").status)
         assertEquals(HttpStatusCode.BadRequest, http.get("/api/plans/$week/planning/suggestions?count=0").status)

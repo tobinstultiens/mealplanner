@@ -50,11 +50,12 @@ class PlanningSuggestionsMeasurementTest {
         println("$copied offers of the week, stores ${stores.joinToString()}; ${account.plans.candidates(week).size} recipes in the rotation")
 
         val pool = account.planning.suggestions(week.toString(), emptySet(), PlanningRepository.MAX_SUGGESTIONS).suggestions
+        val meals = account.planning.suggestions(week.toString(), emptySet(), PlanningRepository.MAX_SUGGESTIONS, query = "").suggestions
+        fun List<DinnerSuggestion>.byGround() = SuggestionGround.entries.joinToString { ground -> "$ground ${count { ground in it.grounds }}" }
+        println("${pool.size} recipes are suggested; ${pool.byGround()}")
         println(
-            "${pool.size} recipes have a ground; " +
-                SuggestionGround.entries.joinToString { ground -> "$ground ${pool.count { ground in it.grounds }}" } +
-                "; weeks since eaten of the rest of the rotation: " + account.planning.suggestions(week.toString(), emptySet(), PlanningRepository.MAX_SUGGESTIONS, query = "")
-                    .suggestions.filter { it.grounds.isEmpty() }.groupingBy { it.weeksSinceEaten }.eachCount().toSortedMap(nullsLast()),
+            "Of ${meals.size} meals of mine, ${meals.count { it.grounds.isNotEmpty() }} have a ground (${meals.byGround()}); weeks since eaten of the rest: " +
+                meals.filter { it.grounds.isEmpty() }.groupingBy { it.weeksSinceEaten }.eachCount().toSortedMap(nullsLast()),
         )
         val first = account.planning.suggestions(week.toString(), emptySet(), 6).suggestions
         val second = account.planning.suggestions(week.toString(), first.map { it.recipeId }.toSet(), 6)
@@ -79,6 +80,7 @@ class PlanningSuggestionsMeasurementTest {
                     }
                     SuggestionGround.USES_WHAT_IS_THERE -> "uses what is there: " + (s.onHand + s.packRests.map { "the rest of the ${it.ingredient} from ${it.openedBy}" }).joinToString()
                     SuggestionGround.FAVOURITE -> "favourite: " + listOfNotNull(s.rating?.let { "rated $it" }, s.weeksSinceEaten?.let { "not eaten for $it weeks" }).joinToString()
+                    SuggestionGround.NOT_TRIED_YET -> "not tried yet"
                 }
             }
             println("- ${s.title} | €%.2f a serving%s | %.2f portions: %.0f kcal, %.0f g protein | %s".format(

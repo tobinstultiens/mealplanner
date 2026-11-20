@@ -70,7 +70,9 @@ data class PlanningTotals(
 
 /**
  * Why a recipe is suggested for the week's dinners. A recipe may be suggested on several grounds; the suggestions are
- * mixed from all three, so that they are not offers only.
+ * mixed from all of them, so that they are not offers only. Only `GET .../planning/suggestions` sends it, which no app
+ * before the planning screen reads; once a release that reads it is installed, a new value is no longer safe (README,
+ * "API compatibility": a list of enums has no default).
  */
 enum class SuggestionGround {
     /** One of its ingredients is on offer at a store of the account during the week, and that makes it cheaper. */
@@ -81,6 +83,12 @@ enum class SuggestionGround {
 
     /** It is rated high, or it was last eaten weeks ago. */
     FAVOURITE,
+
+    /**
+     * It was never planned (or only ever skipped), in an earlier week or this one: one to try. Its own ground rather than
+     * a favourite's, so that the app can say "Not tried yet".
+     */
+    NOT_TRIED_YET,
 }
 
 /**

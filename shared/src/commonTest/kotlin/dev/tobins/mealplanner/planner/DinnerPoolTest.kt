@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.MealSlot.LUNCH
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.SuggestionGround.FAVOURITE
+import dev.tobins.mealplanner.api.SuggestionGround.NOT_TRIED_YET
 import dev.tobins.mealplanner.api.SuggestionGround.ON_OFFER
 import dev.tobins.mealplanner.api.SuggestionGround.USES_WHAT_IS_THERE
 import kotlin.math.abs
@@ -33,8 +34,13 @@ class DinnerPoolTest {
     /** A 200 g tub at 3 euros, of which a serving takes 50 g. */
     private val tub = FreshUse(ingredientId = 1, gramsPerServing = 50.0, pack = Pack(grams = 200.0, euros = 3.0))
 
-    private fun pool(candidates: List<PlanCandidate>, picked: List<PlanCandidate> = emptyList(), kept: List<PlannedMeal> = emptyList(), weeks: Map<Long, Int> = emptyMap()) =
-        DinnerPool.Week(PlanRequest(targets, candidates), kept, picked, weeks)
+    /** The pool of [candidates], each eaten last week unless [weeks] says otherwise: none is one not tried yet. */
+    private fun pool(
+        candidates: List<PlanCandidate>,
+        picked: List<PlanCandidate> = emptyList(),
+        kept: List<PlannedMeal> = emptyList(),
+        weeks: Map<Long, Int> = candidates.associate { it.recipeId to 1 },
+    ) = DinnerPool.Week(PlanRequest(targets, candidates), kept, picked, weeks)
 
     @Test
     fun withEnoughOffersToFillThePageItStillHoldsRecipesOfTheOtherGrounds() {
@@ -67,13 +73,37 @@ class DinnerPoolTest {
     }
 
     @Test
-    fun aRecipeNotEatenForThreeWeeksIsAFavouriteAndOneEatenLastWeekOrNeverIsNot() {
+    fun aRecipeNotEatenForThreeWeeksIsAFavouriteOneNeverPlannedIsNotTriedYetAndOneEatenTwoWeeksAgoIsNeither() {
         val week = pool(listOf(dinner(1), dinner(2), dinner(3)), weeks = mapOf(1L to 3, 2L to 2))
 
         assertEquals(listOf(FAVOURITE), week.rate(dinner(1)).grounds)
         assertEquals(3, week.rate(dinner(1)).weeksSinceEaten)
         assertEquals(emptyList(), week.rate(dinner(2)).grounds)
-        assertEquals(emptyList(), week.rate(dinner(3)).grounds)
+        assertEquals(listOf(NOT_TRIED_YET), week.rate(dinner(3)).grounds)
+        assertEquals(null, week.rate(dinner(3)).weeksSinceEaten)
+    }
+
+    @Test
+    fun aRecipeNeverEatenBeforeButInTheWeekAlreadyIsNoLongerNotTriedYet() {
+        val locked = PlannedMeal(1, DINNER, 3, "Recipe 3", 1.25, 812.5, 56.25, locked = true)
+
+        assertEquals(emptyList(), pool(listOf(dinner(3)), kept = listOf(locked), weeks = emptyMap()).rate(dinner(3)).grounds)
+    }
+
+    @Test
+    fun recipesNotTriedYetTakeTheirTurnAmongTheOthersRatedFirstThenByTheScore() {
+        val offers = (1L..10L).map(::onOffer)
+        // Never planned: 41 the cheapest of them, so the best by the score; 42 rated 4, 43 unrated, 44 rated 2.
+        val untried = listOf(dinner(41).copy(costPerServing = 3.0, regularCostPerServing = 3.0), dinner(42).copy(rating = 4), dinner(43), dinner(44).copy(rating = 2))
+        val candidates = offers + rated(20) + untried
+        val week = pool(candidates, weeks = (offers + rated(20)).associate { it.recipeId to 1 })
+
+        val all = week.suggest(emptySet(), emptySet(), count = 20).suggestions
+
+        assertEquals(listOf(1L, 20L, 42L, 2L, 41L, 3L), all.take(6).map { it.candidate.recipeId }, "offer, favourite, not tried, in turn")
+        assertEquals(listOf(FAVOURITE, NOT_TRIED_YET), all[2].grounds, "rated 4 and never planned: a favourite too")
+        assertEquals(listOf(42L, 41L, 43L, 44L), all.filter { NOT_TRIED_YET in it.grounds }.map { it.candidate.recipeId })
+        assertTrue(week.rate(untried[0]).score > week.rate(untried[1]).score, "the score alone would put 41 first")
     }
 
     @Test

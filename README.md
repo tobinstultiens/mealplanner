@@ -207,11 +207,13 @@ under `/api/plans/{weekStart}/planning` and per account:
   planner would take as a dinner, each on at least one ground: **on offer** (an ingredient is on offer at one of the
   account's stores during the week and that takes at least 5 cents off a serving; each offer named with the store,
   its deal and what it alone saves), **uses what is there** (an ingredient on hand, or at least 5 cents' worth of the
-  rest of a fresh pack a chosen dinner opens, named with that dinner) and **favourite** (rated 4 or 5, or last eaten
-  three weeks or more before the week). A recipe without a ground is not suggested; search finds it. They are rated
-  by the planner's own score for a dinner (calories, protein, fibre, price with offers, rating, repeats, last week,
-  the packs the chosen dinners open), without a day or chance, and mixed from the grounds in turn, offers first, so
-  that a screen holds every ground that has recipes, however many are on offer. A recipe of a batch prepped this
+  rest of a fresh pack a chosen dinner opens, named with that dinner), **favourite** (rated 4 or 5, or last eaten
+  three weeks or more before the week) and **not tried yet** (never planned, or only ever skipped, before the week or
+  in it). A recipe without a ground is not suggested; search finds it. They are rated by the planner's own score for
+  a dinner (calories, protein, fibre, price with offers, rating, repeats, last week, the packs the chosen dinners
+  open), without a day or chance, and mixed from the grounds in turn, in that order, so that a screen holds every
+  ground that has recipes and none crowds out the others, however many it has. Each ground's best comes first in
+  its turn; among those not tried yet, the rating comes first (unrated counting as 3) and the score after. A recipe of a batch prepped this
   week comes only when no other is left. Chosen and hidden recipes are left out, and so are those in `?seen=12,15`:
   "Show others" sends the ids it showed. A cursor would skip or repeat recipes, as the order changes after every
   pick; the ids do not, and the server keeps no state per screen. With `?q=` it is a search ("Something else"):

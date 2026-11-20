@@ -48,7 +48,8 @@ object DinnerPool {
     /**
      * What the pool is rated against: the planner's [request] (its candidates, targets, portions, recent meals, pack
      * weights and priority), the week's [kept] meals, which stay as they are, the dinners [picked] so far in the order
-     * they were, and for each recipe the whole weeks since it was last eaten ([weeksSinceEaten]; not there when never).
+     * they were, and for each recipe the whole weeks since it was last eaten ([weeksSinceEaten]). A recipe not there,
+     * and in no meal of the week nor chosen for it, was never eaten: it is one not tried yet.
      */
     class Week(
         val request: PlanRequest,
@@ -68,11 +69,8 @@ object DinnerPool {
         /** [candidate] rated as one more dinner of the week, with its grounds. */
         fun rate(candidate: PlanCandidate): Rated {
             val meal = dinnerOf(candidate)
-            val score = WeekPlanner.rateDinner(
-                candidate, request,
-                uses = WeekPlanner.uses(candidate.recipeId, kept + pickedMeals),
-                packs = WeekPlanner.packTerm(candidate, open, POOL_DAY, MealSlot.DINNER, request),
-            )
+            val uses = WeekPlanner.uses(candidate.recipeId, kept + pickedMeals)
+            val score = WeekPlanner.rateDinner(candidate, request, uses, packs = WeekPlanner.packTerm(candidate, open, POOL_DAY, MealSlot.DINNER, request))
             val rests = candidate.freshUses
                 .filter { use -> open.reusable(POOL_DAY, listOf(use), meal.portions) >= LEAST_EUROS }
                 .mapNotNull { use -> picked.lastOrNull { pick -> pick.freshUses.any { it.ingredientId == use.ingredientId } }?.let { use.ingredientId to it } }
@@ -81,6 +79,7 @@ object DinnerPool {
                 SuggestionGround.ON_OFFER.takeIf { isOnOffer(candidate) },
                 SuggestionGround.USES_WHAT_IS_THERE.takeIf { candidate.onHandCount > 0 || rests.isNotEmpty() },
                 SuggestionGround.FAVOURITE.takeIf { (candidate.rating ?: 0) >= FAVOURITE_RATING || (weeks ?: -1) >= UNEATEN_WEEKS },
+                SuggestionGround.NOT_TRIED_YET.takeIf { weeks == null && uses == 0 },
             )
             return Rated(candidate, score, grounds, meal, rests, weeks)
         }
@@ -115,21 +114,33 @@ object DinnerPool {
     private fun best(rated: List<Rated>): List<Rated> = rated.sortedByDescending { it.score }
 
     /**
-     * [ranked] mixed from the grounds in turn, offers first: the best of each ground not taken yet, then the next of each,
-     * so that a page holds recipes of every ground that has some, however many offers there are. A recipe of several
-     * grounds is taken in the turn of the first; one without a ground is left out.
+     * [ranked] (best first) mixed from the grounds in turn, in [SuggestionGround]'s order: the first of each ground not
+     * taken yet ([firstOf]), then the next of each, so that a page holds recipes of every ground that has some, and no
+     * ground crowds out the others, however many recipes it has. A recipe of several grounds is taken in the turn of the
+     * first; one without a ground is left out.
      */
     fun mixed(ranked: List<Rated>): List<Rated> {
         val left = ranked.filter { it.grounds.isNotEmpty() }.toMutableList()
         val mixed = ArrayList<Rated>(left.size)
         while (left.isNotEmpty()) {
             for (ground in SuggestionGround.entries) {
-                val next = left.firstOrNull { ground in it.grounds } ?: continue
+                val next = firstOf(ground, left) ?: continue
                 mixed += next
                 left.remove(next)
             }
         }
         return mixed
+    }
+
+    /**
+     * The first of [ranked] in [ground]'s turn: the best by the planner's score, except among recipes not tried yet, which
+     * go by their rating first (a recipe rated without being planned; unrated counts as 3, as the planner counts it), as
+     * the owner's word on a recipe weighs more than how well it fits the week. Equals keep their order.
+     */
+    private fun firstOf(ground: SuggestionGround, ranked: List<Rated>): Rated? {
+        val ofGround = ranked.filter { ground in it.grounds }
+        if (ground != SuggestionGround.NOT_TRIED_YET) return ofGround.firstOrNull()
+        return ofGround.minWithOrNull(compareByDescending<Rated> { it.candidate.rating ?: 3 }.thenByDescending { it.score })
     }
 
     /**
