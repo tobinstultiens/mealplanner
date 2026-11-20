@@ -43,6 +43,7 @@ import dev.tobins.mealplanner.released.api.ShoppingCheck
 import dev.tobins.mealplanner.released.api.ShoppingItem
 import dev.tobins.mealplanner.released.api.ShoppingList
 import dev.tobins.mealplanner.released.api.ShopsSetting
+import dev.tobins.mealplanner.released.api.SparePortion
 import dev.tobins.mealplanner.released.api.SyncResult
 import dev.tobins.mealplanner.released.api.UnmappedText
 import dev.tobins.mealplanner.released.api.WeekPlan
@@ -381,24 +382,34 @@ class ReleasedAppTest {
 
     /**
      * Recipe [recipeId] prepped in a newer app as one batch eaten partly as meals and partly as a side (issue 269): the meal
-     * of Saturday's and Sunday's lunch, and a quarter of a serving next to Saturday's dinner. The installed app, which knows
-     * neither sides nor a batch of both, reads the week with the lunches as a meal and its leftovers, Saturday's cooking the
-     * whole batch, the side's too, and Saturday's dinner with its main as it was; it marks Sunday's lunch eaten and not
-     * again, reads the day, what is due and the list, and gets a sentence naming the side for removing Saturday's lunch.
+     * of Saturday's and Sunday's lunch, and a quarter of a serving next to Saturday's dinner. The installed app knows a
+     * batch of meals and a batch of sides, not one of both, and can't send one ([PrepSlot] has no side). It reads the week:
+     * Saturday's lunch makes the batch and cooks all of it, the side's share too; Sunday's lunch is a locked leftover of
+     * it; Saturday's dinner keeps its main, with the side next to it; each share of the batch says whether it is a side
+     * ([PrepMeal.side]), which is what the app's remove question notes. It marks Sunday's lunch eaten and not again, reads
+     * the day, what is due and the list, and gets a sentence naming the side for removing Saturday's lunch. Its "Remove the
+     * side" and "Remove the side's prep…" work: the batch gets smaller, and then goes with its meals, the dinner staying.
      */
     private suspend fun HttpClient.readsAWeekWithABatchOfMealsAndSidesOf(recipeId: Long) {
         val host = read<WeekPlan>("/api/plans/$week").days[5].meals.single { it.slot == MealSlot.DINNER }
-        assertEquals(MealStatus.PLANNED, host.status)
+        assertEquals(MealStatus.PLANNED to null, host.status to host.side)
         val shares = """[{"date":"2026-11-21","slot":"LUNCH"},{"date":"2026-11-21","slot":"DINNER","side":0.25},{"date":"2026-11-22","slot":"LUNCH"}]"""
         val days = post("/api/plans/$week/preps") { setBody("""{"recipeId":$recipeId,"madeOn":"2026-11-21","meals":$shares}""") }.read<WeekPlan>().days
 
         val saturday = days[5].meals.single { it.slot == MealSlot.LUNCH }
         val sunday = days[6].meals.single { it.slot == MealSlot.LUNCH }
         val dinner = days[5].meals.single { it.slot == MealSlot.DINNER }
+        val prep = checkNotNull(saturday.prep)
         assertEquals(listOf(recipeId, recipeId), listOf(saturday.recipeId, sunday.recipeId))
         assertEquals(listOf(false to true, true to true), listOf(saturday, sunday).map { it.leftover to it.locked })
         assertEquals(listOf(saturday.portions + 0.25 + sunday.portions, 0.0), listOf(saturday.cookPortions, sunday.cookPortions))
-        assertEquals(Triple(host.recipeId, host.portions, host.kcal), Triple(dinner.recipeId, dinner.portions, dinner.kcal), "the side's meal shows its main")
+        assertEquals(listOf(false, true, false), prep.meals.map { it.side }, "each share says whether it is a side")
+        assertEquals(prep, sunday.prep)
+        assertEquals(Triple(host.recipeId, host.title, host.portions), Triple(dinner.recipeId, dinner.title, dinner.portions), "the side's meal keeps its main")
+        val side = checkNotNull(dinner.side)
+        assertEquals(Triple(recipeId, 0.25, 0.0), Triple(side.recipeId, side.portions, side.cookPortions))
+        assertEquals(prep, side.prep, "the side shows the same batch, meals and side alike")
+
         val lunch = "/api/plans/$week/meals/6/LUNCH"
         assertEquals(MealStatus.EATEN, put("$lunch/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>().days[6].meals.single { it.slot == MealSlot.LUNCH }.status)
         put("$lunch/status") { setBody(MealStatus.PLANNED) }.read<WeekPlan>()
@@ -408,6 +419,13 @@ class ReleasedAppTest {
         val removal = delete("/api/plans/$week/meals/5/LUNCH")
         assertEquals(HttpStatusCode.Conflict, removal.status)
         assertTrue(removal.bodyAsText().contains("Saturday dinner (a side), Sunday lunch"), removal.bodyAsText())
+
+        // "Remove the side" on the dinner: the batch is the two lunches; "Remove the prep…": they go, the dinner stays.
+        val smaller = delete("/api/plans/$week/meals/5/DINNER/side").read<WeekPlan>().days[5]
+        assertEquals(saturday.portions + sunday.portions, smaller.meals.single { it.slot == MealSlot.LUNCH }.cookPortions)
+        val removed = delete("/api/plans/$week/preps/${prep.id}").read<WeekPlan>().days
+        assertTrue(removed[5].meals.none { it.slot == MealSlot.LUNCH } && removed[6].meals.none { it.slot == MealSlot.LUNCH })
+        assertEquals(dinner.copy(side = null).main(), removed[5].meals.single { it.slot == MealSlot.DINNER }.main())
     }
 
     /**
@@ -444,6 +462,36 @@ class ReleasedAppTest {
         val week = http.put("${mealPath(dates[2])}/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>()
         assertEquals(MealStatus.EATEN, week.days[dayOf(dates[2])].meals.single { it.slot == MealSlot.DINNER }.status)
         readsWhatIsDue()
+    }
+
+    /**
+     * A batch eaten as meals and as a side (issue 269), made by eating Tuesday's dinner; Wednesday's dinner, with the side
+     * next to it, skipped; Thursday's dinner never marked. The installed app reads the side in the box as a side
+     * ([SparePortion.side]) and, the morning after the last day, the batch as one of meals ([PrepPastLastDay.side] is
+     * only true when every share is a side), with its portion and its side counted together: what it tells is "Throw
+     * away 1 portion", where a newer app tells the side apart.
+     */
+    @Test
+    fun theInstalledAppReadsTheBoxAndWhatIsDueOfABatchOfMealsAndSides() = testApplication {
+        val http = start()
+        http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }.read<ProfileState>()
+        val stew = http.post("/api/recipes") { setBody(RecipeInput("My stew", 2, "400 | g | chicken fillet", "Stew.")) }.read<RecipeDetail>().summary
+        val bowl = http.post("/api/recipes") { setBody(RecipeInput("My bowl", 1, "100 | g | rice", "Cook.")) }.read<RecipeDetail>().summary
+        assertTrue(http.put("/api/recipes/${stew.id}/keeps") { setBody("""{"days":2}""") }.status.isSuccess())
+        today = java.time.LocalDate.parse("2026-11-17")
+        http.put("/api/plans/$week/meals/2/DINNER") { setBody("""{"recipeId":${bowl.id}}""") }.read<WeekPlan>()
+        val shares = """[{"date":"2026-11-17","slot":"DINNER"},{"date":"2026-11-18","slot":"DINNER","side":0.5},{"date":"2026-11-19","slot":"DINNER"}]"""
+        http.post("/api/plans/$week/preps") { setBody("""{"recipeId":${stew.id},"madeOn":"2026-11-17","meals":$shares}""") }.read<WeekPlan>()
+        http.put("/api/plans/$week/meals/1/DINNER/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>()
+        http.put("/api/plans/$week/meals/2/DINNER/status") { setBody(MealStatus.SKIPPED) }.read<WeekPlan>()
+
+        val spare = http.read<List<SparePortion>>("/api/preps/spare/2026-11-18").single()
+        assertEquals(Triple("My stew", 0.5, true), Triple(spare.title, spare.portions, spare.side), "the side in the box is a side")
+
+        today = java.time.LocalDate.parse("2026-11-20")
+        val due = http.read<NotificationFacts>("/api/notifications").prepsPastLastDay.single()
+        assertEquals(listOf(false, 1, 1, "2026-11-19"), listOf(due.side, due.left, due.unmarked, due.firstUnmarked), "told as a batch of meals")
+        assertTrue(http.get("/api/notifications").bodyAsText().contains("\"leftSides\":1"), "a newer app tells the side apart")
     }
 
     /**
