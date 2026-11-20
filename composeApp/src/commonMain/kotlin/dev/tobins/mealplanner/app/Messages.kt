@@ -961,6 +961,14 @@ enum class Msg(private val english: String, private val dutch: String) {
     ),
     TAP_TO_SHOP_BROWSER("Click to shop here", "Klik om hier te winkelen"),
     STORE_SAVING_HINT_BROWSER("Saves about {0} · click to shop here", "Bespaart ongeveer {0} · klik om hier te winkelen"),
+    NO_OFFERS_YET_BROWSER("No offers fetched yet. Click Refresh.", "Nog geen aanbiedingen opgehaald. Klik op Vernieuwen."),
+    PRICES_NONE_BROWSER("No prices looked up yet. Click Refresh.", "Nog geen prijzen opgezocht. Klik op Vernieuwen."),
+    SYNC_NONE_BROWSER("No cooking site set. Click to import recipes from one.", "Geen kookwebsite ingesteld. Klik om recepten te importeren."),
+    SECTIONS_TAP_BROWSER("Click an ingredient to put it in another section.", "Klik op een ingrediënt om het onder een andere afdeling te zetten."),
+    CHART_HINT_BROWSER(
+        "Line: trend. Dots: daily weighings. Click the chart to read a day.",
+        "Lijn: trend. Stippen: dagelijkse metingen. Klik op de grafiek om een dag af te lezen.",
+    ),
 
     // --- end of messages
     ;

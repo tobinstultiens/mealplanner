@@ -10,6 +10,9 @@ import kotlin.test.assertTrue
 @JsFun("(state, hash) => { history.replaceState(state, '', hash); window.dispatchEvent(new HashChangeEvent('hashchange')); }")
 private external fun arriveAt(state: String?, hash: String)
 
+@JsFun("() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))")
+private external fun pressKey()
+
 @JsFun("(hash) => history.replaceState(null, '', hash)")
 private external fun settleAt(hash: String)
 
@@ -121,16 +124,32 @@ class AddressTest {
     }
 
     @Test
-    fun aBackOntoTheEntryTheLoginPageReturnedToStaysOnTheScreen() {
+    fun aBackOntoTheEntryTheLoginPageReturnedToPushesNothingAndTheStepForwardAgainKeepsTheScreen() {
         val heard = mutableListOf<String>()
         val stop = startAt5("#/shopping", heard)
         arriveAt(state = "mealplanner:4:base", hash = "#/today")
         val entries = window.history.length
         steppedToEntry { false }
+        assertEquals(entries, window.history.length, "a new guard entry would cut off the entries ahead")
+        // The browser's step forward to the guard entry that is still there.
+        arriveAt(state = "mealplanner:5", hash = "#/today")
+        steppedToEntry { error("the way back to the guard is not a back") }
         stop()
         assertEquals(listOf(), heard)
-        assertEquals(entries + 1, window.history.length, "a new entry on top, so that the next Back lands here again")
-        assertEquals("#/shopping", window.location.hash)
+        assertEquals("#/shopping", window.location.hash, "the guard entry shows the screen that stayed")
+    }
+
+    @Test
+    fun aKeyPressAfterAStepMakesAHandlerAfterItANewThingToGoBackFrom() {
+        val stop = startAt5("#/recipes", mutableListOf())
+        arriveAt(state = "mealplanner:4", hash = "#/recipes/2")
+        steppedToEntry { false }
+        AddressRoutes.write("#/recipes/2")
+        pressKey()
+        val entries = window.history.length
+        pushBackEntry()
+        assertEquals(entries + 1, window.history.length, "selecting, say, turned on by the user's own input")
+        stop()
     }
 
     @Test

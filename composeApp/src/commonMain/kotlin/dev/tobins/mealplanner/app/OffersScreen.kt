@@ -103,7 +103,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
                     }
                     if (shown.isEmpty()) {
                         item {
-                            if (all.isEmpty()) EmptyState(Spot.NoOffers, t(Msg.NO_OFFERS_YET))
+                            if (all.isEmpty()) EmptyState(Spot.NoOffers, t.onWeb(Msg.NO_OFFERS_YET, Msg.NO_OFFERS_YET_BROWSER))
                             else EmptyState(AppIcons.Offer, t(Msg.NO_OFFERS_MATCH))
                         }
                     }

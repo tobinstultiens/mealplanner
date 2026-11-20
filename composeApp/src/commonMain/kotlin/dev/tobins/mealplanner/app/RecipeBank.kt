@@ -137,7 +137,7 @@ internal suspend fun ApiClient.setAdded(ids: List<Long>, added: Boolean): List<R
 internal fun SyncLine(status: CookingSyncStatus, onEdit: () -> Unit) {
     val t = LocalStrings.current
     val text = when {
-        status.siteChoice() == SiteChoice.NONE && status.syncedAt == null -> t(Msg.SYNC_NONE)
+        status.siteChoice() == SiteChoice.NONE && status.syncedAt == null -> t.onWeb(Msg.SYNC_NONE, Msg.SYNC_NONE_BROWSER)
         status.syncedAt == null -> t(Msg.SYNC_NOT_YET)
         status.shared -> t(Msg.SYNC_SERVER_AT, instantLabel(status.syncedAt!!, t))
         else -> t(Msg.SYNC_AT, instantLabel(status.syncedAt!!, t))

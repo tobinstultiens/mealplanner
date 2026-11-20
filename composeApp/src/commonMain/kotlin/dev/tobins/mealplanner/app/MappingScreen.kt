@@ -287,7 +287,7 @@ private fun SectionsIntro(query: String, onQuery: (String) -> Unit, inOther: Int
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         SectionHeader(t(Msg.SHOP_SECTIONS), Modifier.padding(top = Spacing.InsideCard))
         Text(
-            t(Msg.SECTIONS_INTRO) + " " + (if (inOther == 0) t(Msg.SECTIONS_ALL_SET) else t(Msg.SECTIONS_SOME_OTHER)) + " " + t(Msg.SECTIONS_TAP),
+            t(Msg.SECTIONS_INTRO) + " " + (if (inOther == 0) t(Msg.SECTIONS_ALL_SET) else t(Msg.SECTIONS_SOME_OTHER)) + " " + t.onWeb(Msg.SECTIONS_TAP, Msg.SECTIONS_TAP_BROWSER),
             style = MaterialTheme.typography.bodyMedium,
         )
         OutlinedTextField(

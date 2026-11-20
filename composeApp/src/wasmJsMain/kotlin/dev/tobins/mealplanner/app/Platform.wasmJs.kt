@@ -138,6 +138,20 @@ actual fun productImageLoader(context: coil3.PlatformContext): coil3.ImageLoader
 
 actual fun runsInBrowser(): Boolean = true
 
+/** A text field's editable element has the field's left, right and bottom edges (its top leaves room for the label), within a few pixels. */
+@JsFun(
+    """(left, right, bottom) => {
+        const host = Array.from(document.body.querySelectorAll('*')).find((element) => element.shadowRoot);
+        if (!host) return false;
+        const scale = window.devicePixelRatio;
+        return Array.from(host.shadowRoot.querySelectorAll('[role=textbox]')).some((box) => {
+            const r = box.getBoundingClientRect();
+            return Math.abs(r.left * scale - left) < 4 && Math.abs(r.right * scale - right) < 4 && Math.abs(r.bottom * scale - bottom) < 4;
+        });
+    }""",
+)
+internal actual external fun isTextField(left: Float, right: Float, bottom: Float): Boolean
+
 /**
  * The browser rejects a fetch when no answer came (no connection, a refused or reset one), and
  * Ktor passes that on as a [JsError]: wrapped in `Error("Fail to fetch")` when the request failed, on

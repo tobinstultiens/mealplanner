@@ -1,6 +1,10 @@
 package dev.tobins.mealplanner.app
 
 import kotlinx.browser.document
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.w3c.dom.events.EventTarget
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -97,5 +101,18 @@ class CrashPageTest {
         installCrashPage(target) { Language.ENGLISH }
         uncaughtError(target, "")
         assertNull(document.getElementById("crash-page"))
+    }
+
+    @Test
+    fun theFocusStaysOnReloadWhenAClickOnTheEmptyAreaTakesItAway() = runTest {
+        val target = newTarget()
+        installCrashPage(target) { Language.ENGLISH }
+        uncaughtError(target, "boom")
+        val reload = assertNotNull(page().querySelector("button"))
+        assertEquals(reload, document.activeElement, "Reload has it at first")
+        // What a click on the page's empty area does: the focus goes to nothing.
+        (document.activeElement as org.w3c.dom.HTMLElement).blur()
+        withContext(Dispatchers.Default) { delay(50) }
+        assertEquals(reload, document.activeElement)
     }
 }

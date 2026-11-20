@@ -34,7 +34,8 @@ private val RingCorner = 20.dp
  * It is meant for the root of the app: the ring is found through the focus system, so every
  * clickable, button, switch and text field gets it without changes at its call site. It only shows
  * while the keyboard is what the user last used: a tap does not focus a control, but a mouse click
- * does, and the ring would stay on the row, chip or tab that was clicked. It is kept inside the window,
+ * does, and the ring would stay on the row, chip or tab that was clicked. A text field in the browser has none:
+ * Material's own focus line is clear on it, and a ring around it would run through its label. It is kept inside the window,
  * so that a control at the window's edge (the bottom tabs) does not have it cut off.
  */
 @Composable
@@ -59,7 +60,7 @@ fun Modifier.focusRing(): Modifier {
         }
         .drawWithContent {
             drawContent()
-            focused?.takeIf { byKeyboard }?.let { bounds ->
+            focused?.takeIf { byKeyboard && !isTextField(it.left, it.right, it.bottom) }?.let { bounds ->
                 val inside = Rect(Offset.Zero, size).deflate(RingWidth.toPx() / 2)
                 val wanted = bounds.inflate((RingGap + RingWidth / 2).toPx())
                 val rect = Rect(maxOf(wanted.left, inside.left), maxOf(wanted.top, inside.top), minOf(wanted.right, inside.right), minOf(wanted.bottom, inside.bottom))
