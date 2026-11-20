@@ -101,6 +101,8 @@ class FakeBackend(
     private val vacuum: Boolean = false,
     /** The week lists a batch of the chickpea salad still to make, made today, that can take a side next to a later meal (issue 263). */
     private val growing: Boolean = false,
+    /** Friday's dinner (the lentil soup, whose leftovers are Saturday's lunch) is eaten, so that lunch keeps its recipe too (issue 191). */
+    private val dinnerEaten: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -274,7 +276,8 @@ class FakeBackend(
                 // Friday's was chosen by the user, with Saturday's lunch its leftovers.
                 index == 2 && meal.slot == MealSlot.DINNER -> meal.copy(kcal = 935.0, proteinG = 72.0, fibreG = 3.1, adjusted = true)
                 index == 3 && meal.slot == MealSlot.DINNER -> meal.copy(status = MealStatus.SKIPPED)
-                index == 4 && meal.slot == MealSlot.DINNER -> meal.copy(recipeId = 5, title = "Lentil soup", locked = true, fibreG = 12.6)
+                index == 4 && meal.slot == MealSlot.DINNER ->
+                    meal.copy(recipeId = 5, title = "Lentil soup", locked = true, fibreG = 12.6, status = if (dinnerEaten) MealStatus.EATEN else MealStatus.PLANNED)
                 index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true, fibreG = 12.6)
                 else -> meal
             }

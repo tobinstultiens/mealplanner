@@ -856,6 +856,12 @@ enum class Msg(private val english: String, private val dutch: String) {
     KEEPS_HINT("Only what keeps is suggested for buying ahead.", "Alleen wat goed blijft, wordt voorgesteld om vooruit te kopen."),
     KEEPS_SHORT("keeps", "blijft goed"),
 
+    // --- A meal that keeps its recipe, on the Plan (issue 191): why its menu has no other recipe
+    KEPT_EATEN("Eaten, so its recipe stays", "Gegeten, dus het recept blijft"),
+    KEPT_DINNER_EATEN("Cooked with the dinner that was eaten, so it stays", "Gekookt met het avondeten dat gegeten is, dus het blijft"),
+    KEPT_BATCH_MADE("From a prep that was made, so it stays", "Uit een prep die gemaakt is, dus het blijft"),
+    KEPT_MAKES_BATCH("It makes a prep, so it stays: remove the prep instead", "Het maakt een prep, dus het blijft: verwijder de prep"),
+
     // --- Adjusting a meal to what was in it (issue 226)
     MEAL_ADJUSTED("{0} · adjusted", "{0} · aangepast"),
     ADJUST("Adjust", "Aanpassen"),
