@@ -314,6 +314,9 @@ weight after the count ("500 gram à 2 stuks"). The history's pack key is the no
 moves no row to another product; the verdict reads rows again from their text, and the `eurosPerKg`,
 `eurosPerPiece` and `eurosPerLitre` stored with a row before 20 November 2026 are no input to anything.
 
+A pack text longer than 200 characters, or with more than 9 digits in a row, gives no size. This is checked before
+any regex runs, so no platform's regex engine can throw or stall on a store's text.
+
 **Whose ingredient.** The `ingredient` of a row is the match at the time the row began, by every account's
 names together, and it is not changed afterwards: a match that was wrong stays, and an ingredient renamed
 since does not find its rows by name. An account's live offers are matched differently, by its own names

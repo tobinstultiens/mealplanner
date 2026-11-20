@@ -34,7 +34,7 @@ object PackSize {
      * need [gramsPerMl] (1 g/ml is assumed without it), pieces need [gramsPerPiece].
      */
     fun grams(text: String?, gramsPerPiece: Double? = null, gramsPerMl: Double? = null): Double? {
-        val t = text?.lowercase() ?: return null
+        val t = readable(text) ?: return null
         multi.find(t)?.let { m ->
             return finite(count(m.groupValues[1]), number(m.groupValues[2])) { count, amount -> count * toGrams(amount, m.groupValues[3], gramsPerMl) }
         }
@@ -48,7 +48,7 @@ object PackSize {
 
     /** The number of pieces in a pack written as "3 stuks" (or "per stuk": 1), null when the text counts none. */
     fun pieces(text: String?): Int? {
-        val t = text?.lowercase() ?: return null
+        val t = readable(text) ?: return null
         piecesInPack(t)?.let { return it }
         return pieces.find(t)?.let { it.groupValues[1].toIntOrNull() } ?: if (t.contains("per stuk")) 1 else null
     }
@@ -66,14 +66,14 @@ object PackSize {
         if (everyItem.containsMatchIn(t)) null else packsOf.find(t)?.takeIf { it.groupValues[2] !in allUnits }
 
     /** True when [text] gives a volume ("1,5 l", "6 x 330 ml"): a size that is no weight without a density. */
-    fun isVolume(text: String): Boolean = volume.containsMatchIn(text.lowercase())
+    fun isVolume(text: String): Boolean = readable(text)?.let(volume::containsMatchIn) ?: false
 
     /**
      * Millilitres in a pack written as a volume ("1,5 l": 1500, "6 x 330 ml": 1980), or null when [text]
      * gives none. Only a volume is read: a weight in the same text is not taken for one.
      */
     fun millilitres(text: String?): Double? {
-        val t = text?.lowercase() ?: return null
+        val t = readable(text) ?: return null
         multi.findAll(t).firstOrNull { it.groupValues[3] in volumeUnits }?.let { m ->
             return finite(count(m.groupValues[1]), number(m.groupValues[2])) { count, amount -> count * toMillilitres(amount, m.groupValues[3]) }
         }
@@ -104,7 +104,7 @@ object PackSize {
     fun toBuy(offer: Offer, gramsNeeded: Double?, piecesNeeded: Double?): PacksToBuy? {
         val deal = Discounts.packsNeeded(offer.deal)
         for (text in listOfNotNull(offer.packSize, offer.title)) {
-            if (volume.containsMatchIn(text.lowercase())) continue
+            if (isVolume(text)) continue
             val packGrams = grams(text)?.takeIf { it > 0 }
             if (packGrams != null) return gramsNeeded?.takeIf { it > 0 }?.let { packsFor(it / packGrams)?.let { packs -> PacksToBuy(packs, packGrams, null, deal) } }
             val packPieces = pieces(text)?.takeIf { it > 0 }
@@ -134,6 +134,28 @@ object PackSize {
 
     /** More packs than this to cover one item means the size was misread, not that they are needed. */
     private const val MAX_PACKS = 100_000.0
+
+    /** A pack text longer than this is not a pack size but prose or junk. */
+    private const val MAX_TEXT_LENGTH = 200
+
+    /** No size has more digits in a row than this (MAX_SIZE is 1e9 and a count is far smaller). */
+    private const val MAX_DIGITS = 9
+
+    /**
+     * [text] in lower case, or null when it is too long or has a number too long to be a size. This is
+     * checked before any regex runs, so that what a store writes can neither throw nor make the regex
+     * engine of a platform (the browser's on the web) recurse or backtrack over thousands of digits:
+     * every target gives the same answer.
+     */
+    private fun readable(text: String?): String? {
+        if (text == null || text.length > MAX_TEXT_LENGTH) return null
+        var run = 0
+        for (c in text) {
+            run = if (c in '0'..'9') run + 1 else 0
+            if (run > MAX_DIGITS) return null
+        }
+        return text.lowercase()
+    }
 
     /** A number as written, or null when it is too long to be one: a store's text must never make the reader throw. */
     private fun number(text: String): Double? = sane(text.replace(',', '.').toDouble())
