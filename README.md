@@ -783,6 +783,14 @@ scripts/code-map --tests composeApp     # include the test sources, left out by 
 scripts/code-map --self-test            # on made-up sources
 ```
 
+### Helpers for testing on the emulator
+
+`scripts/emulator/` holds what the `emulator-tester` and `qa` agents use instead of writing their
+own each run: `tap.sh` (taps the clickable node whose whole text matches, then prints the screen),
+`texts.sh`, `shot.sh`, `seed-recipes.py` (recipes with amounts for a test account) and
+`with-clock.sh` (server and dev login provider on another day). Each has a self-test that needs no
+emulator; `scripts/emulator/README.md` says how to run them.
+
 ## Releases
 
 Releases are made by hand, not on every commit: Actions → **Release** → Run workflow, on `main`.
