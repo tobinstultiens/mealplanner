@@ -101,6 +101,14 @@ SELECT * FROM offerHistory INDEXED BY offerHistory_product WHERE store = :store 
 selectOfferRecordings:
 SELECT * FROM offerRecording WHERE store = :store AND seenAt BETWEEN :from AND :until ORDER BY seenAt;
 
+-- Whether this store ever had an offer for the ingredient that saves something (a known share of the regular
+-- price) valid on some day from :from to :until (both included), as it was recorded.
+selectOfferedBetween:
+SELECT EXISTS (
+    SELECT 1 FROM offerHistory
+    WHERE store = :store AND ingredient = :ingredient AND paidShare IS NOT NULL AND validUntil >= :from AND validFrom <= :until
+);
+
 selectOfferHistory:
 SELECT * FROM offerHistory ORDER BY store, productKey, packKey, firstSeen, id;
 

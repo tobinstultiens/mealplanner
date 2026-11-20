@@ -34,6 +34,7 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
+import java.time.Instant
 import java.time.LocalDate
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
@@ -84,6 +85,8 @@ class TickSavingTest {
         put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
         post("/api/offers/refresh")
         val chicken = post("/api/ingredients") { setBody(IngredientInput("Kipfilet", pricePerKg = 10.0)) }.body<Ingredient>()
+        // What a late tick's store is checked by: the offer as recorded on Monday, when it ran (a refresh records at the real day).
+        PriceHistoryRepository(db).recordOffers(Store.JUMBO, listOf(chickenOffer), { "Kipfilet" }, Instant.parse("2026-11-16T10:00:00Z"))
         for (day in listOf(0, 3)) dine(day, 500.0)
         chicken
     }
@@ -245,8 +248,81 @@ class TickSavingTest {
             assertEquals(0.0 to null, tick(wednesday, key, shown = shown).saved(), shown.toString())
             tick(wednesday, key, checked = false)
         }
-        // The edge of what is allowed: the row's whole price, and the oldest day.
-        assertEquals(10.0 to Store.JUMBO, tick(wednesday, key, shown = mondaysTick.copy(saving = 10.0, tickedOn = "2026-09-23")).saved())
+        // The edge of what is allowed: the row's whole price, and the oldest day (when no offer ran, so no store).
+        assertEquals(10.0 to null, tick(wednesday, key, shown = mondaysTick.copy(saving = 10.0, tickedOn = "2026-09-23")).saved())
+    }
+
+    /** The late tick of [shown] on Wednesday; the row is left un-ticked after. */
+    private fun lateTick(key: String, shown: ShoppingCheck.Shown): Pair<Double?, Store?> =
+        tick(wednesday, key, shown = shown).saved().also { tick(wednesday, key, checked = false) }
+
+    @Test
+    fun theStoreOfALateSavingCountsOnlyForAStoreWithAnOfferForTheRowAroundTheTick() = testApplication {
+        val http = start()
+        val key = "i${http.ready().id}"
+        http.put("/api/shops") { setBody(ShopsSetting(listOf(Store.JUMBO, Store.AH))) }
+
+        assertEquals(2.5 to Store.JUMBO, lateTick(key, mondaysTick))
+        // The day before and the day after the offer's days count as around (a phone's clock is off by one) ...
+        assertEquals(2.5 to Store.JUMBO, lateTick(key, mondaysTick.copy(tickedOn = "2026-11-15")))
+        // ... a day further off does not: the saving stays, the store does not.
+        assertEquals(2.5 to null, lateTick(key, mondaysTick.copy(tickedOn = "2026-11-14")))
+        // A store of the account without an offer for the row, and one the account does not shop at.
+        assertEquals(2.5 to null, lateTick(key, mondaysTick.copy(savingStore = Store.AH)))
+        http.put("/api/shops") { setBody(ShopsSetting(listOf(Store.AH))) }
+        assertEquals(2.5 to null, lateTick(key, mondaysTick))
+    }
+
+    @Test
+    fun theStoresOfAnotherAccountNeverMakeAStoreAcceptable() = testApplication {
+        val http = start()
+        val key = "i${http.ready().id}"
+        http.put("/api/shops") { setBody(ShopsSetting(listOf(Store.AH))) }
+        // Bob shops at Jumbo, which has the offer; that does not make Jumbo one of this account's stores.
+        val bob = createClient {
+            install(ContentNegotiation) { json() }
+            defaultRequest {
+                bearerAuth("bob")
+                contentType(ContentType.Application.Json)
+            }
+        }
+        bob.put("/api/shops") { setBody(ShopsSetting(listOf(Store.JUMBO))) }
+        assertEquals(2.5 to null, lateTick(key, mondaysTick))
+        http.put("/api/shops") { setBody(ShopsSetting(listOf(Store.JUMBO))) }
+        assertEquals(2.5 to Store.JUMBO, lateTick(key, mondaysTick))
+    }
+
+    @Test
+    fun aLateSavingIsCappedAtThePriceOfTheAmountThePhoneShowedNotOfWhatTheRowNeedsNow() = testApplication {
+        val http = start()
+        val key = "i${http.ready().id}"
+        // The phone showed the kilo (€10) with a better offer than the server has, €6 off; one dinner was dropped since.
+        db.planQueries.deleteMeal(userId(), week, 3, "DINNER")
+        assertEquals(5.0, assertNotNull(http.chicken().regularPrice), 1e-9)
+        val shown = mondaysTick.copy(saving = 6.0)
+        assertEquals(6.0 to Store.JUMBO, lateTick(key, shown))
+        // More than the kilo cost, or than the amount the phone showed is worth: the server's figure.
+        assertEquals(0.0 to null, lateTick(key, shown.copy(saving = 10.01)))
+        assertEquals(0.0 to null, lateTick(key, shown.copy(grams = 500.0)))
+        // An amount out of bounds (more than twice the row's) is left out, so the cap is the row's price as it is.
+        assertEquals(0.0 to null, lateTick(key, shown.copy(grams = 1500.0)))
+        assertEquals(5.0 to Store.JUMBO, lateTick(key, shown.copy(grams = 1500.0, saving = 5.0)))
+    }
+
+    @Test
+    fun aPhoneWhoseClockRunsAheadByADayIsTakenForTheServersDayAndNotFurther() = testApplication {
+        val http = start()
+        val key = "i${http.ready().id}"
+        // Dated the day after the server's: the server's day, whose offer is on its list, so the server works it out.
+        assertEquals(2.5 to Store.JUMBO, tick(monday, key, shown = mondaysTick.copy(tickedOn = "2026-11-17", saving = 9.0)).saved())
+        tick(monday, key, checked = false)
+        assertEquals(0.0 to null, lateTick(key, mondaysTick.copy(tickedOn = "2026-11-19")))
+        // Two days ahead is no clock but a made-up day: not believed.
+        assertEquals(0.0 to null, lateTick(key, mondaysTick.copy(tickedOn = "2026-11-20")))
+        val today = LocalDate.parse(wednesday)
+        assertNull(mondaysTick.copy(tickedOn = "2026-11-20").tickDay(today))
+        assertEquals(today, mondaysTick.copy(tickedOn = "2026-11-19").tickDay(today))
+        assertEquals(LocalDate.parse(monday), mondaysTick.tickDay(today))
     }
 
     @Test

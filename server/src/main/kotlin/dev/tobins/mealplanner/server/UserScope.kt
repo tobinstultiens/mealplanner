@@ -52,6 +52,7 @@ class UserScope(
             keeps = sections::keepsByIngredient,
             advice = shoppingAdvice::setting,
             productImages = { prices.productImages(ingredients) },
+            offered = PriceHistoryRepository(db)::offered,
             today = today,
         )
     }

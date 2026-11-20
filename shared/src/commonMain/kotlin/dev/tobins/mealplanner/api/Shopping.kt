@@ -223,15 +223,24 @@ data class ShoppingCheck(
         /**
          * The euros the row's offer saved when ticked, as the phone counted it ([dev.tobins.mealplanner.shopping.savingToday]);
          * 0 when nothing. At least 0 and at most the row's regular price (the saving of the whole need
-         * cannot exceed what it costs). Counts only with a valid [tickedOn] before the server's day, as
+         * cannot exceed what it costs, for the amount the row showed in proportion to what it says now). Counts only with a valid [tickedOn] before the server's day, as
          * an offer that ended since is what it is for; a tick of today is worked out by the server.
          */
         @EncodeDefault(EncodeDefault.Mode.NEVER)
         val saving: Double? = null,
-        /** The store of the offer [saving] was saved with; null when it saved nothing. */
+        /**
+         * The store of the offer [saving] was saved with; null when it saved nothing. Counts only for one of the
+         * account's stores that had an offer for the row's ingredient around [tickedOn] on the server's record
+         * of the offers; otherwise the saving is kept without a store.
+         */
         @EncodeDefault(EncodeDefault.Mode.NEVER)
         val savingStore: Store? = null,
-        /** The day (ISO date, the phone's) the row was ticked: at most a day after the server's, at most [MAX_DAYS_LATE] before it. */
+        /**
+         * The day (ISO date, the phone's) the row was ticked: at most [MAX_DAYS_LATE] days before the server's
+         * day, and at most [MAX_DAYS_AHEAD] day after it (a phone's clock may run ahead), which counts as the
+         * server's day; a day further ahead, or no valid one, leaves out the saving and its store. The saving
+         * is believed only for a day before the server's: a tick of the server's day is worked out by the server.
+         */
         @EncodeDefault(EncodeDefault.Mode.NEVER)
         val tickedOn: String? = null,
     )
@@ -242,6 +251,9 @@ data class ShoppingCheck(
 
         /** How much more (or less) a row may have said than it says now: a plan changes, but not tenfold between two phones. */
         const val AMOUNT_FACTOR = 2.0
+
+        /** How many days ahead of the server's day a phone's clock may date a tick: a time zone or a clock set wrong by a little. */
+        const val MAX_DAYS_AHEAD = 1
 
         /** The phone keeps its ticks for four weeks of lists, so a tick older than eight weeks is not one of its own. */
         const val MAX_DAYS_LATE = 56

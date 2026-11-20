@@ -50,6 +50,8 @@ class ShoppingListRepository(
     private val advice: () -> ShoppingAdvice = { ShoppingAdvice() },
     /** The picture of the product each of the account's ingredients is priced with, by id. */
     private val productImages: () -> Map<Long, String> = { emptyMap() },
+    /** Whether a store was recorded with an offer for an ingredient (by name) valid on a day of the range: the store a late tick names must have had one. */
+    private val offered: (Store, String, LocalDate, LocalDate) -> Boolean = { _, _, _, _ -> false },
     /** Today as the household sees it: the day a tick's saving is worked out for. */
     private val today: () -> LocalDate = ::serverToday,
 ) {
@@ -376,8 +378,9 @@ class ShoppingListRepository(
 
     /** The saving a tick of [row] keeps: the phone's [shown] one when it is to be believed, else what the row saves now. */
     private fun savingKept(row: ShoppingItem, shown: ShoppingCheck.Shown?): Saving {
-        val sent = shown?.savingFor(row, today()) ?: return row.savingNow()
-        return Saving(sent, shown.savingStore?.takeIf { sent > 0 })
+        val day = today()
+        val sent = shown?.savingFor(row, day) ?: return row.savingNow()
+        return Saving(sent, shown.storeFor(row, day, shops(), offered)?.takeIf { sent > 0 })
     }
 
     /**
