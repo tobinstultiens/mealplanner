@@ -30,6 +30,7 @@ import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepMeal
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -136,11 +137,14 @@ val MealPrep.made: Boolean get() = meals.any { it.status == MealStatus.EATEN }
  * The meals of [prep] as a sentence names them, each with what sets it apart: `Mon 16 Nov lunch (eaten), Tue 17 Nov dinner
  * (side, skipped)`. So a question about the prep shows which of them were eaten or skipped already.
  */
-fun prepMealsText(prep: MealPrep, t: Strings): String =
-    prep.meals.joinToString(", ") { meal ->
+fun prepMealsText(prep: MealPrep, t: Strings): String = prepMealsText(prep.meals, t, noteSides = true)
+
+/** [meals] of a prep as [prepMealsText] names them; a side noted as one only with [noteSides]. */
+private fun prepMealsText(meals: List<PrepMeal>, t: Strings, noteSides: Boolean): String =
+    meals.joinToString(", ") { meal ->
         val name = "${dayLabel(meal.date, t.locale)} ${t.slot(meal.slot)}"
         val notes = listOfNotNull(
-            Msg.PREP_NOTE_SIDE.takeIf { meal.side },
+            Msg.PREP_NOTE_SIDE.takeIf { noteSides && meal.side },
             Msg.PREP_NOTE_EATEN.takeIf { meal.status == MealStatus.EATEN },
             Msg.PREP_NOTE_SKIPPED.takeIf { meal.status == MealStatus.SKIPPED },
         )
@@ -338,14 +342,19 @@ fun RemovePrepText(prep: MealPrep) {
 
 /**
  * What removing [prep] does, naming its meals: every meal goes, of a prep eaten as sides every side, as the meals they go
- * with stay, and of one eaten both ways both (issue 269). Of a prep that was [made]: that it stays, and its meals are to
- * be skipped instead, in the words of how it is eaten.
+ * with stay. Of one eaten both ways (issue 269) in two parts, as two different things happen: the meals that go, and the
+ * meals that stay with their main and lose the side. Of a prep that was [made]: that it stays, and its meals are to be
+ * skipped instead, in the words of how it is eaten.
  */
 fun removePrepText(prep: MealPrep, t: Strings): String {
     val text = when {
         prep.meals.all { it.side } -> if (prep.made) Msg.REMOVE_PREP_SIDES_MADE_TEXT else Msg.REMOVE_PREP_SIDES_TEXT
         prep.meals.none { it.side } -> if (prep.made) Msg.REMOVE_PREP_MADE_TEXT else Msg.REMOVE_PREP_TEXT
-        else -> if (prep.made) Msg.REMOVE_PREP_MIXED_MADE_TEXT else Msg.REMOVE_PREP_MIXED_TEXT
+        prep.made -> Msg.REMOVE_PREP_MIXED_MADE_TEXT
+        else -> {
+            val (sides, meals) = prep.meals.partition { it.side }
+            return t(Msg.REMOVE_PREP_MIXED_TEXT, prepMealsText(meals, t, noteSides = false), prepMealsText(sides, t, noteSides = false))
+        }
     }
     return t(text, prepMealsText(prep, t))
 }

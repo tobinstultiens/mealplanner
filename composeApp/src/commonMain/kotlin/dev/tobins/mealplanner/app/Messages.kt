@@ -311,8 +311,8 @@ enum class Msg(private val english: String, private val dutch: String) {
     ),
     PREP_SLOT_SIDE("{0} · side {1}", "{0} · bijgerecht {1}"),
     REMOVE_PREP_MIXED_TEXT(
-        "This takes its meals out of the plan, and its sides from the meals they go with, which stay: {0}.",
-        "Hiermee gaan de maaltijden ervan uit het plan, en de bijgerechten van de maaltijden ernaast, die blijven: {0}.",
+        "This takes its meals out of the plan: {0}. The meals with one of its sides keep their main and lose the side: {1}.",
+        "Hiermee gaan de maaltijden ervan uit het plan: {0}. De maaltijden met een bijgerecht ervan houden hun hoofdgerecht en verliezen het bijgerecht: {1}.",
     ),
     REMOVE_PREP_MIXED_MADE_TEXT(
         "One of its meals, or a meal with one of its sides, was eaten, so the batch was cooked and stays in the plan. Mark the meals you do not eat, or do not eat it with, skipped instead: {0}.",

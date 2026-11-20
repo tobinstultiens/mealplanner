@@ -132,13 +132,17 @@ class SidesTest {
     @Test
     fun removingAPrepOfMealsAndSidesNamesBothAndSaysWhatStays() {
         val english = Strings.English
+        // What goes and what stays, each in a list of its own (the emulator run of the pull request found one list unclear).
+        val skipped = mixed.copy(meals = mixed.meals + PrepMeal("2026-11-19", DINNER, 0.25, MealStatus.SKIPPED, side = true))
         assertEquals(
-            "This takes its meals out of the plan, and its sides from the meals they go with, which stay: Tue 17 Nov dinner, Wed 18 Nov lunch (side).",
-            removePrepText(mixed, english),
+            "This takes its meals out of the plan: Tue 17 Nov dinner. The meals with one of its sides keep their main and lose the side: " +
+                "Wed 18 Nov lunch, Thu 19 Nov dinner (skipped).",
+            removePrepText(skipped, english),
         )
         assertEquals(
-            "Hiermee gaan de maaltijden ervan uit het plan, en de bijgerechten van de maaltijden ernaast, die blijven: di 17 nov avondeten, wo 18 nov lunch (bijgerecht).",
-            removePrepText(mixed, Strings.Dutch),
+            "Hiermee gaan de maaltijden ervan uit het plan: di 17 nov avondeten. De maaltijden met een bijgerecht ervan houden hun hoofdgerecht " +
+                "en verliezen het bijgerecht: wo 18 nov lunch, do 19 nov avondeten (overgeslagen).",
+            removePrepText(skipped, Strings.Dutch),
         )
         val made = mixed.copy(meals = mixed.meals.map { if (it.side) it.copy(status = MealStatus.EATEN) else it })
         assertEquals(
