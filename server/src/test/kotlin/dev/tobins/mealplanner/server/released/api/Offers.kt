@@ -1,4 +1,4 @@
-// Frozen from v0.1.9 (e273653477d0addbc6702688ec2e111c6fe11c0a) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.10 (de4360a169911ad09794223687f4df8e42a3ebe4) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -43,6 +43,12 @@ data class Offer(
      * list items only; null when the deal can't be worked out or saves nothing.
      */
     val paidShare: Double? = null,
+    /**
+     * Whether this is a good deal by its price history (issue 118): filled in by the server on `/api/offers` for today
+     * and on the shopping list, for the account's offers valid today; null elsewhere, and when the server could not
+     * judge it.
+     */
+    val verdict: PriceVerdict? = null,
 )
 
 /**

@@ -1,6 +1,8 @@
-// Frozen from v0.1.9 (e273653477d0addbc6702688ec2e111c6fe11c0a) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.10 (de4360a169911ad09794223687f4df8e42a3ebe4) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /** The meals of a day, in eating order. [share] is the part of the daily calories a slot gets. */
@@ -134,19 +136,30 @@ data class PrepMeal(
 )
 
 /** A lunch or dinner on one date, as a prep names its meals. */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class PrepSlot(
     /** ISO date. */
     val date: String,
     val slot: MealSlot,
+    /**
+     * Only in what the app sends (issue 269): in [PrepInput.meals], the batch is eaten here as a side of this many servings
+     * (0.25 or 0.5) next to the slot's meal, null as the meal itself; in `POST .../preps/{id}/sides`, the side's servings.
+     * Null in every answer. Left out of the JSON when null, so a slot reads and is sent as before it was there: a server
+     * from before issue 269 refuses a field it does not know, also in a [SpareMove].
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val side: Double? = null,
 )
 
 /**
  * Body of `POST /api/plans/{weekStart}/preps`: [recipeId] made on [madeOn] in a normal box or [vacuum]
  * sealed, and eaten in [meals] (lunches and dinners, the first on [madeOn], none after the day the
- * recipe's keeps allow). Each meal gets the portion the planner would give it, within the profile's range;
- * with [side], the batch is eaten as a side of that many servings (0.25 or 0.5) next to the meal in each
- * of [meals], which keeps its main.
+ * recipe's keeps allow). A meal of it gets the portion the planner would give that slot, within the profile's range;
+ * a side next to a slot's meal, which keeps its main, is of the servings its [PrepSlot.side] says (issue 269), so one
+ * batch may be eaten partly as meals and partly as sides.
+ * [side] is how apps before issue 269 ask for a batch eaten only as sides: every one of [meals] a side of that many
+ * servings. It is null when the meals say it each; both at once is a 400.
  */
 @Serializable
 data class PrepInput(
@@ -220,4 +233,28 @@ data class WeekPlan(
     /** Estimated euros for every planned meal with the week's offers, and at regular prices. */
     val cost: Double? = null,
     val costWithoutOffers: Double? = null,
+    /**
+     * The fresh ingredients the week's shopping leaves over in small amounts (issue 244), largest first; empty
+     * when there are none and from a server before this. Only rests under half of the pack count ([OpenPacks]).
+     */
+    val rest: List<WeekRest> = emptyList(),
+    /**
+     * The account's batches still to make (no meal of them eaten) whose days, from the made-on day to the last day, reach
+     * into this week, also those with no meal or side in it: what "Add a prepped side…" offers (issue 263). Empty from a
+     * server before this.
+     */
+    val batchesToMake: List<BatchToMake> = emptyList(),
+    /**
+     * How many dinners were chosen on the planning screen ([WeekPlanning.picks], issue 255) and are not on a day yet:
+     * while there are any, the Plan offers "Continue planning". 0 from a server before this.
+     */
+    val dinnersChosen: Int = 0,
 )
+
+/** A batch still to make ([WeekPlan.batchesToMake]): its recipe's id and [title], and the batch. */
+@Serializable
+data class BatchToMake(val recipeId: Long, val title: String, val prep: MealPrep)
+
+/** What the week leaves of a fresh ingredient: [grams] of it, worth [euros] of its pack's regular price. */
+@Serializable
+data class WeekRest(val ingredient: String, val grams: Double, val euros: Double)

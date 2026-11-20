@@ -1,4 +1,4 @@
-// Frozen from v0.1.9 (e273653477d0addbc6702688ec2e111c6fe11c0a) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.10 (de4360a169911ad09794223687f4df8e42a3ebe4) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.EncodeDefault
@@ -198,10 +198,66 @@ data class ShoppingCheck(
      */
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val grams: Double? = null,
+    /**
+     * For a tick that is sent late (made offline, sent later; issue 116): what the phone showed of the
+     * row when it was ticked. The server remembers these in place of what the row says when the tick
+     * arrives, within the bounds of [Shown]. Never sent for a tick that goes out at once, nor when
+     * null, so that a server from before it, which refuses fields it does not know, still takes
+     * every other tick; the app sends the tick again without it when such a server refuses it.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val shown: Shown? = null,
 ) {
+    /**
+     * A row of what the week's meals need as the phone showed it when ticked. Every field is optional,
+     * and one that fails its bound is left out: the tick is stored all the same, with what the server
+     * itself works out for that part. They count only for a row the server's list still has.
+     */
+    @Serializable
+    data class Shown(
+        /** The weight the row said ([ShoppingItem.grams], or [ShoppingItem.knownGrams]): above 0, at most [MAX_GRAMS], and at most [AMOUNT_FACTOR] times what the row says now. */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val grams: Double? = null,
+        /** The pieces the row said ([ShoppingItem.pieces]): above 0, and at most [AMOUNT_FACTOR] times what the row says now, which must have pieces. */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val pieces: Double? = null,
+        /**
+         * The euros the row's offer saved when ticked, as the phone counted it ([dev.tobins.mealplanner.shopping.savingToday]);
+         * 0 when nothing. At least 0 and at most the row's regular price (the saving of the whole need
+         * cannot exceed what it costs, for the amount the row showed in proportion to what it says now). Counts only with a valid [tickedOn] before the server's day, as
+         * an offer that ended since is what it is for; a tick of today is worked out by the server.
+         */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val saving: Double? = null,
+        /**
+         * The store of the offer [saving] was saved with; null when it saved nothing. Counts only for one of the
+         * account's stores that had an offer for the row's ingredient around [tickedOn] on the server's record
+         * of the offers; otherwise the saving is kept without a store.
+         */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val savingStore: Store? = null,
+        /**
+         * The day (ISO date, the phone's) the row was ticked: at most [MAX_DAYS_LATE] days before the server's
+         * day, and at most [MAX_DAYS_AHEAD] day after it (a phone's clock may run ahead), which counts as the
+         * server's day; a day further ahead, or no valid one, leaves out the saving and its store. The saving
+         * is believed only for a day before the server's: a tick of the server's day is worked out by the server.
+         */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val tickedOn: String? = null,
+    )
+
     companion object {
         /** More than any household buys of one ingredient at once: a few packs, not a pallet. */
         const val MAX_GRAMS = 10_000.0
+
+        /** How much more (or less) a row may have said than it says now: a plan changes, but not tenfold between two phones. */
+        const val AMOUNT_FACTOR = 2.0
+
+        /** How many days ahead of the server's day a phone's clock may date a tick: a time zone or a clock set wrong by a little. */
+        const val MAX_DAYS_AHEAD = 1
+
+        /** The phone keeps its ticks for four weeks of lists, so a tick older than eight weeks is not one of its own. */
+        const val MAX_DAYS_LATE = 56
     }
 }
 
