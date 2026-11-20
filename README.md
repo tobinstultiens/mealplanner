@@ -71,13 +71,16 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
   (issue 198): a running token exchange is cancelled and saves nothing, a login page still open answers in
   vain (its answer is let pass), and a login still asking the server how to log in opens no page. A renewal
   answered after the log-out, or after another login, is dropped as well. Log in waits while a login is being
-  started or exchanged, in the settings as on the login screen.
+  started or exchanged, in the settings as on the login screen; of two logins started at once all the same,
+  only the last one started may log in, whichever server answers first.
 - An access token the server refuses is renewed with the refresh token. When the provider refuses that
   (400 or 401, or there is no refresh token) the session ends at once on the login screen, saying the login
   ran out or was ended. Another error from the token endpoint ends it only when it goes on (issue 198): on
-  the third failed renewal in a row, when the first was at least 15 minutes earlier for another client error
-  (403, 404, …; a proxy's 404 while the provider restarts lasts a minute or two) or at least 24 hours earlier
-  for a provider in trouble (5xx, 408, 429). "In a row" means without a renewal that worked in between; the
+  the third failed renewal in a row, when the first failure of the run was at least 24 hours earlier if any
+  failure of the run came from a provider in trouble (5xx, 408, 429), or at least 15 minutes earlier if all
+  were other client errors (403, 404, …; a proxy's 404 while the provider restarts lasts a minute or two).
+  So a run that mixes both kinds, in whichever order, waits as long as a provider in trouble: a day of 503s
+  followed by a 404 still waits the day. "In a row" means without a renewal that worked in between; the
   time is counted from the first failure, not from when the access token expired, since a token unused for a
   week expired a week ago and one hiccup then must not end the session. The login screen then says the login
   could not be renewed for a while. A renewal without an answer (a network error) or without the server's

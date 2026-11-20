@@ -26,7 +26,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Clock
@@ -72,9 +71,12 @@ private data class TokenResponse(
 /**
  * A run of renewals the token endpoint answered with an error that does not end the session at once
  * (see [Login.refresh]): [count] in a row, the first at [since] (epoch seconds), none renewed in between.
+ * [inTrouble]: at least one of them came from a provider in trouble, so the run is given [IN_TROUBLE_FOR].
+ * A run stored by an app from before this was kept does not say, and is taken as one: whatever its errors
+ * were, it then ends no sooner than the rule promises.
  */
 @Serializable
-private data class FailedRenewals(val count: Int, val since: Long)
+private data class FailedRenewals(val count: Int, val since: Long, val inTrouble: Boolean = true)
 
 private const val SESSION_KEY = "auth.session"
 private const val PENDING_KEY = "auth.pending"
@@ -85,10 +87,10 @@ private val json = Json { ignoreUnknownKeys = true }
 /** Failed renewals in a row that may end a session, when they went on for long enough (see [Login.refresh]). */
 private const val FAILED_RENEWALS_TO_END = 3
 
-/** How long a token endpoint may answer renewals with another client error (403, 404, …): a proxy's 404 while the provider restarts lasts a minute or two. */
+/** How long a token endpoint may answer renewals with other client errors only (403, 404, …): a proxy's 404 while the provider restarts lasts a minute or two. */
 private val REFUSING_FOR = 15.minutes
 
-/** How long a token endpoint may answer renewals as a provider in trouble (5xx, 408, 429): an outage is waited out for a day. */
+/** How long a token endpoint may answer renewals once one answer came from a provider in trouble (5xx, 408, 429): an outage is waited out for a day. */
 private val IN_TROUBLE_FOR = 24.hours
 
 /**
@@ -147,9 +149,15 @@ class Login(
     private val clock: Clock = Clock.System,
 ) {
 
-    /** Asks the server how to log in, remembers a PKCE secret, and returns the login page to open. */
-    suspend fun start(serverUrl: String, redirectUri: String): String {
+    /**
+     * Asks the server how to log in, remembers a PKCE secret, and returns the login page to open; null when
+     * [wanted], asked once the server answered, says the login was called off meanwhile. Nothing is
+     * remembered then: a login started while this one asked the server keeps waiting for its own answer,
+     * whichever server answered first.
+     */
+    suspend fun start(serverUrl: String, redirectUri: String, wanted: () -> Boolean = { true }): String? {
         val config = authConfig(serverUrl)
+        if (!wanted()) return null
         val verifier = randomToken(48)
         val state = randomToken(16)
         storage.set(PENDING_KEY, json.encodeToString(PendingLogin(state, verifier, config.tokenEndpoint, config.clientId, redirectUri)))
@@ -208,25 +216,21 @@ class Login(
         return toSession(tokens, previousRefresh = null).also { storage.saveSession(it) }
     }
 
-    /**
-     * Forgets the login waiting for its answer, so that an answer that still comes is let pass
-     * ([isAwaitedAnswer]); with [page], only when that login is the one [start] returned [page] for.
-     */
-    fun abandon(page: String? = null) {
-        val waiting = pending() ?: return
-        if (page == null || Url(page).parameters["state"] == waiting.state) storage.set(PENDING_KEY, "")
-    }
+    /** Forgets the login waiting for its answer, so that an answer that still comes is let pass ([isAwaitedAnswer]). */
+    fun abandon() = storage.set(PENDING_KEY, "")
 
     /**
      * A new access token from the refresh token, saved. Asked for when the server refused the access
      * token, so null means the request fails; whether the session is over too depends on why:
      * - the provider refused the refresh token or the client (400, 401; RFC 6749, 5.2), or there is
      *   none: over at once, [LoggedOut.EXPIRED];
-     * - the token endpoint answered with another error: over only when that went on, on at least
-     *   [FAILED_RENEWALS_TO_END] renewals in a row with the last at least [REFUSING_FOR] (another 4xx: a
-     *   403, a 404) or [IN_TROUBLE_FOR] (5xx, 408, 429) after the first, [LoggedOut.NOT_RENEWED]. Counted
-     *   from the first failure, not from when the access token expired: after a week unused it expired a
-     *   week ago, and one hiccup of the provider must not end the session then;
+     * - the token endpoint answered with another error: over only when that went on, on the third
+     *   ([FAILED_RENEWALS_TO_END]) failed renewal in a row, when the first failure of the run was at least
+     *   24 hours ([IN_TROUBLE_FOR]) earlier if any failure of the run came from a provider in trouble (5xx,
+     *   408, 429), or at least 15 minutes ([REFUSING_FOR]) earlier if all were other client errors (403,
+     *   404, …), [LoggedOut.NOT_RENEWED]. So a run that mixes both kinds, in whichever order, waits as long
+     *   as a provider in trouble. Counted from the first failure, not from when the access token expired:
+     *   after a week unused it expired a week ago, and one hiccup of the provider must not end the session then;
      * - no answer (a network error, which is thrown) or none of the server's login settings: nothing is
      *   known about the session, which stays, and the run of failures neither grows nor starts afresh.
      * An answer for [session] when it is no longer the stored one (logged out, or another login meanwhile)
@@ -268,13 +272,17 @@ class Login(
      */
     fun stillWorks(session: Session): Boolean = session.expiresAt - clock.now().epochSeconds > STILL_WORKS_MARGIN.inWholeSeconds
 
-    /** Counts a renewal the token endpoint answered with [status], and ends the session when [refresh] says so. */
+    /**
+     * Counts a renewal the token endpoint answered with [status], and ends the session when [refresh] says so:
+     * the run keeps when its first failure came, and whether any of its failures came from a provider in trouble.
+     */
     private fun renewalFailed(status: Int) {
         if (status == 400 || status == 401) return end(LoggedOut.EXPIRED)
         val now = clock.now().epochSeconds
-        val run = storage.failedRenewals()?.let { it.copy(count = it.count + 1) } ?: FailedRenewals(1, now)
         val inTrouble = status >= 500 || status == 408 || status == 429
-        val patience = if (inTrouble) IN_TROUBLE_FOR else REFUSING_FOR
+        val run = storage.failedRenewals()?.let { FailedRenewals(it.count + 1, it.since, it.inTrouble || inTrouble) }
+            ?: FailedRenewals(1, now, inTrouble)
+        val patience = if (run.inTrouble) IN_TROUBLE_FOR else REFUSING_FOR
         if (run.count >= FAILED_RENEWALS_TO_END && now - run.since >= patience.inWholeSeconds) end(LoggedOut.NOT_RENEWED)
         else storage.set(FAILED_RENEWALS_KEY, json.encodeToString(run))
     }
@@ -378,10 +386,11 @@ class LoginExchange(
         state.value = LoginProgress.Exchanging
         state.value = try {
             LoginProgress.Done(login.finish(url)).also { storage.saveLoggedOut(null) }
-        } catch (e: CancellationException) {
-            // Called off: whoever did it has said what the screen shows.
-            throw e
         } catch (e: Exception) {
+            // Called off (a log-out, another server): whoever did it has said what the screen shows. Told by
+            // the job, not by the exception: a network layer may report an ordinary failure (a timeout) as a
+            // CancellationException, which must be shown rather than leave the screen on "Logging in…".
+            currentCoroutineContext().ensureActive()
             LoginProgress.Failed(sentence(reasonOf(e)))
         }
     }
@@ -402,11 +411,7 @@ class LoginExchange(
         callOff()
         noteLoginOpened()
         val since = calledOff
-        val page = login.start(serverUrl, redirectUri)
-        if (calledOff == since) return page
-        // Its page is not opened, and a login started after it keeps waiting for its own answer.
-        login.abandon(page)
-        return null
+        return login.start(serverUrl, redirectUri) { calledOff == since }
     }
 
     /**

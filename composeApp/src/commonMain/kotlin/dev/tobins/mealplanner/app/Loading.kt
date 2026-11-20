@@ -88,9 +88,10 @@ internal suspend fun failureOf(action: suspend () -> Unit): String? = (load(acti
  * Why [e], caught where the app did something other than [load], failed, as a fragment for inside a sentence.
  * An [IllegalStateException] is the app's own sentence (`error(...)`, `check(...)`) and stays; any other
  * exception goes through [failedFrom], so its text ("unexpected end of stream on http://...") is never shown.
+ * A [CancellationException] is an [IllegalStateException] too, but comes from a library, not from the app.
  */
 internal suspend fun reasonOf(e: Throwable): String =
-    if (e is IllegalStateException && !e.message.isNullOrBlank()) e.message!! else reasonOf(failedFrom(e))
+    if (e is IllegalStateException && e !is CancellationException && !e.message.isNullOrBlank()) e.message!! else reasonOf(failedFrom(e))
 
 /** Why [failed] failed, as a fragment for inside a sentence: the server's explanation or a plain reason. */
 internal fun reasonOf(failed: Load.Failed): String = if (failed.technical) plainReason(failed) else failed.message

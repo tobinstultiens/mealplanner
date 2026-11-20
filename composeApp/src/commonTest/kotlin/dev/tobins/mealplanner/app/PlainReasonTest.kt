@@ -8,6 +8,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -84,6 +85,8 @@ class FailureSentenceTest {
         assertEquals("The server could not be reached.", sentence(reasonOf(raw)))
         // The app's own sentences (error(...), check(...)) are not exception text and stay.
         assertEquals("The login answer has no code", reasonOf(IllegalStateException("The login answer has no code")))
+        // A cancellation is one by type on every platform, but its text is a library's.
+        assertEquals("Something went wrong.", sentence(reasonOf(CancellationException("Request timeout has expired [url=http://server/x]"))))
         Strings.current = Strings.Dutch
         assertEquals("De server is niet bereikbaar.", sentence(reasonOf(raw)))
     }

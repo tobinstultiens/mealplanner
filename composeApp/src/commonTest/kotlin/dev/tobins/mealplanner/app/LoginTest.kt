@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.Test
@@ -77,9 +78,10 @@ class LoginTest {
 
     /**
      * A server and token endpoint that answer like the meal planner and Authelia. A renewal gets
-     * [refreshStatus] instead of tokens when set, or no answer at all when [offline]; a token request
-     * waits for [gate] when there is one, and the server's login settings for [configGate]. The answers
-     * are made on [dispatcher] when given: the test's own, so that a test knows when they are all made.
+     * [refreshStatus] instead of tokens when set, or no answer at all when [offline]; the token exchange of
+     * a login fails with [exchangeFailure] when set. A token request waits for [gate] when there is one, and
+     * a server's login settings for its host's gate in [configGates]. The answers are made on [dispatcher]
+     * when given: the test's own, so that a test knows when they are all made.
      */
     private fun fakeProvider(
         forms: MutableList<Map<String, String>>,
@@ -87,7 +89,8 @@ class LoginTest {
         refreshStatus: HttpStatusCode? = null,
         offline: Boolean = false,
         gate: CompletableDeferred<Unit>? = null,
-        configGate: CompletableDeferred<Unit>? = null,
+        configGates: Map<String, CompletableDeferred<Unit>> = emptyMap(),
+        exchangeFailure: Throwable? = null,
         dispatcher: CoroutineDispatcher? = null,
     ) = HttpClient(
         MockEngine(
@@ -97,7 +100,7 @@ class LoginTest {
                     val json = headersOf(HttpHeaders.ContentType, "application/json")
                     when (request.url.encodedPath) {
                         "/api/auth/config" -> {
-                            configGate?.await()
+                            configGates[request.url.host]?.await()
                             respond(
                                 """{"issuer":"https://auth.example.org","clientId":"mealplanner","authorizationEndpoint":"https://auth.example.org/api/oidc/authorization","tokenEndpoint":"https://auth.example.org/api/oidc/token","scopes":["openid","offline_access"]}""",
                                 headers = json,
@@ -108,6 +111,7 @@ class LoginTest {
                             val form = (request.body as FormDataContent).formData
                             val renewal = form["grant_type"] == "refresh_token"
                             if (renewal && offline) throw IllegalStateException("No network")
+                            if (!renewal && exchangeFailure != null) throw exchangeFailure
                             forms += form.names().associateWith { form[it]!! }
                             if (refuseRefresh && form["grant_type"] == "refresh_token") respond("""{"error":"invalid_grant"}""", HttpStatusCode.BadRequest, json)
                             else if (renewal && refreshStatus != null) respond("""{"error":"server_error"}""", refreshStatus, json)
@@ -126,7 +130,7 @@ class LoginTest {
         val forms = mutableListOf<Map<String, String>>()
         val login = Login(storage, fakeProvider(forms))
 
-        val page = Url(login.start("https://meals.example.nl", "https://meals.example.nl/app/login"))
+        val page = Url(login.start("https://meals.example.nl", "https://meals.example.nl/app/login")!!)
         assertEquals("/api/oidc/authorization", page.encodedPath)
         assertEquals("S256", page.parameters["code_challenge_method"])
         assertEquals("openid offline_access", page.parameters["scope"])
@@ -166,7 +170,7 @@ class LoginTest {
         if (login.isAwaitedAnswer(url)) runCatching { login.finish(url) } else null
 
     private suspend fun startedLogin(login: Login) =
-        Url(login.start("https://meals.example.nl", "https://meals.example.nl/app/login")).parameters["state"]!!
+        Url(login.start("https://meals.example.nl", "https://meals.example.nl/app/login")!!).parameters["state"]!!
 
     @Test
     fun theSameAnswerTwiceLogsInOnce() = runTest {
@@ -460,6 +464,19 @@ class LoginTest {
     }
 
     @Test
+    fun aFailureReportedAsACancellationIsShownAsAFailure() = runTest {
+        // A network layer may report an ordinary failure (a timeout) as a cancellation. Only a log-out or
+        // another server calls a login off; anything else must not leave the screen on "Logging in…".
+        val storage = MemorySettingsStorage()
+        val failure = CancellationException("Request timeout has expired [url=https://auth.example.org/api/oidc/token]")
+        val logins = exchange(storage, fakeProvider(mutableListOf(), exchangeFailure = failure, dispatcher = StandardTestDispatcher(testScheduler)))
+        logins.deliver("https://meals.example.nl/app/login?code=the-code&state=${startedLogin(logins)}")
+        runCurrent()
+        assertEquals(LoginProgress.Failed(sentence(Strings.current(Msg.WENT_WRONG))), logins.progress.value, "a failure, in a plain sentence")
+        assertEquals(null, storage.session())
+    }
+
+    @Test
     fun aLoginPageStillOpenAtALogOutAnswersNothing() = runTest {
         val storage = MemorySettingsStorage()
         val forms = mutableListOf<Map<String, String>>()
@@ -479,7 +496,7 @@ class LoginTest {
     fun aLoginCalledOffWhileItStartsOpensNoPage() = runTest {
         val storage = MemorySettingsStorage()
         val configGate = CompletableDeferred<Unit>()
-        val logins = exchange(storage, fakeProvider(mutableListOf(), configGate = configGate, dispatcher = StandardTestDispatcher(testScheduler)))
+        val logins = exchange(storage, fakeProvider(mutableListOf(), configGates = mapOf("meals.example.nl" to configGate), dispatcher = StandardTestDispatcher(testScheduler)))
         val page = async { logins.start("https://meals.example.nl", "https://meals.example.nl/app/login") }
         advanceUntilIdle()
 
@@ -491,14 +508,39 @@ class LoginTest {
     }
 
     @Test
-    fun abandoningAnOlderLoginLeavesTheWaitingOneAlone() = runTest {
+    fun twoLoginsStartedAtOnceLeaveTheLastOneWaiting() = runTest {
+        // The screens let one login start at a time (Log in waits meanwhile); LoginExchange must hold without
+        // that too, whichever server answers first: the last login started is the one that may log in.
+        for (newerAnswersFirst in listOf(true, false)) {
+            val storage = MemorySettingsStorage()
+            val older = CompletableDeferred<Unit>()
+            val newer = CompletableDeferred<Unit>()
+            val gates = mapOf("meals.example.nl" to older, "meals.example.org" to newer)
+            val logins = exchange(storage, fakeProvider(mutableListOf(), configGates = gates, dispatcher = StandardTestDispatcher(testScheduler)))
+            val olderPage = async { logins.start("https://meals.example.nl", "https://meals.example.nl/app/login") }
+            val newerPage = async { logins.start("https://meals.example.org", "https://meals.example.org/app/login") }
+            advanceUntilIdle()
+            for (gate in if (newerAnswersFirst) listOf(newer, older) else listOf(older, newer)) {
+                gate.complete(Unit)
+                advanceUntilIdle()
+            }
+
+            assertEquals(null, olderPage.await(), "the older login opens no page (newer answered first: $newerAnswersFirst)")
+            val answer = "https://meals.example.org/app/login?code=the-code&state=${Url(newerPage.await()!!).parameters["state"]}"
+            assertTrue(logins.login.isAwaitedAnswer(answer), "the newer login still waits for its answer (newer answered first: $newerAnswersFirst)")
+            logins.deliver(answer)
+            assertTrue(logins.outcome() is LoginProgress.Done)
+        }
+    }
+
+    @Test
+    fun aLoginNoLongerWantedOnceTheServerAnsweredLeavesTheWaitingOneAlone() = runTest {
         val login = Login(MemorySettingsStorage(), fakeProvider(mutableListOf()))
-        val older = login.start("https://meals.example.nl", "https://meals.example.nl/app/login")
-        val newer = login.start("https://meals.example.org", "https://meals.example.org/app/login")
-        val answer = "https://meals.example.org/app/login?code=c&state=${Url(newer).parameters["state"]}"
-        login.abandon(older)
-        assertTrue(login.isAwaitedAnswer(answer), "the newer login still waits")
-        login.abandon(newer)
+        val waiting = login.start("https://meals.example.org", "https://meals.example.org/app/login")!!
+        val answer = "https://meals.example.org/app/login?code=c&state=${Url(waiting).parameters["state"]}"
+        assertEquals(null, login.start("https://meals.example.nl", "https://meals.example.nl/app/login") { false }, "nothing to open")
+        assertTrue(login.isAwaitedAnswer(answer), "the login waiting before still waits")
+        login.abandon()
         assertFalse(login.isAwaitedAnswer(answer))
     }
 
@@ -638,6 +680,45 @@ class LoginTest {
         }
         renewAt(storage, 31.minutes, HttpStatusCode.NotFound)
         assertEquals(null, storage.session())
+    }
+
+    @Test
+    fun aDayOfAProviderInTroubleIsWaitedOutWhicheverErrorComesLast() = runTest {
+        // From the review of #237: a day of 503s and then one 404 ended the session under the 15-minute rule.
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        renewAt(storage, 0.minutes, HttpStatusCode.ServiceUnavailable)
+        renewAt(storage, 12.hours, HttpStatusCode.ServiceUnavailable)
+        renewAt(storage, 23.hours, HttpStatusCode.NotFound)
+        assertNotNull(storage.session(), "a 404 after 503s waits the day a provider in trouble is given")
+        renewAt(storage, 24.hours, HttpStatusCode.NotFound)
+        assertEquals(null, storage.session(), "a day after the first failure")
+        assertEquals(LoggedOut.NOT_RENEWED, storage.loggedOut())
+    }
+
+    @Test
+    fun aRunThatBeganWithAnotherClientErrorWaitsADayOnceTheProviderIsInTrouble() = runTest {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        renewAt(storage, 0.minutes, HttpStatusCode.NotFound)
+        renewAt(storage, 1.minutes, HttpStatusCode.ServiceUnavailable)
+        for (at in listOf(20.minutes, 23.hours + 59.minutes)) {
+            renewAt(storage, at, HttpStatusCode.NotFound)
+            assertNotNull(storage.session(), "one 503 in the run after $at: it waits a day")
+        }
+        renewAt(storage, 24.hours, HttpStatusCode.NotFound)
+        assertEquals(null, storage.session(), "counted from the first failure, the 404")
+        assertEquals(LoggedOut.NOT_RENEWED, storage.loggedOut())
+    }
+
+    @Test
+    fun aRunStoredByAnOlderAppIsTakenAsAProviderInTrouble() = runTest {
+        // An app from before the kinds of error were kept did not say which its two failures were.
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }
+        storage.set("auth.failedRenewals", """{"count":2,"since":${firstFailure.epochSeconds}}""")
+        renewAt(storage, 20.minutes, HttpStatusCode.NotFound)
+        assertNotNull(storage.session(), "it ends no sooner than the rule promises, whatever they were")
+        renewAt(storage, 24.hours, HttpStatusCode.NotFound)
+        assertEquals(null, storage.session())
+        assertEquals(LoggedOut.NOT_RENEWED, storage.loggedOut())
     }
 
     // --- The background check of the notifications (Android, issue 225): the same renewals, quietly.
