@@ -90,8 +90,11 @@ CREATE INDEX prep_user ON prep(userId, lastDay);
 -- (step 2): a side next to the slot's meal, which keeps its own main, of portions servings of the batch; it
 -- shares the meal's status, and is moved when its share is eaten elsewhere, except the side the batch is made
 -- with, which is kept at 0 as a meal is: the batch is still made on that day, with that meal.
+-- role BOX (issue 265): a skipped meal's share, portions servings, still in the box after a standard meal took its
+-- slot; the slot's meal is that standard meal, and the share is eaten elsewhere as any skipped one is.
 -- A row goes with its meal, so removing the meal takes it out of the batch; replacing a meal's main keeps
--- its side (PlanRepository.save).
+-- its side and a share in the box (PlanRepository.save), and removing a standard meal puts back the skipped meal
+-- whose share is in the box.
 CREATE TABLE prepPortion (
     userId INTEGER NOT NULL,
     weekStart TEXT NOT NULL,
@@ -134,6 +137,26 @@ INSERT INTO prepPortion (userId, weekStart, day, slot, role, prepId, portions) V
 insertSidePortion:
 INSERT INTO prepPortion (userId, weekStart, day, slot, role, prepId, portions) VALUES (?, ?, ?, ?, 'SIDE', ?, ?);
 
+-- A skipped meal's share goes in the box when a standard meal takes its slot (issue 265).
+insertBoxPortion:
+INSERT INTO prepPortion (userId, weekStart, day, slot, role, prepId, portions) VALUES (?, ?, ?, ?, 'BOX', ?, ?);
+
+-- The share in the box kept under one slot, if it holds one.
+selectBoxPortion:
+SELECT prepId, portions FROM prepPortion
+WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'BOX';
+
+deleteBoxPortion:
+DELETE FROM prepPortion WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'BOX';
+
+-- The skipped meal's own share, which goes in the box (insertBoxPortion) when a standard meal takes its slot.
+deleteMealPortion:
+DELETE FROM prepPortion WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'MEAL';
+
+-- Which batch the share in the box under each slot of one week is of.
+selectWeekBoxes:
+SELECT day, slot, prepId FROM prepPortion WHERE userId = :userId AND weekStart = :weekStart AND role = 'BOX';
+
 -- The side next to one meal, if it has one.
 selectSidePortion:
 SELECT prepId, portions FROM prepPortion
@@ -173,10 +196,11 @@ clearSideShare:
 UPDATE prepPortion SET portions = 0
 WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = 'SIDE';
 
--- What a meal (or the side next to it, by role) took from the stock and what was in it go with its share to
--- another meal of the batch.
+-- What a meal (or the side next to it, or the share in the box under its slot, by role) took from the stock and
+-- what was in it go with its share to another meal of the batch, as the role it is there (a share in the box is
+-- eaten as a meal); and in the box, under its slot, when a standard meal takes the place of its skipped meal.
 moveStockUses:
-UPDATE stockUse SET weekStart = :toWeek, day = :toDay, slot = :toSlot
+UPDATE stockUse SET weekStart = :toWeek, day = :toDay, slot = :toSlot, role = :toRole
 WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND role = :role;
 
 moveMealLines:

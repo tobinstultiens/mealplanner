@@ -495,6 +495,48 @@ class ReleasedAppTest {
     }
 
     /**
+     * A standard meal (issue 265) a newer app marked and chose, eaten, in place of a skipped later portion of a prepped
+     * batch that was made, whose share is in the box. The installed app reads the week, the day, the box, both lists,
+     * what is due and the recipes, of which it knows none of this; it saves the standard meal's settings, which leaves it
+     * one, and un-eats and removes it, which puts the skipped portion back in its slot.
+     */
+    @Test
+    fun theInstalledAppReadsAStandardMealInPlaceOfASkippedPreppedPortion() = testApplication {
+        val http = start()
+        http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }.read<ProfileState>()
+        val stew = http.post("/api/recipes") { setBody(RecipeInput("My stew", 4, "800 | g | chicken fillet", "Stew.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER))) }
+            .read<RecipeDetail>().summary
+        val toast = http.post("/api/recipes") { setBody(RecipeInput("My toast", 1, "150 | g | rice", "Toast.", mealSlots = listOf(MealSlot.LUNCH))) }
+            .read<RecipeDetail>().summary
+        // In a newer app: the stew keeps three days and is prepped for Tuesday's dinner and Wednesday's lunch; the toast is a standard meal.
+        assertTrue(http.put("/api/recipes/${stew.id}/keeps") { setBody("""{"days":3}""") }.status.isSuccess())
+        val shares = """[{"date":"2026-11-17","slot":"DINNER"},{"date":"2026-11-18","slot":"LUNCH"}]"""
+        http.post("/api/plans/$week/preps") { setBody("""{"recipeId":${stew.id},"madeOn":"2026-11-17","meals":$shares}""") }.read<WeekPlan>()
+        assertTrue(http.put("/api/recipes/${toast.id}/standard") { setBody("""{"standard":true}""") }.status.isSuccess())
+        http.put("/api/plans/$week/meals/1/DINNER/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>()
+        http.put("/api/plans/$week/meals/2/LUNCH/status") { setBody(MealStatus.SKIPPED) }.read<WeekPlan>()
+        assertTrue(http.put("/api/plans/$week/meals/2/LUNCH/standard") { setBody("""{"recipeId":${toast.id},"eaten":true}""") }.status.isSuccess())
+
+        val lunch = http.read<WeekPlan>("/api/plans/$week").days[2].meals.single { it.slot == MealSlot.LUNCH }
+        assertEquals(Triple(toast.id, MealStatus.EATEN, true), Triple(lunch.recipeId, lunch.status, lunch.locked))
+        assertEquals(toast.id, http.read<DayView>("/api/days/2026-11-18").meals.single { it.slot == MealSlot.LUNCH }.recipeId)
+        val spare = http.read<List<SparePortion>>("/api/preps/spare/2026-11-18").single()
+        assertEquals("2026-11-18" to MealSlot.LUNCH, spare.skipped.date to spare.skipped.slot, "the skipped portion is in the box")
+        http.read<ShoppingList>("/api/plans/$week/shopping")
+        http.read<NotificationFacts>("/api/notifications")
+        assertTrue(http.read<List<RecipeSummary>>("/api/recipes").any { it.id == toast.id })
+
+        // Its settings saved as the installed app saves them: still a standard meal.
+        http.put("/api/recipes/${toast.id}/settings") { setBody(RecipeSettings(RecipeKind.MEAL, listOf(MealSlot.LUNCH))) }.read<RecipeDetail>()
+        assertTrue(http.get("/api/recipes/${toast.id}").bodyAsText().contains("\"standardMeal\":true"))
+
+        // Un-eaten and removed: the skipped portion of the stew is back in Wednesday's lunch.
+        http.put("/api/plans/$week/meals/2/LUNCH/status") { setBody(MealStatus.PLANNED) }.read<WeekPlan>()
+        val back = http.delete("/api/plans/$week/meals/2/LUNCH").read<WeekPlan>().days[2].meals.single { it.slot == MealSlot.LUNCH }
+        assertEquals(Triple(stew.id, MealStatus.SKIPPED, true), Triple(back.recipeId, back.status, back.leftover))
+    }
+
+    /**
      * No enum of the frozen types may have a value the current one lacks: an installed app fails to
      * read a response with a value it does not know, whatever else the response holds. The check
      * covers every enum under `released/` by itself, so a new frozen enum is covered after a freeze.

@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PrepInput
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.SpareMove
+import dev.tobins.mealplanner.api.StandardChoice
 import dev.tobins.mealplanner.server.respondGenerationOff
 import dev.tobins.mealplanner.server.ConflictException
 import dev.tobins.mealplanner.server.generation.GenerationException
@@ -64,7 +65,12 @@ fun Route.planRoutes() {
             }
         }
 
+        // The standard meals for each of their slots, at the portion each gets, and the slots none can take (issue 265).
+        get("/standard-meals") { call.respond(call.user.standardMeals.week(call.week())) }
+
         route("/meals/{day}/{slot}") {
+            // A standard meal in place of what is there, body {"recipeId": 12, "eaten": true}; locked, as a choice by hand.
+            put("/standard") { call.respond(call.user.standardMeals.choose(call.week(), call.day(), call.slot(), call.receive<StandardChoice>())) }
             post("/reroll") { call.respond(call.user.plans.reroll(call.week(), call.day(), call.slot())) }
             put("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
             delete("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }

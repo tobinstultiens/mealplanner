@@ -11,11 +11,17 @@ import java.time.LocalDate
 
 /**
  * A planned meal by where it is in the plan: what a meal takes from the stock is kept under it. With [side], the side
- * next to that meal (issue 234, step 2), whose share is kept under the same meal but apart from the meal's own.
+ * next to that meal (issue 234, step 2), whose share is kept under the same meal but apart from the meal's own. With
+ * [boxed], the share of a skipped prepped meal still in the box after a standard meal took its slot (issue 265), kept
+ * under that slot apart from the standard meal's own.
  */
-data class MealRef(val week: LocalDate, val day: Int, val slot: MealSlot, val side: Boolean = false) {
+data class MealRef(val week: LocalDate, val day: Int, val slot: MealSlot, val side: Boolean = false, val boxed: Boolean = false) {
     /** `stockUse.role` of what is kept under it. */
-    val role: String get() = if (side) SIDE else MEAL
+    val role: String get() = when {
+        boxed -> BOX
+        side -> SIDE
+        else -> MEAL
+    }
 
     companion object {
         /** The role of a meal's own share, in `stockUse` and `prepPortion`. */
@@ -23,6 +29,12 @@ data class MealRef(val week: LocalDate, val day: Int, val slot: MealSlot, val si
 
         /** The role of the share of the side next to a meal. */
         const val SIDE = "SIDE"
+
+        /** The role of a skipped meal's share in the box, under the slot a standard meal took. */
+        const val BOX = "BOX"
+
+        /** The meal of [week]'s [day] and [slot] whose share has [role]. */
+        fun of(week: LocalDate, day: Int, slot: MealSlot, role: String) = MealRef(week, day, slot, side = role == SIDE, boxed = role == BOX)
     }
 }
 
@@ -134,7 +146,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      */
     fun atHome(week: LocalDate, cookedElsewhere: Set<MealRef> = emptySet(), cookedHere: List<MealRef> = emptyList()): Map<Long, Double?> {
         val ofWeek = pantry.selectWeekStockUses(userId, week.toString()).executeAsList()
-            .filter { MealRef(week, it.day.toInt(), MealSlot.valueOf(it.slot), side = it.role == MealRef.SIDE) !in cookedElsewhere }
+            .filter { MealRef.of(week, it.day.toInt(), MealSlot.valueOf(it.slot), it.role) !in cookedElsewhere }
             .map { it.ingredientId to it.grams }
         val taken = (ofWeek + cookedHere.flatMap(::uses).map { it.ingredientId to it.grams })
             .groupBy({ it.first }, { it.second })

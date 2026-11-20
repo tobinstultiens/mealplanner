@@ -18,18 +18,20 @@ import java.util.Locale
  * A meal of a prepped batch as stored: the meal in its [week], and its [share] of the batch, which is the
  * meal's portions until it is skipped and its share is eaten in another meal (then 0). A [side] is the side
  * next to [meal] (issue 234, step 2): [meal] is the meal whose main it goes with, whose status it shares, and
- * [share] its own portions.
+ * [share] its own portions. A [boxed] one is a skipped meal whose slot a standard meal took (issue 265): [meal]
+ * is the skipped meal as the batch has it, of the batch's recipe, with no numbers of its own, and [share] is in
+ * the box.
  */
-class BatchMeal(val week: LocalDate, val meal: PlannedMeal, val share: Double, val side: Boolean = false) {
+class BatchMeal(val week: LocalDate, val meal: PlannedMeal, val share: Double, val side: Boolean = false, val boxed: Boolean = false) {
     val date: LocalDate get() = week.plusDays(meal.day.toLong())
 
-    val ref: MealRef get() = MealRef(week, meal.day, meal.slot, side)
+    val ref: MealRef get() = MealRef(week, meal.day, meal.slot, side, boxed)
 
     fun isAt(date: LocalDate, slot: MealSlot): Boolean = this.date == date && meal.slot == slot
 
     /** Whether this is [meal]'s own share in [week] ([side] false) or that of the side next to it ([side] true). */
     fun isOf(week: LocalDate, meal: PlannedMeal, side: Boolean): Boolean =
-        this.week == week && this.meal.day == meal.day && this.meal.slot == meal.slot && this.side == side
+        this.week == week && this.meal.day == meal.day && this.meal.slot == meal.slot && this.side == side && !boxed
 }
 
 /**
@@ -76,7 +78,10 @@ class Batch(
     /** Whether [meal] of [week] is the meal that makes the batch: its own share ([side] false) or its side's. */
     fun isCook(week: LocalDate, meal: PlannedMeal, side: Boolean = false): Boolean = cook?.isOf(week, meal, side) == true
 
-    /** The batch's meal or side at [date]'s [slot]: a batch is never both the meal of a slot and the side next to it. */
+    /**
+     * The batch's meal, side or share in the box at [date]'s [slot]: a batch is never two of them in one slot (the meal of
+     * a slot and the side next to it, or a share in the box under a slot and that slot's meal or side).
+     */
     fun mealAt(date: LocalDate, slot: MealSlot): BatchMeal? = meals.firstOrNull { it.isAt(date, slot) }
 
     /** The side of the batch next to [meal] of [week]; null when its side is of another batch or it has none. */
@@ -131,16 +136,25 @@ class Batch(
             if (ids.isEmpty()) return emptyMap()
             val meals = db.planQueries.selectPrepMeals(userId, ids.distinct()).executeAsList().groupBy { it.prepId }
             return ids.distinct().mapNotNull { id -> db.planQueries.selectPrep(userId, id).executeAsOneOrNull() }.associate { row ->
-                val ofBatch = meals[row.id].orEmpty().map { m ->
+                val rows = meals[row.id].orEmpty()
+                // The recipe's title as stored, else that of a meal of it, which the plan keeps when the recipe goes.
+                val title = row.recipeTitle ?: rows.firstOrNull { it.role == MealRef.MEAL }?.title.orEmpty()
+                val ofBatch = rows.map { m ->
                     val meal = PlannedMeal(
                         day = m.day.toInt(), slot = MealSlot.valueOf(m.slot), recipeId = m.recipeId, title = m.title, portions = m.portions,
                         kcal = m.kcal, proteinG = m.proteinG, locked = m.locked != 0L, status = MealStatus.valueOf(m.status),
                     )
-                    val side = m.role == MealRef.SIDE
-                    BatchMeal(LocalDate.parse(m.weekStart), if (side) meal else meal.copy(locked = true), m.share ?: m.portions, side)
+                    val week = LocalDate.parse(m.weekStart)
+                    when (m.role) {
+                        MealRef.SIDE -> BatchMeal(week, meal, m.share ?: m.portions, side = true)
+                        // The slot's meal is the standard meal that took its place: the skipped meal is the batch's own.
+                        MealRef.BOX -> {
+                            val skipped = PlannedMeal(meal.day, meal.slot, row.recipeId, title, m.share ?: 0.0, 0.0, 0.0, locked = true, status = MealStatus.SKIPPED)
+                            BatchMeal(week, skipped, m.share ?: 0.0, boxed = true)
+                        }
+                        else -> BatchMeal(week, meal.copy(locked = true), m.share ?: m.portions)
+                    }
                 }.sortedWith(compareBy({ it.date }, { it.meal.slot.ordinal }))
-                // The recipe's title as stored, else that of a meal of it, which the plan keeps when the recipe goes.
-                val title = row.recipeTitle ?: ofBatch.firstOrNull { !it.side }?.meal?.title.orEmpty()
                 row.id to Batch(row.id, row.recipeId, title, LocalDate.parse(row.madeOn), LocalDate.parse(row.lastDay), row.vacuum != 0L, ofBatch)
             }
         }

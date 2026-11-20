@@ -25,6 +25,7 @@ CREATE TABLE recipe (
     inRotation INTEGER NOT NULL DEFAULT 0,  -- App-owned: 1 when the planner may pick it on its own
     keepsDays INTEGER,                 -- App-owned: days it keeps once made in a normal box (issue 234); NULL: not prepped that way
     keepsVacuumDays INTEGER,           -- App-owned: days it keeps once made and vacuum sealed; NULL: not prepped that way
+    standardMeal INTEGER NOT NULL DEFAULT 0, -- App-owned: 1 when it is a standard meal of my recipes (issue 265)
     UNIQUE (userId, sourcePath)
 );
 
@@ -83,8 +84,10 @@ SET contentHash = ?, section = ?, title = ?, tagsJson = ?, servings = ?, instruc
     hasIngredientsBlock = ?, problemsJson = ?, removedAt = NULL
 WHERE userId = ? AND id = ?;
 
+-- A building block is no standard meal (issue 265): becoming one ends it, which a meal keeps through any other save.
 updateSettings:
-UPDATE recipe SET kind = ?, mealSlotsJson = ? WHERE userId = ? AND id = ?;
+UPDATE recipe SET kind = :kind, mealSlotsJson = :mealSlotsJson, standardMeal = CASE WHEN :kind = 'MEAL' THEN standardMeal ELSE 0 END
+WHERE userId = :userId AND id = :id;
 
 setKeeps:
 UPDATE recipe SET keepsDays = :keepsDays, keepsVacuumDays = :keepsVacuumDays WHERE userId = :userId AND id = :id;
@@ -100,9 +103,13 @@ DELETE FROM recipe WHERE userId = ? AND id = ? AND source IN ('MANUAL', 'GENERAT
 addToMine:
 UPDATE recipe SET addedAt = coalesce(addedAt, :addedAt), inRotation = :inRotation WHERE userId = :userId AND id = :id;
 
--- Back to the bank; rating, kind and slots stay for when it is added again.
+-- Back to the bank; rating, kind and slots stay for when it is added again. A bank recipe is in no rotation and no
+-- standard meal (issue 265).
 removeFromMine:
-UPDATE recipe SET addedAt = NULL, inRotation = 0 WHERE userId = ? AND id = ?;
+UPDATE recipe SET addedAt = NULL, inRotation = 0, standardMeal = 0 WHERE userId = ? AND id = ?;
+
+setStandardMeal:
+UPDATE recipe SET standardMeal = :standardMeal WHERE userId = :userId AND id = :id;
 
 setInRotation:
 UPDATE recipe SET inRotation = ? WHERE userId = ? AND id = ?;

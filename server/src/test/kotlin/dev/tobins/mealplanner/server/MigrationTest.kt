@@ -11,6 +11,7 @@ import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.Sex
+import dev.tobins.mealplanner.api.StandardChoice
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.ToppingInput
 import dev.tobins.mealplanner.api.ToppingsInput
@@ -172,6 +173,7 @@ class MigrationTest {
 
     /** Version 21 kept the stock a side took apart from its meal's (20.sqm): stockUse as version 20 had it, empty. */
     private fun dropStockUseRoles(statement: Statement) {
+        dropStandardMeals(statement)
         statement.execute("DROP TABLE stockUse")
         statement.execute(
             "CREATE TABLE stockUse (userId INTEGER NOT NULL, weekStart TEXT NOT NULL, day INTEGER NOT NULL, slot TEXT NOT NULL, " +
@@ -180,6 +182,11 @@ class MigrationTest {
                 "FOREIGN KEY (userId, weekStart, day, slot) REFERENCES planMeal(userId, weekStart, day, slot) ON DELETE CASCADE)",
         )
         statement.execute("CREATE INDEX stockUse_ingredient ON stockUse(ingredientId)")
+    }
+
+    /** Version 22 added standard meals (21.sqm): a recipe's column. */
+    private fun dropStandardMeals(statement: Statement) {
+        statement.execute("ALTER TABLE recipe DROP COLUMN standardMeal")
     }
 
     @Test
@@ -1205,6 +1212,84 @@ class MigrationTest {
         assertEquals("MEAL:1:200.0,SIDE:2:50.0", single(url, "SELECT role || ':' || ingredientId || ':' || grams FROM stockUse WHERE userId = 1 AND day = 3 ORDER BY role"))
         assertEquals("1", single(url, "SELECT count(*) FROM stockUse WHERE userId = 2"), "Bob's as it was")
         driver.close()
+    }
+
+    @Test
+    fun aVersionTwentyOneDatabaseKeepsEveryRowAndNoRecipeIsAStandardMeal() {
+        val file = createTempFile("v21", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropStandardMeals(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name, isStaple) VALUES (1, 1, 'Beef', 0), (2, 1, 'Bread', 1), (3, 2, 'Beef', 0)")
+                statement.execute(
+                    "INSERT INTO recipe (id, userId, source, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, mealSlotsJson, addedAt, inRotation, keepsDays) VALUES " +
+                        "(1, 1, 'MANUAL', 'own', 'Stew', '[]', 2, '', 1, '[]', 'MEAL', '[\"LUNCH\",\"DINNER\"]', '2026-11-01T00:00:00Z', 1, 3), " +
+                        "(2, 1, 'MANUAL', 'own', 'Beef toast', '[]', 1, '', 1, '[]', 'MEAL', '[\"LUNCH\"]', '2026-11-01T00:00:00Z', 0, NULL), " +
+                        "(3, 2, 'MANUAL', 'own', 'Bob stew', '[]', 2, '', 1, '[]', 'MEAL', NULL, '2026-11-01T00:00:00Z', 1, NULL)",
+                )
+                statement.execute(
+                    "INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item) VALUES " +
+                        "(1, 0, 400, 'g', 'WEIGHT', 400, 'beef'), (2, 0, 100, 'g', 'WEIGHT', 100, 'beef'), (2, 1, 80, 'g', 'WEIGHT', 80, 'bread'), (3, 0, 400, 'g', 'WEIGHT', 400, 'beef')",
+                )
+                // Alice: a batch of stew made on Tuesday (eaten) with Wednesday's lunch skipped, what it took of the beef; Bob: a dinner.
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 1, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 1, 'EATEN'), (1, '$week', 2, 'LUNCH', 1, 'Stew', 1.0, 600.0, 40.0, 0, 1, 'SKIPPED'), " +
+                        "(2, '$week', 0, 'DINNER', 3, 'Bob stew', 1.0, 600.0, 40.0, 0, 0, 'EATEN')",
+                )
+                statement.execute("INSERT INTO prep (id, userId, recipeId, madeOn, lastDay, vacuum) VALUES (1, 1, 1, '2026-11-17', '2026-11-20', 0)")
+                statement.execute("INSERT INTO prepPortion (userId, weekStart, day, slot, role, prepId, portions) VALUES (1, '$week', 1, 'DINNER', 'MEAL', 1, NULL), (1, '$week', 2, 'LUNCH', 'MEAL', 1, NULL)")
+                statement.execute("INSERT INTO stock (ingredientId, fromWeek, source, addedAt, grams) VALUES (1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 600.0)")
+                statement.execute(
+                    "INSERT INTO stockUse (userId, weekStart, day, slot, role, ingredientId, fromWeek, source, addedAt, grams) VALUES " +
+                        "(1, '$week', 1, 'DINNER', 'MEAL', 1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0), (1, '$week', 2, 'LUNCH', 'MEAL', 1, '$week', 'STOCK_UP', '2026-11-15T00:00:00Z', 200.0)",
+                )
+                statement.execute("PRAGMA user_version = 21")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        val columns = listOf("id", "userId", "title", "kind", "mealSlotsJson", "addedAt", "inRotation", "keepsDays")
+        fun recipes() = single(url, "SELECT ${columns.joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }} FROM recipe ORDER BY id")
+        val before = Triple(counts(), recipes(), everythingBut(url, "recipe"))
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, Triple(counts(), recipes(), everythingBut(url, "recipe")), "every row as it was, in every table")
+        assertEquals("0", single(url, "SELECT group_concat(DISTINCT standardMeal) FROM recipe"), "no recipe is a standard meal")
+
+        // Alice marks her toast and eats it in place of the skipped lunch: the share stays in the box with its beef, Bob's as it was.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(week) })
+        alice.profiles.save(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT))
+        assertEquals(listOf("Beef"), alice.recipes.setStandard(2, true).addedStaples)
+        alice.standardMeals.choose(week, 2, MealSlot.LUNCH, StandardChoice(2, eaten = true))
+        // The toast's own 0.75 servings of beef apart from the share's, which stays taken.
+        assertEquals("BOX:1:200.0,MEAL:1:75.0", single(url, "SELECT role || ':' || ingredientId || ':' || grams FROM stockUse WHERE userId = 1 AND day = 2 ORDER BY role"))
+        assertEquals("1", single(url, "SELECT count(*) FROM stockUse WHERE userId = 1 AND day = 1"), "Tuesday's as it was")
+        assertEquals(1.0, alice.preps.spare("2026-11-18").single().portions)
+        assertEquals("0", single(url, "SELECT isStaple FROM ingredient WHERE id = 3"), "Bob's beef is no staple")
+        driver.close()
+    }
+
+    /** Every row of every table of the file but [table], to compare before and after a migration that adds a column to it. */
+    private fun everythingBut(url: String, table: String): List<String> = DriverManager.getConnection(url).use { connection ->
+        fun query(sql: String): List<String> = connection.createStatement().executeQuery(sql).use { rows ->
+            val count = rows.metaData.columnCount
+            generateSequence { if (rows.next()) (1..count).joinToString("|") { rows.getString(it).orEmpty() } else null }.toList()
+        }
+        query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != '$table' ORDER BY name")
+            .flatMap { name -> listOf(name) + query("SELECT * FROM \"$name\"") }
     }
 
     /** Everything the file holds: its schema, its version and every row of every table, to compare before and after. */
