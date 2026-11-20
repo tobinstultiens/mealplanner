@@ -29,6 +29,11 @@
       "Bash(gh release view*)",
       "Bash(gh release list*)"
     ],
+    "deny": [
+      "Bash(git push *:main*)",
+      "Bash(git push *:refs/heads/main*)",
+      "Bash(git push * HEAD:main*)"
+    ],
     "ask": [
       "Bash(git push origin main*)",
       "Bash(git push * main)",
