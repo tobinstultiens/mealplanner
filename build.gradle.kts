@@ -1,3 +1,7 @@
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import org.jetbrains.kotlin.gradle.targets.js.npm.tasks.KotlinNpmInstallTask
+import org.jetbrains.kotlin.gradle.targets.js.npm.tasks.KotlinToolingSetupTask
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform) apply false
     alias(libs.plugins.kotlin.jvm) apply false
@@ -20,10 +24,37 @@ subprojects {
     }
 }
 
-// The Wasm npm install has once ended without a package webpack needed (`Can't resolve '@js-joda/core'`,
-// issue 239), and the build only failed minutes later in webpack. Before webpack runs, check that every
-// package of kotlin-js-store/wasm/yarn.lock is in node_modules, so a bad install fails here, and says so.
-// The install task does not look at node_modules when it decides it is up to date, hence a check of its own.
+// A failed test prints its message and stack in the build log, not only in the report. Gradle's default
+// prints the exception's class alone: a browser test that failed in CI said nothing but "Error", whatever
+// the browser reported (issue 306), and the report is gone with the runner.
+allprojects {
+    tasks.withType<AbstractTestTask>().configureEach {
+        testLogging {
+            exceptionFormat = TestExceptionFormat.FULL
+            showStackTraces = true
+        }
+    }
+}
+
+// One yarn at a time. The Kotlin plugin runs yarn twice for Wasm: kotlinWasmToolingSetup installs webpack,
+// Karma and Mocha (130 MB, 50 to 70 s on a CI runner), kotlinWasmNpmInstall the packages of
+// kotlin-js-store/wasm/yarn.lock (a second). Gradle starts both at once, and the plugin makes them take turns
+// with yarn's `--mutex network`: the second yarn keeps an idle connection open to the first one's HTTP server.
+// Node drops a connection that sends no request within 60 s, and the waiting yarn then exits with 0 without
+// installing anything. So whenever the tooling took over a minute and started first, the project's packages
+// were missing (`@js-joda/core`, `ws`; issue 306). A build service that lets one of these tasks run at a time
+// means no yarn of this build ever waits for another.
+abstract class OneYarnAtATime : BuildService<BuildServiceParameters.None>
+val oneYarnAtATime = gradle.sharedServices.registerIfAbsent("oneYarnAtATime", OneYarnAtATime::class) {
+    maxParallelUsages = 1
+}
+tasks.withType<KotlinNpmInstallTask>().configureEach { usesService(oneYarnAtATime) }
+tasks.withType<KotlinToolingSetupTask>().configureEach { usesService(oneYarnAtATime) }
+
+// The install task does not look at node_modules when it decides it is up to date, and a yarn that quits
+// while waiting reports success, so before webpack or a browser test runs, check that every package of
+// kotlin-js-store/wasm/yarn.lock is in node_modules: a bad install fails here, and says so, instead of
+// minutes later in webpack (issue 239). Another build on the same machine can still hold yarn's mutex too long.
 val verifyWasmNpmInstall by tasks.registering {
     dependsOn("kotlinWasmNpmInstall")
     // Plain values: a task action may not refer to the build script (configuration cache).
@@ -39,12 +70,15 @@ val verifyWasmNpmInstall by tasks.registering {
         val missing = locked.filterNot { File(nodeModules, "$it/package.json").isFile }
         check(missing.isEmpty()) {
             "The npm install for Wasm left out ${missing.joinToString()} in $nodeModules although " +
-                "kotlin-js-store/wasm/yarn.lock lists it. Delete build/wasm and run the build again."
+                "kotlin-js-store/wasm/yarn.lock lists it. Another yarn on this machine may have held yarn's " +
+                "mutex for over a minute (issue 306). Delete build/wasm and run the build again."
         }
     }
 }
 allprojects {
-    tasks.matching { it.name.startsWith("wasmJsBrowser") && it.name.endsWith("Webpack") }.configureEach {
+    tasks.matching {
+        it.name.startsWith("wasmJsBrowser") && (it.name.endsWith("Webpack") || it.name.endsWith("Test"))
+    }.configureEach {
         dependsOn(rootProject.tasks.named("verifyWasmNpmInstall"))
     }
 }
