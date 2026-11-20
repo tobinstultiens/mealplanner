@@ -128,4 +128,42 @@ class OpenPacksTest {
         assertClose(0.0, OpenPacks.restOf(batch, candidates))
         assertClose(0.0, OpenPacks.before(batch, candidates, 1, MealSlot.DINNER).reusable(1, uses, 1.0))
     }
+
+    @Test
+    fun onlyRestsUnderHalfOfThePackAreSmallAndEachPackIsJudgedByItself() {
+        // Servings of 50 g from a 200 g tub: 3 servings leave 50 g (a quarter), 2 leave 100 g (exactly half, not under).
+        fun leftBy(servings: Double) = OpenPacks.smallRestsOf(listOf(meal(0, MealSlot.DINNER, 1).copy(portions = servings)), candidates)
+
+        assertClose(50.0, leftBy(3.0).single().grams)
+        assertClose(0.75, leftBy(3.0).single().euros)
+        assertTrue(leftBy(2.0).isEmpty(), "half the pack is not under half")
+        assertTrue(leftBy(1.0).isEmpty(), "three quarters of it left is a pack mostly unused")
+        assertTrue(leftBy(4.0).isEmpty(), "a pack used up leaves nothing")
+
+        // Two packs in the week, days apart: the first leaves 150 g (not small), the second 50 g: only the second counts.
+        val twoPacks = listOf(meal(0, MealSlot.DINNER, 1).copy(portions = 1.0), meal(6, MealSlot.DINNER, 1).copy(portions = 3.0))
+        assertClose(50.0, OpenPacks.smallRestsOf(twoPacks, candidates).single().grams)
+
+        // Two packs both left small, 50 g each: one line for the ingredient with both added up.
+        val bothSmall = listOf(meal(0, MealSlot.DINNER, 1).copy(portions = 3.0), meal(6, MealSlot.DINNER, 1).copy(portions = 3.0))
+        assertClose(100.0, OpenPacks.smallRestsOf(bothSmall, candidates).single().grams)
+        assertClose(1.5, OpenPacks.smallRestsOf(bothSmall, candidates).single().euros)
+    }
+
+    @Test
+    fun aRestOfLessThanFiveCentsIsNotTold() {
+        val pinch = mapOf(1L to PlanCandidate(1, "Recipe 1", setOf(MealSlot.DINNER), 4, 600.0, 40.0, freshUses = listOf(FreshUse(1, 49.5, Pack(200.0, 3.0)))))
+
+        // 0.5 g of 200 g at 3 euros: 0.75 cents.
+        assertTrue(OpenPacks.smallRestsOf(listOf(meal(0, MealSlot.DINNER, 1).copy(portions = 4.0)), pinch).isEmpty())
+    }
+
+    @Test
+    fun aBatchIsOnePurchaseOfAllItsPortionsAndTheRestFollowsFromThat() {
+        // Seven servings made on day 0 and eaten until day 3: 350 g, two tubs, 50 g left of the second.
+        val prep = MealPrep(1, "2026-11-16", "2026-11-20", false, (0..6).map { PrepMeal("2026-11-${16 + it % 4}", MealSlot.LUNCH, 1.0, MealStatus.PLANNED) })
+        val batch = listOf(meal(0, MealSlot.LUNCH, 1).copy(prep = prep)) + (1..3).map { meal(it, MealSlot.LUNCH, 1, leftover = true).copy(prep = prep) }
+
+        assertClose(50.0, OpenPacks.smallRestsOf(batch, candidates).single().grams)
+    }
 }

@@ -56,6 +56,7 @@ import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.TargetSuggestion
 import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.api.WeekRest
 import dev.tobins.mealplanner.api.WeightEntry
 import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.recipes.IngredientLine
@@ -93,6 +94,8 @@ class FakeBackend(
     private val mixed: Boolean = false,
     /** The week holding only Monday's lunch of the chicken thighs prepped the Sunday before ([tailPrep]), not planned yet (issue 263). */
     private val tailOnly: Boolean = false,
+    /** The week says what fresh ingredients it leaves over (issue 244): five rests, so the line says "and 2 more". */
+    private val weekRest: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -367,6 +370,10 @@ class FakeBackend(
         emptySlots = if (emptyWeek) MealSlot.entries else emptyList(),
         cost = if (emptyWeek) null else 61.40,
         costWithoutOffers = if (emptyWeek) null else 68.95,
+        rest = if (emptyWeek || !weekRest) emptyList() else listOf(
+            WeekRest("Crème fraîche", 100.0, 1.10), WeekRest("Koriander", 12.0, 0.60), WeekRest("Bieslook", 8.0, 0.40),
+            WeekRest("Gember", 25.0, 0.20), WeekRest("Peterselie", 10.0, 0.10),
+        ),
     )
 
     private fun day(date: String): DayView {

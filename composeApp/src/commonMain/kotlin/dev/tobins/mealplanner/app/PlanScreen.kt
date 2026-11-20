@@ -280,6 +280,7 @@ fun PlanScreen(
                                     style = MaterialTheme.typography.bodyMedium.numeric(),
                                 )
                             }
+                            restLine(plan.rest, t)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                             Button(enabled = !busy, onClick = { change { api.generatePlan(weekStart) } }) {
                                 Text(if (planned) t(Msg.REPLAN) else t(Msg.PLAN_WEEK))
                             }

@@ -232,4 +232,13 @@ data class WeekPlan(
     /** Estimated euros for every planned meal with the week's offers, and at regular prices. */
     val cost: Double? = null,
     val costWithoutOffers: Double? = null,
+    /**
+     * The fresh ingredients the week's shopping leaves over in small amounts (issue 244), largest first; empty
+     * when there are none and from a server before this. Only rests under half of the pack count ([OpenPacks]).
+     */
+    val rest: List<WeekRest> = emptyList(),
 )
+
+/** What the week leaves of a fresh ingredient: [grams] of it, worth [euros] of its pack's regular price. */
+@Serializable
+data class WeekRest(val ingredient: String, val grams: Double, val euros: Double)

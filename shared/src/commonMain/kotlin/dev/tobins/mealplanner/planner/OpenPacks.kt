@@ -14,6 +14,9 @@ data class Pack(val grams: Double, val euros: Double)
  */
 data class FreshUse(val ingredientId: Long, val gramsPerServing: Double, val pack: Pack)
 
+/** What a closed pack left of [ingredientId]: [grams] of a pack of [packGrams], worth [euros] of the pack price. */
+data class PackRest(val ingredientId: Long, val grams: Double, val euros: Double, val packGrams: Double)
+
 /**
  * What the planner's pack term counts, per euro of pack price (issue 222): the [reuse] reward for the rest of an
  * opened pack a recipe uses up, and the [waste] penalty for the rest a recipe leaves by opening a new pack, which the
@@ -30,13 +33,18 @@ data class PackWeights(val reuse: Double = 0.75, val waste: Double = 0.2)
  * thrown away, and the next meal that needs the ingredient opens a new pack.
  */
 class OpenPacks {
-    private class Open(val pack: Pack, val openedOn: Int, var restGrams: Double)
+    private class Open(val ingredientId: Long, val pack: Pack, val openedOn: Int, var restGrams: Double)
 
     private val open = mutableMapOf<Long, Open>()
 
     /** Euros of packs left unused when they were closed: the rest this plan buys and does not eat. */
     var restEuros = 0.0
         private set
+
+    private val closed = mutableListOf<PackRest>()
+
+    /** The rest of every pack closed so far, one per opening: the last pack opened for an ingredient is the one with a rest. */
+    val rests: List<PackRest> get() = closed
 
     /**
      * What [servings] of a recipe ([uses] per serving) would take from the rest of the packs open on [day],
@@ -68,7 +76,7 @@ class OpenPacks {
             if (need > 0) {
                 open.remove(use.ingredientId)?.let(::close)
                 val packs = ceil(need / use.pack.grams)
-                open[use.ingredientId] = Open(use.pack, day, packs * use.pack.grams - need)
+                open[use.ingredientId] = Open(use.ingredientId, use.pack, day, packs * use.pack.grams - need)
             }
         }
     }
@@ -87,11 +95,19 @@ class OpenPacks {
     }
 
     private fun close(pack: Open) {
-        restEuros += pack.restGrams / pack.pack.grams * pack.pack.euros
+        val euros = pack.restGrams / pack.pack.grams * pack.pack.euros
+        restEuros += euros
+        if (pack.restGrams > 0) closed += PackRest(pack.ingredientId, pack.restGrams, euros, pack.pack.grams)
     }
 
     companion object {
         const val WINDOW_DAYS = 3
+
+        /** A rest is small, and worth telling the user about, when it is less than this share of the pack it is left of. */
+        const val SMALL_SHARE = 0.5
+
+        /** Rests worth less than this many euros are not told: a pinch of a spice is no leftover. */
+        const val LEAST_EUROS = 0.05
 
         /**
          * The packs the meals of [meals] that [counts] opened. Leftovers open nothing, they are the same pot; so do
@@ -112,5 +128,20 @@ class OpenPacks {
         /** Euros of pack rest a whole plan leaves, replayed from its meals: the measure the planner tries to lower. */
         fun restOf(meals: List<PlannedMeal>, candidates: Map<Long, PlanCandidate>): Double =
             opened(meals, candidates).also { it.finish() }.restEuros
+
+        /**
+         * What the plan leaves of fresh ingredients that is worth using: the rests [restOf] counts, only those under
+         * [SMALL_SHARE] of the pack they are left of, as it was bought (a big rest is a pack mostly unused, which
+         * is the planner's business, not a leftover to eat), and worth at least [LEAST_EUROS]. Each pack opened is
+         * judged by itself: an ingredient whose week opens two packs shows the rests of those under half, added up.
+         * Pieces and litres are already grams of the pack ([Pack.grams]), so the share is one of weight for them too.
+         * Largest rest in euros first.
+         */
+        fun smallRestsOf(meals: List<PlannedMeal>, candidates: Map<Long, PlanCandidate>): List<PackRest> =
+            opened(meals, candidates).also { it.finish() }.rests
+                .filter { it.grams < it.packGrams * SMALL_SHARE && it.euros >= LEAST_EUROS }
+                .groupBy { it.ingredientId }
+                .map { (id, rests) -> PackRest(id, rests.sumOf { it.grams }, rests.sumOf { it.euros }, rests.first().packGrams) }
+                .sortedByDescending { it.euros }
     }
 }

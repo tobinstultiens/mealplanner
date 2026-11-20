@@ -84,4 +84,29 @@ class PackRestMeasurementTest {
         assertTrue(shipped.mean { it.proteinPercent } >= baseline.mean { it.proteinPercent } - 2.0, "protein does not fall by more than two points of the target")
         assertTrue(shipped.mean { it.fibrePercent } >= baseline.mean { it.fibrePercent } - 2.0, "fibre does not fall by more than two points of the target")
     }
+
+    /**
+     * What the line under the week's cost would say over 50 seeds (issue 244): the small rests (under half a pack,
+     * [OpenPacks.smallRestsOf]) of each plan, how many items and euros, and the line itself for a few different weeks.
+     */
+    @Test
+    fun theRestLineOfATypicalWeekIsShortAndNamesFoodThatCanBeUsed() {
+        val real = RealRecipeFixture.load(cooking, nevo) ?: return
+        val byId = real.candidates.associateBy { it.recipeId }
+        val weeks = (0L until 50L).map { seed ->
+            val meals = WeekPlanner.plan(PlanRequest(targets, real.candidates, seed = seed))
+            OpenPacks.smallRestsOf(meals, byId) to OpenPacks.restOf(meals, byId)
+        }
+        val rests = weeks.map { it.first }
+        println(
+            "small rests per week: items mean %.1f (min %d, max %d), euros mean %.2f of %.2f all rest".format(
+                rests.map { it.size }.average(), rests.minOf { it.size }, rests.maxOf { it.size },
+                rests.map { r -> r.sumOf { it.euros } }.average(), weeks.map { it.second }.average(),
+            ),
+        )
+        for (week in rests.distinctBy { r -> r.map { it.ingredientId to it.grams.toInt() } }.take(5)) {
+            println(week.take(3).joinToString(", ") { "%.0f g %s (%.2f)".format(it.grams, real.names[it.ingredientId], it.euros) } + " | total %.2f, ${week.size} items".format(week.sumOf { it.euros }))
+        }
+        assertTrue(rests.all { week -> week.all { it.grams < it.packGrams / 2 } }, "only small rests are told")
+    }
 }

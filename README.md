@@ -437,7 +437,7 @@ more again as it reads any row whose need grew.
 
 The planner also prefers a meal that uses up the rest of a fresh ingredient's pack that an earlier meal of the
 week opened (issue 222): the rest of a pack counts for meals on the day it was opened and three days after, the
-pack being that of the ingredient's regular AH price, and is wary of a recipe that opens a new pack for a small amount. See `docs/data-sources.md`, "Packs".
+pack being that of the ingredient's regular AH price, and is wary of a recipe that opens a new pack for a small amount. The Plan says under the week's cost what small rests (under half a pack) the week leaves ("About €2.40 of fresh ingredients left over: 100 g crème fraîche, ..."; `WeekPlan.rest`, an optional field). See `docs/data-sources.md`, "Packs".
 
 ## Web client
 

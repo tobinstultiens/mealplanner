@@ -9,6 +9,7 @@ import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.WeekRest
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.units.Dimension
 import kotlin.test.Test
@@ -241,4 +242,24 @@ class FormattingTest {
         1, "Stew", "dinner", tags, servings, RecipeSource.MANUAL, RecipeKind.MEAL, plannable,
         nutrition = nutrition, rating = rating, cost = cost,
     )
+
+    @Test
+    fun theWeeksRestIsOneLineUnderItsCostAndNothingWhenThereIsNone() {
+        val rest = listOf(WeekRest("Crème fraîche", 100.0, 1.10), WeekRest("Koriander", 12.0, 0.60), WeekRest("Bieslook", 8.0, 0.40))
+
+        assertNull(restLine(emptyList(), Strings.English))
+        assertEquals("About €2.10 of fresh ingredients left over: 100 g crème fraîche, 12 g koriander, 8 g bieslook", restLine(rest, Strings.English))
+        assertEquals("Ongeveer €2,10 aan verse ingrediënten over: 100 g crème fraîche, 12 g koriander, 8 g bieslook", restLine(rest, Strings.Dutch))
+    }
+
+    @Test
+    fun aLongListNamesThreeAndCountsTheRestButTheEurosAreThoseOfAll() {
+        val rest = rest(5)
+
+        assertEquals("About €1.50 of fresh ingredients left over: 10 g a1, 10 g a2, 10 g a3 and 2 more", restLine(rest, Strings.English))
+        assertEquals("Ongeveer €1,50 aan verse ingrediënten over: 10 g a1, 10 g a2, 10 g a3 en nog 2", restLine(rest, Strings.Dutch))
+        assertEquals("About €1.20 of fresh ingredients left over: 10 g a1, 10 g a2, 10 g a3 and 1 more", restLine(rest(4), Strings.English))
+    }
+
+    private fun rest(count: Int) = (1..count).map { WeekRest("A$it", 10.0, 0.30) }
 }

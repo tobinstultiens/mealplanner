@@ -13,7 +13,9 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.api.WeekRest
 import dev.tobins.mealplanner.planner.Pack
+import dev.tobins.mealplanner.planner.OpenPacks
 import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.planner.PlanRequest
 import dev.tobins.mealplanner.planner.PortionRange
@@ -612,7 +614,23 @@ class PlanRepository(
             emptySlots = MealSlot.entries.filter { slot -> meals.none { it.slot == slot } },
             cost = known.takeIf { it.isNotEmpty() }?.sumOf { (cost, portions) -> cost.perServingWithOffers * portions },
             costWithoutOffers = known.takeIf { it.isNotEmpty() }?.sumOf { (cost, portions) -> cost.perServing * portions },
+            rest = restOf(start, week),
         )
+    }
+
+    /**
+     * The small rests of fresh packs the week's shopping leaves (issue 244), by the bookkeeping the planner uses
+     * ([OpenPacks.smallRestsOf]) over the meals as the shopping list buys them ([forShopping]): a prepped batch
+     * is one purchase of all its portions, sides included, on the day it is made, and a skipped meal buys nothing.
+     */
+    private fun restOf(start: LocalDate, week: List<PlannedMeal>): List<WeekRest> {
+        val packs = freshPacks().takeIf { it.isNotEmpty() } ?: return emptyList()
+        val onHand = stock.onHandFor(start)
+        val bought = forShopping(start, week).filter { it.status != MealStatus.SKIPPED }
+        val candidates = bought.map { it.recipeId }.distinct().mapNotNull { recipes.candidate(it, packs, onHand) }.associateBy { it.recipeId }
+        val rests = OpenPacks.smallRestsOf(bought, candidates).takeIf { it.isNotEmpty() } ?: return emptyList()
+        val names = recipes.ingredients.list().associate { it.id to it.name }
+        return rests.mapNotNull { rest -> names[rest.ingredientId]?.let { WeekRest(it, rest.grams, rest.euros) } }
     }
 
     /**
