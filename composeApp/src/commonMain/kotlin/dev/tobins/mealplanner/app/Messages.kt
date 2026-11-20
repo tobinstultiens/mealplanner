@@ -182,6 +182,15 @@ enum class Msg(private val english: String, private val dutch: String) {
         "You were logged out: your login could not be renewed for a while, as the login server kept answering with an error. Log in again to carry on.",
         "Je bent uitgelogd: je inlog kon al een tijd niet worden verlengd, omdat de inlogserver steeds met een fout antwoordde. Log opnieuw in om verder te gaan.",
     ),
+    // The server lets only its group in (issue 314); the first is all a person refused needs to know.
+    LOGGED_OUT_NOT_ALLOWED(
+        "This account may not use the meal planner yet. Ask the person who runs this server.",
+        "Dit account mag de meal planner nog niet gebruiken. Vraag het aan degene die deze server beheert.",
+    ),
+    LOGGED_OUT_NO_GROUPS(
+        "You were logged out: your login does not say which groups your account is in. Log in again; if this stays, ask the person who runs this server.",
+        "Je bent uitgelogd: je inlog zegt niet in welke groepen je account zit. Log opnieuw in; blijft dit zo, vraag het dan aan degene die deze server beheert.",
+    ),
     LOGGING_IN("Logging in…", "Inloggen…"),
     LOGIN_AT("Logs in at {0}", "Logt in bij {0}"),
     CHANGE_SERVER("Change server", "Andere server"),

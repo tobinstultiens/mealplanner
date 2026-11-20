@@ -61,6 +61,7 @@ import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.api.CookingRepoSetting
+import dev.tobins.mealplanner.api.LoginRefusal
 import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.NotificationFacts
 import io.ktor.client.HttpClient
@@ -84,11 +85,22 @@ import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+
+/**
+ * The access token and [LoginRefusal] reason of a 403 the server answered to the login itself, not to what was asked;
+ * null for any other failure. The reason is in the body, as `{"error": "...", "reason": "not_in_group"}`.
+ */
+private suspend fun loginRefusal(cause: Throwable): Pair<String?, String>? {
+    if (cause !is ClientRequestException || cause.response.status != HttpStatusCode.Forbidden) return null
+    val reason = failedFrom(cause).reason?.takeIf { it == LoginRefusal.NOT_IN_GROUP || it == LoginRefusal.NO_GROUPS } ?: return null
+    return cause.response.call.request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ") to reason
+}
 
 /** Where the server is. */
 data class ServerSettings(val url: String)
@@ -116,20 +128,27 @@ private val lenientJson = Json {
 /**
  * Talks to the meal planner server as the logged-in account. Calls throw on network errors (an
  * IOException on every platform) and non-2xx responses. An expired access token is renewed with
- * [refresh], which is told the access token the server refused, and the call retried.
+ * [refresh], which is told the access token the server refused, and the call retried. A login the
+ * server refuses as such ([LoginRefusal], a 403) is told to [loginRefused], with the access token it
+ * was refused for and the reason; the call fails all the same.
  */
 class ApiClient(
     settings: ServerSettings,
     session: Session? = null,
     engine: HttpClientEngine? = null,
+    loginRefused: suspend (refused: String?, reason: String) -> Unit = { _, _ -> },
     refresh: suspend (refused: String?) -> Session? = { null },
 ) {
     private val setUp: HttpClientConfig<*>.() -> Unit = {
         expectSuccess = true
-        // A request that cannot reach the server fails as an IOException on every platform, the
-        // lost connection the screens catch; the login's renewal fails through here too (connectionFailure).
         HttpResponseValidator {
-            handleResponseExceptionWithRequest { cause, _ -> connectionFailure(cause)?.let { throw it } }
+            handleResponseExceptionWithRequest { cause, _ ->
+                // A request that cannot reach the server fails as an IOException on every platform, the
+                // lost connection the screens catch; the login's renewal fails through here too (connectionFailure).
+                connectionFailure(cause)?.let { throw it }
+                // Told with the token the request was sent with, which a renewal meanwhile may have replaced.
+                loginRefusal(cause)?.let { (token, reason) -> loginRefused(token, reason) }
+            }
         }
         install(ContentNegotiation) { json(lenientJson) }
         install(HttpTimeout)

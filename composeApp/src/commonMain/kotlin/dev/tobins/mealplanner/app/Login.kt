@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.AuthConfig
+import dev.tobins.mealplanner.api.LoginRefusal
 import io.ktor.client.HttpClient
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -131,6 +132,12 @@ enum class LoggedOut {
 
     /** The token endpoint kept answering renewals with an error for long (see [Login.refresh]). */
     NOT_RENEWED,
+
+    /** The server refused the account: it is not (or no longer) in the group that may use it ([LoginRefusal.NOT_IN_GROUP]). */
+    NOT_ALLOWED,
+
+    /** The server refused the login as it does not say which groups the account is in ([LoginRefusal.NO_GROUPS]). */
+    NO_GROUPS,
 }
 
 fun SettingsStorage.loggedOut(): LoggedOut? = get(LOGGED_OUT_KEY)?.let { stored -> LoggedOut.entries.firstOrNull { it.name == stored } }
@@ -444,6 +451,28 @@ class LoginExchange(
         val session = storage.session() ?: return null
         if (refused != null && session.accessToken != refused && login.stillWorks(session)) return session
         login.refresh(serverUrl, session, quietly)
+    }
+
+    /**
+     * The server refused the login behind the access token [refused] for [reason], one of [LoginRefusal]: the account
+     * may not use the server, or the login does not say which groups it is in. That holds for every request and
+     * every renewal until someone changes the account at the provider, so the session ends at once, with the reason
+     * for the login screen to say, and the app opens no login page by itself after it. Only when [refused] is still
+     * the stored session's token: an answer for a session already ended or replaced (another login, perhaps of
+     * someone else) ends nothing. Any other reason is not about the login, and ends nothing either. Answers whether
+     * the session ended.
+     */
+    fun loginRefused(refused: String?, reason: String): Boolean {
+        val loggedOut = when (reason) {
+            LoginRefusal.NOT_IN_GROUP -> LoggedOut.NOT_ALLOWED
+            LoginRefusal.NO_GROUPS -> LoggedOut.NO_GROUPS
+            else -> return false
+        }
+        if (refused == null || storage.session()?.accessToken != refused) return false
+        // Whoever logs in next may be someone else: what was the account's goes, as on logging out.
+        storage.logOut()
+        storage.saveLoggedOut(loggedOut)
+        return true
     }
 
     /**

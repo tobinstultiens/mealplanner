@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server
 
 import com.auth0.jwt.JWT
+import com.auth0.jwt.JWTCreator
 import com.auth0.jwt.algorithms.Algorithm
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
@@ -52,6 +53,7 @@ class OidcVerifierTest {
         iss: String = issuer,
         clientId: String = "mealplanner",
         expires: Instant = Instant.now().plusSeconds(300),
+        claims: JWTCreator.Builder.() -> Unit = {},
     ): String = JWT.create()
         .withKeyId("main")
         .withIssuer(iss)
@@ -59,6 +61,7 @@ class OidcVerifierTest {
         .withAudience(clientId)
         .withClaim("client_id", clientId)
         .withExpiresAt(expires)
+        .apply(claims)
         .sign(Algorithm.RSA256(signer.public as RSAPublicKey, signer.private as RSAPrivateKey))
 
     @Test
@@ -82,5 +85,20 @@ class OidcVerifierTest {
         assertEquals("$issuer/api/oidc/authorization", config.authorizationEndpoint)
         assertEquals("$issuer/api/oidc/token", config.tokenEndpoint)
         assertEquals("mealplanner", config.clientId)
+    }
+
+    @Test
+    fun theGroupsComeFromTheSignedToken() = runBlocking {
+        val verifier = OidcVerifier(issuer, "mealplanner")
+        // As Authelia writes it with the groups scope and a claims policy that puts it in the access token.
+        assertEquals(listOf("family", "mealplanner"), verifier.verify(token { withArrayClaim("groups", arrayOf("family", "mealplanner")) })?.groups)
+        assertEquals(emptyList(), verifier.verify(token { withArrayClaim("groups", arrayOf<String>()) })?.groups)
+        assertEquals(emptyList(), verifier.verify(token { withNullClaim("groups") })?.groups, "an empty list written as null is no groups")
+        assertEquals(listOf("mealplanner"), verifier.verify(token { withClaim("groups", "mealplanner") })?.groups, "a single group as a string")
+        // A token from before the scope was asked for, or without the claims policy: nothing to tell.
+        assertNull(verifier.verify(token())?.groups)
+        assertEquals("user-1", verifier.verify(token())?.subject)
+        // The claim is read only from a token whose signature holds.
+        assertNull(verifier.verify(token(signer = other) { withArrayClaim("groups", arrayOf("mealplanner")) }))
     }
 }

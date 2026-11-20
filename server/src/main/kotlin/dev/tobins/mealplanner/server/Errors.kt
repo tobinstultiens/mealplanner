@@ -36,6 +36,10 @@ fun StatusPagesConfig.errorMapping() {
     exception<GenerationException> { call, cause ->
         call.respond(HttpStatusCode.BadGateway, mapOf("error" to (cause.message ?: "generation failed")))
     }
+    // Thrown while the login is checked, before any route runs (see requireMember).
+    exception<LoginRefusedException> { call, cause ->
+        call.respond(HttpStatusCode.Forbidden, mapOf("error" to (cause.message ?: "forbidden"), "reason" to cause.reason))
+    }
     exception<ConflictException> { call, cause ->
         call.respond(HttpStatusCode.Conflict, mapOf("error" to (cause.message ?: "conflict")))
     }

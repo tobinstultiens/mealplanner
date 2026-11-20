@@ -77,6 +77,10 @@ class LoginFlowTest {
     private val gate = CompletableDeferred<Unit>()
     @Volatile private var refreshStatus = HttpStatusCode.BadRequest
 
+    /** The access token a login gets; with [renewedTo] set, a renewal works and gets that one. */
+    @Volatile private var loginToken = "anna-token"
+    @Volatile private var renewedTo: String? = null
+
     /** What the login takes for now, to count how long renewing has failed. */
     @Volatile private var now = Instant.parse("${FakeBackend.TODAY}T10:30:00Z")
     private val loginClock = object : Clock {
@@ -93,11 +97,14 @@ class LoginFlowTest {
                 "/api/oidc/token" -> {
                     val grant = (request.body as FormDataContent).formData["grant_type"]!!
                     tokenRequests += grant
-                    if (grant == "refresh_token") {
+                    val renewed = renewedTo
+                    if (grant == "refresh_token" && renewed != null) {
+                        respond("""{"access_token":"$renewed","refresh_token":"anna-refresh-2","expires_in":3600}""", headers = json)
+                    } else if (grant == "refresh_token") {
                         respond("""{"error":"invalid_grant"}""", refreshStatus, json)
                     } else {
                         gate.await()
-                        respond("""{"access_token":"anna-token","refresh_token":"anna-refresh","expires_in":3600}""", headers = json)
+                        respond("""{"access_token":"$loginToken","refresh_token":"anna-refresh","expires_in":3600}""", headers = json)
                     }
                 }
                 else -> respond("", HttpStatusCode.NotFound)
@@ -212,6 +219,40 @@ class LoginFlowTest {
         assertTrue(opened.isEmpty(), "the reason is shown, not covered by the login page")
         assertEquals(null, storage.session())
         assertTrue("refresh_token" in tokenRequests)
+    }
+
+    @Test
+    fun aLoginOutsideTheServersGroupEndsOnTheLoginScreenWithTheSentence() {
+        loginToken = FakeBackend.NOT_IN_GROUP_TOKEN
+        startApp()
+        waitUntil { opened.size == 1 }
+        val state = Url(opened.single()).parameters["state"]!!
+        gate.complete(Unit)
+        logins.deliver("${backend.settings.url}/app/login?code=the-code&state=$state")
+
+        // The provider let the login through; the server's first answer ends it.
+        waitFor("This account may not use the meal planner yet. Ask the person who runs this server.")
+        compose.onNodeWithText("Log in").assertIsDisplayed()
+        compose.waitForIdle()
+        assertEquals(null, storage.session())
+        assertEquals(LoggedOut.NOT_ALLOWED, storage.loggedOut())
+        assertEquals(1, opened.size, "no login page opened over the sentence")
+    }
+
+    @Test
+    fun aSessionWhoseGroupWasTakenAwayEndsAtItsNextRenewalWithTheSentence() {
+        // The access token ran out; the provider renews it, but the account is no longer in the group.
+        storage.saveSession(Session(FakeBackend.REFUSED_TOKEN, "anna-refresh", expiresAt = 0))
+        renewedTo = FakeBackend.NOT_IN_GROUP_TOKEN
+        startApp()
+
+        waitFor("This account may not use the meal planner yet. Ask the person who runs this server.")
+        compose.onNodeWithText("Log in").assertIsDisplayed()
+        compose.waitForIdle()
+        assertEquals(listOf("refresh_token"), tokenRequests.toList())
+        assertEquals(null, storage.session())
+        assertEquals(LoggedOut.NOT_ALLOWED, storage.loggedOut())
+        assertTrue(opened.isEmpty(), "the reason is shown, not covered by the login page")
     }
 
     @Test

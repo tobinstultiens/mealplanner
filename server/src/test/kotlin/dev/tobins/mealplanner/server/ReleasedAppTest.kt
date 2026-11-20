@@ -135,13 +135,17 @@ class ReleasedAppTest {
      */
     private var today: java.time.LocalDate = java.time.LocalDate.parse(week)
 
-    /** A server with a NEVO fixture, five recipes of the cooking site, offers and a plan's worth of everything else. */
-    private fun ApplicationTestBuilder.start(): HttpClient {
+    /**
+     * A server with a NEVO fixture, five recipes of the cooking site, offers and a plan's worth of everything else, and
+     * the installed app logged in with [token]; [group] is `MEALPLANNER_OIDC_GROUP`, unset as by default.
+     */
+    private fun ApplicationTestBuilder.start(group: String? = null, token: String = "t"): HttpClient {
         val repo = createTempDirectory("cooking").toFile()
         for (i in 0..4) File(repo, "content/recipes/meal-$i.md").apply { parentFile.mkdirs() }.writeText(meal("Meal $i", if (i == 0) "1 | g | dragon fruit\n" else ""))
         val config = ServerConfig(
             port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = repo,
             nevoFile = createTempFile("nevo", ".csv").toFile().apply { writeText(nevo) },
+            oidcGroup = group,
         )
         val jumbo = FixedOffers(
             Store.JUMBO,
@@ -155,7 +159,7 @@ class ReleasedAppTest {
         return createClient {
             install(ContentNegotiation) { json(releasedJson) }
             defaultRequest {
-                bearerAuth("t")
+                bearerAuth(token)
                 contentType(ContentType.Application.Json)
             }
         }
@@ -174,7 +178,8 @@ class ReleasedAppTest {
         val account = http.read<Me>("/api/me")
         assertEquals("t", account.username)
         http.read<Health>("/health")
-        http.read<AuthConfig>("/api/auth/config")
+        // Without the group setting the scopes are those of before: the provider's client may not allow the groups one.
+        assertEquals(LOGIN_SCOPES, http.read<AuthConfig>("/api/auth/config").scopes)
 
         // Setting up an account: the cooking site, offers, a profile, shops, a routine.
         assertTrue(http.post("/api/sync/cooking").read<SyncResult>().added > 0)
@@ -579,6 +584,29 @@ class ReleasedAppTest {
      * read a response with a value it does not know, whatever else the response holds. The check
      * covers every enum under `released/` by itself, so a new frozen enum is covered after a freeze.
      */
+    /**
+     * With `MEALPLANNER_OIDC_GROUP` on (issue 314). The installed app asks the provider for exactly the scopes the
+     * server names (v0.1.9's `Login.start` joins `AuthConfig.scopes`), so a login it starts from then on asks for the
+     * groups as well; a member then uses it as before. A login refused reads as `{"error": ...}`, the sentence the
+     * installed app shows for any request that fails.
+     */
+    @Test
+    fun theInstalledAppIsToldTheGroupsScopeAndAMemberReadsAsBefore() = testApplication {
+        val http = start(group = "mealplanner", token = "t~mealplanner")
+        assertEquals(LOGIN_SCOPES + "groups", http.read<AuthConfig>("/api/auth/config").scopes)
+        assertEquals("t", http.read<Me>("/api/me").username)
+        assertTrue(http.post("/api/sync/cooking").read<SyncResult>().added > 0)
+        http.read<CookingSyncStatus>("/api/sync/cooking")
+
+        val others = createClient {}
+        for (token in listOf("t~family", "t")) {
+            val refused = others.get("/api/me") { bearerAuth(token) }
+            assertEquals(HttpStatusCode.Forbidden, refused.status, token)
+            val error = releasedJson.decodeFromString<Map<String, String>>(refused.bodyAsText())["error"]
+            assertTrue(error != null && error.endsWith("ask the person who runs this server.", ignoreCase = true), "$token: $error")
+        }
+    }
+
     @Test
     fun noEnumHasAValueTheInstalledAppLacks() {
         val frozen = frozenEnums()

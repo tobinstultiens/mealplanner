@@ -40,11 +40,18 @@ For the app on an emulator, `adb reverse tcp:8080 tcp:8080` and `adb reverse tcp
 make both reachable as `localhost`, so the app and the server agree on the issuer; set the server
 address to `http://localhost:8080` in the app's settings.
 
+To play a member and a non-member of the server's group, start the stand-in with users and their groups
+(`--user anna=mealplanner --user eve=family`, or `--users users.json` with `{"anna": ["mealplanner"]}`,
+read again for every token so a change shows at the next renewal) and the server with
+`MEALPLANNER_OIDC_GROUP=mealplanner`. Without users anyone can log in, in the group `mealplanner`
+(`--default-groups`). `python3 scripts/test_dev_oidc_provider.py` is the stand-in's own test.
+
 ## Accounts and login
 
 Users log in with an OpenID Connect provider (Authelia in the homelab); every account it knows may
-use the app and gets its own recipes, ingredient catalogue, pantry, profile, plans, shopping lists,
-log and weights. Store offers, regular prices, their history and the NEVO data are shared.
+use the app, or with `MEALPLANNER_OIDC_GROUP` only the members of that group (see below), and each gets
+its own recipes, ingredient catalogue, pantry, profile, plans, shopping lists, log and weights. Store
+offers, regular prices, their history and the NEVO data are shared.
 
 - Clients use the authorization code flow with PKCE as the public client `mealplanner`; the server
   tells them where to log in (`GET /api/auth/config`). The web client returns to `/`, the Android app
@@ -100,6 +107,23 @@ log and weights. Store offers, regular prices, their history and the NEVO data a
 - The server accepts JWT access tokens (RS256) from that issuer issued to that client, checked against
   the provider's keys. The token's subject is the account; new accounts start with the default
   ingredient catalogue. `GET /api/me` names the caller.
+- With `MEALPLANNER_OIDC_GROUP` set (issue 314), a token must list that group in its `groups` claim, an array of
+  strings: Authelia's `groups` scope, put in the access token by the client's claims policy (`docs/deploy.md`,
+  "Who may use it"). Any other token is refused on every route that needs a login with 403 and
+  `{"error": "<a sentence>", "reason": "not_in_group"}`, or `"no_groups"` for a token without the claim at all (a
+  login from before the setting, or a provider that does not put the claim in its access tokens). The refusal comes
+  before the account is looked up, so a refused login gets no account; one that had an account keeps its data, and
+  finds it again once it is in the group. `GET /api/auth/config` names the `groups` scope only while the setting is
+  on (a provider refuses a login asking for a scope its client may not have), and the apps ask for exactly the
+  scopes it names, installed ones up to v0.1.9 included. Authelia reads the account's groups again for every token
+  it issues, a renewal too, so taking someone out of the group stops them at their next renewal (an access token
+  lives an hour by default).
+- On that 403 the app ends the session at once, as when the provider refuses a renewal, and the login screen says
+  "This account may not use the meal planner yet. Ask the person who runs this server." (`not_in_group`), or asks
+  to log in again (`no_groups`); it opens no login page by itself after it. Only when the refused token is still
+  the stored one, so an answer for an old session ends none that replaced it, and not in the Android app's background
+  check, which leaves it to the next request in front. Installed apps up to v0.1.9 do not end the session: they show
+  the server's sentence where a screen fails to load, until the user logs out and in again.
 - Data from before accounts existed belongs to account 1, which `MEALPLANNER_OWNER` (a username)
   claims on first login, or else the first account to log in.
 - The server's cooking site (`COOKING_REPO_URL`, or the checkout at `COOKING_REPO_PATH`) is the bank of every
@@ -992,6 +1016,7 @@ installed side by side: they share the application id but not the signing key.
 |---|---|---|
 | `MEALPLANNER_OIDC_ISSUER` | unset | OpenID Connect issuer whose access tokens are accepted, e.g. `https://authelia.example.nl`; without it nobody can log in |
 | `MEALPLANNER_OIDC_CLIENT_ID` | `mealplanner` | The app's client id at the issuer |
+| `MEALPLANNER_OIDC_GROUP` | unset | Only accounts whose access token lists this group (`groups` claim) may use the server; unset: every account of the issuer. Switch it on only as `docs/deploy.md`, "Who may use it", says, or people are locked out |
 | `MEALPLANNER_OWNER` | unset | Username that claims the data from before accounts; unset: the first login |
 | `MEALPLANNER_ANDROID_CERTS` | unset | SHA-256 fingerprints of the app's signing certificates, for `assetlinks.json` |
 | `MEALPLANNER_DATA_DIR` | the database's directory | Where per-account cooking repo clones go (and the server's, without `COOKING_REPO_PATH`) |
