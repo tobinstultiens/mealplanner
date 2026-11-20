@@ -390,11 +390,6 @@ class WriteLockTest {
             }
             holder.get(30, SECONDS)
             assertEquals(HttpStatusCode.OK, http.put("/api/profile") { setBody(profile) }.status)
-||||||| parent of 983b367 (Small notes of the QA pass: the shopping count says what it counts, no greyed menu item, no setting named, the number pad closes (#271))
-            assertTrue(held.await(30, SECONDS))
-            val busy = http.put("/api/profile") { setBody(profile) }
-            assertEquals(HttpStatusCode.ServiceUnavailable, busy.status)
-            assertTrue("try again" in busy.bodyAsText(), busy.bodyAsText())
         } finally {
             opened.close()
         }
