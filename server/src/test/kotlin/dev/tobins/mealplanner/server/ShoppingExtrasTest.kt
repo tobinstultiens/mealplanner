@@ -32,6 +32,7 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -258,14 +259,33 @@ class ShoppingExtrasTest {
         assertEquals(HttpStatusCode.Conflict, http.add("One too many").status)
     }
 
+    /**
+     * Adds at once never go past the limit: on a file in WAL mode with a connection per thread, as the server runs,
+     * and on the in-memory database of most tests, whose one connection every thread shares (issue 248).
+     */
     @Test
     fun addsAtTheSameTimeNeverGoPastTheLimit() {
-        // A file in WAL mode with a connection per thread, as the server runs; not an in-memory database.
-        val (driver, db) = openDatabase("jdbc:sqlite:${createTempFile("extras", ".db").toFile().apply { delete() }.path}")
+        val dir = createTempDirectory("extras").toFile()
+        try {
+            for (url in listOf("jdbc:sqlite::memory:", "jdbc:sqlite:${File(dir, "extras.db").path}")) {
+                val (driver, db) = openDatabase(url)
+                try {
+                    assertEquals(mapOf("added" to 2, "full" to 6), addAtOnce(db, File(dir, "pictures")), url)
+                } finally {
+                    driver.close()
+                }
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /** Fills the list up to two below the limit, then adds eight at once; what became of each, counted. */
+    private fun addAtOnce(db: Database, pictures: File): Map<String, Int> {
         val foods = FoodRepository(db)
         val offers = OfferRepository(db, emptyList())
         val userId = UserRepository(db).resolve(Identity("sub-t", "t")).id
-        val shopping = UserScope(userId, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile()).shopping
+        val shopping = UserScope(userId, db, foods, offers, PriceRepository(db, null, foods, offers), null, pictures).shopping
         repeat(ShoppingExtraInput.MAX_OPEN - 2) { shopping.addExtra(week, ShoppingExtraInput("Item $it")) }
 
         val start = CountDownLatch(1)
@@ -284,9 +304,7 @@ class ShoppingExtrasTest {
         start.countDown()
         val counted = outcomes.map { it.get(30, TimeUnit.SECONDS) }.groupingBy { it }.eachCount()
         pool.shutdown()
-
-        assertEquals(mapOf("added" to 2, "full" to 6), counted)
         assertEquals(ShoppingExtraInput.MAX_OPEN.toLong(), db.shoppingQueries.countOpenExtras(userId).executeAsOne())
-        driver.close()
+        return counted
     }
 }

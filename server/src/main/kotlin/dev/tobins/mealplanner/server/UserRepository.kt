@@ -63,8 +63,13 @@ class UserRepository(private val db: Database) {
 
     fun meta(userId: Long, key: String): String? = q.selectUserMeta(userId, key).executeAsOneOrNull()
 
-    fun setMeta(userId: Long, key: String, value: String?) {
-        if (value == null) q.deleteUserMeta(userId, key) else q.upsertUserMeta(userId, key, value)
+    fun setMeta(userId: Long, key: String, value: String?) = setMeta(userId, mapOf(key to value))
+
+    /** Sets each of [values]' keys to its value, null removing it, in one transaction: what one change of the account says. */
+    fun setMeta(userId: Long, values: Map<String, String?>): Unit = db.writing {
+        for ((key, value) in values) {
+            if (value == null) q.deleteUserMeta(userId, key) else q.upsertUserMeta(userId, key, value)
+        }
     }
 
     /** Every account with a value for [key], with that value. */

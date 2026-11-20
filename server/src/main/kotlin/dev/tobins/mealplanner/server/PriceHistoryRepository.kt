@@ -64,10 +64,10 @@ class PriceHistoryRepository(private val db: Database) {
      * adds later. The category, address and price per litre are not part of what a period is (see
      * [OfferIdentity]): a continued period gets them only where it has none yet, and keeps the ones it has.
      */
-    fun recordOffers(store: Store, offers: List<Offer>, ingredientOf: (Offer) -> String?, now: Instant) {
+    fun recordOffers(store: Store, offers: List<Offer>, ingredientOf: (Offer) -> String?, now: Instant): Unit = db.writing {
         val seen = seen(now)
         val last = q.lastOfferRecording(store.name).executeAsOne().lastSeen
-        if (last != null && last >= seen) return
+        if (last != null && last >= seen) return@writing
         offers.filterNot(OfferSighting::readable).takeIf { it.isNotEmpty() }?.let { unreadable ->
             val example = unreadable.first()
             log.warn(
@@ -76,7 +76,7 @@ class PriceHistoryRepository(private val db: Database) {
             )
         }
         val saw = OfferSighting.of(offers, serverDay(now))
-        if (saw.isEmpty()) return
+        if (saw.isEmpty()) return@writing
         val open = last?.let { q.selectOpenOffers(store.name, it).executeAsList() }.orEmpty().associateBy { it.id }
         val (continued, started) = changes(open.values.map { it.id to it.identity() }, saw) { it.identity }
         for ((id, sighting) in continued) {
@@ -145,7 +145,7 @@ class PriceHistoryRepository(private val db: Database) {
      * when the previous lookup found this name's price (`ingredientPrice.fetchedAt`), null when it found none:
      * a period continues only from that lookup, so a name the lookup could not find for a while starts again.
      */
-    fun recordRegularPrice(price: RegularPriceSighting, lastFound: Instant?, now: Instant) {
+    fun recordRegularPrice(price: RegularPriceSighting, lastFound: Instant?, now: Instant): Unit = db.writing {
         val open = lastFound?.let { q.selectOpenRegularPrice(price.name, price.store.name, seen(it)).executeAsOneOrNull() }
         val (continued, started) = changes(listOfNotNull(open).map { it.id to it.identity() }, listOf(price)) { it.identity }
         val seen = seen(now)
@@ -173,13 +173,13 @@ class PriceHistoryRepository(private val db: Database) {
         if (names.isEmpty()) emptyList() else q.selectRegularPrices(names.distinct(), seen(from)).executeAsList()
 
     /** Removes the offers, and the recordings, last seen more than [KEEP_YEARS] years before [now]. */
-    fun pruneOffers(now: Instant) {
+    fun pruneOffers(now: Instant): Unit = db.writing {
         q.pruneOffers(cutoff(now))
         q.pruneOfferRecordings(cutoff(now))
     }
 
     /** Removes the regular prices last seen more than [KEEP_YEARS] years before [now]. */
-    fun pruneRegularPrices(now: Instant) = q.pruneRegularPrices(cutoff(now))
+    fun pruneRegularPrices(now: Instant): Unit = db.writing { q.pruneRegularPrices(cutoff(now)) }
 
     private fun cutoff(now: Instant) = seen(now.atZone(ZoneOffset.UTC).minusYears(KEEP_YEARS).toInstant())
 

@@ -19,7 +19,7 @@ class ShoppingAdviceRepository(private val db: Database, private val userId: Lon
         db.userQueries.selectUserMeta(userId, KEY).executeAsOneOrNull()?.let { json.decodeFromString<ShoppingAdvice>(it) } ?: ShoppingAdvice()
 
     fun save(advice: ShoppingAdvice): ShoppingAdvice {
-        db.userQueries.upsertUserMeta(userId, KEY, json.encodeToString(advice))
+        db.writing { db.userQueries.upsertUserMeta(userId, KEY, json.encodeToString(advice)) }
         return setting()
     }
 

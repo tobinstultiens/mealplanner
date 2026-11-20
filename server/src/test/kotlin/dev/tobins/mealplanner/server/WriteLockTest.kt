@@ -4,6 +4,10 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.Ingredient
@@ -18,6 +22,7 @@ import dev.tobins.mealplanner.api.RotationInput
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingCheck
+import dev.tobins.mealplanner.api.ShoppingExtraInput
 import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.client.HttpClient
@@ -40,6 +45,7 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import java.io.File
+import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
@@ -56,18 +62,20 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import org.slf4j.LoggerFactory
 
 /**
  * Every change that reads before it writes takes the write lock first ([writing]), so that another
- * connection's write in between (the offer refresh, the price lookup, a second server process) makes it
- * wait instead of failing with "database is locked" (issue 169).
+ * connection's write in between (a second server process; before issue 248 also the offer refresh and the
+ * price lookup) makes it wait instead of failing with "database is locked" (issue 169).
  *
  * The server runs on a database whose driver lets another connection write and commit right after the
  * first read inside a transaction, which is where a deferred transaction would lose: its first write then
  * fails with SQLITE_BUSY_SNAPSHOT. Taken first, the lock holds that write off until the change is done.
  *
  * Writers of one process take turns as well (issue 246), on a file as on the in-memory database of most tests,
- * whose one connection every thread shares: none begins its transaction inside another's.
+ * whose one connection every thread shares: none begins its transaction inside another's. Every write of the
+ * server does, and one that waits too long for its turn gives up with a clear error (issue 248).
  */
 class WriteLockTest {
     private val dir = createTempDirectory("write-lock").toFile()
@@ -76,6 +84,8 @@ class WriteLockTest {
 
     @AfterTest
     fun cleanUp() {
+        if (::driver.isInitialized) driver.close()
+        if (otherDatabase.isInitialized()) otherDatabase.value.first.close()
         dir.deleteRecursively()
     }
 
@@ -111,6 +121,11 @@ class WriteLockTest {
         }
     }
 
+    private val nevo = listOf(
+        "\"NEVO-versie/NEVO-version\"|\"Voedingsmiddelgroep\"|\"Food group\"|\"NEVO-code\"|\"Voedingsmiddelnaam/Dutch food name\"|\"Engelse naam/Food name\"|\"Synoniem\"|\"Hoeveelheid/Quantity\"|\"ENERCC (kcal)\"|\"PROT (g)\"|\"FAT (g)\"|\"FASAT (g)\"|\"CHO (g)\"|\"SUGAR (g)\"|\"FIBT (g)\"|\"NA (mg)\"",
+        "NEVO-Online 2025 9.0|Vlees|Meat and poultry|10|Rundvlees rauw|Beef raw||per 100g|150|20|4|2|0|0|0|50",
+    ).joinToString("\r\n")
+
     /** The account's names as the identity provider gives them; changing them makes the next login write. */
     private var displayName = "T"
 
@@ -121,8 +136,9 @@ class WriteLockTest {
 
     private lateinit var driver: MeddlingDriver
 
-    /** Another connection, as the offer refresh and the price lookup have; [lastWrite] reads what it wrote last. */
-    private val other by lazy { openDatabase(url).second.also { it.planQueries.ensureSource("AH") } }
+    /** Another connection, as a second server process has; [lastWrite] reads what it wrote last. */
+    private val otherDatabase = lazy { openDatabase(url).also { it.second.planQueries.ensureSource("AH") } }
+    private val other by lazy { otherDatabase.value.second }
 
     private fun lastWrite() = other.planQueries.selectSources().executeAsList().single().error
 
@@ -130,10 +146,6 @@ class WriteLockTest {
         val repo = File(dir, "cooking")
         fun write(path: String, text: String) = File(repo, "content/$path").apply { parentFile.mkdirs() }.writeText(text)
         for (i in 0..4) write("recipes/dinner$i.md", "---\ntitle: Dinner $i\n---\n```ingredients\nservings: 4\n${1200 + i * 80} | g | beef\n```")
-        val nevo = listOf(
-            "\"NEVO-versie/NEVO-version\"|\"Voedingsmiddelgroep\"|\"Food group\"|\"NEVO-code\"|\"Voedingsmiddelnaam/Dutch food name\"|\"Engelse naam/Food name\"|\"Synoniem\"|\"Hoeveelheid/Quantity\"|\"ENERCC (kcal)\"|\"PROT (g)\"|\"FAT (g)\"|\"FASAT (g)\"|\"CHO (g)\"|\"SUGAR (g)\"|\"FIBT (g)\"|\"NA (mg)\"",
-            "NEVO-Online 2025 9.0|Vlees|Meat and poultry|10|Rundvlees rauw|Beef raw||per 100g|150|20|4|2|0|0|0|50",
-        ).joinToString("\r\n")
         val config = ServerConfig(
             port = 0, databaseUrl = url, cookingRepo = repo, dataDir = File(dir, "data"),
             nevoFile = createTempFile(dir.toPath(), "nevo", ".csv").toFile().apply { writeText(nevo) },
@@ -230,18 +242,27 @@ class WriteLockTest {
         }
     }
 
-    /** A database at [url] and an account in it, for [check]; on the in-memory database of most tests and on a file, as the server's. */
-    private fun onEither(check: (Database, UserRepository, Long) -> Unit) {
+    /**
+     * A database and an account in it, for [check]; on the in-memory database of most tests and on a file, as the
+     * server's, where writers wait up to [writeWait] for their turn. Closed after.
+     */
+    private fun onEither(writeWait: Duration = WRITE_WAIT, check: (Database, UserRepository, Long) -> Unit) {
         for (at in listOf("jdbc:sqlite::memory:", url)) {
-            val db = openDatabase(at).second
-            val users = UserRepository(db)
-            check(db, users, users.resolve(Identity("sub-turns", "turns")).id)
+            val (driver, db) = openDatabase(at, writeWait)
+            try {
+                val users = UserRepository(db)
+                check(db, users, users.resolve(Identity("sub-turns", "turns")).id)
+            } catch (e: Throwable) {
+                throw AssertionError("On $at: ${e.message}", e)
+            } finally {
+                driver.close()
+            }
         }
     }
 
-    /** Runs [body] on a thread of its own, whatever the machine's cores; [CompletableFuture.get] passes its failure on. */
-    private fun elsewhere(body: () -> Unit): CompletableFuture<Unit> = CompletableFuture<Unit>().also { done ->
-        thread {
+    /** Runs [body] on a thread of its own, [name]d, whatever the machine's cores; [CompletableFuture.get] passes its failure on. */
+    private fun elsewhere(name: String = "elsewhere", body: () -> Unit): CompletableFuture<Unit> = CompletableFuture<Unit>().also { done ->
+        thread(name = name) {
             try {
                 done.complete(body())
             } catch (e: Throwable) {
@@ -305,5 +326,132 @@ class WriteLockTest {
         assertEquals(listOf("1", "1"), listOf(users.meta(account, "outer"), users.meta(account, "inner")))
         elsewhere { db.writing { users.setMeta(account, "outer", "3") } }.get(30, SECONDS)
         assertEquals("3", users.meta(account, "outer"))
+    }
+
+    /**
+     * A writer gives up when another holds the turn for the database's whole wait, saying which thread holds it and,
+     * in the error's log, where that one is (issue 248): a writer that hangs no longer holds up every other one for good.
+     * The one holding it is not disturbed, and once it is done the next writer goes as usual.
+     */
+    @Test
+    fun aWriterThatWaitsTooLongGivesUpAndSaysWhoHoldsTheTurn() = onEither(writeWait = Duration.ofMillis(300)) { db, users, account ->
+        val inside = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val first = elsewhere("slow-writer") { db.writing { users.setMeta(account, "turn", "first"); inside.countDown(); release.await(30, SECONDS) } }
+        try {
+            assertTrue(inside.await(30, SECONDS))
+            val started = System.nanoTime()
+            val busy = assertFailsWith<DatabaseBusyException> { db.writing { users.setMeta(account, "turn", "second") } }
+            val waited = (System.nanoTime() - started) / 1_000_000
+            assertTrue(waited >= 300, "gave up after $waited ms, before the wait was over")
+            assertTrue("thread slow-writer" in busy.message!!, busy.message)
+            val where = busy.suppressed.single().stackTrace
+            assertTrue(where.any { it.className == CountDownLatch::class.java.name }, "the holder's stack, waiting on its latch: ${where.toList()}")
+        } finally {
+            release.countDown()
+        }
+        first.get(30, SECONDS)
+        assertEquals("first", users.meta(account, "turn"), "the writer that held the turn kept its change")
+        db.writing { users.setMeta(account, "turn", "third") }
+        assertEquals("third", users.meta(account, "turn"))
+    }
+
+    /**
+     * A request that waits too long for its turn is answered 503 with a message for the app, rather than hanging for
+     * as long as the writer before it does; the same request goes through once the turn is free.
+     */
+    @Test
+    fun aRequestThatWaitsTooLongToWriteIsAnsweredBusy() = testApplication {
+        val (opened, db) = openDatabase(url, writeWait = Duration.ofMillis(300))
+        val config = ServerConfig(port = 0, databaseUrl = url, cookingRepo = null, dataDir = File(dir, "data"))
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = names) }
+        val http = createClient {
+            install(ContentNegotiation) { json() }
+            defaultRequest {
+                bearerAuth("t")
+                contentType(ContentType.Application.Json)
+            }
+        }
+        val profile = Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT)
+        // Logged in first: a new account is written too.
+        assertEquals(HttpStatusCode.OK, http.get("/api/ping").status)
+        val held = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val holder = elsewhere { db.writing { held.countDown(); release.await(30, SECONDS) } }
+        try {
+            assertTrue(held.await(30, SECONDS))
+            val busy = http.put("/api/profile") { setBody(profile) }
+            assertEquals(HttpStatusCode.ServiceUnavailable, busy.status)
+            assertTrue("try again" in busy.bodyAsText(), busy.bodyAsText())
+        } finally {
+            release.countDown()
+        }
+        holder.get(30, SECONDS)
+        assertEquals(HttpStatusCode.OK, http.put("/api/profile") { setBody(profile) }.status)
+        opened.close()
+    }
+
+    /** The warnings of the writer turn's log while [block] runs. */
+    private fun turnWarnings(block: () -> Unit): List<String> {
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        val log = LoggerFactory.getLogger("dev.tobins.mealplanner.server.WriterTurn") as Logger
+        log.addAppender(appender)
+        try {
+            block()
+        } finally {
+            log.detachAppender(appender)
+        }
+        return appender.list.filter { it.level == Level.WARN }.map { it.formattedMessage }
+    }
+
+    /**
+     * A writer that holds the turn for more than a third of the wait is logged as it lets go, with where it wrote: three
+     * such in a row would make the next writer give up. A quick one, and one inside another, are not.
+     */
+    @Test
+    fun aWriterThatHoldsTheTurnLongIsLoggedWithWhereItWrote() = onEither(writeWait = Duration.ofMillis(900)) { db, users, account ->
+        val warnings = turnWarnings {
+            db.writing { users.setMeta(account, "quick", "1") }
+            db.writing { users.setMeta(account, "slow", "1"); Thread.sleep(400) }
+        }
+        val warning = warnings.single()
+        assertTrue("WriteLockTest.kt" in warning && "give up after 900 ms" in warning, warning)
+    }
+
+    /**
+     * What wrote outside [writing] before issue 248, from several accounts at once with the NEVO import running: making
+     * a recipe (an insert, then `last_insert_rowid()`), an own item of the list counted against its limit, ticking it,
+     * an account's settings. On the in-memory database such writes began a transaction inside another's ("cannot
+     * start a transaction within a transaction"), or took another's new row for their own. Each account ends with
+     * exactly what it wrote, on either database.
+     */
+    @Test
+    fun writersOfSeveralAccountsAtOnceEachKeepTheirOwn() = onEither { db, users, _ ->
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val prices = PriceRepository(db, null, foods, offers)
+        val pictures = File(dir, "pictures")
+        val nevoFile = File(dir, "nevo.csv").apply { writeText(nevo) }
+        fun scope(account: Long) = UserScope(account, db, foods, offers, prices, null, pictures)
+        val accounts = (1..6).map { users.resolve(Identity("sub-$it", "user$it")).id }
+        val writers = accounts.map { account ->
+            elsewhere("account-$account") {
+                val user = scope(account)
+                repeat(8) { n ->
+                    val recipe = user.recipes.create(RecipeInput("Dish $account-$n", 2, "${100 + n} | g | beef"))
+                    assertEquals("Dish $account-$n" to 100.0 + n, recipe.summary.title to recipe.ingredients.single().line.amount)
+                    val item = user.shopping.addExtra(week, ShoppingExtraInput("Item $n")).items.single { it.key.startsWith("x:") && it.name == "Item $n" }
+                    user.shopping.setChecked(week, ShoppingCheck(item.key, true))
+                    users.setMeta(account, "last", "$n")
+                }
+            }
+        } + elsewhere("nevo-import") { repeat(4) { assertEquals(1, foods.importNevo(nevoFile)) } }
+        writers.forEach { it.get(60, SECONDS) }
+        for (account in accounts) {
+            val user = scope(account)
+            assertEquals((0..7).map { "Dish $account-$it" }, user.recipes.list().map { it.title }.sorted(), "account $account")
+            assertEquals((0..7).map { "Item $it" }, user.shopping.get(week).items.filter { it.key.startsWith("x:") && it.checked }.map { it.name }.sorted())
+            assertEquals("7", users.meta(account, "last"))
+        }
     }
 }

@@ -106,8 +106,7 @@ class CookingSync(
             withContext(Dispatchers.IO) {
                 // Left first: should this stop half-way, the old site's next sync brings its recipes back.
                 if (siteFor(accountId, clean, noSite) != siteOf(accountId)) leaveSite(accountId)
-                users.setMeta(accountId, REPO_KEY, clean)
-                users.setMeta(accountId, NO_SITE_KEY, if (clean == null && noSite) "1" else null)
+                users.setMeta(accountId, mapOf(REPO_KEY to clean, NO_SITE_KEY to if (clean == null && noSite) "1" else null))
             }
         }
     }
@@ -122,7 +121,7 @@ class CookingSync(
         val user = scope(accountId)
         user.pictures.removeAll()
         user.recipes.syncCookingSite(emptyList())
-        for (key in listOf(SYNCED_AT_KEY, SYNCED_COMMIT_KEY, SYNC_ERROR_KEY)) users.setMeta(accountId, key, null)
+        users.setMeta(accountId, listOf(SYNCED_AT_KEY, SYNCED_COMMIT_KEY, SYNC_ERROR_KEY).associateWith { null })
     }
 
     /**
@@ -198,9 +197,7 @@ class CookingSync(
     /** Brings the account's recipes in line with [pages], read at [commit], and records the sync. */
     private fun importPages(accountId: Long, user: UserScope, commit: String?, pages: List<SitePage>): SyncResult =
         user.recipes.syncCookingSite(pages).copy(autoLinked = user.ingredients.autoLink(), commit = commit).also {
-            users.setMeta(accountId, SYNCED_AT_KEY, now().toString())
-            users.setMeta(accountId, SYNCED_COMMIT_KEY, it.commit)
-            users.setMeta(accountId, SYNC_ERROR_KEY, null)
+            users.setMeta(accountId, mapOf(SYNCED_AT_KEY to now().toString(), SYNCED_COMMIT_KEY to it.commit, SYNC_ERROR_KEY to null))
         }
 
     /** Runs a sync of the account, keeping its failure for [status] before passing it on. */

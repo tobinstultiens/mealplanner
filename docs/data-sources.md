@@ -785,24 +785,32 @@ leftovers of it there afterwards (issue 169): nothing was cooked or taken for th
 would not buy for them either. The lunch is planned like any other meal, cooked for itself and bought for.
 
 Each change of the plan reads it and writes it in one transaction that takes the database's write lock
-first, so a meal eaten meanwhile on another device is not replaced after all, and a write of the offer
-refresh or the price lookup in between makes the request wait for it instead of failing with
-"database is locked". So does every other change that reads before it writes (issue 169): the stock
-(ticks of the shopping list, using up, on hand by hand, eating and un-eating), the catalogue's links,
-editing a recipe and the cooking-site sync, and a login under new names. They share one helper
-(`Database.writing` in `Database.kt`), whose first statement changes nothing on `appUser` (a table of no
-account, so a login without an account yet takes it the same way). A login of a known account under
-the same names writes nothing and does not wait for the lock. None of them holds the lock across a
-network call: the cooking-site fetch, the store and price lookups and Claude's recipe writing all happen
-before or outside them.
+first, so a meal eaten meanwhile on another device is not replaced after all. So does every other change
+that reads before it writes (issue 169): the stock (ticks of the shopping list, using up, on hand by hand,
+eating and un-eating), the catalogue's links, editing a recipe and the cooking-site sync, and a login under
+new names; and since issue 248 every other write of the server, a single statement too: the offer refresh,
+the price lookup and the price history, the NEVO import, making a recipe, own items of the shopping list and
+their ticks, settings, the food log and the recipe pictures. They share one helper (`Database.writing` in
+`Database.kt`), whose first statement changes nothing on `appUser` (a table of no account, so a login
+without an account yet takes it the same way): a write of another process in between (a second server, the
+sqlite3 shell) makes it wait instead of failing with "database is locked". A login of a known account under
+the same names writes nothing and does not wait for the lock. None of them holds the lock across a network
+call: the cooking-site fetch, the store and price lookups and Claude's recipe writing all happen before or
+outside them, and the server's long jobs write in short turns of their own (one account's import, one store's
+offers, one price found, one recipe picture).
 
 Within the server they also take turns before their transaction begins (issue 246): one at a time per
-database, waiting without the busy timeout's limit; one called inside another on the same thread (eating a
-meal changes the stock) joins it. On the database file each thread has a connection of its own, and
-SQLite kept them apart already; the in-memory database of the tests has one connection that every thread
-shares, where two at once began a second transaction on it ("cannot start a transaction within a
-transaction") or ran one inside the other's. Writes outside `Database.writing` (a single statement, or a
-transaction that writes first, such as the offer refresh) still go by SQLite's lock and its busy timeout.
+database, first come first served; one called inside another on the same thread (eating a meal changes the
+stock, a replan saves each meal) joins it, and the two commit or are taken back together. On the database
+file each thread has a connection of its own, and SQLite kept them apart already; the in-memory database of
+the tests has one connection that every thread shares, where two at once began a second transaction on it
+("cannot start a transaction within a transaction"), ran one inside the other's, or read the other's new row
+as its own. A writer waits at most 30 seconds for its turn (issue 248), so that one that hangs does not hold
+up every other for good, while a save behind a nightly job's turns still goes through: then it gives up, and
+a request is answered 503 with "The server is busy saving something else; try again in a moment". The log
+says which thread held the turn, for how long, and where it is (its stack). A writer that holds the turn for
+more than 10 seconds, a third of that, is logged with the function that wrote when it lets go: three such in
+a row would make the next writer give up.
 
 Marking an item on hand in the pantry makes it one set by hand, even if ticks put it there (its stock
 goes, and it keeps its place in the pantry's list): those stay until removed by hand, whatever is

@@ -28,6 +28,12 @@ fun StatusPagesConfig.errorMapping() {
     exception<BadRequestException> { call, cause ->
         call.respond(HttpStatusCode.BadRequest, mapOf("error" to (cause.message ?: "bad request")))
     }
+    // A write that waited too long for another to finish ([writing]): the server's trouble, not the request's, and
+    // worth trying again. Logged with where that other write is, which is what needs fixing.
+    exception<DatabaseBusyException> { call, cause ->
+        call.application.log.error("Request ${call.request.local.uri} gave up waiting to write", cause)
+        call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "The server is busy saving something else; try again in a moment"))
+    }
     // A call cancelled, most often because the app went away while it loaded ("Response was cancelled"): nobody waits
     // for an answer and nothing failed. Ktor's engine logs it at debug level, as it does when no handler is installed;
     // caught below, it would be logged as an error and answered with a 500 (issue 263).
