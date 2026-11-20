@@ -150,17 +150,29 @@ private fun spareOnItsLastDay() {
         1, 4, keepingRecipe.title, 1.0, PrepSlot(plusDays(FakeBackend.TODAY, -1), MealSlot.LUNCH), lastDay = FakeBackend.TODAY,
         room = listOf(PrepSlot(FakeBackend.TODAY, MealSlot.DINNER)),
     )
-    Column(Modifier.padding(16.dp)) { SpareCard(spare, FakeBackend.TODAY, enabled = true) {} }
+    // Today's dinner is the only meal with room, so the card proposes it and has no other.
+    Column(Modifier.padding(16.dp)) { SpareCard(spare, FakeBackend.TODAY, spare.proposal(emptyList()), enabled = true) {} }
 }
 
+/**
+ * The question that removes [samplePrep], whose Friday lunch is skipped already; once [made] (today's dinner eaten), what
+ * the dialog says instead, of a batch eaten as the meals or as [sides].
+ */
 @Composable
-private fun removePrepQuestion() {
+private fun removePrepQuestion(made: Boolean = false, sides: Boolean = false) {
     val prep = MealPrep(
         1, FakeBackend.TODAY, plusDays(FakeBackend.TODAY, 3), false,
-        samplePrep.input().meals.map { PrepMeal(it.date, it.slot, 1.0, MealStatus.PLANNED) },
+        samplePrep.input().meals.mapIndexed { i, meal ->
+            val status = when {
+                made && i == 0 -> MealStatus.EATEN
+                i == 2 -> MealStatus.SKIPPED
+                else -> MealStatus.PLANNED
+            }
+            PrepMeal(meal.date, meal.slot, 1.0, status, side = sides)
+        },
     )
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(LocalStrings.current(Msg.REMOVE_PREP_TITLE, keepingRecipe.title), style = MaterialTheme.typography.headlineSmall)
+        Text(LocalStrings.current(if (made) Msg.REMOVE_PREP_MADE_TITLE else Msg.REMOVE_PREP_TITLE, keepingRecipe.title), style = MaterialTheme.typography.headlineSmall)
         RemovePrepText(prep)
     }
 }
@@ -244,6 +256,8 @@ enum class Shot(
     val prepped: Boolean = false,
     /** The fake backend's week with a side prepped next to three meals (issue 234, step 2). */
     val sides: Boolean = false,
+    /** The fake backend's week holding only a lunch of last week's batch (issue 263). */
+    val tailOnly: Boolean = false,
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
     val dutch: Boolean = false,
     val heightDp: Int = 640,
@@ -261,8 +275,8 @@ enum class Shot(
     PLAN_PREP(prepped = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     PLAN_PREP_NL(prepped = true, dutch = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     // The Prep dialog's body, as a dialog is a window of its own: in both languages, and at the largest font.
-    PREP_CHOICES(heightDp = 1100, content = { _, _ -> prepChoices() }),
-    PREP_CHOICES_NL(dutch = true, heightDp = 1100, content = { _, _ -> prepChoices() }),
+    PREP_CHOICES(heightDp = 1300, content = { _, _ -> prepChoices() }),
+    PREP_CHOICES_NL(dutch = true, heightDp = 1350, content = { _, _ -> prepChoices() }),
     PREP_CHOICES_X2(heightDp = 2000, fontScale = 2.0f, content = { _, _ -> prepChoices() }),
     // Half a serving of a salad as a side next to three meals: the side under each, what the meal comes to with it, and the
     // days it takes over the calories (issue 234, step 2); in both languages, and on Today, where the batch is made.
@@ -274,12 +288,20 @@ enum class Shot(
     PREP_SIDE_CHOICES(heightDp = 1300, content = { _, _ -> prepSideChoices() }),
     PREP_SIDE_CHOICES_NL(dutch = true, heightDp = 1300, content = { _, _ -> prepSideChoices() }),
     PREP_SIDE_CHOICES_X2(heightDp = 2000, fontScale = 2.0f, content = { _, _ -> prepSideChoices() }),
-    // Removing a prep names every meal that goes.
+    // Removing a prep names every meal that goes, and which were skipped; once made, it says beforehand that it stays (issue 263).
     REMOVE_PREP(heightDp = 420, content = { _, _ -> removePrepQuestion() }),
     REMOVE_PREP_NL(dutch = true, heightDp = 420, content = { _, _ -> removePrepQuestion() }),
+    REMOVE_PREP_MADE(heightDp = 500, content = { _, _ -> removePrepQuestion(made = true) }),
+    REMOVE_PREP_MADE_NL(dutch = true, heightDp = 560, content = { _, _ -> removePrepQuestion(made = true) }),
+    REMOVE_SIDE_PREP_MADE(heightDp = 560, content = { _, _ -> removePrepQuestion(made = true, sides = true) }),
+    REMOVE_SIDE_PREP_MADE_NL(dutch = true, heightDp = 640, content = { _, _ -> removePrepQuestion(made = true, sides = true) }),
+    // A week whose only meal is of last week's batch: still to plan, no recipes missing, and nothing to buy because last week's list bought it.
+    PLAN_PREPPED_TAIL(tailOnly = true, heightDp = 2400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    SHOPPING_PREPPED_TAIL(tailOnly = true, content = { api, _ -> shopping(api, shoppingMode = false) }),
+    SHOPPING_PREPPED_TAIL_NL(tailOnly = true, dutch = true, content = { api, _ -> shopping(api, shoppingMode = false) }),
     // A share in the box on its last day: eat it today or throw it away; with the meals it can still go to.
-    SPARE_LAST_DAY(heightDp = 300, content = { _, _ -> spareOnItsLastDay() }),
-    SPARE_LAST_DAY_NL(dutch = true, heightDp = 300, content = { _, _ -> spareOnItsLastDay() }),
+    SPARE_LAST_DAY(heightDp = 400, content = { _, _ -> spareOnItsLastDay() }),
+    SPARE_LAST_DAY_NL(dutch = true, heightDp = 400, content = { _, _ -> spareOnItsLastDay() }),
     // What was in Wednesday's dinner: a line changed, one left out, one added in pieces, one linked to nothing; the
     // later dinner the extra chicken leaves short, and the quick add-ons (#226).
     ADJUST_MEAL(heightDp = 1400, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
@@ -322,6 +344,20 @@ enum class Shot(
     }),
     RECIPE_FROM_LEFTOVERS(heightDp = 1900, content = { api, _ ->
         RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 0.0, skipped = false))
+    }),
+    // A later meal of a batch made on Monday: nothing to cook, and what is in its box of 1.25 servings (issue 263).
+    RECIPE_FROM_PREPPED_DAY(heightDp = 1900, content = { api, _ ->
+        RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 1.25, 0.0, skipped = false, prepMadeOn = FakeBackend.WEEK_START))
+    }),
+    RECIPE_FROM_PREPPED_DAY_NL(dutch = true, heightDp = 1900, content = { api, _ ->
+        RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 1.25, 0.0, skipped = false, prepMadeOn = FakeBackend.WEEK_START))
+    }),
+    // Cook mode on the day a batch of 4 servings is made: what it cooks for whom, as the recipe says it (issue 263).
+    COOK_MODE_PREP_DAY(heightDp = 1500, content = { api, _ ->
+        RecipeDetailScreen(api, 4, null, {}, {}, meal = MealToCook(4, 1.5, 4.0, skipped = false, prepMadeOn = FakeBackend.TODAY), initiallyCooking = true)
+    }),
+    COOK_MODE_PREP_DAY_NL(dutch = true, heightDp = 1500, content = { api, _ ->
+        RecipeDetailScreen(api, 4, null, {}, {}, meal = MealToCook(4, 1.5, 4.0, skipped = false, prepMadeOn = FakeBackend.TODAY), initiallyCooking = true)
     }),
     // Cook mode of a planned meal, the way it opens: scaled amounts, the first step current.
     COOK_MODE(heightDp = 1400, content = { api, _ ->
@@ -464,7 +500,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     @get:Rule
     val compose = createEmptyComposeRule()
 
-    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides)
+    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, tailOnly = shot.tailOnly)
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)
 

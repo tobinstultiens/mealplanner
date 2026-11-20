@@ -88,10 +88,20 @@ data class CookProgress(val ingredients: Set<Int> = emptySet(), val steps: Set<I
  * Cook mode of a recipe: big rows to tick the ingredients (the amounts of [factor] times the recipe,
  * as the recipe screen shows them) and the steps one per card, the current one highlighted.
  * [onMarkEaten] is given for a meal still planned and shows its button once the last step is done;
- * [top] is shown above the ingredients (the "As written" switch of a recipe opened from a meal).
+ * [top] is shown above the ingredients (what to cook and the "As written" switch of a recipe opened from a meal);
+ * [ingredientsTitle] heads them instead of "Ingredients" (what a later meal of a prepped batch holds).
  */
 @Composable
-fun CookMode(recipe: RecipeDetail, factor: Double?, progress: CookProgress, onProgress: (CookProgress) -> Unit, onMarkEaten: (() -> Unit)?, modifier: Modifier = Modifier, top: @Composable () -> Unit = {}) {
+fun CookMode(
+    recipe: RecipeDetail,
+    factor: Double?,
+    progress: CookProgress,
+    onProgress: (CookProgress) -> Unit,
+    onMarkEaten: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    ingredientsTitle: String? = null,
+    top: @Composable () -> Unit = {},
+) {
     val t = LocalStrings.current
     val steps = cookSteps(recipe.instructions)
     val current = progress.currentStep(steps.size)
@@ -101,7 +111,7 @@ fun CookMode(recipe: RecipeDetail, factor: Double?, progress: CookProgress, onPr
     ) {
         top()
         if (recipe.ingredients.isNotEmpty()) {
-            Text(t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleLarge)
+            Text(ingredientsTitle ?: t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleLarge)
             var group: String? = null
             recipe.ingredients.forEachIndexed { index, mapped ->
                 val line = factor?.let { mapped.line.scaled(it) } ?: mapped.line

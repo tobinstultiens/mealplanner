@@ -25,7 +25,7 @@ class UserScope(
     val ingredients = IngredientRepository(db, foods, accountId)
     val stock = StockRepository(db, foods, accountId)
     val shops = ShopsRepository(db, accountId)
-    val recipes = RecipeRepository(db, ingredients, accountId) { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) }
+    val recipes = RecipeRepository(db, ingredients, accountId, today) { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) }
     val profiles = ProfileRepository(db, accountId)
     val toppings = RecipeToppings(db, accountId, recipes)
     val pictures = RecipePictures(db, imageDir, accountId)

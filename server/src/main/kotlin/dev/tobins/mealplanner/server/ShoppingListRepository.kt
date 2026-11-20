@@ -137,8 +137,14 @@ class ShoppingListRepository(
             stockUpDismissed = stockUpDismissed,
             buyAheadProvisional = ahead.provisional,
             noLongerNeeded = noLongerNeeded(ticks, rows.mapTo(HashSet()) { it.key }, stock, sectionOf, staples = catalogue.filter { it.isStaple }.mapTo(HashSet()) { it.id }),
+            preppedBoughtIn = preppedBoughtIn(start),
         )
     }
+
+    /** The earliest week before the one starting [start] whose list bought a batch eaten in it ([ShoppingList.preppedBoughtIn]). */
+    private fun preppedBoughtIn(start: LocalDate): String? =
+        plans.meals(start).flatMap { listOfNotNull(it.prep, it.side?.prep) }
+            .map { Batch.mondayOf(LocalDate.parse(it.madeOn)) }.filter { it < start }.minOrNull()?.toString()
 
     /**
      * What [meals] need, in walking order, with the staples and to-taste names apart. [lines] are their
@@ -297,7 +303,8 @@ class ShoppingListRepository(
         val next = start.plusDays(DAYS.toLong())
         val nextWeek = plans.forShopping(next)
         val limit = if (nextWeek.isEmpty()) minOf(BuyAhead.MAX_MEALS, freeDinners(next)) else BuyAhead.MAX_MEALS
-        if (limit == 0) return BuyAheadAdvice(emptyList(), false)
+        // Next week still has no plan of its own: the advice is empty, not about planned meals.
+        if (limit == 0) return BuyAheadAdvice(emptyList(), provisional = true)
         val (meals, ratings) = if (nextWeek.isNotEmpty()) {
             planned(nextWeek) to emptyMap()
         } else {

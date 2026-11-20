@@ -57,6 +57,8 @@ class RecipeRepository(
     /** The catalogue the recipes' lines mean ingredients of; also what a planned meal's own lines name ([MealAdjustments]). */
     val ingredients: IngredientRepository,
     private val userId: Long,
+    /** Today as the household sees it: this week's prices, and which planned weeks are over. */
+    private val today: () -> LocalDate = ::serverToday,
     /** Prices with the offers valid between two dates. */
     private val pricing: (LocalDate, LocalDate) -> Pricing = { _, _ -> Pricing.NONE },
 ) {
@@ -64,8 +66,8 @@ class RecipeRepository(
 
     /** Prices with this week's offers: what a recipe costs if bought now. */
     private fun currentPricing(): Pricing {
-        val today = serverToday()
-        return pricing(today, today.plusDays(6))
+        val day = today()
+        return pricing(day, day.plusDays(6))
     }
 
     /** My recipes: what a released app lists as the account's recipes, so it needs to know nothing of the bank. */
@@ -282,7 +284,7 @@ class RecipeRepository(
      * plan while the shopping list stopped buying for it; weeks that are over are history and do not count.
      */
     private fun plannedDays(id: Long): List<LocalDate> {
-        val after = serverToday().minusDays(7).toString()
+        val after = today().minusDays(7).toString()
         val meals = db.planQueries.selectPlannedFrom(userId, id, after).executeAsList().map { it.weekStart to it.day }
         val sides = db.planQueries.selectSidesPlannedFrom(userId, id, after).executeAsList().map { it.weekStart to it.day }
         return (meals + sides).map { (week, day) -> LocalDate.parse(week).plusDays(day) }.distinct().sorted()

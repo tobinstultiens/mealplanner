@@ -262,7 +262,7 @@ internal fun ShoppingScreen(
                 if (list.items.isEmpty()) {
                     Column(Modifier.padding(padding)) {
                         AddItemRow(session)
-                        EmptyState(Spot.NothingToBuy, t(Msg.NOTHING_TO_BUY), Modifier.weight(1f))
+                        EmptyState(Spot.NothingToBuy, nothingToBuyText(list, t), Modifier.weight(1f))
                     }
                     return@Scaffold
                 }
@@ -387,3 +387,10 @@ internal fun ShoppingScreen(
         }
     }
 }
+
+/**
+ * Why [list], with no rows, has nothing to buy: no meals planned, or only meals of a prepped batch made in an earlier week,
+ * which that week's list bought ([ShoppingList.preppedBoughtIn], issue 263), while the Plan shows them in this week.
+ */
+fun nothingToBuyText(list: ShoppingList, t: Strings): String =
+    list.preppedBoughtIn?.let { t(Msg.NOTHING_TO_BUY_PREPPED, dayMonthLabel(it, t.locale)) } ?: t(Msg.NOTHING_TO_BUY)

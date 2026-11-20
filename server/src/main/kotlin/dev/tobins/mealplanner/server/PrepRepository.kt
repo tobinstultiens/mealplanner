@@ -99,7 +99,7 @@ class PrepRepository(
         val shown = parseWeekStart(weekStart)
         db.writing {
             val batch = batch(id)
-            if (batch.made) throw ConflictException("This prepped batch was made already: mark the meals you do not eat skipped instead")
+            if (batch.made) throw ConflictException(madeAlready(batch))
             val weeks = batch.meals.map { it.week }.distinct().associateWith { plans.meals(it) }
             for (meal in batch.meals.filterNot { it.side }) {
                 val stored = weeks.getValue(meal.week).first { it.day == meal.meal.day && it.slot == meal.meal.slot }
@@ -212,6 +212,14 @@ class PrepRepository(
         }
         return plans.view(shown)
     }
+
+    /**
+     * Why [batch], made already, can't be removed, in the words of how it is eaten: a batch eaten as sides speaks of its
+     * sides, which are skipped with their meals (issue 263).
+     */
+    private fun madeAlready(batch: Batch): String =
+        if (batch.meals.all { it.side }) "This prepped side was made already: mark the meals you do not eat it with skipped instead"
+        else "This prepped batch was made already: mark the meals you do not eat skipped instead"
 
     /** Batch [id] of this account; a [NotFoundException] for any other. */
     private fun batch(id: Long): Batch = Batch.load(db, userId, listOf(id))[id] ?: throw NotFoundException("No prep with id $id")

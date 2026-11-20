@@ -84,6 +84,22 @@ data class MealToCook(
     val planned: Boolean = false,
     val prepMadeOn: String? = null,
 ) {
+    /** A later meal of a prepped batch, not skipped: nothing is cooked for it, its portion is in a box already (issue 263). */
+    val fromBatch: Boolean get() = prepMadeOn != null && cookPortions <= 0.0 && !skipped
+
+    /**
+     * What the recipe's amounts are scaled by when opened from this meal, for a recipe of [servings]: to what is cooked
+     * now, or for a later meal of a batch ([fromBatch]) to its own portion, which is what its box holds, so that nothing
+     * reads as something to buy or cook (issue 263). Null for the amounts as written: when asked ([asWritten]), or for a
+     * meal with nothing to cook of its own (skipped, or yesterday's leftovers).
+     */
+    fun amountsFactor(servings: Int, asWritten: Boolean): Double? = when {
+        asWritten -> null
+        cookPortions > 0.0 -> cookPortions / servings
+        fromBatch -> portions / servings
+        else -> null
+    }
+
     companion object {
         /** Keeps the meal across a re-created screen; no meal is an empty list. */
         val Saver = listSaver<MealToCook?, Any>(
@@ -264,16 +280,24 @@ fun RecipeDetailScreen(
                 var asWritten by rememberSaveable(recipeId) { mutableStateOf(false) }
                 val cooking = meal?.takeIf { it.recipeId == recipeId }
                 val servings = recipe.summary.servings?.takeIf { it > 0 }
-                val factor = if (cooking != null && servings != null && cooking.cookPortions > 0 && !asWritten) cooking.cookPortions / servings else null
+                val factor = servings?.let { cooking?.amountsFactor(it, asWritten) }
+                // A later meal of a batch shows what is in its box, under its own heading.
+                val ingredientsTitle = cooking?.takeIf { it.fromBatch && factor != null }?.let { t(Msg.IN_THIS_MEAL, servingsText(it.portions, t)) }
+                // The amounts can be shown as written whenever they are scaled for this meal.
+                val scalable = cooking != null && (cooking.cookPortions > 0 || cooking.fromBatch)
                 if (cookMode) {
                     val place = cooking?.takeIf { it.planned && !eaten }?.place
                     CookMode(
                         recipe, factor, progress, { progress = it },
                         onMarkEaten = place?.let { { markEaten(it) } },
                         modifier = Modifier.padding(padding),
+                        ingredientsTitle = ingredientsTitle,
                         top = {
-                            // The amounts can be changed here, without going back to the recipe.
-                            if (cooking != null && servings != null && cooking.cookPortions > 0) AsWrittenRow(servings, asWritten) { asWritten = it }
+                            // What to cook, as on the recipe, and the amounts can be changed here without going back to it.
+                            if (cooking != null && servings != null) {
+                                Text(cooking.sentence(t), style = MaterialTheme.typography.titleMedium)
+                                if (scalable) AsWrittenRow(servings, asWritten) { asWritten = it }
+                            }
                         },
                     )
                     return@SubScreen
@@ -291,7 +315,8 @@ fun RecipeDetailScreen(
                             recipe.summary.tags.forEach { AssistChip(onClick = {}, label = { Text(it) }) }
                         }
                     }
-                    recipe.summary.servings?.let {
+                    // Not for a later meal of a batch, which cooks nothing: its box holds its own portion.
+                    recipe.summary.servings?.takeIf { ingredientsTitle == null }?.let {
                         Text(t.plural(Plural.MAKES_SERVINGS, it), style = MaterialTheme.typography.labelLarge)
                     }
                     if (recipe.summary.removedFromSite) {
@@ -320,8 +345,17 @@ fun RecipeDetailScreen(
                                 (load { api.updateRecipeSettings(recipeId, settings) } as? Load.Ready)?.let { state = it }
                             }
                         }
-                        KeepsSettings(recipe.summary, enabled = !acting) { keeps ->
-                            scope.launch { settle(load { api.setRecipeKeeps(recipeId, keeps) }, Msg.KEEPS_FAILED) }
+                        // Only a meal can be prepped, not a building block. Busy while saving, so a second choice is made on
+                        // the answer to the first and does not send the other number as the screen last drew it.
+                        if (recipe.summary.kind == RecipeKind.MEAL) {
+                            KeepsSettings(recipe.summary, enabled = !acting) { keeps ->
+                                acting = true
+                                scope.launch {
+                                    val result = load { api.setRecipeKeeps(recipeId, keeps) }
+                                    acting = false
+                                    settle(result, Msg.KEEPS_FAILED)
+                                }
+                            }
                         }
                         ToppingsSettings(api, recipe) { settle(it, Msg.TOPPINGS_FAILED) }
                         routines?.let { current ->
@@ -332,7 +366,7 @@ fun RecipeDetailScreen(
                     }
                     if (cooking != null && servings != null) {
                         Text(cooking.sentence(t), style = MaterialTheme.typography.titleMedium)
-                        if (cooking.cookPortions > 0) {
+                        if (scalable) {
                             AsWrittenRow(servings, asWritten) { asWritten = it }
                         }
                     }
@@ -346,7 +380,7 @@ fun RecipeDetailScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             } else {
-                                Text(t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
+                                Text(ingredientsTitle ?: t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
                                 var group: String? = null
                                 for (mapped in recipe.ingredients) {
                                     val line = factor?.let { mapped.line.scaled(it) } ?: mapped.line

@@ -1,10 +1,12 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.DailyTargets
 import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot.BREAKFAST
 import dev.tobins.mealplanner.api.MealSlot.DINNER
 import dev.tobins.mealplanner.api.MealSlot.LUNCH
 import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepInput
 import dev.tobins.mealplanner.api.PrepMeal
@@ -12,7 +14,9 @@ import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.SparePortion
+import dev.tobins.mealplanner.api.WeekPlan
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -116,5 +120,96 @@ class PrepTest {
         assertEquals("Cook 2.75 servings: 0 now, 2.75 for the prep's later meals", MealToCook(1, 1.5, 2.75, skipped = true, prepMadeOn = "2026-11-17").sentence(english))
         assertEquals("Prepped on Tue 17 Nov: nothing to cook", MealToCook(1, 1.25, 0.0, skipped = false, prepMadeOn = "2026-11-17").sentence(english))
         assertEquals("Skipped: nothing to cook", MealToCook(1, 1.25, 0.0, skipped = true, prepMadeOn = "2026-11-17").sentence(english))
+    }
+
+    // --- Rough edges (issue 263)
+
+    /** The week of 16 November with [meals] by day. */
+    private fun week(vararg meals: PlannedMeal, start: String = "2026-11-16") = WeekPlan(
+        start, DailyTargets(2000, 150), (0..6).map { day -> PlanDay(plusDays(start, day), meals.filter { it.day == day }, 0.0, 0.0) }, emptyList(),
+    )
+
+    @Test
+    fun theBoxCardProposesTheNextFreeLunchOrDinnerItKeepsFor() {
+        val room = listOf(PrepSlot("2026-11-18", DINNER), PrepSlot("2026-11-19", LUNCH), PrepSlot("2026-11-19", DINNER))
+        val spare = SparePortion(7, 1, "Salad", 1.25, PrepSlot("2026-11-18", LUNCH), lastDay = "2026-11-20", room = room)
+        // Wednesday's dinner holds a meal still to eat and Thursday's lunch is empty: the free one is proposed.
+        val wednesday = PlannedMeal(2, DINNER, 9, "Rice bowl", 1.0, 700.0, 30.0)
+        assertEquals(PrepSlot("2026-11-19", LUNCH), spare.proposal(listOf(week(wednesday, PlannedMeal(3, DINNER, 9, "Rice bowl", 1.0, 700.0, 30.0)))))
+        // Every one of them holds a meal (or its week is not known): the first with room, where it takes that meal's place.
+        val full = week(*room.map { PlannedMeal(daysBetween("2026-11-16", it.date), it.slot, 9, "Rice bowl", 1.0, 700.0, 30.0) }.toTypedArray())
+        assertEquals(PrepSlot("2026-11-18", DINNER), spare.proposal(listOf(full)))
+        assertEquals(PrepSlot("2026-11-18", DINNER), spare.proposal(emptyList()))
+        assertNull(spare.copy(room = emptyList()).proposal(listOf(full)), "no room, no proposal")
+        assertEquals("Eat it on Thu 19 Nov · lunch", Strings.English(Msg.SPARE_EAT_PROPOSED, slotLabel(PrepSlot("2026-11-19", LUNCH), Strings.English)))
+    }
+
+    @Test
+    fun theBoxCardShowsOnlyOnTheWeeksTheShareCanStillBeEatenIn() {
+        val spare = SparePortion(7, 1, "Salad", 1.25, PrepSlot("2026-11-21", LUNCH), lastDay = "2026-11-24", room = emptyList())
+        val today = "2026-11-21"
+        assertEquals(listOf(spare), sparesShown(listOf(spare), "2026-11-16", today), "this week")
+        assertEquals(listOf(spare), sparesShown(listOf(spare), "2026-11-23", today), "next week, until its last day")
+        assertEquals(emptyList(), sparesShown(listOf(spare), "2026-11-09", today), "a week that is over")
+        assertEquals(emptyList(), sparesShown(listOf(spare), "2026-11-30", today), "a week after it keeps")
+    }
+
+    @Test
+    fun aWeekWithOnlyMealsOfLastWeeksBatchIsStillToPlan() {
+        val lastWeeks = prep.copy(madeOn = "2026-11-15")
+        val tail = PlannedMeal(0, LUNCH, 1, "Salad", 1.25, 500.0, 33.0, leftover = true, locked = true, prep = lastWeeks)
+        assertEquals(false, week(tail).hasOwnMeals, "only last week's batch")
+        assertEquals(true, week(tail, PlannedMeal(1, DINNER, 9, "Rice bowl", 1.0, 700.0, 30.0)).hasOwnMeals)
+        assertEquals(true, week(PlannedMeal(1, DINNER, 1, "Salad", 1.5, 600.0, 40.0, locked = true, prep = prep)).hasOwnMeals, "a batch made this week")
+        assertEquals(false, week().hasOwnMeals)
+    }
+
+    @Test
+    fun removingAPrepThatWasMadeSaysBeforehandThatItStays() {
+        val english = Strings.English
+        val skipped = prep.copy(meals = listOf(prep.meals[0], prep.meals[1].copy(status = MealStatus.SKIPPED)))
+        assertEquals(false, skipped.made)
+        assertEquals("This takes all its meals out of the plan: Tue 17 Nov dinner, Wed 18 Nov lunch (skipped).", removePrepText(skipped, english))
+
+        val made = skipped.copy(meals = listOf(prep.meals[0].copy(status = MealStatus.EATEN), skipped.meals[1]))
+        assertEquals(true, made.made)
+        assertEquals(
+            "One of its meals was eaten, so the batch was cooked and stays in the plan. Mark the meals you do not eat skipped instead: " +
+                "Tue 17 Nov dinner (eaten), Wed 18 Nov lunch (skipped).",
+            removePrepText(made, english),
+        )
+        val sides = made.copy(meals = made.meals.map { it.copy(side = true) })
+        assertEquals(
+            "A meal with this side was eaten, so the batch was cooked and its sides stay in the plan. Mark the meals you do not eat it with skipped instead: " +
+                "Tue 17 Nov dinner (side, eaten), Wed 18 Nov lunch (side, skipped).",
+            removePrepText(sides, english),
+        )
+        assertEquals(
+            "Een maaltijd met dit bijgerecht is gegeten, dus de prep is gekookt en de bijgerechten blijven in het plan. Zet de maaltijden waarbij je het niet eet op overgeslagen: " +
+                "di 17 nov avondeten (bijgerecht, gegeten), wo 18 nov lunch (bijgerecht, overgeslagen).",
+            removePrepText(sides, Strings.Dutch),
+        )
+    }
+
+    @Test
+    fun aLaterMealOfABatchShowsWhatIsInItsBoxNotWhatToCook() {
+        // Of a recipe of 4 servings: the prep day scales to the batch, a later day to its own 1.25 servings.
+        val later = MealToCook(1, 1.25, 0.0, skipped = false, prepMadeOn = "2026-11-17")
+        assertEquals(true, later.fromBatch)
+        assertEquals(1.25 / 4, later.amountsFactor(4, asWritten = false))
+        assertNull(later.amountsFactor(4, asWritten = true), "as written when asked")
+        assertEquals(2.75 / 4, MealToCook(1, 1.5, 2.75, skipped = false, prepMadeOn = "2026-11-17").amountsFactor(4, asWritten = false))
+        assertEquals(false, later.copy(skipped = true).fromBatch, "a skipped one holds nothing")
+        assertNull(MealToCook(1, 0.75, 0.0, skipped = false).amountsFactor(4, asWritten = false), "yesterday's leftovers stay as written, as before")
+        assertEquals("In this meal: 1.25 servings", Strings.English(Msg.IN_THIS_MEAL, servingsText(1.25, Strings.English)))
+    }
+
+    @Test
+    fun aWeekOfOnlyAnEarlierBatchSaysWhyItHasNothingToBuy() {
+        val empty = ShoppingList("2026-11-23", emptyList(), emptyList())
+        assertEquals("Nothing to buy: no meals are planned for this week.", nothingToBuyText(empty, Strings.English))
+        val tail = empty.copy(preppedBoughtIn = "2026-11-16")
+        assertEquals("Nothing to buy: this week's prepped meals were bought with the list of the week of 16 Nov.", nothingToBuyText(tail, Strings.English))
+        assertEquals("Niets te kopen: de geprepte maaltijden van deze week zijn gekocht met de lijst van de week van 16 nov.", nothingToBuyText(tail, Strings.Dutch))
     }
 }

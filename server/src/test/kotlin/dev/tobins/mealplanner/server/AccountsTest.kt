@@ -512,6 +512,24 @@ class AccountsTest {
         assertEquals(listOf(5 to 100.0), alice.shortfalls())
     }
 
+    /** Issue 263: which list bought the batch a week eats from is told only to the batch's own account. */
+    @Test
+    fun whereABatchWasBoughtIsToldOnlyToItsOwnAccount() = testApplication {
+        start()
+        val profile = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        val (alice, bob) = listOf("alice", "bob").map { name -> clientFor(name).also { it.put("/api/profile") { setBody(profile) } } }
+        val stew = alice.post("/api/recipes") { setBody(recipe) }.body<RecipeDetail>().summary
+        alice.put("/api/recipes/${stew.id}/keeps") { setBody(RecipeKeeps(days = 2)) }
+        val made = alice.post("/api/plans/2026-11-16/preps") {
+            setBody(PrepInput(stew.id, "2026-11-22", meals = listOf(PrepSlot("2026-11-22", MealSlot.DINNER), PrepSlot("2026-11-23", MealSlot.DINNER))))
+        }
+        assertEquals(HttpStatusCode.OK, made.status, made.bodyAsText())
+        suspend fun HttpClient.boughtIn() = get("/api/plans/2026-11-23/shopping").body<ShoppingList>().preppedBoughtIn
+
+        assertEquals("2026-11-16", alice.boughtIn())
+        assertNull(bob.boughtIn(), "Bob's week has none of Alice's meals")
+    }
+
     @Test
     fun theVerdictsOnOffersGoByTheAccountsOwnIngredientsAndStores() = testApplication {
         val today = serverToday()
