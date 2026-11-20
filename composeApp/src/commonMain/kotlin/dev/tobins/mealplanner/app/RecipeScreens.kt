@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -45,12 +46,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKeeps
+import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeCost
 import dev.tobins.mealplanner.api.RecipeNutrition
@@ -163,6 +166,8 @@ fun RecipeDetailScreen(
     // A recipe of the bank is read-only until it is added: whether the planner may pick it is asked for with the adding.
     var pickOnAdd by rememberSaveable(recipeId) { mutableStateOf(true) }
     var acting by remember { mutableStateOf(false) }
+    // What marking it a standard meal here made staples (issue 265), said under the switch while the recipe is open.
+    var standardMarked by remember(recipeId) { mutableStateOf<StandardSwitch?>(null) }
     var confirmingDelete by remember { mutableStateOf(false) }
     // Cook mode and its ticks live as long as the recipe is open (App forgets them with the screen).
     var cookMode by rememberSaveable(recipeId) { mutableStateOf(initiallyCooking) }
@@ -340,6 +345,24 @@ fun RecipeDetailScreen(
                                 settle(result, Msg.ROTATION_FAILED)
                             }
                         }
+                        // A building block is no standard meal (issue 265). Busy while saving, as for the rotation.
+                        if (recipe.summary.kind == RecipeKind.MEAL) {
+                            StandardMealRow(recipe.summary.standardMeal, standardMarked, enabled = !acting) { standard ->
+                                acting = true
+                                scope.launch {
+                                    val result = load { api.setStandardMeal(recipeId, standard) }
+                                    acting = false
+                                    when (result) {
+                                        is Load.Ready -> {
+                                            standardMarked = result.value.takeIf { standard }
+                                            state = Load.Ready(result.value.recipe)
+                                        }
+                                        is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.STANDARD_FAILED))
+                                        Load.Loading -> Unit
+                                    }
+                                }
+                            }
+                        }
                         PlannerSettings(recipe.summary) { settings ->
                             scope.launch {
                                 (load { api.updateRecipeSettings(recipeId, settings) } as? Load.Ready)?.let { state = it }
@@ -443,15 +466,27 @@ private fun AddFromBank(pick: Boolean, busy: Boolean, onPick: (Boolean) -> Unit,
     }
 }
 
+/**
+ * A setting's [label] with its switch at the end of the line: the whole line toggles it, as a tap on the words is meant
+ * for the switch too, and reads as one switch to TalkBack.
+ */
+@Composable
+internal fun SwitchRow(label: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+    }
+}
+
 /** The switch that puts one of my recipes in the rotation the planner picks from, with a line on what that means. */
 @Composable
 private fun RotationRow(inRotation: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(t(Msg.IN_MY_ROTATION), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-            Switch(checked = inRotation, onCheckedChange = onChange, enabled = enabled)
-        }
+        SwitchRow(t(Msg.IN_MY_ROTATION), inRotation, enabled, onChange)
         Text(
             t(if (inRotation) Msg.ROTATION_ON_HINT else Msg.ROTATION_OFF_HINT),
             style = MaterialTheme.typography.bodySmall,

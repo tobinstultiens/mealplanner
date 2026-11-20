@@ -862,6 +862,36 @@ enum class Msg(private val english: String, private val dutch: String) {
     KEPT_BATCH_MADE("From a prep that was made, so it stays", "Uit een prep die gemaakt is, dus het blijft"),
     KEPT_MAKES_BATCH("It makes a prep, so it stays: remove the prep instead", "Het maakt een prep, dus het blijft: verwijder de prep"),
 
+    // --- Standard meals (issue 265): the recipe's switch, the chips where a meal is skipped, the picker
+    STANDARD_MEAL("Standard meal: I can always make this", "Standaardmaaltijd: kan ik altijd maken"),
+    STANDARD_ON_HINT(
+        "Offered in one tap when you skip a meal it is planned as; its ingredients are staples",
+        "Met één tik aangeboden als je een maaltijd overslaat waarvoor het gepland wordt; de ingrediënten zijn basis",
+    ),
+    STANDARD_OFF_HINT(
+        "For a meal you can always make from what is at home: it is offered when you skip one, and its ingredients become staples",
+        "Voor een maaltijd die je altijd kunt maken van wat in huis is: aangeboden als je er een overslaat, en de ingrediënten worden basis",
+    ),
+    STANDARD_ADDED_STAPLES("Now staples: {0}", "Nu basis: {0}"),
+    STANDARD_NONE_ADDED("Its ingredients were staples already", "De ingrediënten waren al basis"),
+    STANDARD_UNLINKED("Not linked to an ingredient, so not a staple: {0}", "Niet aan een ingrediënt gekoppeld, dus geen basis: {0}"),
+    STANDARD_FAILED("Could not save whether it is a standard meal: {0}", "Opslaan of het een standaardmaaltijd is, is niet gelukt: {0}"),
+    // The number and its unit stay on one line (a no-break space).
+    STANDARD_CHIP("{0} · {1}\u00A0kcal", "{0} · {1}\u00A0kcal"),
+    STANDARD_MISSING("no {0} at home", "geen {0} in huis"),
+    STANDARD_OR("or", "of"),
+    STANDARD_INSTEAD("Instead, one of my standard meals:", "In plaats daarvan, een van mijn standaardmaaltijden:"),
+    STANDARD_RESTOCK("Back among the staples, to restock: {0}", "Weer bij de basis, om aan te vullen: {0}"),
+    SKIP_SHEET_TITLE("Skipped: {0}", "Overgeslagen: {0}"),
+    SKIP_SHEET_TEXT("Eat one of your standard meals instead?", "Een van je standaardmaaltijden eten in plaats daarvan?"),
+    SKIP_SHEET_LEAVE("Leave it empty", "Leeg laten"),
+    PICKER_STANDARD("My standard meals", "Mijn standaardmaaltijden"),
+    REMOVE_STANDARD_MEAL("Remove from the plan", "Uit het plan halen"),
+    PICKER_SHRINKS_PREP(
+        "This meal is from a prepped batch still to make: another recipe here makes the batch smaller.",
+        "Deze maaltijd komt uit een prep die nog gemaakt wordt: een ander recept hier maakt de prep kleiner.",
+    ),
+
     // --- Adjusting a meal to what was in it (issue 226)
     MEAL_ADJUSTED("{0} · adjusted", "{0} · aangepast"),
     ADJUST("Adjust", "Aanpassen"),

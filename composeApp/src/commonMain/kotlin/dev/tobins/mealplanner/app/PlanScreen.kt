@@ -52,6 +52,9 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.SpareMove
+import dev.tobins.mealplanner.api.StandardChosen
+import dev.tobins.mealplanner.api.StandardMeal
+import dev.tobins.mealplanner.api.StandardMeals
 import dev.tobins.mealplanner.api.WeekPlan
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -109,10 +112,24 @@ fun PlanScreen(
     var addingSide by rememberSaveable(stateSaver = jsonSaver(AddingSide.serializer().nullable)) { mutableStateOf(null) }
     var spares by remember { mutableStateOf<List<SparePortion>>(emptyList()) }
     val preppable = myRecipes?.let(::preppable).orEmpty()
+    // The week's standard meals (issue 265), for the skip sheet and the picker, and the meal just skipped with those it offers.
+    var standard by remember(weekStart) { mutableStateOf<StandardMeals?>(null) }
+    var skipped by remember { mutableStateOf<Pair<PlannedMeal, List<StandardMeal>>?>(null) }
 
     /** Asks for the shares in the box today again; a failure leaves the card as it was, as the plan says what went wrong. */
     suspend fun refreshSpares() {
         (load { api.spareShares(today) } as? Load.Ready)?.let { spares = it.value }
+    }
+
+    /** Asks for the week's standard meals again, as what the plan holds says which slots can take one; a failure keeps those shown. */
+    suspend fun refreshStandard(): StandardMeals? {
+        (load { api.standardMeals(weekStart) } as? Load.Ready)?.let { standard = it.value }
+        return standard
+    }
+
+    /** Tells which ingredients choosing a standard meal made staples again, so the shopping list names them to restock. */
+    fun sayRestocked(chosen: StandardChosen) {
+        if (chosen.addedStaples.isNotEmpty()) scope.launch { snackbar.showSnackbar(t(Msg.STANDARD_RESTOCK, chosen.addedStaples.joinToString(", "))) }
     }
 
     LaunchedEffect(now) {
@@ -124,6 +141,7 @@ fun PlanScreen(
     }
     LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.plan(weekStart) } }
     LaunchedEffect(reload, frontReturns, today) { refreshSpares() }
+    LaunchedEffect(weekStart, reload, frontReturns) { refreshStandard() }
     // The week after the one shown, while the Prep dialog is open: a batch may be eaten into it, as a side next to its meals too.
     var nextWeek by remember(weekStart) { mutableStateOf<WeekPlan?>(null) }
     LaunchedEffect(prepping != null, weekStart) {
@@ -136,8 +154,8 @@ fun PlanScreen(
         scope.launch { listState.scrollToItem(0) }
     }
 
-    /** Runs a change on the server and shows the plan it returns. */
-    fun change(action: suspend () -> WeekPlan) {
+    /** Runs a change on the server and shows the plan it returns; [then] follows a change that went through. */
+    fun change(then: suspend () -> Unit = {}, action: suspend () -> WeekPlan) {
         if (busy) return
         busy = true
         scope.launch {
@@ -145,6 +163,8 @@ fun PlanScreen(
                 is Load.Ready -> {
                     state = result
                     refreshSpares()
+                    refreshStandard()
+                    then()
                 }
                 is Load.Failed -> snackbar.showSnackbar(failureSentence(result))
                 Load.Loading -> Unit
@@ -165,21 +185,40 @@ fun PlanScreen(
     }
 
     choosingFor?.let { (day, slot) ->
+        val inSlot = (state as? Load.Ready)?.value?.days?.getOrNull(day)?.meals?.firstOrNull { it.slot == slot }
+        // A standard meal goes in by its own route, which keeps a skipped prepped meal's share in the box (issue 265).
+        val standardIds = standardChoices(standard, day, slot).mapTo(HashSet()) { it.recipeId }
         RecipePicker(
             api, slot,
             title = t(Msg.PLAN_CHOOSE_FOR, t.slot(slot), dayLabel(plusDays(weekStart, day), t.locale)),
+            standard = standardIds,
+            note = t(Msg.PICKER_SHRINKS_PREP).takeIf { shrinksPrep(inSlot) },
             onDismiss = { choosingFor = null },
             onBrowseBank = { choosingFor = null; onOpenBank() },
         ) { recipe ->
             // A refusal (such as "this meal was eaten already") or a server from before the route: the picker shows why and stays open.
-            when (val result = load { api.chooseRecipe(weekStart, day, slot, recipe.id) }) {
+            val result = if (recipe.id in standardIds) {
+                load { api.chooseStandard(weekStart, day, slot, recipe.id, eaten = false).also(::sayRestocked).plan }
+            } else {
+                load { api.chooseRecipe(weekStart, day, slot, recipe.id) }
+            }
+            when (result) {
                 is Load.Ready -> {
                     state = Load.Ready(result.value ?: throw AppError(t(Msg.PLAN_CHOOSE_UNSUPPORTED)))
                     choosingFor = null
+                    refreshSpares()
+                    refreshStandard()
                 }
                 is Load.Failed -> throw AppError(failureSentence(result))
                 Load.Loading -> Unit
             }
+        }
+    }
+
+    skipped?.let { (meal, choices) ->
+        SkipSheet(meal.title, choices, enabled = !busy, onDismiss = { skipped = null }) { choice ->
+            skipped = null
+            change { api.chooseStandard(weekStart, meal.day, meal.slot, choice.recipeId, eaten = false).also(::sayRestocked).plan }
         }
     }
 
@@ -343,12 +382,20 @@ fun PlanScreen(
                                 onChoose = { day, slot -> choosingFor = day to slot },
                                 onToggleSkipped = { meal ->
                                     val status = if (meal.status == MealStatus.SKIPPED) MealStatus.PLANNED else MealStatus.SKIPPED
-                                    change {
+                                    // Skipped, the standard meals for its slot are offered at once, unless none can take its place.
+                                    val offer: suspend () -> Unit = {
+                                        val choices = standardChoices(standard, meal.day, meal.slot, skipped = meal.recipeId)
+                                        if (status == MealStatus.SKIPPED && choices.isNotEmpty()) skipped = meal to choices
+                                    }
+                                    change(then = offer) {
                                         api.setMealStatus(weekStart, meal.day, meal.slot, status)
                                         api.plan(weekStart)
                                     }
                                 },
                                 onToggleLock = { meal -> change { api.setMealLocked(weekStart, meal.day, meal.slot, !meal.locked) } },
+                                // A standard meal placed by hand goes again; one placed over a skipped prepped meal brings it back.
+                                standardRecipes = standard?.meals?.mapTo(HashSet()) { it.recipeId }.orEmpty(),
+                                onRemove = { meal -> change { api.removeMeal(weekStart, meal.day, meal.slot) } },
                                 onAdjust = { meal -> onAdjust(MealPlace(weekStart, meal.day, meal.slot)) },
                                 onPrep = { meal ->
                                     val date = plusDays(weekStart, meal.day)
@@ -398,6 +445,9 @@ private fun DayCard(
     onChoose: (Int, MealSlot) -> Unit,
     onToggleSkipped: (PlannedMeal) -> Unit,
     onToggleLock: (PlannedMeal) -> Unit,
+    /** The recipes that are my standard meals (issue 265): a meal of one can be taken out of the plan ([onRemove]). */
+    standardRecipes: Set<Long>,
+    onRemove: (PlannedMeal) -> Unit,
     onAdjust: (PlannedMeal) -> Unit,
     onPrep: (PlannedMeal) -> Unit,
     /** Removes a prep after naming its meals: the meal's own or its side's, with the title of its recipe. */
@@ -486,6 +536,10 @@ private fun DayCard(
                                 // Left out for a skipped meal, where it would be greyed with no reason: eat it after all first.
                                 if (kept == null && meal.status != MealStatus.SKIPPED) {
                                     DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onGenerate(meal) })
+                                }
+                                // Only where the server lets it go: not a meal that keeps its recipe, of a prep, or with a side.
+                                if (kept == null && meal.prep == null && meal.side == null && meal.recipeId in standardRecipes) {
+                                    DropdownMenuItem(text = { Text(t(Msg.REMOVE_STANDARD_MEAL)) }, onClick = { menu = false; onRemove(meal) })
                                 }
                                 val lunchOrDinner = meal.slot == MealSlot.LUNCH || meal.slot == MealSlot.DINNER
                                 val prep = meal.prep

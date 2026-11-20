@@ -88,15 +88,16 @@ DELETE FROM stock WHERE ingredientId = :id AND ingredientId IN (SELECT id FROM i
 -- was for, so that un-eating the meal puts exactly that back, into the entry it came from. A dinner is
 -- cooked with its leftovers: what it took for the next day's leftover lunch is kept under that lunch.
 -- role is MEAL for the meal's own share (its main), SIDE for that of the side next to it taken from a prepped
--- batch (issue 234, step 2): each is taken and given back with its own batch or meal, so they are kept apart.
+-- batch (issue 234, step 2), and BOX for that of a skipped prepped meal still in the box after a standard meal took its
+-- slot (issue 265): each is taken and given back with its own batch or meal, so they are kept apart.
 -- The rows go with their meal, so a meal that has some is neither replaced nor removed (PlanRepository.whyKeepsItsRecipe);
--- those of its side are carried over when its main is replaced (PlanRepository.save).
+-- those of its side and of a share in the box are carried over when its main is replaced (PlanRepository.save).
 CREATE TABLE stockUse (
     userId INTEGER NOT NULL,
     weekStart TEXT NOT NULL,
     day INTEGER NOT NULL,
     slot TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'MEAL', -- MEAL | SIDE: the share of the meal itself or of its side
+    role TEXT NOT NULL DEFAULT 'MEAL', -- MEAL | SIDE | BOX: the share of the meal itself, of its side, or in the box
     ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
     fromWeek TEXT NOT NULL,            -- stock.fromWeek of the entry it was taken from
     source TEXT NOT NULL,              -- stock.source of that entry
