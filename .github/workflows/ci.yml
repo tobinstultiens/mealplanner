@@ -1,6 +1,6 @@
 name: CI
 
-# Four jobs run side by side; then the server image is built and started, and pushed only on main.
+# Five jobs run side by side; then the server image is built and started, and pushed only on main.
 on:
   push:
     branches: [main]
@@ -109,6 +109,17 @@ jobs:
         with:
           name: profile-server-jar
           path: build/reports/profile/
+
+  # The self-tests of the helper scripts for agents (scripts/agent-cost, scripts/code-map): plain Python
+  # on made-up input, no Gradle, no secrets. A script that breaks fails here and not in the next session.
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Self-tests of the agent scripts
+        run: |
+          scripts/agent-cost --self-test
+          scripts/code-map --self-test
 
   # The server image: built and started on every run, so what only shows at start is found before the
   # merge and not the morning after; pushed only on main. Same registry and secrets as the cooking
