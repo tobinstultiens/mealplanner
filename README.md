@@ -893,12 +893,27 @@ What a run takes from outside the repository, and what holds each still:
   (issue 306). `verifyWasmNpmInstall` checks before webpack and before every Wasm browser test that each
   package of `kotlin-js-store/wasm/yarn.lock` is in `build/wasm/node_modules`, and fails with a message
   saying so. Another build on the same machine can still hold yarn's mutex that long; locally, delete
-  `build/wasm` and build again.
-- **The browser** for the Wasm tests: the Chrome preinstalled on the runner image (Karma's `ChromeHeadless`), a
-  version that changes with the image.
+  `build/wasm` and build again. In CI the tooling and yarn's cache come from a cache entry keyed on
+  `gradle/libs.versions.toml` and that lock, so the registry is needed only when one of them changes. Only
+  the `test` job saves it, at its end, when everything before passed, its browser tests included, and
+  `scripts/verify-npm-tree` finds every package the tooling's own `yarn.lock` requires at its locked version;
+  `server-jar` only restores it. Both check a restored tree the same way, and one that is not whole is removed
+  with a warning and installed afresh, so a bad entry cannot decide a run. After a key change neither job has
+  a cache: each installs from the registry, as before, and the `test` job saves the new entry.
+- **The browser** for the Wasm tests: Chrome for Testing at the version `CHROME_VERSION` in the `test` job.
+  Its zip is downloaded only when the cache has no copy (a retry says "retrying the download", with the
+  attempt), and checked against `CHROME_SHA256` on every run, cached or not, before it is unpacked and handed
+  to Karma as `CHROME_BIN`, with its setuid sandbox helper (`CHROME_DEVEL_SANDBOX`: Ubuntu forbids the user
+  namespaces of Chrome's other sandbox). A new version needs both values (the hash of `chrome-linux64.zip`).
+  Locally Karma uses the Chrome it finds, or `CHROME_BIN`.
+- **The JDK** is the latest Temurin 17 that `actions/setup-java` offers, and Gradle the wrapper's; each Gradle
+  job prints them first (`./gradlew --version`), the `test` job also the browser's version.
 - **No test reaches the network.** Tests that need a server start one on the loopback; the one that checks
   a failing fetch of the cooking site points at `127.0.0.1:1`, where nothing listens, and logs JGit's
-  "connection failed" on purpose.
+  "connection failed" on purpose. CI checks every test it runs: after the tests pass, the `test`, `android` and
+  `screenshots` jobs run them again offline (`./gradlew --stop`, then `scripts/without-network`, a network
+  namespace with only the loopback), with nothing they need left to fetch: the tasks of `allTests`, `server`'s
+  tests, `:androidApp:testDebugUnitTest` and `:composeApp:verifyScreenshots`.
 
 A failed test prints its message and stack in the log (`exceptionFormat = FULL` for every test task in the
 root build file): a browser test's failure used to show only its class, `Error` for a Mocha timeout.

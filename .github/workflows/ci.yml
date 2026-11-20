@@ -14,6 +14,11 @@ jobs:
   # Shared logic, server and app tests (JVM, Android host and the browser), and the migration check.
   test:
     runs-on: ubuntu-latest
+    env:
+      # The browser of the Wasm tests: Chrome for Testing at this version, checked against this hash, instead
+      # of whatever Chrome the runner image has that week (issue 306). A new version needs both lines.
+      CHROME_VERSION: 157.0.8103.78
+      CHROME_SHA256: 9223832977a13db3646201b1341c1f9cf08afa3ceae92540116d7b0c062364fb
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -21,6 +26,66 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      # The npm packages of the Wasm build: the Kotlin plugin's tooling (webpack, Karma, Mocha) and yarn's
+      # cache, keyed on what decides them, so a normal run needs no npm registry (issue 306). No restore-keys: a
+      # run never starts from another lock's packages. Only this job saves them, at its end, after its browser
+      # tests have used them and the tree has been checked; server-jar only restores.
+      - name: Restore the npm packages of the Wasm build
+        id: npm
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.kotlin/kotlin-npm-tooling
+            ~/.cache/yarn
+          key: wasm-npm-v2-${{ hashFiles('gradle/libs.versions.toml', 'kotlin-js-store/wasm/yarn.lock') }}
+      # A restored tooling tree that lacks a package of its lock is not used: it is removed, with a warning, and
+      # the build installs the packages itself, so a bad cache entry cannot decide a run.
+      - name: Check the restored npm packages
+        if: steps.npm.outputs.cache-hit == 'true'
+        run: |
+          scripts/verify-npm-tree --self-test
+          for dir in ~/.kotlin/kotlin-npm-tooling/yarn/*/; do
+            if ! scripts/verify-npm-tree "$dir"; then
+              echo "::warning::The cached npm packages are incomplete and are not used; delete the cache entry ${{ steps.npm.outputs.cache-primary-key }}."
+              rm -rf ~/.kotlin/kotlin-npm-tooling ~/.cache/yarn
+              break
+            fi
+          done
+      # The zip is kept, not the unpacked browser, so that its hash is checked on every run, cached or not.
+      - name: Restore Chrome
+        id: chrome
+        uses: actions/cache@v4
+        with:
+          path: ~/chrome-for-testing-zip
+          key: chrome-for-testing-zip-${{ env.CHROME_VERSION }}
+      - name: Download Chrome
+        if: steps.chrome.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/chrome-for-testing-zip
+          url="https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-linux64.zip"
+          for attempt in 1 2 3 4; do
+            curl -fsSL -o ~/chrome-for-testing-zip/chrome-linux64.zip "$url" && break
+            [ "$attempt" -lt 4 ] || exit 1
+            echo "::warning::Chrome's download failed (attempt $attempt of 4); retrying the download in 10 s"
+            sleep 10
+          done
+      # Karma starts the browser named by CHROME_BIN. Ubuntu forbids the user namespaces Chrome's sandbox
+      # needs, so it uses its setuid helper, as the packaged Chrome does. Started once here, so a browser that
+      # cannot run fails in this step and says so, not as a test failure.
+      - name: Versions
+        run: |
+          echo "$CHROME_SHA256  $HOME/chrome-for-testing-zip/chrome-linux64.zip" | sha256sum --check
+          unzip -q ~/chrome-for-testing-zip/chrome-linux64.zip -d "$RUNNER_TEMP/chrome"
+          chrome=$RUNNER_TEMP/chrome/chrome-linux64/chrome
+          sudo chown root:root "${chrome}_sandbox"
+          sudo chmod 4755 "${chrome}_sandbox"
+          echo "CHROME_DEVEL_SANDBOX=${chrome}_sandbox" >> "$GITHUB_ENV"
+          export CHROME_DEVEL_SANDBOX=${chrome}_sandbox
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+          echo "YARN_CACHE_FOLDER=$HOME/.cache/yarn" >> "$GITHUB_ENV"
+          "$chrome" --version
+          "$chrome" --headless --disable-gpu --dump-dom about:blank > /dev/null
+          ./gradlew --version
       - name: Test
         run: ./gradlew :shared:allTests :server:test :server:verifyMainDatabaseMigration :composeApp:allTests --profile
       # The browser tests can fail with a bare "Error"; the reports hold what the console said.
@@ -39,6 +104,27 @@ jobs:
         with:
           name: profile-test
           path: build/reports/profile/
+      # No test reaches the network (issue 306): the test tasks run again, offline, in a network namespace with
+      # only the loopback. The Test step above has resolved, downloaded and built everything they use, so this
+      # needs nothing from outside whatever the caches held. Its daemon is stopped first (scripts/without-network).
+      - name: Test again without a network
+        run: |
+          ./gradlew --stop
+          scripts/without-network ./gradlew --offline \
+            :shared:jvmTest --rerun :shared:wasmJsBrowserTest --rerun :server:test --rerun \
+            :composeApp:testAndroidHostTest --rerun :composeApp:wasmJsBrowserTest --rerun
+      # Only after everything above passed, only when the restore missed, and only a whole tree.
+      - name: Check the npm packages before saving them
+        if: steps.npm.outputs.cache-hit != 'true'
+        run: for dir in ~/.kotlin/kotlin-npm-tooling/yarn/*/; do scripts/verify-npm-tree "$dir"; done
+      - name: Save the npm packages of the Wasm build
+        if: steps.npm.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.kotlin/kotlin-npm-tooling
+            ~/.cache/yarn
+          key: ${{ steps.npm.outputs.cache-primary-key }}
 
   # The debug APK and lint. Release APKs are built by the Release workflow.
   android:
@@ -50,9 +136,16 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      - name: Versions
+        run: ./gradlew --version
       # testDebugUnitTest starts the real MainActivity under Robolectric (AppStartTest): an app that cannot start fails here.
       - name: Build, start and lint
         run: ./gradlew :androidApp:assembleDebug :androidApp:testDebugUnitTest :androidApp:lintDebug --profile
+      # As in the test job: the unit tests again, offline, with no network but the loopback (issue 306).
+      - name: Test again without a network
+        run: |
+          ./gradlew --stop
+          scripts/without-network ./gradlew --offline :androidApp:testDebugUnitTest --rerun
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -77,8 +170,16 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      - name: Versions
+        run: ./gradlew --version
       - name: Compare screenshots
         run: ./gradlew :composeApp:verifyScreenshots --profile
+      # As in the test job: the screenshot tests again, offline, with no network but the loopback (issue 306).
+      # verifyScreenshots never takes its tests as up to date, so they run again.
+      - name: Compare screenshots again without a network
+        run: |
+          ./gradlew --stop
+          scripts/without-network ./gradlew --offline :composeApp:verifyScreenshots
       - name: Upload screenshot differences
         if: failure()
         uses: actions/upload-artifact@v4
@@ -105,6 +206,30 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      # As in the test job: the Wasm build's npm packages without the registry, restored only (the test job saves
+      # them) and checked before use. On a miss this job installs them itself and does not save them.
+      - name: Restore the npm packages of the Wasm build
+        id: npm
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.kotlin/kotlin-npm-tooling
+            ~/.cache/yarn
+          key: wasm-npm-v2-${{ hashFiles('gradle/libs.versions.toml', 'kotlin-js-store/wasm/yarn.lock') }}
+      - name: Check the restored npm packages
+        if: steps.npm.outputs.cache-hit == 'true'
+        run: |
+          for dir in ~/.kotlin/kotlin-npm-tooling/yarn/*/; do
+            if ! scripts/verify-npm-tree "$dir"; then
+              echo "::warning::The cached npm packages are incomplete and are not used; delete the cache entry ${{ steps.npm.outputs.cache-primary-key }}."
+              rm -rf ~/.kotlin/kotlin-npm-tooling ~/.cache/yarn
+              break
+            fi
+          done
+      - name: Versions
+        run: |
+          echo "YARN_CACHE_FOLDER=$HOME/.cache/yarn" >> "$GITHUB_ENV"
+          ./gradlew --version
       - name: Build the server jar
         run: ./gradlew :server:shadowJar --profile
       - name: Upload server jar

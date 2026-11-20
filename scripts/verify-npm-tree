@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""Checks that a yarn 1 install is whole: every package its yarn.lock requires is in node_modules, at the locked version.
+
+    scripts/verify-npm-tree DIR     # DIR holds package.json, yarn.lock and node_modules
+    scripts/verify-npm-tree --self-test
+
+CI restores the Kotlin plugin's npm tooling (webpack, Karma, Mocha, under ~/.kotlin/kotlin-npm-tooling) from a cache
+(issue 306). The plugin only asks whether node_modules exists, so a tree that lost packages would be used as it is and
+fail the run, whatever the commit. This tells such a tree apart. A package reached only through optionalDependencies
+may be left out by yarn on this platform (another OS's binaries), so only the required ones count.
+
+Exit 0 when whole; 1 with what is missing.
+"""
+import json
+import os
+import re
+import sys
+import tempfile
+
+DEPENDENCY = re.compile(r'^ {4}("?)(.+?)\1 "?([^"]*)"?$')
+
+
+def name_of(key):
+    """The package name of a lock key `name@range` (a scoped name starts with @ itself)."""
+    return key[: key.index("@", 1)]
+
+
+def read_lock(text):
+    """Lock key -> {"version", "dependencies": [(name, range)]}; optional dependencies are left out."""
+    entries, current, section = {}, None, None
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        if not line.startswith(" "):
+            current = {"version": None, "dependencies": []}
+            for key in line.rstrip(":").split(", "):
+                entries[key.strip('"')] = current
+            section = None
+        elif line.startswith("  version "):
+            current["version"] = line.split(None, 1)[1].strip('"')
+        elif line.startswith("  ") and not line.startswith("    "):
+            section = line.strip().rstrip(":")
+        elif section == "dependencies":
+            match = DEPENDENCY.match(line)
+            if match:
+                current["dependencies"].append((match.group(2), match.group(3)))
+    return entries
+
+
+def required(package_json, entries):
+    """(name, version) of every package reached from package.json through required dependencies; unknown keys apart."""
+    roots = {**package_json.get("dependencies", {}), **package_json.get("devDependencies", {})}
+    todo = [f"{name}@{spec}" for name, spec in roots.items()]
+    seen, needed, unknown = set(), set(), []
+    while todo:
+        key = todo.pop()
+        if key in seen:
+            continue
+        seen.add(key)
+        entry = entries.get(key)
+        if entry is None:
+            unknown.append(key)
+            continue
+        needed.add((name_of(key), entry["version"]))
+        todo.extend(f"{name}@{spec}" for name, spec in entry["dependencies"])
+    return needed, unknown
+
+
+def installed(node_modules):
+    """(name, version) of every package anywhere under node_modules, nested ones included."""
+    found = set()
+    for root, dirs, files in os.walk(node_modules):
+        dirs[:] = [d for d in dirs if d != ".bin"]
+        if "package.json" not in files:
+            continue
+        parent, base = os.path.split(root)
+        scope_parent, scope = os.path.split(parent)
+        if os.path.basename(parent) == "node_modules":
+            name = base
+        elif scope.startswith("@") and os.path.basename(scope_parent) == "node_modules":
+            name = f"{scope}/{base}"
+        else:
+            continue
+        try:
+            with open(os.path.join(root, "package.json")) as f:
+                found.add((name, json.load(f).get("version")))
+        except (OSError, ValueError):
+            pass
+    return found
+
+
+def problems(directory):
+    with open(os.path.join(directory, "package.json")) as f:
+        package_json = json.load(f)
+    with open(os.path.join(directory, "yarn.lock")) as f:
+        entries = read_lock(f.read())
+    needed, unknown = required(package_json, entries)
+    missing = sorted(needed - installed(os.path.join(directory, "node_modules")))
+    return [f"not in yarn.lock: {key}" for key in unknown] + [f"missing: {name}@{version}" for name, version in missing]
+
+
+def self_test():
+    lock = '''# yarn lockfile v1
+
+
+"@s/a@^1.0.0", "@s/a@^1.1.0":
+  version "1.2.0"
+  dependencies:
+    b "^2.0.0"
+  optionalDependencies:
+    c "^3.0.0"
+
+b@^2.0.0:
+  version "2.1.0"
+
+c@^3.0.0:
+  version "3.0.0"
+'''
+    with tempfile.TemporaryDirectory() as d:
+        def package(path, version):
+            os.makedirs(os.path.join(d, path), exist_ok=True)
+            with open(os.path.join(d, path, "package.json"), "w") as f:
+                json.dump({"version": version}, f)
+        with open(os.path.join(d, "package.json"), "w") as f:
+            json.dump({"dependencies": {"@s/a": "^1.0.0"}}, f)
+        with open(os.path.join(d, "yarn.lock"), "w") as f:
+            f.write(lock)
+        package("node_modules/@s/a", "1.2.0")
+        package("node_modules/@s/a/node_modules/b", "2.1.0")
+        assert problems(d) == [], problems(d)  # nested is fine, the optional c may be absent
+        package("node_modules/@s/a/node_modules/b", "2.0.9")
+        assert problems(d) == ["missing: b@2.1.0"], problems(d)
+        os.remove(os.path.join(d, "node_modules/@s/a/package.json"))
+        assert problems(d) == ["missing: @s/a@1.2.0", "missing: b@2.1.0"], problems(d)
+        with open(os.path.join(d, "package.json"), "w") as f:
+            json.dump({"dependencies": {"@s/a": "^9"}}, f)
+        assert problems(d) == ["not in yarn.lock: @s/a@^9"], problems(d)
+    print("self-test ok")
+
+
+def main(args):
+    if args == ["--self-test"]:
+        self_test()
+        return 0
+    if len(args) != 1:
+        print(__doc__.strip().splitlines()[2], file=sys.stderr)
+        return 2
+    found = problems(args[0])
+    if found:
+        print(f"{args[0]}: the install is not whole ({len(found)}):", *found[:30], sep="\n  ")
+        return 1
+    print(f"{args[0]}: whole")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

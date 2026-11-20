@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Runs a command as the current user in a network namespace that has only the loopback, so a test that reaches
+# the network fails (CI, issue 306). Needs sudo without a password, as on a GitHub runner; first fails when
+# Maven Central can still be reached, so a pass never means the check did not apply.
+#
+#   scripts/without-network ./gradlew --offline :server:test --rerun
+#
+# Stop the Gradle daemon first (`./gradlew --stop`): one outside the namespace cannot be asked over the loopback
+# to release Gradle's cache locks, and the build inside waits for them.
+set -euo pipefail
+[ $# -gt 0 ] || { echo "usage: scripts/without-network <command...>" >&2; exit 2; }
+exec sudo -E unshare --net -- bash -c '
+  ip link set lo up
+  if curl -sS --max-time 5 -o /dev/null https://repo.maven.apache.org/; then
+    echo "without-network: Maven Central is reachable, so this is no check" >&2
+    exit 1
+  fi
+  exec sudo -E -u "$SUDO_USER" -- "$@"
+' without-network "$@"
