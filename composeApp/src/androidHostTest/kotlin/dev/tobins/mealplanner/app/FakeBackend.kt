@@ -78,6 +78,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.encodeToJsonElement
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import kotlin.concurrent.thread
 
 /**
  * A server on localhost that answers the calls of the screens with fixed sample data, so
@@ -123,6 +124,12 @@ class FakeBackend(
     val requests: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
 
     /**
+     * The calls of [requests] once their answer is sent: what the server sends from then on is no longer in it, so a test
+     * can change the data after an answer and know that only a later call can tell. The app may not have read it yet.
+     */
+    val answered: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+
+    /**
      * The free lunch or dinner the server proposes for the share in the box ([spare]): none, as every slot of its room holds a
      * meal in the sample week, unless a test sets one.
      */
@@ -142,8 +149,22 @@ class FakeBackend(
     @Volatile
     var refusing: String? = null
 
+    /**
+     * While set, the week's standard meals are answered once it opens, as over a slow connection, so that a test can show
+     * a screen before they come in. They wait on a thread of their own: every other call is answered meanwhile.
+     */
+    @Volatile
+    var standardMealsAnswer: java.util.concurrent.CountDownLatch? = null
+
     private val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
-        createContext("/") { exchange -> exchange.respond() }
+        createContext("/") { exchange ->
+            val held = standardMealsAnswer
+            if (held != null && exchange.requestURI.path.endsWith("/standard-meals")) {
+                thread { held.await(10, java.util.concurrent.TimeUnit.SECONDS); exchange.respond() }
+            } else {
+                exchange.respond()
+            }
+        }
         start()
     }
     private val json = Json { encodeDefaults = true }
@@ -179,6 +200,7 @@ class FakeBackend(
             responseBody.use { it.write(bytes) }
         }
         close()
+        answered += "$requestMethod ${requestURI.path}"
     }
 
     /** What the server answers with an error and its sentence, as `{"error": "..."}`. */

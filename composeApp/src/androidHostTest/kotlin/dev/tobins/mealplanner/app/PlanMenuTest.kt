@@ -3,13 +3,9 @@ package dev.tobins.mealplanner.app
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToIndex
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -65,18 +61,10 @@ class PlanMenuTest {
         }
     }
 
-    /** Opens the swap menu of the [slot] under the day [label] (the list is lazy: the day is scrolled to first). */
-    private fun openMenuOf(label: String, item: Int, slot: String = "dinner") {
-        val swap = "Swap $slot"
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(hasScrollAction()).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNode(hasScrollAction()).performScrollToIndex(item)
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty() }
-        val dayTop = compose.onNodeWithText(label).fetchSemanticsNode().boundsInRoot.top
-        val buttons = compose.onAllNodesWithContentDescription(swap).fetchSemanticsNodes()
-        // The first button of that slot below the day's heading is its own.
-        val own = buttons.withIndex().filter { it.value.boundsInRoot.top > dayTop }.minBy { it.value.boundsInRoot.top }.index
-        compose.onAllNodesWithContentDescription(swap)[own].performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Adjust what was in it").fetchSemanticsNodes().isNotEmpty() }
+    /** Opens the swap menu of the [slot] meal of the day headed [day], once the week is there with its box card if [prepped]. */
+    private fun openMenuOf(day: String, slot: String = "dinner", prepped: Boolean = false) {
+        compose.waitForPlan(boxCard = prepped)
+        compose.openSwapMenu(day, slot)
     }
 
     private fun count(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().size
@@ -88,7 +76,7 @@ class PlanMenuTest {
     @Test
     fun aMealStillToEatHasEveryEntry() {
         show()
-        openMenuOf("Mon 16 Nov", item = 1)
+        openMenuOf("Mon 16 Nov")
         assertOffered("Another recipe", "Choose a recipe…", "Write a new recipe…", "Adjust what was in it", "Not eating this")
     }
 
@@ -96,7 +84,7 @@ class PlanMenuTest {
     fun aSkippedMealsMenuLeavesOutWritingANewRecipe() {
         show()
         // The fake week skips Thursday's dinner.
-        openMenuOf("Thu 19 Nov", item = 4)
+        openMenuOf("Thu 19 Nov")
         assertOffered("Eat it after all", "Another recipe", "Choose a recipe…")
         assertNotOffered("Write a new recipe…")
     }
@@ -105,7 +93,7 @@ class PlanMenuTest {
     fun aLockedMealCannotBeSwappedForAnother() {
         show()
         // Friday's lentil soup was chosen, so it is locked: choosing again is left, another recipe is greyed.
-        openMenuOf("Fri 20 Nov", item = 5)
+        openMenuOf("Fri 20 Nov")
         assertOffered("Another recipe", "Choose a recipe…")
         compose.onNodeWithText("Another recipe").assertIsNotEnabled()
     }
@@ -114,7 +102,7 @@ class PlanMenuTest {
     fun anEatenMealIsMarkedAndItsMenuSaysItKeepsItsRecipe() {
         show()
         // The fake week has Wednesday's breakfast eaten.
-        openMenuOf("Wed 18 Nov", item = 3, slot = "breakfast")
+        openMenuOf("Wed 18 Nov", slot = "breakfast")
         assertEquals(1, count("✓ Eaten"), "the row is marked as Today marks it")
         assertOffered("Eaten, so its recipe stays", "Adjust what was in it", "Not eating this")
         assertNotOffered("Another recipe", "Choose a recipe…", "Write a new recipe…", "Prep this recipe…")
@@ -123,7 +111,7 @@ class PlanMenuTest {
     @Test
     fun theLeftoverLunchOfAnEatenDinnerKeepsItsRecipe() {
         show(FakeBackend(dinnerEaten = true))
-        openMenuOf("Sat 21 Nov", item = 6, slot = "lunch")
+        openMenuOf("Sat 21 Nov", slot = "lunch")
         assertOffered("Cooked with the dinner that was eaten, so it stays", "Adjust what was in it", "Not eating this")
         assertNotOffered("Another recipe", "Choose a recipe…", "Write a new recipe…", "Prep this recipe…")
     }
@@ -132,7 +120,7 @@ class PlanMenuTest {
     fun theMealThatMakesAPrepStaysAndOffersRemovingThePrep() {
         // The skipped share in the box is a card above the days.
         show(FakeBackend(prepped = true))
-        openMenuOf("Mon 16 Nov", item = 2)
+        openMenuOf("Mon 16 Nov", prepped = true)
         assertOffered("It makes a prep, so it stays: remove the prep instead", "Remove the prep…", "Not eating this")
         assertNotOffered("Another recipe", "Choose a recipe…", "Write a new recipe…", "Prep this recipe…")
     }
@@ -140,7 +128,7 @@ class PlanMenuTest {
     @Test
     fun aLaterMealOfAPrepStillToMakeCanBeChosenAgain() {
         show(FakeBackend(prepped = true))
-        openMenuOf("Tue 17 Nov", item = 3, slot = "lunch")
+        openMenuOf("Tue 17 Nov", slot = "lunch", prepped = true)
         assertOffered("Choose a recipe…", "Remove the prep…")
         assertNotOffered("It makes a prep, so it stays: remove the prep instead", "Prep this recipe…")
     }
@@ -149,7 +137,7 @@ class PlanMenuTest {
     fun aSideThatMakesItsBatchGoesOnlyWithItsPrep() {
         show(FakeBackend(sides = true))
         // Wednesday's dinner has the side the batch is made with.
-        openMenuOf("Wed 18 Nov", item = 3)
+        openMenuOf("Wed 18 Nov")
         assertOffered("Remove the side's prep…")
         assertNotOffered("Remove the side")
     }
@@ -157,7 +145,7 @@ class PlanMenuTest {
     @Test
     fun aLaterSideOfABatchStillToMakeCanGoOnItsOwn() {
         show(FakeBackend(sides = true))
-        openMenuOf("Thu 19 Nov", item = 4, slot = "lunch")
+        openMenuOf("Thu 19 Nov", slot = "lunch")
         assertOffered("Remove the side", "Remove the side's prep…")
     }
 }

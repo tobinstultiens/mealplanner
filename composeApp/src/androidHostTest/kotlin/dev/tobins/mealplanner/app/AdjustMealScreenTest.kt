@@ -5,10 +5,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -135,8 +137,10 @@ class AdjustMealScreenTest {
     fun anIngredientOfTheCatalogueIsAddedAndResetTakesEveryChangeAway() {
         show()
         scrollTo("Add an ingredient").performClick()
-        waitFor("Feta")
-        compose.onNodeWithText("Feta").performClick()
+        // The picker's row, once its catalogue is in: the screen shows the feta's add-on chip ("Feta · 30 g") all along.
+        val feta = hasText("Feta") and hasAnyAncestor(isDialog())
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(feta).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(feta).performClick()
         compose.onNodeWithText("How much Feta?").assertExists()
         typeAmount("30")
         waitForChanges(*start.toTypedArray(), MealLineChange(2, 30.0))
