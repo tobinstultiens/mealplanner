@@ -27,6 +27,8 @@ For each PR start a fresh `reviewer` with only the PR number; pass `model: "opus
 - After two rounds without approval, stop on that issue and report why, rather than loop.
 - **Approved but left for the owner** (a release is required, or it touches workflows, signing or `.claude/`): when more than one such PR waits, run `merger` in plan mode and give the owner its order and what they have to do. Only when the owner says which ones to merge, start `merger` in merge mode with the PR numbers and the owner's words quoted; when the owner also asked for an app release after the merges, say so in the brief and it starts the Release workflow once CI on `main` is green, without a further prompt. That makes the owner's request the only approval: when they asked to merge PRs labelled `needs-app-release` and said nothing about a release, ask them once, before starting the merger, whether it should release afterwards. Never infer either approval.
 - A failing CI run nobody understands: `ci-triage` with the run id.
+- An agent still listed as running long after its report came in is probably held by a background wait (an `until … sleep` loop with no limit). Look at its processes (`ps` for `sleep`, `gh … --watch`, `until`) before assuming it is working, and stop the loop.
+- The "## Waiting" paragraph is one rule kept word for word in seven agent files (`coder`, `coder-deep`, `reviewer`, `merger`, `emulator-tester`, `qa`, `ci-triage`), because each agent reads only its own definition. Change it in all seven at once.
 - After a merge, have the coders of the PRs still open rebase on `main` before their review.
 
 ## 5. Report
