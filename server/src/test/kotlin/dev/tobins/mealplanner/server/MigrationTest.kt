@@ -186,7 +186,13 @@ class MigrationTest {
 
     /** Version 22 added standard meals (21.sqm): a recipe's column. */
     private fun dropStandardMeals(statement: Statement) {
+        dropPlanPicks(statement)
         statement.execute("ALTER TABLE recipe DROP COLUMN standardMeal")
+    }
+
+    /** Version 23 added the dinners chosen and the recipes hidden on the planning screen (22.sqm): a table, with its index. */
+    private fun dropPlanPicks(statement: Statement) {
+        statement.execute("DROP TABLE planPick")
     }
 
     @Test
@@ -1264,7 +1270,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        assertEquals(before, Triple(counts(), recipes(), everythingBut(url, "recipe")), "every row as it was, in every table")
+        assertEquals(before, Triple(counts(), recipes(), everythingBut(url, "recipe", "planPick")), "every row as it was, in every table")
         assertEquals("0", single(url, "SELECT group_concat(DISTINCT standardMeal) FROM recipe"), "no recipe is a standard meal")
 
         // Alice marks her toast and eats it in place of the skipped lunch: the share stays in the box with its beef, Bob's as it was.
@@ -1282,13 +1288,73 @@ class MigrationTest {
         driver.close()
     }
 
-    /** Every row of every table of the file but [table], to compare before and after a migration that adds a column to it. */
-    private fun everythingBut(url: String, table: String): List<String> = DriverManager.getConnection(url).use { connection ->
+    @Test
+    fun aVersionTwentyTwoDatabaseKeepsEveryRowAndStartsWithNoDinnerChosen() {
+        val file = createTempFile("v22", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropPlanPicks(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name, isStaple) VALUES (1, 1, 'Beef', 0), (2, 2, 'Beef', 0)")
+                statement.execute(
+                    "INSERT INTO recipe (id, userId, source, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, mealSlotsJson, addedAt, inRotation) VALUES " +
+                        "(1, 1, 'MANUAL', 'own', 'Stew', '[]', 4, '', 1, '[]', 'MEAL', '[\"DINNER\"]', '2026-11-01T00:00:00Z', 1), " +
+                        "(2, 1, 'MANUAL', 'own', 'Soup', '[]', 4, '', 1, '[]', 'MEAL', '[\"DINNER\"]', '2026-11-01T00:00:00Z', 1), " +
+                        "(3, 2, 'MANUAL', 'own', 'Bob stew', '[]', 4, '', 1, '[]', 'MEAL', NULL, '2026-11-01T00:00:00Z', 1)",
+                )
+                statement.execute(
+                    "INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item) VALUES " +
+                        "(1, 0, 1600, 'g', 'WEIGHT', 1600, 'beef'), (2, 0, 1200, 'g', 'WEIGHT', 1200, 'beef'), (3, 0, 1600, 'g', 'WEIGHT', 1600, 'beef')",
+                )
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 1, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 1, 'EATEN'), (2, '$week', 0, 'DINNER', 3, 'Bob stew', 1.0, 600.0, 40.0, 0, 0, 'PLANNED')",
+                )
+                statement.execute("PRAGMA user_version = 22")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        val before = counts() to everythingBut(url, "planPick")
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, counts() to everythingBut(url, "planPick"), "every row as it was, in every table")
+        assertEquals("0", single(url, "SELECT count(*) FROM planPick"), "no dinner chosen, no recipe hidden")
+
+        // Alice chooses her soup and hides her stew; deleting the soup takes its pick along, and Bob has none.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(week) })
+        alice.profiles.save(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT))
+        alice.planning.pick(week, 2)
+        assertEquals(listOf(1L), alice.planning.hide(week, 1).notThisWeek.map { it.recipeId })
+        assertEquals(listOf(2L), alice.planning.get(week).picks.map { it.recipeId })
+        alice.recipes.delete(2)
+        assertEquals("1:1", single(url, "SELECT recipeId || ':' || refused FROM planPick"), "the soup's pick went with it")
+        assertEquals("0", single(url, "SELECT count(*) FROM planPick WHERE userId = 2"))
+        driver.close()
+    }
+
+    /**
+     * Every row of every table of the file but [tables], to compare before and after a migration that adds a column to one
+     * of them; a table a later migration adds is one of them too.
+     */
+    private fun everythingBut(url: String, vararg tables: String): List<String> = DriverManager.getConnection(url).use { connection ->
         fun query(sql: String): List<String> = connection.createStatement().executeQuery(sql).use { rows ->
             val count = rows.metaData.columnCount
             generateSequence { if (rows.next()) (1..count).joinToString("|") { rows.getString(it).orEmpty() } else null }.toList()
         }
-        query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != '$table' ORDER BY name")
+        query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+            .filter { it !in tables }
             .flatMap { name -> listOf(name) + query("SELECT * FROM \"$name\"") }
     }
 

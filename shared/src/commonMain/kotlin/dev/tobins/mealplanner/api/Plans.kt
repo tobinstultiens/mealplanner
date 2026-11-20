@@ -243,6 +243,11 @@ data class WeekPlan(
      * server before this.
      */
     val batchesToMake: List<BatchToMake> = emptyList(),
+    /**
+     * How many dinners were chosen on the planning screen ([WeekPlanning.picks], issue 255) and are not on a day yet:
+     * while there are any, the Plan offers "Continue planning". 0 from a server before this.
+     */
+    val dinnersChosen: Int = 0,
 )
 
 /** A batch still to make ([WeekPlan.batchesToMake]): its recipe's id and [title], and the batch. */

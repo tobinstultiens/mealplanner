@@ -190,6 +190,62 @@ largest; anything else is a 400. All the rules are in `PortionRange`:
 An app from before the range saves a profile without its two fields; the server keeps the stored range
 then, rather than going back to the defaults.
 
+## Planning the week
+
+The week's dinners can be chosen by hand from suggestions, after which the planner puts them on days and fills the
+rest (issue 255). The server has it all; the app's planning screen comes with the next app release. Everything is
+under `/api/plans/{weekStart}/planning` and per account:
+
+- `GET planning` (`WeekPlanning`): the days whose dinner is still to choose (`openDays`: those without a dinner the
+  week keeps when it is planned, which is one locked, prepped, eaten, skipped, with a prepped side or with a skipped
+  share in the box under it), the dinners chosen so far in the order they were, each at the portion the planner gives
+  a dinner of it, the recipes hidden for the week, and `totals`, the strip: what the week's kept meals and the chosen
+  dinners (on the days they would get, with their leftover lunches) cost with and without offers, and their calories,
+  protein and fibre against the share of the daily targets those meals stand for. They are summed by the Plan's own
+  code, and after "Done" the Plan has those same meals with those same numbers.
+- `GET planning/suggestions` (`DinnerSuggestions`, 6 unless `?count=`, at most 50): recipes of the rotation the
+  planner would take as a dinner, each on at least one ground: **on offer** (an ingredient is on offer at one of the
+  account's stores during the week and that takes at least 5 cents off a serving; each offer named with the store,
+  its deal and what it alone saves), **uses what is there** (an ingredient on hand, or at least 5 cents' worth of the
+  rest of a fresh pack a chosen dinner opens, named with that dinner) and **favourite** (rated 4 or 5, or last eaten
+  three weeks or more before the week). A recipe without a ground is not suggested; search finds it. They are rated
+  by the planner's own score for a dinner (calories, protein, fibre, price with offers, rating, repeats, last week,
+  the packs the chosen dinners open), without a day or chance, and mixed from the grounds in turn, offers first, so
+  that a screen holds every ground that has recipes, however many are on offer. A recipe of a batch prepped this
+  week comes only when no other is left. Chosen and hidden recipes are left out, and so are those in `?seen=12,15`:
+  "Show others" sends the ids it showed. A cursor would skip or repeat recipes, as the order changes after every
+  pick; the ids do not, and the server keeps no state per screen. With `?q=` it is a search ("Something else"):
+  every meal of mine whose title has each word, in the rotation or not, best first, whatever its grounds.
+- `PUT` and `DELETE planning/picks/{recipeId}` choose a dinner and take it out; `PUT` and `DELETE
+  planning/not-this-week/{recipeId}` hide a recipe for the week and show it again. Each answers `WeekPlanning`.
+  They are stored as they are made (`planPick`), so leaving the screen or the app loses nothing, and
+  `WeekPlan.dinnersChosen` says how many dinners are chosen and not yet on a day ("Continue planning"). Any of my
+  recipes that is a meal with amounts can be chosen, whatever its calories: nothing is refused or warned about for
+  those. More dinners than open days is a 409. Hiding changes nothing in the rotation; a hidden recipe chosen is no
+  longer chosen. Both are forgotten once their week is over.
+- `POST planning/done` ("Done", or "Fill the rest") answers the `WeekPlan`. Each chosen dinner goes on an open day of
+  its own, locked as a recipe chosen by hand, with its leftover lunch the next day where that lunch is free. Of all
+  the ways to put them on days, the one taken leaves the least rest of fresh packs, by the planner's own bookkeeping
+  (`OpenPacks`), so dinners that share a pack land within the days it keeps; then the fewest leftovers without a
+  lunch to go to (with a dinner for every day, one that leaves no leftovers goes on Sunday); then the fewest dinners with the same first tag as the
+  day before. Then the planner fills everything else as `generate` does, keeping what it keeps, with none of the
+  hidden recipes. With nothing chosen nor hidden it is `generate` itself, by the same code. The chosen dinners are
+  then no longer "chosen"; the hidden recipes stay hidden for the week.
+
+`POST /api/plans/{weekStart}/meals/{day}/DINNER/move` with `{"toDay": 3}` moves a dinner to another day of the week,
+swapping it with the dinner there, each as it is (recipe, portions, lock, status, what was in it). The lunches after
+the two days follow: each dinner's leftover lunch goes with it, with what was in it, or the dinner gets the leftovers
+the planner would give it there; a day left without leftovers keeps a lunch of its own, or takes the one the
+leftovers pushed out, and else its lunch goes (it was the leftovers of the dinner that left). A lunch that is locked,
+eaten, skipped or has a side stays as it is. Refused (409, nothing changes) for a dinner that keeps its recipe (eaten,
+or of a batch made or that it makes, with the server's own sentences), a later meal of a prepped batch, one with a
+prepped side or a share in the box under it, and one whose leftover lunch can't follow; another slot than dinner, or
+the same day, is a 400.
+
+The planner knows the recipes of locked meals that are not in the rotation (`PlanRequest.known`): such a dinner,
+chosen by hand, leaves its leftovers for the next lunch when the week is planned again, as a dinner of the rotation
+does. It never picks them by itself.
+
 ## Prepped meals
 
 A recipe can be made once and eaten over several days (issue 234), as the meals themselves, as a side next to
@@ -924,7 +980,8 @@ locked, and a skipped meal leaves the day's and the week's totals; a meal that w
 dinner, keeps its recipe and its place: `reroll`, `PUT` and delete answer 409, `POST meals/{day}/{slot}/generate` 422, and
 `generate` keeps it; see `docs/data-sources.md`, "Un-eating"; `preps` and `preps/{id}` with `preps/{id}/spare` for prepped
 meals, `DELETE meals/{day}/{slot}/side` for a side, and `GET /api/preps/spare/{date}`, see "Prepped meals"; `GET standard-meals`
-and `PUT meals/{day}/{slot}/standard`, with `PUT /api/recipes/{id}/standard`, see "Standard meals"), `/api/days/{date}` and `/api/log` (what was eaten)
+and `PUT meals/{day}/{slot}/standard`, with `PUT /api/recipes/{id}/standard`, see "Standard meals"; `planning` with its
+suggestions, picks, `not-this-week` and `done`, and `POST meals/{day}/DINNER/move`, see "Planning the week"), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion; the newest weighing is the profile's weight, so the targets follow it:
 a weighing for an earlier day leaves the profile alone, and removing the newest one gives the profile the weight of the newest
 one left. Removing the only one keeps the profile's weight, as what it was before is not stored; plans already made keep their

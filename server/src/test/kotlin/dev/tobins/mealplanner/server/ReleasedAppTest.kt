@@ -537,6 +537,44 @@ class ReleasedAppTest {
     }
 
     /**
+     * A week planned on the planning screen of a newer app (issue 255): two dinners chosen and a recipe hidden, not yet on
+     * days, then "Done", then one of the dinners moved to another day. The installed app reads the week, its day, the list
+     * and what is due at each step, of which it knows none of this, and its own Generate keeps the chosen dinners, which
+     * are locked as recipes chosen by hand.
+     */
+    @Test
+    fun theInstalledAppReadsAWeekPlannedOnThePlanningScreen() = testApplication {
+        val http = start()
+        http.post("/api/sync/cooking").read<SyncResult>()
+        http.addWholeBank()
+        http.put("/api/profile") { setBody(Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }.read<ProfileState>()
+        val recipes = http.read<List<RecipeSummary>>("/api/recipes").map { it.id }
+        suspend fun readsTheWeek(): WeekPlan {
+            http.read<DayView>("/api/days/2026-11-18")
+            http.read<ShoppingList>("/api/plans/$week/shopping")
+            http.read<NotificationFacts>("/api/notifications")
+            return http.read<WeekPlan>("/api/plans/$week")
+        }
+
+        for (id in recipes.take(2)) assertTrue(http.put("/api/plans/$week/planning/picks/$id").status.isSuccess())
+        assertTrue(http.put("/api/plans/$week/planning/not-this-week/${recipes[2]}").status.isSuccess())
+        assertTrue(http.get("/api/plans/$week").bodyAsText().contains("\"dinnersChosen\":2"), "a newer app sees the dinners chosen")
+        assertTrue(readsTheWeek().days.all { it.meals.isEmpty() }, "chosen, not yet on days")
+
+        val done = http.post("/api/plans/$week/planning/done")
+        assertTrue(done.status.isSuccess(), done.bodyAsText())
+        fun WeekPlan.chosen() = days.flatMap { it.meals }.filter { it.slot == MealSlot.DINNER && it.recipeId in recipes.take(2) && it.locked }
+        val chosen = readsTheWeek().chosen()
+        assertEquals(recipes.take(2).toSet(), chosen.map { it.recipeId }.toSet())
+        assertEquals(chosen, http.post("/api/plans/$week/generate").read<WeekPlan>().chosen(), "the installed app's Generate keeps them")
+
+        val to = (chosen[0].day + 1) % 7
+        val moved = http.post("/api/plans/$week/meals/${chosen[0].day}/DINNER/move") { setBody("""{"toDay":$to}""") }
+        assertTrue(moved.status.isSuccess(), moved.bodyAsText())
+        assertEquals(chosen[0].recipeId, readsTheWeek().days[to].meals.single { it.slot == MealSlot.DINNER }.recipeId)
+    }
+
+    /**
      * No enum of the frozen types may have a value the current one lacks: an installed app fails to
      * read a response with a value it does not know, whatever else the response holds. The check
      * covers every enum under `released/` by itself, so a new frozen enum is covered after a freeze.

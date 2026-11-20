@@ -173,6 +173,9 @@ class RecipeRepository(
      * @param onHand the ingredients on hand in the week being planned ([StockRepository.onHandFor]).
      * @param freshPacks the packs of the fresh ingredients ([PriceRepository.freshPacks]); a recipe's
      *   [PlanCandidate.freshUses] are those of its ingredients that have one and are not on hand.
+     * @param everyMeal every one of my recipes that is a meal with amounts, in the rotation or not, disliked or not and
+     *   with complete nutrition or not: those the user may put in a plan by hand ([PlanRepository.choose]), as the planning
+     *   screen's search finds them (issue 255).
      */
     fun planCandidates(
         onOffer: Set<Long> = emptySet(),
@@ -180,19 +183,21 @@ class RecipeRepository(
         prices: Pricing = Pricing.NONE,
         onHand: Set<Long> = emptySet(),
         freshPacks: Map<Long, Pack> = emptyMap(),
+        everyMeal: Boolean = false,
     ): List<PlanCandidate> {
         val resolve = ingredients.resolver()
-        val disliked = dislikes.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+        val disliked = dislikes.takeUnless { everyMeal }.orEmpty().map { it.trim().lowercase() }.filter { it.isNotEmpty() }
             .map { Regex("\\b${Regex.escape(it)}(s|es|en|n)?\\b", RegexOption.IGNORE_CASE) }
         return mine().mapNotNull { row ->
-            if (row.kind != RecipeKind.MEAL.name || row.inRotation == 0L) return@mapNotNull null
+            if (row.kind != RecipeKind.MEAL.name || (row.inRotation == 0L && !everyMeal)) return@mapNotNull null
             val lines = linesOf(row.id)
             if (disliked.isNotEmpty() && lines.any { line ->
                     val names = listOfNotNull(line.ingredientText, resolve(line)?.name)
                     disliked.any { word -> names.any(word::containsMatchIn) }
                 }
             ) return@mapNotNull null
-            val nutrition = nutritionOf(row, lines, resolve)?.takeIf { it.complete } ?: return@mapNotNull null
+            val nutrition = nutritionOf(row, lines, resolve)?.takeIf { it.complete || everyMeal } ?: return@mapNotNull null
+            val cost = costOf(row, lines, resolve, prices)
             PlanCandidate(
                 recipeId = row.id,
                 title = row.title,
@@ -204,9 +209,10 @@ class RecipeRepository(
                 tags = Json.decodeFromString(row.tagsJson),
                 onHandCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onHand },
                 offerCount = lines.mapNotNull { resolve(it)?.id }.distinct().count { it in onOffer },
-                costPerServing = costOf(row, lines, resolve, prices)?.perServingWithOffers,
+                costPerServing = cost?.perServingWithOffers,
                 rating = row.rating?.toInt(),
                 freshUses = if (freshPacks.isEmpty()) emptyList() else freshUsesOf(row.servings!!.toInt(), lines, resolve, freshPacks, onHand),
+                regularCostPerServing = cost?.perServing,
             )
         }
     }
