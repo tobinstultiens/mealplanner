@@ -930,7 +930,7 @@ a weighing for an earlier day leaves the profile alone, and removing the newest 
 one left. Removing the only one keeps the profile's weight, as what it was before is not stored; plans already made keep their
 portions), `/api/offers` (weekly store offers;
 `POST /api/offers/refresh` fetches them now; `GET /api/offers/verdicts` says whether each of the account's offers is a
-good deal by its price history, for reading only: no app uses it yet, see `docs/data-sources.md`, "Is it a good deal?") and `/api/prices` (regular AH prices per ingredient, the
+good deal by its own pack's price history, for reading only: no app uses it yet, see `docs/data-sources.md`, "Is it a good deal?") and `/api/prices` (regular AH prices per ingredient, the
 baseline for costing meals; `POST /api/prices/refresh` starts a lookup).
 
 Ingredient texts are linked without manual work where the match is clear: through the default

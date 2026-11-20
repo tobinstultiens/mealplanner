@@ -372,6 +372,25 @@ ingredient names.
 **This product.** The rows of the same store and the same normalised title, over the last year (52 weeks: a seasonal
 product's offers of last season count, older prices say little about today's), every pack size and every deal.
 
+**Each pack against itself** (the owner's choice, issue 197). The verdict compares today's offer only with offers of
+its own pack (the pack size as the store writes it, normalised; `''` when it gives none): a 500 g offer with earlier
+500 g offers, never with the kilo pack's. Comparing per kg across packs called a 1 kg pack's ordinary deal "a real
+deal" against dearer-per-kg 500 g offers, and the 500 g pack's usual deal "worse than usual", which overstates it for
+"buy now or wait": the kilo comes back at that price. That another pack is cheaper per kg or per litre is said apart
+from the verdict ("Cheaper per kg in another pack now (1 kg): …", or "Cheapest per kg in another pack (1 kg): …",
+below).
+
+**Two products under one title** (issue 197). Jumbo writes some offers under a brand title ("Lipton", "Spa Touch",
+"Croky", "Duyvis", "Coca-Cola"), several at once, each a different product or group of products: its subtitle, kept as
+the pack size, says which ("Tray 24x250ml", "Alle flesjes à 500 ml, per flesje", "Alle flessen à 1,5 liter"). Judged
+pack against pack, they are never compared with one another, so none is "cheaper another way" than another. In the
+offers of 16 to 20 November 2026 every title Jumbo used twice at once had two different packs. The product's address
+(`url`) cannot tell them apart: Jumbo's is the promotion's page (`/aanbiedingen/lipton/3022372`), whose number is new
+with each promotion, also for the same product the next week ("Mandarijnen, Net 1 kilo": 3023718 one week, 3024032
+the next). Telling products apart by it would make every week of a Jumbo product a product of its own. So they are told
+apart by the pack (the owner's decision, issue 197); two products under one title and one pack would still share a
+history.
+
 **Which rows are one offer, and which offers are earlier** (`joinOffers`, `judge`). Rows of one product (store and
 title) are one offer when they have the same pack and the same deal as the customer sees it (the deal text, or for an
 offer without one, as at Lidl, its price) on store dates that share a day or run on (the later one starts by the day
@@ -379,27 +398,41 @@ after the earlier one ends). Nothing else decides it. In particular, the nights 
 never do: the store parsers skip an item with a missing field without a word. Nights the store was not read do not
 decide it either. The same deal again the next week is the offer going on, not a second one: an offer that continues
 says nothing about how often the product is on offer, and a product that is always on offer has its own rule (rule 4).
-An offer is earlier when its store dates ended before today and it is not today's offer itself. An offer is *alongside*
-when its store dates include today and it is not today's offer: it has not ended, so it is no earlier offer, but it is
-dated as running today, so it counts against today's (rules 2 and 6) and the summary names it. Each row of this table is a test in
+
+"Now" is what the store shows today (`TodaysPage`, issue 197): an offer is *shown today* when the store's latest
+recording saw it, or when it is among the store's stored offers (`/api/offers`), with the same pack and deal on dates
+that share a day with it. A store's dates alone do not say an offer is still there: Lidl changes a price mid-week on
+the same dates, and a deal dated over months can be withdrawn long before its end. An offer is *alongside* when its
+store dates include today, it is not today's offer, and it is shown today: it has not ended, so it is no earlier offer,
+and it is named in the summary; of today's pack, it counts against today's (rules 2 and 6). An offer is *earlier* when
+it is not today's offer and it ended: its store dates ended before today, or it ended early, dated over today but no
+longer shown. Only earlier offers of today's pack are compared with. Each row of this table is a test in
 `history/OfferPeriodsTest.kt` or `history/VerdictPropertiesTest.kt`. The latter checks the properties behind the
-rules on 600 made-up histories (fixed seeds, under two seconds; packs by weight, by pieces and without a size), which include offers dated over months and from
-before the first read, other deals running alongside for weeks, and looked-up regular prices:
-- the verdict and every number in it stay the same when nights are dropped from the sightings;
+rules on 600 made-up histories (fixed seeds, under two seconds; packs by weight, by pieces and without a size), which
+include offers dated over months and from before the first read, other deals running alongside for weeks, looked-up
+regular prices, two prices without deal text on the same dates (Lidl's change mid-week), offers the store stopped
+showing before their dates ended, and another deal of today's pack shown alongside that pays what today's does:
+- the verdict and every number in it stay the same when nights are dropped from the sightings (today's page stays the
+  store's);
 - today's value is what `DealTerms.of` gives for today's offer as shown today (but for the share against a reported
   raise);
-- no offer dated over today or later is an earlier one, nor today's own, nor counted twice, and the offers alongside are
-  exactly the other offers dated over today;
+- the earlier offers are exactly the other offers of today's pack that ended, by their dates or early, none counted
+  twice; the offers alongside are exactly the other offers, of any pack, dated over today and shown today, valued as
+  shown today;
 - a comparison rests on at least 2 earlier offers;
 - a raise is reported exactly when a price before of the same pack in the 30 days before was lower;
-- a real deal is never clearly dearer, in its measure, than any other offer of the product dated up to today, ended or
-  running, and "less than ever" is clearly less than every one;
-- no verdict but "not a deal" passes over an offer running now that is clearly cheaper in what is paid (worked out in
-  the test from the two offers' prices, not from the measure the verdict chose), and "less than ever" holds against
-  offers running now too;
+- a real deal is never clearly dearer, in its measure, than any other offer of its pack dated up to today, ended or
+  shown today, and "less than ever" is clearly less than every one;
+- no verdict but "not a deal" passes over an offer of today's pack shown now that is clearly cheaper in what is paid
+  (worked out in the test from the two offers' prices, not from the measure the verdict chose);
 - "always on offer" only when offers of today's pack and deal were dated over 90 % of the days read;
-- the summary names every offer running alongside, says "no earlier offer of it ended" only when none did, and speaks of
-  a share against a raise only when it compares by the share.
+- the summary names every offer shown alongside and no other as on offer now, names an offer without deal text by its
+  price, says "no earlier offer … ended" only when none did, and speaks of a share against a raise only when it
+  compares by the share;
+- another pack is said to be cheaper exactly when an offer of another pack, shown today or ended, is clearly cheaper per
+  kg or per litre, never per piece (the generator has two packs of pieces); one shown today when any is.
+
+The test also counts the shapes it reaches, and fails if one of these is never reached.
 
 | | Pack | Deal | Price | Store dates | Nights missed between | Answer |
 |---|---|---|---|---|---|---|
@@ -417,17 +450,20 @@ before the first read, other deals running alongside for weeks, and looked-up re
 | 12 | today's | today's | any | ended a day or more before today's began | any | an earlier offer |
 | 13 | any | another | any | ended before today | any | an earlier offer |
 | 14 | any | another | any | dated to begin after today (Jumbo lists next week's) | any, also the last night | neither earlier nor alongside |
-| 15 | any | another | any | dated over today, from before or since today's began | any | alongside: not earlier; counts against today's (rule 2) and is named |
-| 16 | another | today's | any | dated over today | any | alongside, as row 15; its days are not today's for rule 4 |
+| 15 | any | another | any | dated over today, from before or since today's began; shown today | any | alongside: not earlier; named; of today's pack, counts against today's (rules 2 and 6) |
+| 16 | another | today's | any | dated over today; shown today | any | alongside, as row 15, never compared with; its days are not today's for rule 4 |
+| 17 | any | another | any | dated over today, but not shown today (last seen yesterday, or fifty nights ago) | any | ended early: an earlier offer, never alongside |
+| 18 | same | no text (Lidl) | another, replacing the first on the same dates | the same | any | the price no longer shown ended early (row 17); both shown: alongside |
 
 **At which price.** An offer whose price moved while its deal stayed (row 3: AH showing another price before mid-week,
 and a stated "25% korting" price with it) is measured at its lowest price. That is the row with the lowest price before,
 since for one deal text the price follows the price before: a share of it, or the price the text names. It is the
 price a customer could have had while the offer ran, against the lowest price before it, as a reduction is measured
-(rule 1). That is for earlier offers only. Today's offer is measured as the store shows it today, its own price and
-price before, never at a price of a row it was joined with: an older, lower price before would make today's "1+1
-gratis" look cheaper than what is paid. The one exception is rule 1, which measures the share against the price before
-a raise, and says so.
+(rule 1). That is for earlier offers only. Today's offer, and every offer alongside it, is measured as the store shows
+it today, its own price and price before, never at a price of a row it was joined with: an older, lower price before
+would make today's "1+1 gratis" look cheaper than what is paid, and an offer alongside "cheaper right now" at a price
+the store no longer asks. The one exception is rule 1, which measures the share against the price before a raise, and
+says so.
 
 **Long-dated offers.** Jumbo dates some offers over many weeks (38 of the 428 stored offers of 2026-11-16 span more
 than 14 days, up to 356, such as "Jumbo Oosterse maaltijden, 2 voor 5,50" dated 2026-01-07 to 2026-12-08). By rows 2
@@ -435,18 +471,28 @@ and 11, every row of such an offer with the same pack and deal is one offer, and
 enough history yet": the product's earlier offers of that deal are not counted as separate ones. Rule 4 counts the
 days the store dated an offer of today's pack and deal over, not the days it was seen, so such an offer seen on only
 two nights is "always on offer" over the days its dates cover, and the summary says "dated it on offer". When a
-long-dated offer is another one than today's, it runs alongside (row 15): a shorter deal on top of it is compared with
-it (rule 2), and the summary names it rather than saying the product was not on offer before.
+long-dated offer is another one than today's, it runs alongside while the store shows it (row 15): a shorter deal of the
+same pack on top of it is compared with it (rule 2), and the summary names it rather than saying the product was not on
+offer before. Once the store no longer shows it, it ended early (row 17) and is an earlier offer.
 
 **What is compared.** What is paid, never the deal's wording, so a "2+1 gratis" is compared with the "1+1 gratis" the
 product had before. Each offer, today's and every earlier one, is read by today's deal reader (`DealTerms.of` on the
 title, pack size, deal and prices kept with the row, not the readings stored with it), so a change to how deals are read
-never compares an old reading with a new one. The measure is one of: the price per kg, per litre or per piece (across
-pack sizes), the price of one pack (only between offers of the same pack size, for products whose size can't be read,
-such as AH's "2 voor 5.50" of "AH Goudse plakken" or a Lidl price without a pack size), or the share of the regular
-price paid. Of those today's offer has, the one most earlier offers have too is used; on a tie the prices come before
-the share, as a price does not depend on what the store says the price was before. An offer alongside is compared
-for rule 2 by what is paid, below.
+never compares an old reading with a new one. The measure is one of: the price per kg, per litre or per piece, the price
+of one pack (for products whose size can't be read, such as AH's "2 voor 5.50" of "AH Goudse plakken" or a Lidl price
+without a pack size), or the share of the regular price paid; all of them between offers of today's pack only. Of those
+today's offer has, the one most earlier offers have too is used; on a tie the prices come before the share, as a price
+does not depend on what the store says the price was before. An offer alongside is compared for rule 2 by what is paid,
+below.
+
+**Another pack, said apart.** When an offer of another pack is clearly cheaper (by more than 3 %) per kg or per litre
+(the first of these both have), the
+verdict says so after its own sentence: one the store shows today first ("Cheaper per kg in another pack now (1 kg):
+€1.87 per kg with "1+1 gratis", dated until 23 Nov 2026"), as it can be bought instead; else the cheapest that ended
+("Cheapest per kg in another pack (1 kg): €1.87 per kg with "1+1 gratis" from 19 Oct 2026 to 25 Oct 2026"). It never
+changes the verdict. Only the price of an amount of the same stuff says which pack costs less: never the price of a pack
+or a share, which say nothing across packs, and never the price of a piece (the owner, issue 197): two products under
+one title, such as Jumbo's "Braadpan gietijzer" of 14 and of 24 cm, are pieces of different worth.
 
 **The rules,** in this order (the constants are named in `history/DealVerdict.kt` and `history/RegularPrices.kt`):
 1. *Not a deal* (`NOT_A_DEAL`): the regular price of the same pack went up in the 30 days before the offer began, and
@@ -466,13 +512,13 @@ for rule 2 by what is paid, below.
    shows, so two of them can differ without any price raised. A title without a size is no group: AH writes most single
    products so ("AH Ananas zonder kroon"), and the rule holds for them. The day the price before was "seen" is at the
    latest the day before today's offer began.
-2. *Cheaper another way* (`CHEAPER_ANOTHER_WAY`): an offer of the product alongside (dated over today, row 15) is clearly
-   cheaper, by more than 3 %, than today's in what is paid: by the first price both have (per kg, litre or piece; per
-   pack only of the same pack), else by the share of the regular price, but only within the same pack. A share alone
-   says nothing across packs: 35 % off a 500 g pack can cost more per kg than 25 % off the kilo. An offer that can be
-   compared neither way is not "cheaper", and is only named. Jumbo's "2 voor 6,00" hamburgers (€1,50 a piece) dated
-   all year make today's "voor 3,19" (€1,60 a piece) no real deal, though it is less than the earlier "voor 3,49" weeks.
-   Like rule 1, a fact that needs no history; the summary names the cheaper offer.
+2. *Cheaper another way* (`CHEAPER_ANOTHER_WAY`): an offer of today's pack alongside (dated over today and shown today,
+   row 15) is clearly cheaper, by more than 3 %, than today's in what is paid: by the first price both have (per kg,
+   litre, piece or pack), else by the share of the regular price. Another pack's offer never is (each pack against
+   itself; a cheaper pack is said apart, above), nor is an offer the store no longer shows (row 17). Jumbo's "2 voor
+   6,00" hamburgers (€1,50 a piece) dated all year and still shown make today's "voor 3,19" (€1,60 a piece) no real
+   deal, though it is less than the earlier "voor 3,49" weeks. Like rule 1, a fact that needs no history; the summary
+   names the cheaper offer, by its deal text, or by its price when it has none (Lidl).
 3. *Not enough history yet* (`NOT_ENOUGH_HISTORY`) when the store was read on fewer than 56 days (`MIN_DAYS_READ`, 8
    weeks of nightly refreshes). Stores run offers by the week and bring a product back every few weeks, so 8 weeks see
    a usual deal come back at least once. Days read, not calendar time: a store that could not be read was not watched.
@@ -482,11 +528,11 @@ for rule 2 by what is paid, below.
    offer include it, whether or not the product was seen that night, as for which rows are one offer. Another pack's
    days do not count: the 500 g pack on "1+1 gratis" all year says nothing about a week of it on the kilo.
 5. *Can't be compared* (`NOT_COMPARABLE`) when today's offer has none of the measures (a deal of unknown kind, a Lidl
-   offer with neither deal nor price). *Not enough history yet* when fewer than 2 earlier offers have the measure
-   (`MIN_EARLIER_OFFERS`): one could be the odd one out.
+   offer with neither deal nor price). *Not enough history yet* when fewer than 2 earlier offers of today's pack have
+   the measure (`MIN_EARLIER_OFFERS`): one could be the odd one out.
 6. Against those earlier offers, prices within 3 % being the same (`TOLERANCE`: "2 voor 3,99" and "2 voor 4,00", packs
-   of "ca. 450 g"): a *real deal* (`REAL_DEAL`) at or below the lowest seen, of the earlier offers and of those
-   running now in the same measure, and clearly below at least half of the earlier offers;
+   of "ca. 450 g"): a *real deal* (`REAL_DEAL`) at or below the lowest of its pack seen, of the earlier offers and of
+   those shown now in the same measure, and clearly below at least half of the earlier offers;
    *worse than usual* (`WORSE_THAN_USUAL`) when more than half of them were clearly cheaper; else *the usual deal*
    (`USUAL_DEAL`). An offer clearly below the usual but not at the lowest is a usual deal too, and its summary says so
    ("Better than usual, but it has been cheaper"). The usual value said with it is the median.
@@ -494,18 +540,25 @@ for rule 2 by what is paid, below.
 With each verdict come the facts it rests on: the measure and today's value in it, the usual (median) and the lowest
 earlier value with its deal and dates, the latest offer at least as cheap as today's, earlier or alongside (said as
 "last this cheap" when it was about the same, within 3 %, and "last cheaper" when it was clearly less), the earlier
-offers themselves with their store dates, deal and values, the offers alongside (each named in the summary: "Also on
-offer now: …"), the raise if any (the summary says the share is measured against the price before it only when the
-share is the measure), and on how many of the days read the product was dated on offer,
+offers themselves with their store dates, deal and values (one that ended early is marked so, and said to be "no
+longer shown"), the offers alongside (each named in the summary: "Also on offer now: …", by its deal text, or by its
+price when it has none), the cheaper pack if any, the raise if any (the summary says the share is measured against the
+price before it only when the share is the measure), and on how many of the days read the product was dated on offer,
 and a summary in English, such as: "Worse than usual: 67% of the regular price, where it usually goes for 50% of the
 regular price; last cheaper 50% of the regular price with "1+1 gratis" from 2 Nov 2026 to 8 Nov 2026, …". With no
 earlier offer it says "no earlier offer of it ended since …", never that the product was not on offer: an offer
-alongside may have run all along.
+alongside may have run all along. When the product came in other packs too, it says "in this pack" ("on offer 3 times
+before in this pack", "less than ever in this pack", "no earlier offer of this pack ended"). The response gives, with
+each earlier offer and offer alongside, its pack, its price and whether it ended early, and the cheaper pack
+(`cheaperPack`: the offer, the measure, today's value in it, and whether it is shown now); all of these were added
+in issue 197 and are optional.
 
 A copy of a real database can be read with
 `PRICE_HISTORY_DB=/path/to/copy.db ./gradlew :server:test --tests '*DealVerdictRealDataTest*' --rerun -i`: it copies the
 file twice, replays the stored offers on one (as above) and prints the verdicts on the offers of the account with the
 most ingredients, and gives the other twelve weeks of made-up history to show each verdict's wording on real offers.
+With `PRICE_HISTORY_NEXT_DB=/path/to/later-copy.db` as well, a later database's stored offers are replayed on a further
+copy as one more night, at the time they were fetched, so that two real nights can be read.
 
 ## Buying ahead and stocking up
 

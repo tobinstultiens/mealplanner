@@ -146,17 +146,87 @@ class DealVerdictTest {
         )
     }
 
+    /** Issue 197, the owner's "each pack against itself": a 300 g offer is compared with earlier 300 g offers only. */
     @Test
-    fun pricesPerKgCompareAcrossPackSizes() {
+    fun eachPackIsComparedWithItsOwnOffers() {
         fun jumbo(deal: String, packSize: String) = offer(deal, packSize = packSize, title = "Jumbo Kipfilet", store = Store.JUMBO)
         val kilo = jumbo("voor 8,00", "1 kg")
-        // 1,80 for 300 gram is 6,00 per kg, where the kilo pack went for 8,00.
-        val verdict = verdict(today(jumbo("voor 1,80", "300 gram")), run(kilo, 7, 13), run(kilo, 28, 34))
-
-        assertEquals(Verdict.REAL_DEAL, verdict.verdict)
-        assertEquals(Measure.PER_KG, verdict.measure)
+        // 1,80 for 300 gram is 6,00 per kg, where the kilo pack went for 8,00: no 300 g offer before, so nothing to say yet.
+        val alone = verdict(today(jumbo("voor 1,80", "300 gram")), run(kilo, 7, 13), run(kilo, 28, 34))
+        assertEquals(Verdict.NOT_ENOUGH_HISTORY to 0, alone.verdict to alone.compared)
+        assertEquals(null, alone.cheaperPack, "the kilo was dearer per kg")
+        assertEquals(
+            "Not enough history yet: no earlier offer of this pack ended since 14 Sep 2026; a verdict needs 2 earlier offers to compare with.",
+            alone.summary("Jumbo"),
+        )
+        // Against two earlier 300 g offers at 2,40 (8,00 per kg) it is a real deal, less than ever for its pack.
+        val small = jumbo("voor 2,40", "300 gram")
+        val verdict = verdict(today(jumbo("voor 1,80", "300 gram")), run(kilo, 7, 13), run(small, 21, 27), run(kilo, 28, 34), run(small, 42, 48))
+        assertEquals(Verdict.REAL_DEAL to Measure.PER_KG, verdict.verdict to verdict.measure)
+        assertEquals(listOf(small.deal, small.deal), verdict.earlier.map { it.deal })
         assertEquals(6.0, verdict.value!!, 1e-9)
-        assertTrue(verdict.summary("Jumbo").startsWith("A real deal: €6.00 per kg is less than ever"), verdict.summary("Jumbo"))
+        assertTrue(verdict.summary("Jumbo").startsWith("A real deal: €6.00 per kg is less than ever in this pack since 14 Sep 2026"), verdict.summary("Jumbo"))
+    }
+
+    /** Issue 197: another pack that went for less per kg is said apart from the verdict, which stays its own pack's. */
+    @Test
+    fun aCheaperPackIsSaidApart() {
+        fun jumbo(deal: String, packSize: String) = offer(deal, packSize = packSize, title = "Jumbo Kipfilet", store = Store.JUMBO)
+        val small = jumbo("voor 2,40", "300 gram")
+        val verdict = verdict(today(small), run(small, 7, 13), run(jumbo("voor 6,00", "1 kg"), 21, 27), run(small, 42, 48))
+        assertEquals(Verdict.USUAL_DEAL, verdict.verdict)
+        assertEquals(Measure.PER_KG to false, verdict.cheaperPack?.measure to verdict.cheaperPack?.now)
+        assertEquals(
+            "The usual deal: €8.00 per kg; on offer twice before in this pack since 14 Sep 2026, usually at €8.00 per kg, " +
+                "lowest €8.00 per kg with \"voor 2,40\" from 21 Sep 2026 to 27 Sep 2026. " +
+                "Cheapest per kg in another pack (1 kg): €6.00 per kg with \"voor 6,00\" from 5 Oct 2026 to 11 Oct 2026.",
+            verdict.summary("Jumbo"),
+        )
+    }
+
+    /**
+     * Issue 197, the owner's follow-up: another pack is said to be cheaper only per kg or per litre, never per piece. A
+     * pan in two sizes under one title ("Braadpan gietijzer" at Jumbo) is two products of different worth; the smaller
+     * one is not "cheaper per piece". It is still named as on offer now.
+     */
+    @Test
+    fun anotherPackIsNeverSaidToBeCheaperPerPiece() {
+        fun pan(price: Double, size: String) = offer("voor ${price.toString().replace('.', ',')}", price = price, packSize = "1 stuk, doorsnede van $size", title = "Braadpan gietijzer", store = Store.JUMBO)
+        val small = pan(14.99, "14 cm")
+        val verdict = verdict(today(pan(29.99, "24 cm")), run(small, TODAY - 2, TODAY, validUntil = TODAY + 4))
+        assertEquals(Measure.PER_PIECE to 29.99, verdict.measure to verdict.value, "today's own measure is still per piece")
+        assertEquals(null, verdict.cheaperPack)
+        assertEquals(
+            "Not enough history yet: no earlier offer of this pack ended since 14 Sep 2026; a verdict needs 2 earlier offers to compare with. " +
+                "Also on offer now: \"voor 14,99\" for 1 stuk. doorsnede van 14 cm, dated until 27 Nov 2026.",
+            verdict.summary("Jumbo"),
+        )
+        // By weight, the same shape is said: 500 g at 2,40 against the kilo at 3,00 now.
+        fun chicken(price: Double, packSize: String) = offer("voor ${price.toString().replace('.', ',')}0", price = price, packSize = packSize, title = "Jumbo Kipfilet", store = Store.JUMBO)
+        val byWeight = verdict(today(chicken(2.4, "500 gram")), run(chicken(3.0, "1 kg"), TODAY - 2, TODAY, validUntil = TODAY + 4))
+        assertEquals(Measure.PER_KG to true, byWeight.cheaperPack?.measure to byWeight.cheaperPack?.now)
+    }
+
+    /**
+     * Issue 197 F3: Jumbo's brand titles cover several products at once, each its own pack (the store's subtitle), as
+     * "Lipton" on 20 November 2026. Each is judged against itself, so one is never "cheaper another way" than another;
+     * that the 1,5 litre bottles cost less per litre is said apart, with the pack named. The recorded address cannot
+     * tell them apart: Jumbo's is the promotion's page, which changes every week for the same product.
+     */
+    @Test
+    fun productsUnderOneJumboBrandTitleAreToldApartByTheirPack() {
+        fun lipton(deal: String, price: Double?, packSize: String) = offer(deal, price = price, packSize = packSize, title = "Lipton", store = Store.JUMBO)
+        val bottle = lipton("voor 1,00", 1.0, "Alle flesjes à 500 ml, per flesje<br />M.u.v. Gekoeld")
+        val big = lipton("2 voor 3,99", null, "Alle flessen à 1,5 liter")
+        val tray = lipton("15% korting · Alleen online", null, "Tray 24x250ml")
+        val verdict = verdict(today(bottle), run(big, TODAY - 2, TODAY, validUntil = TODAY + 4), run(tray, 0, TODAY, validFrom = -180, validUntil = TODAY + 25))
+        assertEquals(Verdict.NOT_ENOUGH_HISTORY, verdict.verdict, "never cheaper another way: the 1,5 litre bottles are another pack")
+        assertEquals(Measure.PER_LITRE to true, verdict.cheaperPack?.measure to verdict.cheaperPack?.now)
+        assertTrue(
+            " Cheaper per litre in another pack now (alle flessen à 1.5 liter): €1.33 per litre with \"2 voor 3,99\", dated until 27 Nov 2026. " +
+                "Also on offer now: \"15% korting · Alleen online\" for tray 24x250ml, dated until 18 Dec 2026." in verdict.summary("Jumbo"),
+            verdict.summary("Jumbo"),
+        )
     }
 
     @Test

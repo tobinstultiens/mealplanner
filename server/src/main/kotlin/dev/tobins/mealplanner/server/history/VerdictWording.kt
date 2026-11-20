@@ -11,8 +11,14 @@ import kotlin.math.roundToInt
  */
 fun DealVerdict.summary(store: String): String {
     val since = firstRead?.let { " since ${date(it)}" }.orEmpty()
-    // Earlier offers are those that ended; offers running alongside are said apart, below.
-    val before = if (earlier.isEmpty()) "no earlier offer of it ended$since" else "on offer ${times(earlier.size)} before$since"
+    // The verdict is on today's pack only; say so when the product came in other packs too.
+    val inPack = if (otherPacks) " in this pack" else ""
+    // Earlier offers are those that ended; offers shown alongside are said apart, below.
+    val before = when {
+        earlier.isNotEmpty() -> "on offer ${times(earlier.size)} before$inPack$since"
+        otherPacks -> "no earlier offer of this pack ended$since"
+        else -> "no earlier offer of it ended$since"
+    }
     val text = when (verdict) {
         Verdict.NOT_A_DEAL -> raise!!.let { "Not a deal: its regular price went up from ${euros(it.before)} (seen ${date(it.beforeSeen)}) to ${euros(it.now)}, " +
             "and with this deal you pay ${share(value!!)} of the price before." }
@@ -26,7 +32,7 @@ fun DealVerdict.summary(store: String): String {
         Verdict.ALWAYS_ON_OFFER -> "The usual price, not a deal: $store dated it on offer this way on $daysThisDeal of the ${days(daysRead)} it was read$since."
         Verdict.NOT_COMPARABLE -> "Can't be compared: the deal gives no share of the regular price and no price per kg, litre, piece or pack; $before."
         Verdict.REAL_DEAL -> "A real deal: ${amount(value!!)} " +
-            (if (lastAsCheap == null) "is less than ever$since (lowest before: ${was(lowest!!)})" else "is as low as it has been (${was(lastAsCheap)})") +
+            (if (lastAsCheap == null) "is less than ever$inPack$since (lowest before: ${was(lowest!!)})" else "is as low as it has been (${was(lastAsCheap)})") +
             "; $before, usually at ${amount(typical!!)}."
         Verdict.USUAL_DEAL -> if (value!! < typical!! * (1 - TOLERANCE)) {
             "Better than usual, but it has been cheaper: ${amount(value)}, where it usually goes for ${amount(typical)}; ${lastCheap()}, lowest ${was(lowest!!)}; $before."
@@ -41,14 +47,33 @@ fun DealVerdict.summary(store: String): String {
         " Its regular price went up from ${euros(it.before)} (seen ${date(it.beforeSeen)}) to ${euros(it.now)}" +
             (if (measure == Measure.PAID_SHARE) "; its share is measured against ${euros(it.before)}." else ".")
     }
-    val also = alongside.filter { verdict != Verdict.CHEAPER_ANOTHER_WAY || it != cheaperNow }.takeIf { it.isNotEmpty() }?.joinToString("; ", prefix = " Also on offer now: ", postfix = ".") { offered(it) }
-    return text + raised.orEmpty() + also.orEmpty()
+    val named = listOfNotNull(cheaperNow.takeIf { verdict == Verdict.CHEAPER_ANOTHER_WAY }, cheaperPack?.takeIf { it.now }?.offer)
+    val also = alongside.filter { it !in named }.takeIf { it.isNotEmpty() }?.joinToString("; ", prefix = " Also on offer now: ", postfix = ".") { offered(it) }
+    return text + raised.orEmpty() + cheaperPackSaid().orEmpty() + also.orEmpty()
 }
 
-/** Another offer of the product as the store dated it: its deal, its pack where it gives one, and until when. */
+/**
+ * Another pack that is or was cheaper per unit (issue 197, "each pack against itself"): one shown now is said as
+ * such, one that ended as the cheapest of the other packs.
+ */
+private fun DealVerdict.cheaperPackSaid(): String? = cheaperPack?.let { (run, measure, _, now) ->
+    val unit = name(measure).removePrefix("price ")
+    val pack = run.identity.product.pack.ifEmpty { "no size given" }
+    if (now) {
+        " Cheaper $unit in another pack now ($pack): ${amount(run.measures[measure]!!, measure)}${dealOf(run)}, dated until ${date(run.validUntil)}."
+    } else {
+        " Cheapest $unit in another pack ($pack): ${was(run, measure)}."
+    }
+}
+
+/**
+ * Another offer of the product as the store dated it: its deal (or, without deal text, its price), its pack where it
+ * gives one, and until when.
+ */
 private fun offered(run: OfferPeriod): String {
     val pack = run.identity.product.pack.takeIf { it.isNotEmpty() }?.let { " for $it" }.orEmpty()
-    return "\"${run.deal?.takeIf { it.isNotBlank() } ?: "a lower price"}\"$pack, dated until ${date(run.validUntil)}"
+    val deal = run.deal?.takeIf { it.isNotBlank() }?.let { "\"$it\"" } ?: run.identity.price?.let(::euros) ?: "an offer without a price"
+    return "$deal$pack, dated until ${date(run.validUntil)}"
 }
 
 /** The latest earlier offer at least as cheap as today's: "this cheap" when about the same, "cheaper" when clearly less. */
@@ -58,16 +83,21 @@ private fun DealVerdict.lastCheap(): String {
     return (if (cheaper) "last cheaper " else "last this cheap ") + was(last)
 }
 
-/** An earlier offer: its value in the verdict's measure, its deal and when it ran. */
-private fun DealVerdict.was(run: OfferPeriod): String {
+/**
+ * An earlier offer: its value in [measure], its deal and when it ran, as the store dated it; one that ended before
+ * those dates did ([DealVerdict.endedEarly]) is said to be no longer shown.
+ */
+private fun DealVerdict.was(run: OfferPeriod, measure: Measure = this.measure!!): String {
     val from = run.validFrom
     val until = run.validUntil
     val dates = if (from == until) "on ${date(from)}" else "from ${date(from)} to ${date(until)}"
-    val deal = run.deal?.takeIf { it.isNotBlank() }?.let { " with \"$it\"" }.orEmpty()
-    return "${amount(run.measures[measure!!]!!)}$deal $dates"
+    val gone = if (run !in alongside && endedEarly(run)) " (no longer shown)" else ""
+    return "${amount(run.measures[measure]!!, measure)}${dealOf(run)} $dates$gone"
 }
 
-private fun DealVerdict.amount(value: Double): String = when (measure!!) {
+private fun dealOf(run: OfferPeriod) = run.deal?.takeIf { it.isNotBlank() }?.let { " with \"$it\"" }.orEmpty()
+
+private fun DealVerdict.amount(value: Double, measure: Measure = this.measure!!): String = when (measure) {
     Measure.PER_KG -> "${euros(value)} per kg"
     Measure.PER_LITRE -> "${euros(value)} per litre"
     Measure.PER_PIECE -> "${euros(value)} per piece"

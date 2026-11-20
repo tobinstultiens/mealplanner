@@ -47,9 +47,11 @@ class DealVerdictRepository(
         val terms = ingredients.matchTerms()
         val names = ingredients.list().associate { it.id to it.name }
         val stores = shops()
-        val onOffer = offers.state(serverDay(now), terms, names).offers
-            .filter { it.store in stores && it.ingredientId != null && OfferSighting.readable(it) }
+        val valid = offers.state(serverDay(now), terms, names).offers.filter { OfferSighting.readable(it) }
+        val onOffer = valid.filter { it.store in stores && it.ingredientId != null }
         if (onOffer.isEmpty()) return DealVerdicts(emptyList())
+        // What each store shows of each product today: its stored offers, whichever ingredient they match.
+        val page = valid.groupBy({ it.store to normalised(it.title) }, ::CurrentOffer)
         val read = read(onOffer, stores, now)
         val matcher = OfferMatcher(terms)
         val matched = HashMap<Pair<String, String?>, Long?>()
@@ -58,7 +60,8 @@ class DealVerdictRepository(
             val own = periods[offer.store.name to normalised(offer.title)].orEmpty()
                 .filter { row -> matched.getOrPut(row.title to row.category) { matcher.match(row.title, row.category) } == offer.ingredientId }
             val regular = read.regular.filter { it.isFor(offer) }.mapNotNull { row -> row.packPrice?.let { RegularPrice(it, Instant.parse(row.firstSeen), Instant.parse(row.lastSeen)) } }
-            view(offer, judge(CurrentOffer(offer), own.map { it.period() }, read.recordings[offer.store].orEmpty(), regular, serverDay(now)))
+            val shown = page[offer.store to normalised(offer.title)].orEmpty()
+            view(offer, judge(CurrentOffer(offer), own.map { it.period() }, read.recordings[offer.store].orEmpty(), regular, serverDay(now), shown))
         }
         return DealVerdicts(verdicts.sortedWith(compareBy({ it.store }, { it.verdict }, { it.title })))
     }
@@ -114,14 +117,16 @@ class DealVerdictRepository(
         daysOnOffer = verdict.daysOnOffer,
         daysThisDeal = verdict.daysThisDeal,
         regularRaise = verdict.raise?.let { RaisedPrice(it.before, it.beforeSeen.toString(), it.now) },
-        earlier = verdict.earlier.map(::earlierOffer),
+        earlier = verdict.earlier.map { earlierOffer(it, endedEarly = verdict.endedEarly(it)) },
         alongside = verdict.alongside.map(::earlierOffer),
         cheaperNow = verdict.cheaperNow?.let(::earlierOffer),
+        cheaperPack = verdict.cheaperPack?.let { CheaperPackView(earlierOffer(it.offer, endedEarly = !it.now && verdict.endedEarly(it.offer)), it.measure, it.value, it.now) },
     )
 
-    private fun earlierOffer(run: OfferPeriod) = EarlierOffer(
+    private fun earlierOffer(run: OfferPeriod, endedEarly: Boolean = false) = EarlierOffer(
         run.validFrom.toString(), run.validUntil.toString(), run.deal,
         run.measures.paidShare, run.measures.perKg, run.measures.perLitre, run.measures.perPiece, run.measures.perPack,
+        pack = run.identity.product.pack, price = run.identity.price, endedEarly = endedEarly,
     )
 }
 
@@ -157,11 +162,13 @@ data class OfferVerdict(
     val daysThisDeal: Int,
     /** The product's regular price went up shortly before this offer began; null when it did not, or can't be told. */
     val regularRaise: RaisedPrice?,
-    /** The earlier offers of the product at the store, oldest first, from and until as the store dated them. */
+    /** The earlier offers of this pack at the store, oldest first, from and until as the store dated them. */
     val earlier: List<EarlierOffer>,
-    /** The other offers of the product dated over today too, and the one clearly cheaper than this one, if any. */
+    /** The other offers of the product the store shows today, of any pack, as it shows them; and the one of this pack clearly cheaper than this one, if any. */
     val alongside: List<EarlierOffer>,
     val cheaperNow: EarlierOffer?,
+    /** An offer of another pack clearly cheaper per kg or per litre, shown now or else ended; null when none is. */
+    val cheaperPack: CheaperPackView? = null,
 )
 
 /** A regular price raised from [before] (last seen on [beforeSeen], an ISO date) to [now], a pack. */
@@ -178,4 +185,14 @@ data class EarlierOffer(
     val perLitre: Double?,
     val perPiece: Double?,
     val perPack: Double?,
+    /** The pack, normalised; '' when the store gives none. */
+    val pack: String = "",
+    /** The price the store gave, which is the deal of an offer without deal text (Lidl). */
+    val price: Double? = null,
+    /** Dated over today, but the store no longer shows it: it ended before its dates did. */
+    val endedEarly: Boolean = false,
 )
+
+/** Another pack's [offer] clearly cheaper in [measure], in which this offer comes to [value]; shown [now], or ended. */
+@Serializable
+data class CheaperPackView(val offer: EarlierOffer, val measure: Measure, val value: Double, val now: Boolean)

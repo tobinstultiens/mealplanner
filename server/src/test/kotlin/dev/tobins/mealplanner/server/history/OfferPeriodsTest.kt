@@ -151,16 +151,20 @@ class OfferPeriodsTest {
         assertEquals(emptyList(), verdict.alongside)
     }
 
+    /** "2 voor 3,00" dated all year (€1,50 for the kilo, where today's is €1,99), seen on its first two nights and on those of [lastSeen]. */
+    private fun allYear(vararg lastSeen: Int) = listOf(row(allYearOffer, 0, 1)) + lastSeen.map { row(allYearOffer, it, it) }
+
+    private val allYearOffer = offer("2 voor 3,00", from = -300, until = TODAY + 30)
+
     @Test
-    fun row15AnotherDealDatedOverTodayIsAlongsideAndCountsAgainstToday() {
-        // Dated all year, seen on two nights; and one that began after today's offer did, still running.
-        val allYear = row(offer("2 voor 3,00", from = -300, until = TODAY + 30), 0, 1)
-        val sinceSunday = row(offer("VOOR 2.19", price = 2.19, from = TODAY - 1, until = TODAY + 5), TODAY - 1, TODAY - 1)
-        val verdict = judged(thisWeek(), realEarlier, allYear, sinceSunday, row(thisWeek(), TODAY - 3, TODAY))
+    fun row15AnotherDealDatedOverTodayAndShownTodayIsAlongsideAndCountsAgainstToday() {
+        // Dated all year, seen on its first nights and today; and one that began after today's offer did, still shown.
+        val sinceSunday = row(offer("VOOR 2.19", price = 2.19, from = TODAY - 1, until = TODAY + 5), TODAY - 1, TODAY)
+        val verdict = judged(thisWeek(), realEarlier, *allYear(TODAY).toTypedArray(), sinceSunday, row(thisWeek(), TODAY - 3, TODAY))
         assertEquals(listOf(realEarlier.firstSeen), verdict.earlier.map { it.firstSeen }, "neither is an earlier offer")
-        assertEquals(setOf(allYear.offerKey, sinceSunday.offerKey), verdict.alongside.map { it.offerKey }.toSet())
+        assertEquals(setOf(allYearOffer.deal, sinceSunday.deal), verdict.alongside.map { it.deal }.toSet())
         // "2 voor 3,00" is €1,50 for the kilo, today's €1,99: cheaper another way.
-        assertEquals(Verdict.CHEAPER_ANOTHER_WAY to allYear.offerKey, verdict.verdict to verdict.cheaperNow?.offerKey)
+        assertEquals(Verdict.CHEAPER_ANOTHER_WAY to allYearOffer.deal, verdict.verdict to verdict.cheaperNow?.deal)
         // "VOOR 2.19", dearer, alongside alone only gets named.
         val dearer = judged(thisWeek(), realEarlier, sinceSunday, row(thisWeek(), TODAY - 3, TODAY))
         assertEquals(Verdict.NOT_ENOUGH_HISTORY, dearer.verdict)
@@ -174,6 +178,35 @@ class OfferPeriodsTest {
         assertEquals(listOf(otherPack.offerKey), verdict.alongside.map { it.offerKey })
         assertEquals(4 to TODAY + 1, verdict.daysThisDeal to verdict.daysOnOffer)
         assertEquals(Verdict.NOT_ENOUGH_HISTORY, verdict.verdict)
+    }
+
+    @Test
+    fun row17AnotherDealDatedOverTodayButNoLongerShownEndedEarly() {
+        // Last seen yesterday, or fifty nights ago: the store withdrew it, whatever its dates say.
+        for (lastSeen in listOf(TODAY - 1, TODAY - 50)) {
+            val verdict = judged(thisWeek(), realEarlier, *allYear(lastSeen).toTypedArray(), row(thisWeek(), TODAY - 3, TODAY))
+            assertEquals(emptyList(), verdict.alongside, "last seen on night $lastSeen")
+            assertEquals(listOf(allYearOffer.deal, realEarlier.deal), verdict.earlier.map { it.deal })
+            // Not "cheaper another way", as it is not shown; as an earlier offer at €1,50 a kg, it makes today's €1,99 worse than usual.
+            assertEquals(Verdict.WORSE_THAN_USUAL, verdict.verdict)
+            assertTrue(verdict.endedEarly(verdict.earlier.single { it.deal == allYearOffer.deal }))
+        }
+        // Still on the store's page, though its recording of today failed: shown.
+        val onPage = judge(
+            CurrentOffer(thisWeek()), listOf(realEarlier) + allYear(TODAY - 1) + row(thisWeek(), TODAY - 3, TODAY), (0..TODAY).map(::night), emptyList(), day(TODAY),
+            page = listOf(CurrentOffer(thisWeek()), CurrentOffer(allYearOffer)),
+        )
+        assertEquals(Verdict.CHEAPER_ANOTHER_WAY to allYearOffer.deal, onPage.verdict to onPage.cheaperNow?.deal)
+    }
+
+    @Test
+    fun row18WithoutADealTextAPriceReplacedOnTheSameDatesEndedEarly() {
+        // Lidl: 1,79 from Friday to Sunday, 1,99 since, on the same dates. Today's is 1,99; 1,79 is not on offer now.
+        fun lidl(price: Double) = offer(null, price = price, from = TODAY - 3, until = TODAY + 3)
+        val verdict = judged(lidl(1.99), realEarlier, row(lidl(1.79), TODAY - 3, TODAY - 1), row(lidl(1.99), TODAY, TODAY))
+        assertEquals(emptyList(), verdict.alongside)
+        assertEquals(listOf("VOOR 1.49" to 1.49, null to 1.79), verdict.earlier.map { it.deal to it.identity.price })
+        assertTrue("Also on offer now" !in verdict.summary("Lidl"), verdict.summary("Lidl"))
     }
 
     private companion object {
