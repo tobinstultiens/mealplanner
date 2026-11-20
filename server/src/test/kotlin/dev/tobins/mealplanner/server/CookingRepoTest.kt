@@ -36,7 +36,9 @@ import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import com.sun.net.httpserver.HttpServer
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.io.path.createTempDirectory
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -45,7 +47,17 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/** The temporary directories of the test running, deleted after it. */
+private val temporary = ConcurrentLinkedQueue<File>()
+
+private fun tempDir(prefix: String): File = createTempDirectory(prefix).toFile().also(temporary::add)
+
 class CookingRepoTest {
+    @AfterTest
+    fun deleteTemporaryDirectories() {
+        while (true) (temporary.poll() ?: break).deleteRecursively()
+    }
+
     private val units = """
         # Comments and unknown keys are fine.
         weight:
@@ -70,7 +82,7 @@ class CookingRepoTest {
 
     /** A git repository standing in for the cooking repo on GitHub. */
     private class Upstream {
-        val dir: File = createTempDirectory("upstream").toFile()
+        val dir: File = tempDir("upstream")
         private val git: Git = Git.init().setDirectory(dir).setInitialBranch("master").call()
 
         fun commit(files: Map<String, String>, message: String = "Update"): String {
@@ -102,7 +114,7 @@ class CookingRepoTest {
     fun clonesOnFirstUseThenFollowsTheRemoteBranch() {
         val upstream = Upstream()
         val first = upstream.commit(mapOf("content/a.md" to "first", "data/units.yaml" to units))
-        val repo = CookingRepo(File(createTempDirectory("local").toFile(), "cooking"), upstream.url)
+        val repo = CookingRepo(File(tempDir("local"), "cooking"), upstream.url)
 
         assertEquals(first, repo.update())
         assertEquals("first", File(repo.dir, "content/a.md").readText())
@@ -126,7 +138,7 @@ class CookingRepoTest {
             start()
         }
         try {
-            val repo = CookingRepo(File(createTempDirectory("local").toFile(), "cooking"), "http://127.0.0.1:${silent.address.port}/cooking.git", timeoutSeconds = 1)
+            val repo = CookingRepo(File(tempDir("local"), "cooking"), "http://127.0.0.1:${silent.address.port}/cooking.git", timeoutSeconds = 1)
             val started = System.nanoTime()
             assertFailsWith<GitAPIException> { repo.update() }
             assertTrue((System.nanoTime() - started) / 1_000_000_000 < 30, "gave up after the timeout")
@@ -138,7 +150,7 @@ class CookingRepoTest {
 
     @Test
     fun withoutAUrlTheDirectoryIsUsedAsItIs() {
-        val dir = createTempDirectory("manual").toFile()
+        val dir = tempDir("manual")
         assertNull(CookingRepo(dir, url = null).update())
         assertEquals(UnitTable.Default, CookingRepo(dir, url = null).units(), "no units.yaml: the built-in table")
     }
@@ -155,7 +167,7 @@ class CookingRepoTest {
         )
         val config = ServerConfig(
             port = 0, databaseUrl = "jdbc:sqlite::memory:",
-            cookingRepo = File(createTempDirectory("server").toFile(), "cooking"), cookingRepoUrl = upstream.url,
+            cookingRepo = File(tempDir("server"), "cooking"), cookingRepoUrl = upstream.url,
         )
         application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), verifier = TestTokens) }
         val http = createClient {
@@ -188,7 +200,7 @@ class CookingRepoTest {
         // Every sync here follows a push and must fetch it: no interval between fetches.
         val config = ServerConfig(
             port = 0, databaseUrl = "jdbc:sqlite::memory:",
-            cookingRepo = File(createTempDirectory("server").toFile(), "cooking"), cookingRepoUrl = upstream.url,
+            cookingRepo = File(tempDir("server"), "cooking"), cookingRepoUrl = upstream.url,
             cookingFetchInterval = Duration.ZERO,
         )
         val db = openDatabase(config.databaseUrl).second
@@ -276,12 +288,13 @@ class CookingRepoTest {
     private class Accounts(site: CookingRepo?, shared: Boolean = true, accounts: Int = 2, databaseUrl: String = "jdbc:sqlite::memory:") : AutoCloseable {
         val clock = TestClock()
         private val opened = openDatabase(databaseUrl)
-        private val db = opened.second
+        val writes = RefusingWrites(opened.first)
+        private val db = writes.database
         private val foods = FoodRepository(db)
         private val offers = OfferRepository(db, emptyList())
         private val prices = PriceRepository(db, null, foods, offers)
-        private val images = createTempDirectory("images").toFile()
-        private val data = createTempDirectory("data").toFile()
+        private val images = tempDir("images")
+        private val data = tempDir("data")
         private val users = UserRepository(db)
         val ids = (1..accounts).map { users.resolve(Identity("sub-$it", "user$it")).id }
         val cooking = CookingSync(users, data, site, shared, ::scope, CookingSync.FETCH_INTERVAL) { clock.now }
@@ -311,7 +324,7 @@ class CookingRepoTest {
     fun accountsOnTheServersSiteShareOneFetchAndKeepTheirOwnRows() = runBlocking {
         val upstream = Upstream()
         upstream.commit(mapOf("content/recipes/stew.md" to page("Stew"), "content/recipes/curry.md" to page("Curry")))
-        val site = CountingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url)
+        val site = CountingRepo(File(tempDir("server"), "cooking"), upstream.url)
         val accounts = Accounts(site)
         val (owner, other) = accounts.ids
 
@@ -340,7 +353,7 @@ class CookingRepoTest {
     @Test
     fun anAccountThatSetsItsOwnRepositoryKeepsWhatItAddedFromTheServersSite() = runBlocking {
         val server = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"), "content/recipes/curry.md" to page("Curry"))) }
-        val accounts = Accounts(CookingRepo(File(createTempDirectory("server").toFile(), "cooking"), server.url))
+        val accounts = Accounts(CookingRepo(File(tempDir("server"), "cooking"), server.url))
         val (owner, other) = accounts.ids
         accounts.cooking.syncScheduled()
         accounts.add(other, "Stew")
@@ -372,7 +385,7 @@ class CookingRepoTest {
     @Test
     fun firstVisitsAtOnceImportOnce() = runBlocking {
         val upstream = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"))) }
-        val site = CountingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url)
+        val site = CountingRepo(File(tempDir("server"), "cooking"), upstream.url)
         val accounts = Accounts(site)
         val (owner, other) = accounts.ids
 
@@ -394,7 +407,7 @@ class CookingRepoTest {
     fun syncsOfTwoAccountsWithinTheIntervalFetchOnce() = runBlocking {
         val upstream = Upstream()
         val first = upstream.commit(mapOf("content/recipes/stew.md" to page("Stew")))
-        val site = CountingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url)
+        val site = CountingRepo(File(tempDir("server"), "cooking"), upstream.url)
         val accounts = Accounts(site)
         val (owner, other) = accounts.ids
         val clock = accounts.clock
@@ -435,7 +448,7 @@ class CookingRepoTest {
     fun syncsDuringAFetchWaitForItAndFetchNoMore() = runBlocking {
         val upstream = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"))) }
         val gate = CountDownLatch(1)
-        val site = CountingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url, gate)
+        val site = CountingRepo(File(tempDir("server"), "cooking"), upstream.url, gate)
         val accounts = Accounts(site, accounts = 3)
         val (owner, second, third) = accounts.ids
 
@@ -465,9 +478,9 @@ class CookingRepoTest {
         val titles = (1..20).map { "Dish $it" }
         val upstream = Upstream().apply { commit(titles.associate { "content/recipes/${it.replace(' ', '-')}.md" to page(it) }) }
         val gate = CountDownLatch(1)
-        val server = createTempDirectory("server").toFile()
+        val server = tempDir("server")
         val site = CountingRepo(File(server, "cooking"), upstream.url, gate)
-        val database = createTempDirectory("database").toFile()
+        val database = tempDir("database")
         try {
             Accounts(site, accounts = 6, databaseUrl = "jdbc:sqlite:${File(database, "mealplanner.db").path}").use { accounts ->
                 val syncs = accounts.ids.map { id -> launch(Dispatchers.IO) { accounts.cooking.sync(id) } }
@@ -492,7 +505,7 @@ class CookingRepoTest {
     @Test
     fun aFailedFetchIsNotTriedAgainWithinTheInterval() = runBlocking {
         val upstream = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"))) }
-        val site = CountingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url)
+        val site = CountingRepo(File(tempDir("server"), "cooking"), upstream.url)
         val accounts = Accounts(site)
         val (owner, other) = accounts.ids
         accounts.cooking.syncScheduled()
@@ -507,8 +520,8 @@ class CookingRepoTest {
         assertEquals(listOf("Stew"), accounts.bank(other))
 
         // No clone: nothing to read until the next try.
-        val gone = File(createTempDirectory("gone").toFile(), "cooking.git").toURI().toString()
-        val unreachable = CountingRepo(File(createTempDirectory("server").toFile(), "cooking"), gone)
+        val gone = File(tempDir("gone"), "cooking.git").toURI().toString()
+        val unreachable = CountingRepo(File(tempDir("server"), "cooking"), gone)
         val fresh = Accounts(unreachable)
         val (first, next) = fresh.ids
         assertFailsWith<GitAPIException> { fresh.cooking.sync(first) }
@@ -521,14 +534,34 @@ class CookingRepoTest {
         assertEquals(2, unreachable.fetches.get(), "tried again after the interval")
     }
 
+    /**
+     * Issue 285: when the server's site cannot be fetched, the error is kept for each account that reads it; an
+     * account whose error cannot be written (the database was busy) is logged, and the next one still gets its error.
+     */
+    @Test
+    fun anErrorThatCannotBeKeptForOneAccountDoesNotSkipTheNext() = runBlocking {
+        val gone = File(tempDir("gone"), "cooking.git").toURI().toString()
+        val accounts = Accounts(CountingRepo(File(tempDir("server"), "cooking"), gone))
+        val (first, next) = accounts.ids
+        var refused = false
+        accounts.writes.refuse = { sql -> "userMeta" in sql && !refused.also { refused = true } }
+
+        accounts.cooking.syncScheduled()
+
+        assertTrue(refused, "the first account's write was refused")
+        assertNull(accounts.cooking.status(first).error)
+        assertNotNull(accounts.cooking.status(next).error)
+        accounts.close()
+    }
+
     /** What the app reads of a sync within the interval: what was imported, and no error (issue 215). */
     @Test
     fun aSyncThatDidNotFetchAnswersWhatItImported() = testApplication {
         val upstream = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"))) }
         val config = ServerConfig(
             port = 0, databaseUrl = "jdbc:sqlite::memory:",
-            cookingRepo = File(createTempDirectory("server").toFile(), "cooking"), cookingRepoUrl = upstream.url,
-            dataDir = createTempDirectory("data").toFile(),
+            cookingRepo = File(tempDir("server"), "cooking"), cookingRepoUrl = upstream.url,
+            dataDir = tempDir("data"),
         )
         application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
         fun client(token: String) = createClient {
@@ -566,7 +599,7 @@ class CookingRepoTest {
     @Test
     fun unsharedOnlyTheOwnerReadsTheServersSite() = runBlocking {
         val upstream = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"))) }
-        val accounts = Accounts(CookingRepo(File(createTempDirectory("server").toFile(), "cooking"), upstream.url), shared = false)
+        val accounts = Accounts(CookingRepo(File(tempDir("server"), "cooking"), upstream.url), shared = false)
         val (owner, other) = accounts.ids
         accounts.cooking.syncScheduled()
         accounts.cooking.importFirst(other)
@@ -579,8 +612,8 @@ class CookingRepoTest {
 
     @Test
     fun theServersSiteIsTheConfiguredCheckoutAsBefore() {
-        val path = createTempDirectory("checkout").toFile()
-        val data = createTempDirectory("data").toFile()
+        val path = tempDir("checkout")
+        val data = tempDir("data")
         assertEquals(path, CookingSync.serverSite(path, "https://example.org/c.git", data)!!.dir, "the owner's clone stays where it was")
         assertEquals(File(data, "cooking"), CookingSync.serverSite(null, "https://example.org/c.git", data)!!.dir)
         assertNull(CookingSync.serverSite(path, null, data)!!.url, "a checkout managed by hand")

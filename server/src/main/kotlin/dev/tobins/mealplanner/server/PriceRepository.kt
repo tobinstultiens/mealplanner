@@ -169,7 +169,7 @@ class PriceRepository(
      * Looks up every ingredient name of every account, or nothing when the last lookup is
      * younger than [olderThan].
      * One lookup at a time; a second call while one runs returns at once. An ingredient
-     * whose search fails keeps its previous price; so do all of them when the lookup found a price
+     * whose search or save fails keeps its previous price; so do all of them when the lookup found a price
      * again for under half of the names priced before (the next round tries again). Each price found is also kept in the price
      * history ([PriceHistoryRepository.recordRegularPrice]), in the transaction that stores it.
      */
@@ -186,34 +186,45 @@ class PriceRepository(
             var found = 0
             var failures = 0
             val notFound = mutableListOf<String>()
+            /** Counts a failed ingredient; true when so many failed that the lookup should stop. */
+            fun tooManyFailures(ingredient: Ingredient, e: Exception): Boolean {
+                log.warn("Price lookup for ${ingredient.name} failed: ${e.message}")
+                // The store is down or blocking us: stop rather than fail a hundred times.
+                if (++failures < 5) return false
+                log.warn("Stopped looking up prices after $failures failures")
+                return true
+            }
             for ((ingredient, names) in catalogue) {
                 val price = try {
                     lookUp(source, ingredient, names, matcher, pause)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    log.warn("Price lookup for ${ingredient.name} failed: ${e.message}")
-                    // The store is down or blocking us: stop rather than fail a hundred times.
-                    if (++failures >= 5) {
-                        log.warn("Stopped looking up prices after $failures failures")
-                        return
-                    }
+                    if (tooManyFailures(ingredient, e)) return
                     continue
                 }
                 if (price == null) {
                     notFound += ingredient.name
                 } else {
                     val (product, perKg) = price
-                    db.writing {
-                        q.upsertPrice(
-                            ingredient.name, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString(),
-                            product.category, product.subCategory, StoreImages.accept(product.imageUrl),
-                        )
-                        history.recordRegularPrice(
-                            RegularPriceSighting(ingredient.name, source.store, product.title, product.packSize, product.regularPrice, perKg),
-                            lastFound[ingredient.name.lowercase()]?.let(Instant::parse),
-                            now,
-                        )
+                    try {
+                        db.writing {
+                            q.upsertPrice(
+                                ingredient.name, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString(),
+                                product.category, product.subCategory, StoreImages.accept(product.imageUrl),
+                            )
+                            history.recordRegularPrice(
+                                RegularPriceSighting(ingredient.name, source.store, product.title, product.packSize, product.regularPrice, perKg),
+                                lastFound[ingredient.name.lowercase()]?.let(Instant::parse),
+                                now,
+                            )
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // A save that gave up keeps the ingredient's previous price, like a failed search.
+                        if (tooManyFailures(ingredient, e)) return
+                        continue
                     }
                     found++
                 }

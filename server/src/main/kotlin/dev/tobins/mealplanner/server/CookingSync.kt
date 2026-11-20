@@ -204,8 +204,20 @@ class CookingSync(
     private inline fun <T> recording(accountId: Long, sync: () -> T): T = try {
         sync()
     } catch (e: Exception) {
-        if (e !is CancellationException) users.setMeta(accountId, SYNC_ERROR_KEY, messageOf(e))
+        if (e !is CancellationException) keepError(accountId, e)
         throw e
+    }
+
+    /**
+     * Keeps [error] as the account's last sync error for [status]. When even that cannot be written it is
+     * logged: the caller goes on, to the next account, or to pass on the sync's own failure rather than this one.
+     */
+    private fun keepError(accountId: Long, error: Exception) {
+        try {
+            users.setMeta(accountId, SYNC_ERROR_KEY, messageOf(error))
+        } catch (e: Exception) {
+            log.warn("The sync error of account $accountId could not be kept (${e.message}): ${error.message}")
+        }
     }
 
     /** Pictures are extras: a problem with them is logged, and never fails the sync of the recipes. */
@@ -265,7 +277,7 @@ class CookingSync(
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             log.warn("The server's cooking site could not be fetched: ${e.message}")
-            for (accountId in accounts) users.setMeta(accountId, SYNC_ERROR_KEY, messageOf(e))
+            for (accountId in accounts) keepError(accountId, e)
             return
         }
         for (accountId in accounts) {

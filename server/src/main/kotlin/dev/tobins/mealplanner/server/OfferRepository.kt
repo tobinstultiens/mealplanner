@@ -140,10 +140,23 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
         return state(today)
     }
 
-    /** Keeps why [store]'s fetch failed, for [problems] and the health check; its offers stay as they were. */
-    private fun recordFailure(store: Store, message: String): Unit = db.writing {
-        q.ensureSource(store.name)
-        q.recordFailure(message, store.name)
+    /**
+     * Keeps why [store]'s fetch failed, for [problems] and the health check; its offers stay as they were.
+     * The write may give up as well (the store's save did, most likely: [DatabaseBusyException]); that is
+     * logged and never ends the round, so the stores after this one are still refreshed. The store then
+     * shows as stale all the same: its last success only gets older.
+     */
+    private fun recordFailure(store: Store, message: String) {
+        try {
+            db.writing {
+                q.ensureSource(store.name)
+                q.recordFailure(message, store.name)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Could not record that the fetch of ${store.label} failed (${e.message}); its error was: $message")
+        }
     }
 
     /** A fetch that parsed but cannot be the store's real week; thrown to keep the stored offers like a failed fetch. */

@@ -166,6 +166,48 @@ class OffersApiTest {
         assertEquals(HttpStatusCode.BadRequest, http.get("/api/offers?date=soon").status)
     }
 
+    /**
+     * Issue 285: a store whose save gave up and whose failure could not be recorded either (the database stayed
+     * busy) is logged, and the stores after it are still refreshed. It shows as stale, as its last success ages.
+     */
+    @Test
+    fun aFailureThatCannotBeRecordedDoesNotSkipTheStoresAfterIt() = runBlocking {
+        val opened = openDatabase("jdbc:sqlite::memory:")
+        val writes = RefusingWrites(opened.first)
+        val db = writes.database
+        val lastNight = Instant.parse("2026-11-16T10:00:00Z")
+        db.planQueries.ensureSource(Store.AH.name)
+        db.planQueries.recordSuccess(lastNight.toString(), Store.AH.name)
+        // AH finds the database busy from its fetch until Jumbo's begins.
+        val ah = object : OfferSource {
+            override val store = Store.AH
+            override suspend fun fetch(): List<Offer> {
+                writes.refuse = { "offer" in it.lowercase() }
+                return listOf(offer(Store.AH, "Kipfilet"))
+            }
+        }
+        val jumbo = object : OfferSource {
+            override val store = Store.JUMBO
+            override suspend fun fetch(): List<Offer> {
+                writes.refuse = { false }
+                return listOf(offer(Store.JUMBO, "Rundergehakt", "2026-11-16", "2026-11-22"))
+            }
+        }
+        val repository = OfferRepository(db, listOf(ah, jumbo))
+        val now = Instant.parse("2026-11-19T10:00:00Z")
+
+        val state = repository.refresh(now = now)
+
+        assertEquals(listOf("Rundergehakt"), state.offers.map { it.title }, "Jumbo was refreshed")
+        assertEquals(now.toString(), state.sources.single { it.store == Store.JUMBO }.fetchedAt)
+        assertEquals(0, state.sources.single { it.store == Store.AH }.offerCount, "AH kept what it had")
+        val problems = repository.problems(now)
+        assertEquals(1, problems.size, problems.toString())
+        assertContains(problems.single(), Store.AH.label)
+        assertContains(problems.single(), lastNight.toString())
+        opened.first.close()
+    }
+
     @Test
     fun warnsAboutLidlOffersThatStoppedBeingRenewed() = runBlocking {
         val ah = FakeSource(Store.AH, listOf(offer(Store.AH, "Kipfilet", "2026-11-16", "2026-11-22")))

@@ -13,7 +13,9 @@ official API, so each can change without notice.
 
 How the server uses them (`server/src/main/kotlin/.../offers/`): every six hours it fetches each
 store whose last successful fetch is over a day old; `POST /api/offers/refresh` fetches all at once.
-A store that fails keeps its previous offers and reports the error under `/api/offers`. Each successful
+A store that fails keeps its previous offers and reports the error under `/api/offers`. When that error cannot be recorded either (the database stayed
+busy), it is only logged and the next store is fetched all the same; `/health/data` shows the store as
+stale once its last success is old enough. Each successful
 fetch is also kept in the price history (see "Price history" below). Parsers are
 tested against trimmed real responses in `server/src/test/resources/offers/`; the live check is
 `LIVE_OFFERS=1 ./gradlew :server:test --tests '*OfferSourcesTest.liveStores'`.

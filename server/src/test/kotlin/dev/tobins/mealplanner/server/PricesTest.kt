@@ -15,6 +15,7 @@ import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -182,6 +183,25 @@ class PricesTest {
 
         assertEquals(5, broken.calls)
         assertNull(state.fetchedAt, "an aborted lookup is not recorded as done")
+    }
+
+    /** Issue 285: one price that cannot be saved is skipped like a failed search, and the others are still stored. */
+    @Test
+    fun aPriceThatCannotBeSavedDoesNotEndTheLookup() = runBlocking {
+        val opened = openDatabase("jdbc:sqlite::memory:")
+        val writes = RefusingWrites(opened.first)
+        val db = writes.database
+        val (ingredients, products) = tenNames(db)
+        val prices = PriceRepository(db, FakeStore(products), FoodRepository(db), OfferRepository(db, emptyList()))
+        // Only the first save finds the database busy.
+        var first = true
+        writes.refuse = { sql -> "INSERT" in sql && "price" in sql.lowercase() && first.also { first = false } }
+
+        prices.refresh(now = Instant.parse("2026-11-13T10:00:00Z"), pause = Duration.ZERO)
+
+        assertEquals(9, prices.state(ingredients).prices.size, "the nine others are priced")
+        assertNotNull(prices.state(ingredients).fetchedAt, "the lookup ran to its end")
+        opened.first.close()
     }
 
     private fun tenNames(db: dev.tobins.mealplanner.server.db.Database): Pair<IngredientRepository, Map<String, List<StoreProduct>>> {
