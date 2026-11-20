@@ -257,11 +257,18 @@ class NotificationsTest {
     }
 
     @Test
-    fun aTapOpensThePlanWhereAMealIsToMarkOrElseWhereTheBatchWasMade() {
-        val madeLastWeek = chili.copy(madeOn = "2026-11-15")
-        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-09"), notice(NotificationKind.THROW_AWAY, pastLastDay(madeLastWeek)).opening)
-        val unmarked = madeLastWeek.copy(prepId = 8, unmarked = 1, firstUnmarked = "2026-11-17")
-        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-16"), notice(NotificationKind.THROW_AWAY, pastLastDay(madeLastWeek, unmarked)).opening, "the day to mark")
+    fun aTapOpensThePlanWhereAMealIsToMarkOrElseWhereAShareWasLeft() {
+        fun week(vararg batches: PrepPastLastDay) = notice(NotificationKind.THROW_AWAY, pastLastDay(*batches)).opening
+        // Made on Sunday the 15th; its only share left is Tuesday's skipped lunch, in the week after (issue 263).
+        val madeLastWeek = chili.copy(madeOn = "2026-11-15", firstLeft = "2026-11-17")
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-16"), week(madeLastWeek), "the week of the share to throw away")
+        // A meal still to mark comes first, as it can be marked there, also when a share left is earlier.
+        val unmarked = chili.copy(prepId = 8, madeOn = "2026-11-15", left = 1, firstLeft = "2026-11-15", unmarked = 1, firstUnmarked = "2026-11-17")
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-16"), week(unmarked), "the day to mark")
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-16"), week(chili.copy(madeOn = "2026-11-15", firstLeft = "2026-11-15"), unmarked))
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-09"), week(unmarked.copy(unmarked = 0, firstUnmarked = null)), "the share left, made the same day")
+        // A server from before issue 263 says nothing of where the shares are: the week the batch was made.
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-09"), week(madeLastWeek.copy(firstLeft = null)))
     }
 
     @Test

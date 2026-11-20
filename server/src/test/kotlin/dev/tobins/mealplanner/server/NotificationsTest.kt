@@ -366,7 +366,7 @@ class NotificationsTest {
         http.mark(2, "LUNCH", MealStatus.SKIPPED)
         http.mark(4, "LUNCH", MealStatus.EATEN)
 
-        val due = PrepPastLastDay(id, salad.id, "Chicken salad", "2026-11-17", "2026-11-20", left = 1, unmarked = 1, firstUnmarked = "2026-11-19")
+        val due = PrepPastLastDay(id, salad.id, "Chicken salad", "2026-11-17", "2026-11-20", left = 1, unmarked = 1, firstUnmarked = "2026-11-19", firstLeft = "2026-11-18")
         assertEquals(listOf(due), facts("2026-11-21").prepsPastLastDay, "Saturday, the morning after its last day")
         assertEquals(emptyList(), facts("2026-11-20").prepsPastLastDay, "on its last day it may still be eaten")
         assertEquals(emptyList(), facts("2026-11-22").prepsPastLastDay, "a day later it was told already")
@@ -433,7 +433,10 @@ class NotificationsTest {
         http.mark(2, "DINNER", MealStatus.EATEN)
         http.mark(2, "LUNCH", MealStatus.SKIPPED)
 
-        val due = PrepPastLastDay(id, salad.id, "Chicken salad", "2026-11-17", "2026-11-20", side = true, left = 1, unmarked = 1, firstUnmarked = "2026-11-19", leftSides = 1, unmarkedSides = 1)
+        val due = PrepPastLastDay(
+            id, salad.id, "Chicken salad", "2026-11-17", "2026-11-20", side = true, left = 1, unmarked = 1, firstUnmarked = "2026-11-19", leftSides = 1, unmarkedSides = 1,
+            firstLeft = "2026-11-18",
+        )
         assertEquals(listOf(due), facts("2026-11-21").prepsPastLastDay, "Wednesday lunch's side in the box, Thursday's not marked; Tuesday's was eaten elsewhere")
     }
 
@@ -455,6 +458,7 @@ class NotificationsTest {
         val due = PrepPastLastDay(
             id, salad.id, "Chicken salad", "2026-11-17", "2026-11-20",
             side = false, left = 2, unmarked = 1, firstUnmarked = "2026-11-19", leftSides = 1, unmarkedSides = 1,
+            firstLeft = "2026-11-18",
         )
         assertEquals(listOf(due), facts("2026-11-21").prepsPastLastDay, "a portion and a side in the box, and a side not marked")
     }

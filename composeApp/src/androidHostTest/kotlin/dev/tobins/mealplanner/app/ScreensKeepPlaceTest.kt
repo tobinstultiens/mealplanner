@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.onFirst
@@ -60,8 +61,18 @@ class ScreensKeepPlaceTest {
         appClock = Clock.System
     }
 
+    /** The device's storage, which tells the app of a login made elsewhere as a second browser tab's would ([SettingsStorage.watch]). */
+    private val storage = object : SettingsStorage by MemorySettingsStorage() {
+        var onChange: () -> Unit = {}
+
+        override fun watch(onChange: () -> Unit): () -> Unit {
+            this.onChange = onChange
+            return { this.onChange = {} }
+        }
+    }
+
     private fun startApp() {
-        val storage = MemorySettingsStorage().apply { saveSession(Session("anna-token", expiresAt = Long.MAX_VALUE)) }
+        storage.saveSession(Session("anna-token", expiresAt = Long.MAX_VALUE))
         val launcher = object : LoginLauncher {
             override fun redirectUri(serverUrl: String) = "$serverUrl/app/login"
             override fun open(url: String) = Unit
@@ -108,6 +119,36 @@ class ScreensKeepPlaceTest {
         waitFor("Sat 21 Nov")
         compose.onNodeWithText("Sat 21 Nov").assertIsDisplayed()
         compose.onAllNodesWithText("Mon 16 Nov").assertCountEquals(0)
+    }
+
+    @Test
+    fun anotherLoginStartsThePlanAfreshThisWeekAtTheTop() {
+        startApp()
+        waitFor("Today")
+        openTab("Plan")
+        waitFor("Week of 16 Nov")
+        compose.onNodeWithContentDescription("Next week").performClick()
+        waitFor("Week of 23 Nov")
+        waitFor("Mon 16 Nov")
+        compose.onNode(hasScrollAction()).performScrollToIndex(6)
+        waitFor("Sat 21 Nov")
+
+        // Logged out in the settings, and in again, maybe as someone else (issue 263).
+        openTab("Progress")
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithContentDescription("Settings").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Settings").performClick()
+        waitFor("Log out")
+        compose.onNodeWithText("Log out").performScrollTo().performClick()
+        waitFor("You are logged out.")
+        storage.saveSession(Session("bert-token", expiresAt = Long.MAX_VALUE))
+        compose.runOnIdle { storage.onChange() }
+
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Plan").fetchSemanticsNodes().isNotEmpty() }
+        openTab("Plan")
+        waitFor("Week of 16 Nov")
+        waitFor("Mon 16 Nov")
+        compose.onNodeWithText("Mon 16 Nov").assertIsDisplayed()
+        compose.onAllNodesWithText("Week of 23 Nov").assertCountEquals(0)
     }
 
     @Test

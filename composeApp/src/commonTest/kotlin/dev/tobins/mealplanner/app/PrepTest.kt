@@ -114,6 +114,17 @@ class PrepTest {
     }
 
     @Test
+    fun aVacuumSealedBatchSaysSoOnItsMeals() {
+        val sealed = prep.copy(vacuum = true)
+        val made = PlannedMeal(1, DINNER, 1, "Salad", 1.5, 600.0, 40.0, locked = true, prep = sealed)
+        val later = PlannedMeal(2, LUNCH, 1, "Salad", 1.25, 500.0, 33.0, leftover = true, locked = true, prep = sealed)
+        assertEquals("Dinner · prep day · vacuum sealed", Strings.English.mealLabel(made))
+        assertEquals("Lunch · prepped Tue 17 Nov · vacuum sealed", Strings.English.mealLabel(later))
+        assertEquals("Avondeten · prepdag · vacuüm", Strings.Dutch.mealLabel(made))
+        assertEquals("Lunch · geprept di 17 nov · vacuüm · aangepast", Strings.Dutch.mealLabel(later.copy(adjusted = true)))
+    }
+
+    @Test
     fun theRecipeOfAPreppedMealSaysWhatToCookForTheLaterMeals() {
         val english = Strings.English
         assertEquals("Cook 2.75 servings: 1.5 now, 1.25 for the prep's later meals", MealToCook(1, 1.5, 2.75, skipped = false, prepMadeOn = "2026-11-17").sentence(english))

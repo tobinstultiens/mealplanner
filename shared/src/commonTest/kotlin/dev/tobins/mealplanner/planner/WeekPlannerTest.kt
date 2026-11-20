@@ -215,6 +215,28 @@ class WeekPlannerTest {
     }
 
     @Test
+    fun aLunchTakesADinnerRecipeBeforeTheOnlyLunchRecipeWhenThatWasPrepped() {
+        // Recipe 20 is the only lunch recipe, prepped for Monday's and Tuesday's lunches; the dinners are single servings, so
+        // they leave no leftover lunch and every other lunch is chosen.
+        val lunchRecipe = candidate(20, LUNCH, 550.0, 40.0)
+        val singleDinners = (10L..19L).map { candidate(it, DINNER, kcal = 600.0 + (it - 10) * 30, protein = 45.0 + (it - 10), servings = 1) }
+        val prep = MealPrep(
+            id = 4, madeOn = "2026-11-16", lastDay = "2026-11-19", vacuum = false,
+            meals = listOf(0, 1).map { PrepMeal("2026-11-${16 + it}", LUNCH, 1.0, MealStatus.PLANNED) },
+        )
+        val batch = listOf(0, 1).map { day -> PlannedMeal(day, LUNCH, 20, "Recipe 20", 1.0, 550.0, 40.0, leftover = day > 0, locked = true, prep = prep) }
+
+        for (seed in 0L until 10L) {
+            val plan = WeekPlanner.plan(PlanRequest(targets, listOf(lunchRecipe) + singleDinners, locked = batch, seed = seed))
+            assertEquals(batch, plan.filter { it.recipeId == 20L }, "seed $seed: the lunches after the batch are cooked from dinner recipes")
+            assertEquals(7, plan.count { it.slot == LUNCH }, "seed $seed: every lunch is planned")
+        }
+        // With no dinner recipe either, the prepped recipe is planned again rather than a lunch left empty.
+        val onlyIt = WeekPlanner.plan(PlanRequest(targets, listOf(lunchRecipe), locked = batch))
+        assertEquals(7, onlyIt.count { it.slot == LUNCH && it.recipeId == 20L })
+    }
+
+    @Test
     fun aBatchEatenAsAMealAndAsASideCountsEachShareAndGetsNoSideFromThePlanner() {
         // Issue 269: recipe 17 made on Tuesday's dinner, eaten then as the meal and on Thursday as a side next to recipe 13.
         val prep = MealPrep(

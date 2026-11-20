@@ -376,7 +376,9 @@ class AccountsTest {
         // Sides of his own next to his own meals in the same slots leave hers as they are.
         val bobsSalad = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's salad")) }.body<RecipeDetail>().summary
         bob.put("/api/recipes/${bobsSalad.id}/keeps") { setBody(RecipeKeeps(days = 3)) }
-        for (meal in listOf("1/DINNER", "2/LUNCH")) bob.put("/api/plans/$week/meals/$meal") { setBody(MealChoice(bobsSalad.id)) }
+        // His mains are a bowl of his own: a side is never the recipe of the main it goes with (issue 263).
+        val bobsBowl = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's bowl")) }.body<RecipeDetail>().summary
+        for (meal in listOf("1/DINNER", "2/LUNCH")) bob.put("/api/plans/$week/meals/$meal") { setBody(MealChoice(bobsBowl.id)) }
         val bobs = bob.post("/api/plans/$week/preps") { setBody(PrepInput(bobsSalad.id, "2026-11-17", meals = meals, side = 0.25)) }.body<WeekPlan>()
         assertTrue(bobs.days.flatMap { it.meals }.mapNotNull { it.side }.all { it.recipeId == bobsSalad.id && it.prep.id != prep.id })
         bob.put("/api/plans/$week/meals/2/LUNCH/status") { setBody(MealStatus.EATEN) }
@@ -407,6 +409,8 @@ class AccountsTest {
         for (meal in listOf("2/LUNCH", "3/DINNER")) bob.put("/api/plans/$week/meals/$meal") { setBody(MealChoice(bobsBowl.id)) }
         assertEquals(HttpStatusCode.NotFound, bob.post("/api/plans/$week/preps/$id/sides") { setBody(thursday) }.status)
         assertTrue(bob.get("/api/plans/$week").body<WeekPlan>().days.flatMap { it.meals }.all { it.prep == null && it.side == null })
+        assertEquals(listOf(id), alicesWeek.batchesToMake.map { it.prep.id }, "her batch is hers to grow (issue 263)")
+        assertEquals(emptyList(), bob.get("/api/plans/$week").body<WeekPlan>().batchesToMake, "and not offered to him")
         // His own batch of meals and sides in the same slots, grown by a side on Thursday, leaves hers as it is; she can't grow his.
         val bobsSalad = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's salad")) }.body<RecipeDetail>().summary
         bob.put("/api/recipes/${bobsSalad.id}/keeps") { setBody(RecipeKeeps(days = 3)) }
@@ -415,6 +419,7 @@ class AccountsTest {
         val grown = bob.post("/api/plans/$week/preps/$bobsId/sides") { setBody(thursday) }.body<WeekPlan>()
         assertEquals(listOf(false, true, true), grown.days[3].meals.single { it.slot == MealSlot.DINNER }.side!!.prep.meals.map { it.side })
         assertEquals(HttpStatusCode.NotFound, alice.post("/api/plans/$week/preps/$bobsId/sides") { setBody(thursday) }.status)
+        assertEquals(listOf(bobsId), bob.get("/api/plans/$week").body<WeekPlan>().batchesToMake.map { it.prep.id })
 
         assertEquals(alicesWeek, alice.get("/api/plans/$week").body<WeekPlan>())
     }

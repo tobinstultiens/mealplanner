@@ -19,13 +19,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.DailyTargets
-import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
@@ -65,22 +66,22 @@ fun sideHosts(vararg weeks: WeekPlan?): Set<PrepSlot> = weeks.filterNotNull().fl
     }
 }.toSet()
 
-/** A batch still to make that a side can be added to (issue 269): its [prep], and its recipe's id and [title]. */
-data class GrowableBatch(val prep: MealPrep, val recipeId: Long, val title: String)
-
 /**
- * The batches of [week] a side next to [meal] can be added to, which makes them larger (issue 269), as the server takes
+ * The batches a side next to [meal] of [week] can be added to, which makes them larger (issue 269), as the server takes
  * them: still to make (no meal of them eaten), with their first share before [meal] and their last day not before it,
  * neither [meal]'s own nor of its recipe, so that no plate holds one recipe twice. None when [meal] can't take a side: not
- * a lunch or dinner still to eat from [today] on, or with one already. Only batches with a meal or side in [week] are known.
+ * a lunch or dinner still to eat from [today] on, or with one already. Every batch of the account whose days reach into
+ * [week] ([WeekPlan.batchesToMake], issue 263), also one made the week before with no share in it; from a server before
+ * that, only those with a meal or side in [week].
  */
-fun growable(week: WeekPlan, meal: PlannedMeal, today: String): List<GrowableBatch> {
+fun growable(week: WeekPlan, meal: PlannedMeal, today: String): List<BatchToMake> {
     val date = plusDays(week.weekStart, meal.day)
     val canTakeOne = meal.slot in setOf(MealSlot.LUNCH, MealSlot.DINNER) && meal.status == MealStatus.PLANNED && meal.side == null && date >= today
     if (!canTakeOne) return emptyList()
-    val batches = week.days.flatMap { it.meals }.flatMap { other ->
-        listOfNotNull(other.prep?.let { GrowableBatch(it, other.recipeId, other.title) }, other.side?.let { GrowableBatch(it.prep, it.recipeId, it.title) })
-    }.distinctBy { it.prep.id }
+    val inWeek = week.days.flatMap { it.meals }.flatMap { other ->
+        listOfNotNull(other.prep?.let { BatchToMake(other.recipeId, other.title, it) }, other.side?.let { BatchToMake(it.recipeId, it.title, it.prep) })
+    }
+    val batches = (week.batchesToMake + inWeek).distinctBy { it.prep.id }
     return batches.filter { batch ->
         val first = batch.prep.meals.firstOrNull()
         first != null && !batch.prep.made && date <= batch.prep.lastDay &&
@@ -97,15 +98,16 @@ fun growable(week: WeekPlan, meal: PlannedMeal, today: String): List<GrowableBat
 @Composable
 fun AddSideDialog(
     slot: PrepSlot,
-    batches: List<GrowableBatch>,
+    batches: List<BatchToMake>,
     onDismiss: () -> Unit,
     onNewPrep: () -> Unit,
-    onAdd: suspend (GrowableBatch, Double) -> String?,
+    onAdd: suspend (BatchToMake, Double) -> String?,
 ) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
-    var batch by remember { mutableStateOf(batches.first()) }
-    var portions by remember { mutableStateOf(SIDE_PORTIONS.last()) }
+    // Kept across a re-created activity, as the dialog is (issue 263).
+    var batch by rememberSaveable(stateSaver = jsonSaver(BatchToMake.serializer())) { mutableStateOf(batches.first()) }
+    var portions by rememberSaveable { mutableStateOf(SIDE_PORTIONS.last()) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
@@ -140,10 +142,10 @@ fun AddSideDialog(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddSideChoices(
-    batches: List<GrowableBatch>,
-    batch: GrowableBatch,
+    batches: List<BatchToMake>,
+    batch: BatchToMake,
     portions: Double,
-    onBatch: (GrowableBatch) -> Unit,
+    onBatch: (BatchToMake) -> Unit,
     onPortions: (Double) -> Unit,
     onNewPrep: () -> Unit,
 ) {

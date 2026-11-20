@@ -340,6 +340,8 @@ enum class Msg(private val english: String, private val dutch: String) {
     KEEPS_VACUUM("Vacuum sealed: {0}", "Vacuüm: {0}"),
     KEEPS_NOT("not prepped", "niet geprept"),
     KEEPS_FAILED("Could not save how long it keeps.", "Kon niet opslaan hoe lang het goed blijft."),
+    // --- Prepped meals, the last rough edges (issue 263): a batch kept vacuum sealed says so on its meals and sides
+    PREP_LABEL_VACUUM("{0} · vacuum sealed", "{0} · vacuüm"),
 
     PLAN_CHOOSE_FOR("Recipe for {0} on {1}", "Recept voor {0} op {1}"),
     PLAN_CHOOSE_UNSUPPORTED(

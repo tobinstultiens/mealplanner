@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.ClosedSlot
 import dev.tobins.mealplanner.api.LaterShortfall
 import dev.tobins.mealplanner.api.MealLineChange
@@ -713,7 +714,20 @@ class PlanRepository(
             cost = known.takeIf { it.isNotEmpty() }?.sumOf { (cost, portions) -> cost.perServingWithOffers * portions },
             costWithoutOffers = known.takeIf { it.isNotEmpty() }?.sumOf { (cost, portions) -> cost.perServing * portions },
             rest = restOf(start, week),
+            batchesToMake = batchesToMake(start),
         )
+    }
+
+    /**
+     * The account's batches still to make whose days reach into the week starting [start] ([WeekPlan.batchesToMake]): those
+     * keeping until its Monday or later, made by its Sunday, with no meal eaten. A batch can only grow by a side until it is
+     * made, and one made the week before may have no meal in this week yet keep into it (issue 263).
+     */
+    private fun batchesToMake(start: LocalDate): List<BatchToMake> {
+        val end = start.plusDays(DAYS - 1L).toString()
+        val ids = q.selectPrepsKeeping(userId, start.toString()).executeAsList().filter { it.madeOn <= end }.map { it.id }
+        val batches = Batch.load(db, userId, ids)
+        return ids.mapNotNull { batches[it] }.filterNot { it.made }.map { BatchToMake(it.recipeId, it.title, it.toApi()) }
     }
 
     /**

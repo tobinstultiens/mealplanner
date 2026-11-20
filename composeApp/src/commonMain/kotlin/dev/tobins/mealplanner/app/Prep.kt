@@ -24,6 +24,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import dev.tobins.mealplanner.api.MealPrep
@@ -37,6 +39,9 @@ import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.WeekPlan
 import kotlinx.coroutines.launch
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
 /*
  * Prepped meals (issue 234): one recipe made once and eaten over several days, started by hand on the Plan. The
@@ -61,8 +66,9 @@ fun prepDays(weekStart: String, today: String): List<String> = (0..6).map { plus
  * eaten in, each as the meal itself or as a side of [PrepSlot.side] servings next to the meal planned there, which keeps
  * its own (issue 234, step 2): one batch may be both (issue 269). [side] is how a lunch or dinner picked next is eaten,
  * the dialog's "Eaten as": as the meal (null) or as a side of that many servings. [firstDay] is the earliest day it may be
- * made: today ([prepDays]).
+ * made: today ([prepDays]). Serializable, so that an open Prep dialog keeps it across a re-created activity ([jsonSaver]).
  */
+@Serializable
 data class PrepChoice(
     val recipe: RecipeSummary?,
     val madeOn: String,
@@ -122,6 +128,13 @@ data class PrepChoice(
     /** What the server is sent, each meal saying how it is eaten (issue 269); only once [problem] is null. */
     fun input(): PrepInput = PrepInput(recipe!!.id, madeOn, vacuum, meals.sortedWith(compareBy({ it.date }, { it.slot.ordinal })))
 }
+
+/**
+ * Keeps a dialog's [T] in the saved instance state as JSON, so that an open Prep, Remove or Add-a-side dialog stays open with
+ * its choices when Android re-creates the activity (font size, dark mode, rotation; issue 263), as the screens keep their place.
+ */
+fun <T> jsonSaver(serializer: KSerializer<T>): Saver<T, String> =
+    Saver(save = { Json.encodeToString(serializer, it) }, restore = { Json.decodeFromString(serializer, it) })
 
 /**
  * The choice "Prep a recipe…" opens with: made on the first of [days] (from [today] on, [prepDays]), with the recipe
@@ -196,7 +209,7 @@ fun PrepDialog(
 ) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
-    var choice by remember { mutableStateOf(start) }
+    var choice by rememberSaveable(stateSaver = jsonSaver(PrepChoice.serializer())) { mutableStateOf(start) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(

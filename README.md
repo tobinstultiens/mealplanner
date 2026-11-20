@@ -217,7 +217,8 @@ them, or one batch partly each way (issue 269). Only by hand: the planner never 
   counts its own portion, on the Plan and on Today. Generating or replanning keeps them and plans around them: a
   prepped dinner leaves no leftover lunch, and the recipe of a batch in the week (as meals or sides, also one made the
   week before) is planned again only when no other recipe fits the slot, even when that means repeating the others
-  in a small rotation; then every meal or side of the batch counts as a use of it.
+  in a small rotation (for a lunch, neither a lunch recipe nor a dinner recipe cooked for lunch); then every meal or
+  side of the batch counts as a use of it.
   The made-on day's meal can be neither replaced nor removed on its own (409, naming the later meals: `DELETE
   /api/plans/{weekStart}/preps/{id}` removes the prep with all its meals, in every week, after the app named
   them); a later meal can, which makes the batch smaller, until the batch is made. Unlocking a prepped meal is a 409.
@@ -229,8 +230,9 @@ them, or one batch partly each way (issue 269). Only by hand: the planner never 
   is skipped.
 - **A skipped meal's share** stays in the batch. `GET /api/preps/spare/{date}` lists the shares still in the box on
   that date (`SparePortion`), each with the later lunches and dinners up to its last day that have room (empty, or
-  a meal still to eat that is not locked and of no prep), and the next free one, in whichever week (`proposed`: the
-  earliest that is empty; for a side the earliest meal still to eat without a side; null when none is). On its last day it is to eat that day or throw away; from
+  a meal still to eat that is not locked and of no prep; for a side a meal still to eat without a side, of another
+  recipe), and the next free one, in whichever week (`proposed`: the earliest that is empty; for a side the earliest
+  such meal; null when none is). On its last day it is to eat that day or throw away; from
   the day after, it is not listed, and it is never planned on its own. `POST
   /api/plans/{weekStart}/preps/{id}/spare` with `{"from": {"date": ..., "slot": ...}, "to": {...}}` eats it there:
   the meal there goes, the skipped meal keeps a share of 0 (and can no longer be marked eaten), and what the stock
@@ -238,8 +240,9 @@ them, or one batch partly each way (issue 269). Only by hand: the planner never 
   meal's slot meanwhile; its share stays in the box all the same ("Standard meals"). The morning after the last day,
   the "Prepped food to throw away" notification (issue 264) names what may still be in a box: the shares of skipped
   meals or sides not eaten elsewhere, and the meals of the batch never marked, portions and sides counted apart
-  (`PrepPastLastDay.left` and `unmarked` count both, `leftSides` and `unmarkedSides` the sides among them; `side`,
-  true when every share is a side, is what apps before issue 269 word it by). A batch never made (no meal of it
+  (`PrepPastLastDay.left` and `unmarked` count both, `leftSides` and `unmarkedSides` the sides among them;
+  `firstUnmarked` and `firstLeft` are the days of the first of each, for the tap to open; `side`, true when every
+  share is a side, is what apps before issue 269 word it by). A batch never made (no meal of it
   eaten) has nothing in a box and is not named.
 - **Into the next week.** A prep may run over the week's end. Its meals are in the next week before that week is
   planned, and generating it keeps them; a week with only those counts as not planned yet (the "Plan next week"
@@ -253,14 +256,18 @@ them, or one batch partly each way (issue 269). Only by hand: the planner never 
   A shortfall warning ("What was in a meal") counts what the batch took for its meals of the next week in the week
   it was made, whose stock it was cooked from.
 - **Sides.** A meal of `PrepInput.meals` with `"side": 0.25` or `0.5` (else 400) eats the batch there as a side of
-  that many servings next to the slot's meal, which must hold a meal still to eat without a side (409 naming the slot
-  otherwise); the meals without one eat it as the meal itself, so one batch may be both, with sides of both sizes
+  that many servings next to the slot's meal, which must hold a meal still to eat without a side, whose main is
+  another recipe, as no plate holds one recipe twice (409 naming the slot otherwise); the meals without one eat it as
+  the meal itself, so one batch may be both, with sides of both sizes
   (issue 269). It is the sum of all its shares, and made with its first, a meal or a side, on the made-on day.
   `PrepInput.side`, as apps before issue 269 send it, makes every meal such a side; both at once is a 400. A batch
   still to make grows by a side: `POST /api/plans/{weekStart}/preps/{id}/sides` with `{"date": "2026-11-19", "slot":
   "DINNER", "side": 0.5}` puts one next to a lunch or dinner after its first share, up to its last day, today or later,
-  that has a meal still to eat without a side and is not a meal of the batch (409 otherwise, and once the batch was
-  made; 404 for another account's batch); it is bought and cooked with the batch.
+  that has a meal still to eat without a side, of another recipe, and is not a meal of the batch (409 otherwise, and
+  once the batch was made; 404 for another account's batch); it is bought and cooked with the batch. The batches a
+  week's sides can be taken from are in `WeekPlan.batchesToMake` (`BatchToMake`: the recipe, its title and the batch):
+  the account's own batches still to make whose days, from the made-on day to the last, reach into that week, also
+  those with no meal or side in it (issue 263).
   The meal keeps its main and its portion: the main is not resized, and the day may go over its calories, which
   the app says. A meal has at most one side, `PlannedMeal.side` (`MealSide`: the recipe, its portions, its kcal,
   protein, fibre and cost from the recipe as it is now, `cookPortions` and the batch, whose `PrepMeal.side` marks
@@ -290,7 +297,8 @@ week that is over has no "Prep a recipe…"), in a box or vacuum sealed, and per
 it can't be made yet (no meal on the made-on day, fewer than two meals); above it, a line says what a prep needs and
 that each meal picked takes the place of what is planned there. The dialog's recipes are read again whenever it opens
 and when the app comes back to the front, so keeps set meanwhile (also on another device) are there. A prepped meal is
-labelled "Dinner · prep day" where it is made and "Lunch · prepped Mon 16 Nov" after; its lock can't be undone, and its
+labelled "Dinner · prep day" where it is made and "Lunch · prepped Mon 16 Nov" after, on the Plan and on Today, with "·
+vacuum sealed" added for a batch kept that way (its sides too); its lock can't be undone, and its
 menu has "Remove the prep…", which names every meal that goes, with those eaten or skipped already, before it removes
 them; once one was eaten the batch was made, and the dialog says beforehand that it stays and its meals are to be
 skipped instead (of a batch eaten as sides, in words of sides), with nothing to confirm. The recipe opened from the prep
@@ -309,11 +317,11 @@ The Prep dialog also asks how it is eaten: "The meal", or "A side" of 0.25 or 0.
 or dinner picked next is eaten, so one batch can be the meal on some days and a side of either size on others (issue
 269); each picked one says so ("Lunch · side 0.5"). As a side, only lunches and dinners with a meal still to eat and no
 side yet can be picked (of the week shown and the next); one picked another way can always be taken off. "Add a
-prepped side…" in such a meal's menu offers the batches of the week shown that are still to make, made before the meal
+prepped side…" in such a meal's menu offers the account's batches that are still to make, made before the meal
 and keeping until its day at least, of another recipe than the meal's, to take a side of 0.25 or 0.5 servings from,
-which makes that batch larger; "Prep a new side…" there, or the menu itself when no batch can take one, opens the Prep
-dialog as a side of half a serving with that meal chosen. A batch made the week before with no share in the week shown
-is not offered. The side shows under the
+which makes that batch larger: also one made the week before with no share in the week shown (`batchesToMake`; from a
+server before that, only those with a share in the week shown). "Prep a new side…" there, or the menu itself when no
+batch can take one, opens the Prep dialog as a side of half a serving with that meal chosen. The side shows under the
 meal's main, "Side · prep day" where it is made and "Side · prepped Wed 18 Nov" after, with its numbers and what
 the meal comes to with it; a tap opens its recipe (the batch to cook on the prep day). The meal's menu then has
 "Remove the side" and "Remove the side's prep…". A day card with sides that is over its calories says by how much
@@ -552,7 +560,7 @@ The bank (`Route.Bank`, `#/recipes/bank`; `GET /api/recipes/bank`) is opened by 
 
 Recipe photos (from the cooking site) show on the Recipes list, the recipe screen, Today and the Plan, for the recipes that have one; a recipe without one keeps the plain layout, with no placeholder. They come from our own server, so the same loader fetches them with the login token, and the "Show product pictures" setting does not affect them.
 
-Screens keep their place. Opening a recipe (or the pantry, offers and so on) from a tab and going back leaves the tab as it was: the Plan's week and scroll, Today's day, the recipe list's scroll, search and choice, the bank's scroll and search; so does Android re-creating the activity (rotation, dark mode, language). This is kept in memory and the saved instance state, not on disk: a cold start begins on Today, this week, at the top. A screen that comes back shows what it showed at once and fetches again behind it; a failed fetch keeps what is shown and says so in a line at the bottom with a Retry (a recipe the server says is gone shows the error instead). A new client (login, logout, another server) makes every open screen fetch again. When the app returns to the front (Android: started again; browser: the tab visible again) every screen in front fetches once, and Today and the Plan read the date again: they follow the new day or week when they were showing today or this week, and stay where the user stepped to otherwise. While the app is in front the clock is read every 30 seconds to notice midnight.
+Screens keep their place. Opening a recipe (or the pantry, offers and so on) from a tab and going back leaves the tab as it was: the Plan's week and scroll, Today's day, the recipe list's scroll, search and choice, the bank's scroll and search; so does Android re-creating the activity (rotation, dark mode, language, font size), which also leaves an open Prep, "Remove the prep…" or "Add a prepped side…" dialog open with what was chosen in it. This is kept in memory and the saved instance state, not on disk: a cold start begins on Today, this week, at the top. A screen that comes back shows what it showed at once and fetches again behind it; a failed fetch keeps what is shown and says so in a line at the bottom with a Retry (a recipe the server says is gone shows the error instead). A new client (login, logout, another server) makes every open screen fetch again; logging out (or a login that ran out) also makes every screen forget its place, and the Plan a week a notification asked for, so whoever logs in next starts afresh on this week, at the top. When the app returns to the front (Android: started again; browser: the tab visible again) every screen in front fetches once, and Today and the Plan read the date again: they follow the new day or week when they were showing today or this week, and stay where the user stepped to otherwise. While the app is in front the clock is read every 30 seconds to notice midnight.
 
 Cook mode: the **Cook** button on a recipe (one of mine or from the bank) opens big rows to tick the ingredients, with the amounts of the recipe screen (scaled to the servings to cook when it was opened from a meal, with its "As written" switch), and the steps one per card: the numbered list of the instructions, or, when there is none, every non-empty line (steps typed one per line in the editor). Tapping a row ticks it (dimmed, not moved); tapping a step marks it done and makes the next one the current, highlighted one. The screen stays on while it is open (Android: the window flag; browser: the Screen Wake Lock API where the browser has it, taken again when the tab shows). Ticks live in the saved instance state and go with the recipe screen; nothing is sent to the server. With the last step done, a meal that is still planned offers "Mark as eaten" (`PUT /api/plans/{week}/meals/{day}/{slot}/status`); Back leaves cook mode for the recipe.
 
@@ -567,7 +575,7 @@ the device; each kind is an Android notification channel of its own, so the syst
 | Weigh-in | The newest weigh-in is 7 or more days old and there is a profile; once per 7 days, until one is entered | Progress | Off |
 | Dinner today | Today has a planned dinner that is neither eaten nor skipped and something to cook: its main, or else a side's prepped batch made next to it that evening ("Tonight's side: …"); a dinner that makes a prepped batch says its servings are for tonight and the prep's later meals; once per day | The recipe, from that meal (its servings to cook; on a prep day for the prep's later meals) | Off |
 | Mark what you ate | A meal of today is still planned; once per day | Today | Off |
-| Prepped food to throw away | The morning after a prepped batch's last day (its own: in a box or vacuum sealed), when the batch was made (a meal of it eaten) and a share of it was skipped and not eaten elsewhere ("Throw away 1 portion of Chili con carne" / "It kept until Mon 23 Nov."), or a meal or side of it was never marked ("1 portion of Chili con carne was not marked: eaten, or to throw away?"); sides say "side". Several batches go into one notification; once per batch, and only on the day after its last day; a batch told later the same day is a notification of its own next to the first (an Android tag per batch) | Plan, on the week of the first meal not marked, else on the week the batch was made | On (only an account that made a prep gets it) |
+| Prepped food to throw away | The morning after a prepped batch's last day (its own: in a box or vacuum sealed), when the batch was made (a meal of it eaten) and a share of it was skipped and not eaten elsewhere ("Throw away 1 portion of Chili con carne" / "It kept until Mon 23 Nov."), or a meal or side of it was never marked ("1 portion of Chili con carne was not marked: eaten, or to throw away?"); sides say "side". Several batches go into one notification; once per batch, and only on the day after its last day; a batch told later the same day is a notification of its own next to the first (an Android tag per batch) | Plan, where there is something to do: on the week of the first meal not marked, where it can be marked, else on that of the first skipped share left in the box, which may be the week after the batch was made (from a server before issue 263: the week the batch was made) | On (only an account that made a prep gets it) |
 
 The server says what is due, the app decides whether to tell: `GET /api/notifications` answers, for the calling
 account and the server's today, the facts behind kinds 2 to 7 as data (`NotificationFacts`: names, dates, counts,
@@ -631,7 +639,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the Plan with one batch eaten as sides and as a meal (also in Dutch), the Prep dialog with meals picked both ways (also in Dutch and at font scale 2), "Add a prepped side…" with batches still to make (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch; the question also of a prep that was made, of meals and of sides, in both languages, and of a prep of meals and sides, made or not, in both languages), a week holding only a meal of last week's batch on the Plan and Shopping (Shopping also in Dutch), the recipe of a later prepped meal and cook mode on a prep day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
+Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch, and with that prep kept vacuum sealed, also in Dutch and at font scale 2), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the Plan with one batch eaten as sides and as a meal (also in Dutch), the Prep dialog with meals picked both ways (also in Dutch and at font scale 2), "Add a prepped side…" with batches still to make (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch; the question also of a prep that was made, of meals and of sides, in both languages, and of a prep of meals and sides, made or not, in both languages), a week holding only a meal of last week's batch on the Plan and Shopping (Shopping also in Dutch), the recipe of a later prepped meal and cook mode on a prep day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker, Offers, Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for), the Notifications card (in English and Dutch, with notifications refused by Android, and at font scale 2 in both languages), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed

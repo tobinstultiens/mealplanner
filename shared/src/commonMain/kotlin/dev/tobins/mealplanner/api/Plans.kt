@@ -237,7 +237,17 @@ data class WeekPlan(
      * when there are none and from a server before this. Only rests under half of the pack count ([OpenPacks]).
      */
     val rest: List<WeekRest> = emptyList(),
+    /**
+     * The account's batches still to make (no meal of them eaten) whose days, from the made-on day to the last day, reach
+     * into this week, also those with no meal or side in it: what "Add a prepped side…" offers (issue 263). Empty from a
+     * server before this.
+     */
+    val batchesToMake: List<BatchToMake> = emptyList(),
 )
+
+/** A batch still to make ([WeekPlan.batchesToMake]): its recipe's id and [title], and the batch. */
+@Serializable
+data class BatchToMake(val recipeId: Long, val title: String, val prep: MealPrep)
 
 /** What the week leaves of a fresh ingredient: [grams] of it, worth [euros] of its pack's regular price. */
 @Serializable
