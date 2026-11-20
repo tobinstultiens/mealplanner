@@ -76,6 +76,27 @@ class OfferMatcherTest {
     }
 
     @Test
+    fun sausagesSpreadsAndReadyMadeMeatAreNotTheMeatTheyAreMadeFrom() {
+        // Offers recorded in the week of 16 November 2026.
+        assertEquals(null, match("Kips snijleverworst"), "liver sausage of the brand Kips")
+        assertEquals(null, match("Kips kleintje smeerleverworst"))
+        assertEquals(null, match("Kips roompaté"), "a spread")
+        assertEquals(null, match("Kip schnitzel, kip cordon bleu, kip burger of kip gehaktbal"))
+        assertEquals(null, match("Alle Easy Chicken Tonight of Easy Asia Tonight"), "cooking sauces")
+        assertEquals(null, match("Gehakt cordon bleu", category = "Diepvriesvlees & gevogelte"))
+        assertEquals(null, match("Optimel drinkyoghurt"), "a drink, not the plain yoghurt")
+        assertEquals(chicken, match("Jumbo kip of kippen"), "the plural of kip is kippen")
+        assertEquals(mince, match("Plakjes Jumbo gehaktbal of grillgehakt"))
+    }
+
+    @Test
+    fun anIngredientThatIsItselfASausageStillMatches() {
+        val sausage = 20L
+        val products = OfferMatcher(mapOf(sausage to listOf("Smoked sausage", "rookworst")))
+        assertEquals(sausage, products.match("Unox Rookworst", null))
+    }
+
+    @Test
     fun theLongestTermWins() {
         assertEquals(chickenFillet, match("Kipfilet van de kip"))
         assertEquals(
