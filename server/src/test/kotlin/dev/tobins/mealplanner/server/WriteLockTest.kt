@@ -365,30 +365,33 @@ class WriteLockTest {
         val (opened, db) = openDatabase(url, writeWait = Duration.ofMillis(300))
         val config = ServerConfig(port = 0, databaseUrl = url, cookingRepo = null, dataDir = File(dir, "data"))
         application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = names) }
-        val http = createClient {
-            install(ContentNegotiation) { json() }
-            defaultRequest {
-                bearerAuth("t")
-                contentType(ContentType.Application.Json)
-            }
-        }
-        val profile = Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT)
-        // Logged in first: a new account is written too.
-        assertEquals(HttpStatusCode.OK, http.get("/api/ping").status)
-        val held = CountDownLatch(1)
-        val release = CountDownLatch(1)
-        val holder = elsewhere { db.writing { held.countDown(); release.await(30, SECONDS) } }
         try {
-            assertTrue(held.await(30, SECONDS))
-            val busy = http.put("/api/profile") { setBody(profile) }
-            assertEquals(HttpStatusCode.ServiceUnavailable, busy.status)
-            assertTrue("try again" in busy.bodyAsText(), busy.bodyAsText())
+            val http = createClient {
+                install(ContentNegotiation) { json() }
+                defaultRequest {
+                    bearerAuth("t")
+                    contentType(ContentType.Application.Json)
+                }
+            }
+            val profile = Profile(90.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT)
+            // Logged in first: a new account is written too.
+            assertEquals(HttpStatusCode.OK, http.get("/api/ping").status)
+            val held = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val holder = elsewhere { db.writing { held.countDown(); release.await(30, SECONDS) } }
+            try {
+                assertTrue(held.await(30, SECONDS))
+                val busy = http.put("/api/profile") { setBody(profile) }
+                assertEquals(HttpStatusCode.ServiceUnavailable, busy.status)
+                assertTrue("try again" in busy.bodyAsText(), busy.bodyAsText())
+            } finally {
+                release.countDown()
+            }
+            holder.get(30, SECONDS)
+            assertEquals(HttpStatusCode.OK, http.put("/api/profile") { setBody(profile) }.status)
         } finally {
-            release.countDown()
+            opened.close()
         }
-        holder.get(30, SECONDS)
-        assertEquals(HttpStatusCode.OK, http.put("/api/profile") { setBody(profile) }.status)
-        opened.close()
     }
 
     /** The warnings of the writer turn's log while [block] runs. */

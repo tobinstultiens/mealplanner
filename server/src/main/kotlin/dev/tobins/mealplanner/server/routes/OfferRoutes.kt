@@ -10,6 +10,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import java.time.Instant
 import java.time.LocalDate
+import dev.tobins.mealplanner.server.logged
 import kotlinx.coroutines.launch
 
 /** Store offers and regular prices, and fetching them now. */
@@ -29,7 +30,7 @@ fun Route.offerRoutes(offers: OfferRepository, prices: PriceRepository) {
     get("/api/prices") { call.respond(prices.state(call.user.ingredients)) }
     // A lookup takes minutes: it runs in the background and the app polls GET /api/prices.
     post("/api/prices/refresh") {
-        call.application.launch { prices.refresh() }
+        call.application.launch { logged("Price lookup") { prices.refresh() } }
         call.respond(prices.state(call.user.ingredients).copy(refreshing = true))
     }
 }
