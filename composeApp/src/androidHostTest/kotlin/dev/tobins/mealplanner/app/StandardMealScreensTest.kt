@@ -2,18 +2,15 @@ package dev.tobins.mealplanner.app
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToIndex
-import androidx.compose.ui.test.performScrollToNode
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -23,6 +20,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.TimeZone
+import java.util.concurrent.CountDownLatch
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -112,31 +110,25 @@ class StandardMealScreensTest {
         show { TodayScreen(api, { _, _ -> }, {}) }
         compose.onNodeWithContentDescription("Next day").performClick()
         waitFor("Skipped")
+        // The app asked, and the older server did not know the route.
+        compose.waitUntil(timeoutMillis = 10_000) { backend.requests.any { it.endsWith("/standard-meals") } }
         assertEquals(0, count("Instead, one of my standard meals:"))
-        assertTrue(backend.requests.any { it.endsWith("/standard-meals") }, "the app asked, and the older server did not know the route")
     }
 
     // --- The Plan
 
-    /** Opens the swap menu of the [slot] ("lunch", "dinner") of the day headed [label], the Plan's list item [item]. */
-    private fun openMenuOf(label: String, slot: String, item: Int) {
-        waitFor("Prep a recipe…")
-        compose.onNode(hasScrollAction()).performScrollToIndex(item)
-        waitFor(label)
-        // The positions are read once the list has settled where it was scrolled to.
-        compose.waitForIdle()
-        val dayTop = compose.onNodeWithText(label).fetchSemanticsNode().boundsInRoot.top
-        val buttons = compose.onAllNodesWithContentDescription("Swap $slot").fetchSemanticsNodes()
-        val own = buttons.withIndex().filter { it.value.boundsInRoot.top > dayTop }.minBy { it.value.boundsInRoot.top }.index
-        compose.onAllNodesWithContentDescription("Swap $slot")[own].performClick()
-        waitFor("Not eating this")
+    /** Shows the Plan of [backend], and once it is all there the menu of the [slot] meal ("lunch", "dinner") of the day headed [day]. */
+    private fun openMenuOnPlan(day: String, slot: String, prepped: Boolean = false) {
+        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
+        // The week of a prep has the card of the share in the box above the days.
+        compose.waitForPlan(boxCard = prepped)
+        compose.openSwapMenu(day, slot)
     }
 
     @Test
     fun theSkipSheetLeavesOutTheRecipeThatWasSkipped() {
-        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
         // Tuesday's lunch is the tuna pasta salad, itself a standard meal for lunch: the sheet offers the shakshuka only.
-        openMenuOf("Tue 17 Nov", "lunch", item = 2)
+        openMenuOnPlan("Tue 17 Nov", "lunch")
         compose.onNodeWithText("Not eating this").performClick()
         waitFor("Eat one of your standard meals instead?")
         assertEquals(1, count("Shakshuka · 700"))
@@ -145,32 +137,29 @@ class StandardMealScreensTest {
 
     @Test
     fun aStandardMealCanBeTakenOutOfThePlan() {
-        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
         // Tuesday's lunch is the tuna pasta salad, a standard meal: removing it is what gives a skipped prepped meal its slot back.
-        openMenuOf("Tue 17 Nov", "lunch", item = 2)
+        openMenuOnPlan("Tue 17 Nov", "lunch")
+        // The entry is there once the week's standard meals are, which the menu does not wait for.
+        waitFor("Remove from the plan")
         compose.onNodeWithText("Remove from the plan").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it == "DELETE /api/plans/${FakeBackend.WEEK_START}/meals/1/LUNCH" } }
     }
 
     @Test
     fun aMealOfAnotherRecipeHasNoEntryToTakeItOut() {
-        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
-        openMenuOf("Mon 16 Nov", "dinner", item = 1)
+        // The tuna pasta salad's menu has the entry once the week's standard meals are in; the chicken's has none then.
+        openMenuOnPlan("Tue 17 Nov", "lunch")
+        waitFor("Remove from the plan")
+        // Closes the menu; the screen opens nothing here.
+        compose.onNodeWithText("Adjust what was in it").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { count("Remove from the plan") == 0 }
+        compose.openSwapMenu("Mon 16 Nov", "dinner")
         assertEquals(0, count("Remove from the plan"), "the chicken thighs are no standard meal")
-    }
-
-    /** Opens the swap menu of the dinner of the first day (Monday) on the Plan. */
-    private fun openMondayDinnerMenu() {
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithContentDescription("Swap dinner").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNode(hasScrollAction()).performScrollToIndex(1)
-        compose.onAllNodesWithContentDescription("Swap dinner")[0].performClick()
-        waitFor("Another recipe")
     }
 
     @Test
     fun skippingAMealOnThePlanShowsTheStandardMealsAtOnceAndOneTapPutsOneThere() {
-        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
-        openMondayDinnerMenu()
+        openMenuOnPlan("Mon 16 Nov", "dinner")
         compose.onNodeWithText("Not eating this").performClick()
         waitFor("Eat one of your standard meals instead?")
         assertTrue(backend.changes.any { it.contains("/meals/0/DINNER/status") && it.contains("SKIPPED") })
@@ -185,26 +174,19 @@ class StandardMealScreensTest {
     @Test
     fun aSlotNoStandardMealCanTakeGetsNoSkipSheet() {
         useBackend(standardMeals = true, prepped = true)
-        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
         // Monday's dinner makes the prep: the server lists it as closed, so skipping it offers nothing.
-        waitFor("Prep a recipe…")
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Mon 16 Nov"))
-        val dayTop = compose.onNodeWithText("Mon 16 Nov").fetchSemanticsNode().boundsInRoot.top
-        val buttons = compose.onAllNodesWithContentDescription("Swap dinner").fetchSemanticsNodes()
-        val own = buttons.withIndex().filter { it.value.boundsInRoot.top > dayTop }.minBy { it.value.boundsInRoot.top }.index
-        compose.onAllNodesWithContentDescription("Swap dinner")[own].performClick()
-        waitFor("Not eating this")
+        openMenuOnPlan("Mon 16 Nov", "dinner", prepped = true)
         compose.onNodeWithText("Not eating this").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it.contains("/meals/0/DINNER/status") } }
-        compose.waitUntil(timeoutMillis = 10_000) { backend.requests.count { it.endsWith("/standard-meals") } >= 2 }
-        compose.waitForIdle()
+        // Done once the meals can be tapped again: by then the standard meals were asked for again and the sheet would show.
+        compose.waitUntilPlanIsIdle()
+        assertTrue(backend.changes.any { it.contains("/meals/0/DINNER/status") })
+        assertTrue(backend.requests.count { it.endsWith("/standard-meals") } >= 2, "asked again after the skip")
         assertEquals(0, count("Eat one of your standard meals instead?"))
     }
 
     @Test
     fun leavingTheSkipSheetKeepsTheSkip() {
-        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
-        openMondayDinnerMenu()
+        openMenuOnPlan("Mon 16 Nov", "dinner")
         compose.onNodeWithText("Not eating this").performClick()
         waitFor("Leave it empty")
         compose.onNodeWithText("Leave it empty").performClick()
@@ -215,18 +197,16 @@ class StandardMealScreensTest {
     @Test
     fun withoutStandardMealsSkippingOnThePlanIsAsBefore() {
         useBackend(standardMeals = false)
-        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
-        openMondayDinnerMenu()
+        openMenuOnPlan("Mon 16 Nov", "dinner")
         compose.onNodeWithText("Not eating this").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it.contains("/status") } }
-        compose.waitForIdle()
+        compose.waitUntilPlanIsIdle()
+        assertTrue(backend.changes.any { it.contains("/status") })
         assertEquals(0, count("Eat one of your standard meals instead?"), "with none for the slot the skip is as it was")
     }
 
     @Test
     fun thePickerListsTheStandardMealsFirstAndPutsOneInByItsOwnRoute() {
-        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
-        openMondayDinnerMenu()
+        openMenuOnPlan("Mon 16 Nov", "dinner")
         compose.onNodeWithText("Choose a recipe…").performClick()
         // Their order is `pickableRecipes`' (StandardMealsTest); here, that they are there under their heading.
         waitFor("My standard meals")
@@ -242,12 +222,24 @@ class StandardMealScreensTest {
     @Test
     fun thePickerSaysWhenChoosingMakesAPrepStillToMakeSmaller() {
         useBackend(standardMeals = true, prepped = true)
-        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
-        // Tuesday's lunch is a later meal of the chicken thighs, a batch no meal of which was eaten yet. The box card comes
-        // before the days, so Tuesday is the list's fourth item.
-        openMenuOf("Tue 17 Nov", "lunch", item = 3)
+        // Tuesday's lunch is a later meal of the chicken thighs, a batch no meal of which was eaten yet.
+        openMenuOnPlan("Tue 17 Nov", "lunch", prepped = true)
         compose.onNodeWithText("Choose a recipe…").performClick()
         waitFor("This meal is from a prepped batch still to make: another recipe here makes the batch smaller.")
+    }
+
+    @Test
+    fun standardMealsThatComeAfterThePickerOpenedShowAtItsTop() {
+        val answer = CountDownLatch(1)
+        backend.standardMealsAnswer = answer
+        openMenuOnPlan("Mon 16 Nov", "dinner")
+        compose.onNodeWithText("Choose a recipe…").performClick()
+        waitFor("In my rotation")
+        assertEquals(0, count("My standard meals"))
+        // They go above the recipes shown so far: the list moves to show them rather than keep those in view.
+        answer.countDown()
+        waitFor("My standard meals")
+        compose.onNodeWithText("My standard meals").assertIsDisplayed()
     }
 
     // --- The recipe's switch

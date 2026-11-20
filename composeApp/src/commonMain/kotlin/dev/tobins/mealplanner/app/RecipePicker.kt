@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -14,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -128,6 +131,8 @@ fun RecipePickerBody(
     if (runsInBrowser()) LaunchedEffect(Unit) { searchField.requestFocus() }
     val shown = pickableRecipes(recipes, slot, query, standard)
     val headings = shown.headings
+    val list = rememberLazyListState()
+    KeepTopForStandardMeals(list, shown.standard.map { it.id })
     Column {
         note?.let { Text(it, Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         OutlinedTextField(
@@ -140,7 +145,7 @@ fun RecipePickerBody(
         if (shown.all.isEmpty()) {
             Text(t(Msg.NO_RECIPES_MATCH), Modifier.padding(top = 16.dp))
         }
-        LazyColumn(Modifier.heightIn(max = 480.dp)) {
+        LazyColumn(Modifier.heightIn(max = 480.dp), state = list) {
             if (headings && shown.standard.isNotEmpty()) item(key = "heading:standard") { SectionHeader(t(Msg.PICKER_STANDARD), Modifier.padding(top = 12.dp, bottom = 4.dp)) }
             items(shown.standard, key = { "standard:${it.id}" }) { recipe ->
                 RecipeRow(recipe, onClick = { onPick(recipe) })
@@ -159,5 +164,23 @@ fun RecipePickerBody(
         }
         // Under the list, not in it: the way to the bank is there however many recipes are above it.
         onBrowseBank?.let { TextButton(onClick = it) { Text(t(Msg.BROWSE_BANK_MORE)) } }
+    }
+}
+
+/**
+ * Keeps [list] at its top when the standard meals it shows first ([standardIds]) change while it is there. They can come
+ * in after the picker opened, as the screen asks for them on its own (issue 306), and a lazy list keeps in view the item
+ * that was first: without this the group would go in above it, out of sight, with no sign that it is there. A list the
+ * user has scrolled stays where it is.
+ */
+@Composable
+private fun KeepTopForStandardMeals(list: LazyListState, standardIds: List<Long>) {
+    val shownBefore = remember { arrayOf(standardIds) }
+    SideEffect {
+        // Before the list is measured with the new rows: the position it has is the one the user saw.
+        if (shownBefore[0] != standardIds && list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0) {
+            list.requestScrollToItem(0)
+        }
+        shownBefore[0] = standardIds
     }
 }

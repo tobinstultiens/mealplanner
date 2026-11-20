@@ -754,6 +754,12 @@ design change, so pull requests and tickets do not need screenshots attached. A 
 variant goes into the `Shot` enum or the `Look`s in `ScreenshotTest`. The emulator remains for flows such
 as the login and updates. `allTests` leaves these tests out.
 
+The other host tests drive the screens against `FakeBackend` too. A screen fills in from several answers that
+come in any order, so a test waits for the node it asserts on (or for a call the fake has answered), never for
+time and never for a call it merely received. On the Plan that is `PlanActions.kt`: `waitForPlan` (with the
+share-in-the-box card, the last answer that moves the days), `openSwapMenu`, which finds a meal's button in its
+day's card instead of by a list index or by where it is drawn, and `waitUntilPlanIsIdle` after a change (issue 306).
+
 Robolectric runs offline. It would fetch the `android-all-instrumented` jar of the SDK the tests run at
 (`15-robolectric-14663667-2-i7` for SDK 35) from Maven Central when the first test starts, and a failed
 fetch failed every Robolectric test of the run (issue 239). `gradle/robolectric.gradle.kts`, applied by the

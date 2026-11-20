@@ -8,17 +8,15 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToIndex
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKeeps
@@ -127,16 +125,20 @@ class PrepScreensTest {
     @Test
     fun thePrepDialogOffersARecipeWhoseKeepsWereSetElsewhereMeanwhile() {
         showPlan()
-        // The lentil soup comes to keep on another device while the Plan is open.
+        // The lentil soup comes to keep on another device while the Plan is open: after the Plan's own read of my recipes
+        // was answered, so only a read made later can know it.
+        compose.waitUntil(timeoutMillis = 10_000) { "GET /api/recipes" in backend.answered }
         backend.keepElsewhere(5, RecipeKeeps(days = 2))
         compose.onNodeWithText("Prep a recipe…").performClick()
-        // Opening the dialog reads my recipes again, whenever the Plan's first read of them came.
-        compose.waitUntil(timeoutMillis = 10_000) { backend.requests.count { it == "GET /api/recipes" } >= 2 }
-        // The recipe menu (its button names the recipe chosen, or asks for one) lists the soup.
+        // The recipe menu (its button names the recipe chosen, or asks for one) is there once my recipes are. Opening the
+        // dialog reads them again, and the menu lists the soup when that answer is in.
         val recipeButton = hasAnyAncestor(isDialog()) and hasClickAction() and
             (hasText("Slow-cooked chicken thighs with coconut, lemon and spinach") or hasText("Pick a recipe that keeps."))
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(recipeButton).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(recipeButton).performClick()
-        waitFor("Lentil soup")
+        // In the menu: the Plan behind the dialog may show the soup's meal too.
+        val soup = hasText("Lentil soup") and hasAnyAncestor(isPopup())
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(soup).fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test
@@ -161,14 +163,7 @@ class PrepScreensTest {
         withGrowingBatch()
         showPlan()
         // Friday's dinner (the lentil soup) can take a side of the salad batch made today.
-        waitFor("Overnight oats")
-        compose.onNode(hasScrollAction()).performScrollToIndex(5)
-        waitFor("Fri 20 Nov")
-        val dayTop = compose.onNodeWithText("Fri 20 Nov").fetchSemanticsNode().boundsInRoot.top
-        val buttons = compose.onAllNodesWithContentDescription("Swap dinner").fetchSemanticsNodes()
-        // The first dinner button below the day's heading is its own (the list is lazy).
-        val own = buttons.withIndex().filter { it.value.boundsInRoot.top > dayTop }.minBy { it.value.boundsInRoot.top }.index
-        compose.onAllNodesWithContentDescription("Swap dinner")[own].performClick()
+        compose.openSwapMenu("Fri 20 Nov", "dinner")
         waitFor("Add a prepped side…")
         compose.onNodeWithText("Add a prepped side…").performClick()
         // The dialog starts at half a serving, the larger of the two; a quarter is chosen instead.
@@ -185,11 +180,9 @@ class PrepScreensTest {
     fun anOpenRemovePrepDialogStaysWhenTheActivityIsMadeAgain() {
         withPrep()
         showPlan()
-        // Monday's dinner makes the batch: its menu removes the prep. Its day comes after the plan's head and the box card.
-        waitFor("Eat it on…")
-        compose.onNode(hasScrollAction()).performScrollToIndex(2)
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithContentDescription("Swap dinner").fetchSemanticsNodes().isNotEmpty() }
-        compose.onAllNodesWithContentDescription("Swap dinner")[0].performClick()
+        // Monday's dinner makes the batch: its menu removes the prep.
+        compose.waitForPlan(boxCard = true)
+        compose.openSwapMenu("Mon 16 Nov", "dinner")
         compose.onNodeWithText("Remove the prep…").performClick()
         val title = "Remove the prep of Slow-cooked chicken thighs with coconut, lemon and spinach?"
         waitFor(title)
