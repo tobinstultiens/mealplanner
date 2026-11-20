@@ -299,15 +299,16 @@ internal fun ShoppingScreen(
                             )
                         }
                     }
+                    val store = chosenStore?.takeIf { view == ShoppingView.STORE && it in shops }
+                    // With advice below, the count sits under "For this week": it counts that part only, not the buy-ahead rows.
+                    if (list.hasAdvice(store, shops, today)) item(key = "this-week") { PartTitle(t(Msg.FOR_THIS_WEEK)) }
                     item {
                         Text(
-                            shoppingProgress(list.items, t),
+                            shoppingProgress(list, t),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                         )
                     }
-                    val store = chosenStore?.takeIf { view == ShoppingView.STORE && it in shops }
-                    if (list.hasAdvice(store, shops, today)) item(key = "this-week") { PartTitle(t(Msg.FOR_THIS_WEEK)) }
                     when {
                         view == ShoppingView.SECTION -> sectionItems(shoppingSections(list.items, shoppingMode)) { row(it) }
                         store == null -> {

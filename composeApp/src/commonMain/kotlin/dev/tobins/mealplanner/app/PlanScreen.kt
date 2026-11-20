@@ -430,7 +430,10 @@ private fun DayCard(
                                     text = { Text(if (meal.status == MealStatus.SKIPPED) t(Msg.EAT_AFTER_ALL) else t(Msg.NOT_EATING_THIS)) },
                                     onClick = { menu = false; onToggleSkipped(meal) },
                                 )
-                                DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onGenerate(meal) })
+                                // Left out for a skipped meal, where it would be greyed with no reason: eat it after all first.
+                                if (meal.status != MealStatus.SKIPPED) {
+                                    DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onGenerate(meal) })
+                                }
                                 val lunchOrDinner = meal.slot == MealSlot.LUNCH || meal.slot == MealSlot.DINNER
                                 val prep = meal.prep
                                 if (prep != null) {

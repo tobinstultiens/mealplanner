@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.shopping.leftToBuyGrams
 import dev.tobins.mealplanner.shopping.nothingToBuy
 import kotlinx.datetime.LocalDate
@@ -80,6 +81,14 @@ fun shoppingSections(items: List<ShoppingItem>, shoppingMode: Boolean): List<Sho
             ShoppingSectionView(title, group, emptyList())
         }
     }
+
+/**
+ * The progress of this week's trip: [shoppingProgress] of the list's own rows. The buy-ahead and
+ * stock-up rows below it are advice for later, not part of the trip: ticking one never moves the
+ * count, and an untouched one never keeps "all ticked off" from showing. The screen puts the line
+ * under "For this week" when advice follows, so it says what it counts.
+ */
+fun shoppingProgress(list: ShoppingList, strings: Strings): String = shoppingProgress(list.items, strings)
 
 /**
  * `12 of 43 · 3 sections to go`, or `All 43 ticked off` when nothing is left. A row the stock or the

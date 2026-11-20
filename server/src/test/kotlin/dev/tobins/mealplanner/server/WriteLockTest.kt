@@ -384,6 +384,7 @@ class WriteLockTest {
                 val busy = http.put("/api/profile") { setBody(profile) }
                 assertEquals(HttpStatusCode.ServiceUnavailable, busy.status)
                 assertTrue("try again" in busy.bodyAsText(), busy.bodyAsText())
+                assertFalse("reason" in busy.bodyAsText(), "a busy write is not \"generation is off\": ${busy.bodyAsText()}")
             } finally {
                 release.countDown()
             }

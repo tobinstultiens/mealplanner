@@ -35,7 +35,9 @@ internal sealed interface Load<out T> {
      * [status] is the HTTP status when the server answered with an error. [technical]: [message] is
      * the text of an exception, such as "unexpected end of stream on http://...", not a sentence for
      * the user. [unreadable]: the server answered, but the app could not read the answer.
-     * [lostConnection]: the request could not connect, timed out or was cut off.
+     * [lostConnection]: the request could not connect, timed out or was cut off. [reason] is the
+     * server's optional machine-readable `reason` next to its `error` sentence, for a screen that must
+     * tell two answers with the same status apart (503: generation is off, or a write is busy).
      */
     data class Failed(
         val message: String,
@@ -43,6 +45,7 @@ internal sealed interface Load<out T> {
         val technical: Boolean = false,
         val unreadable: Boolean = false,
         val lostConnection: Boolean = false,
+        val reason: String? = null,
     ) : Load<Nothing>
     data class Ready<T>(val value: T) : Load<T>
 }
@@ -59,13 +62,11 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
 internal suspend fun failedFrom(e: Throwable): Load.Failed {
     if (e is AppError) return Load.Failed(e.message)
     if (e is ResponseException) {
-        // The server explains errors as {"error": "..."}; fall back to the status line when there is none or it is empty.
-        val reason = runCatching {
-            kotlinx.serialization.json.Json.parseToJsonElement(e.response.bodyAsText())
-                .let { it as? kotlinx.serialization.json.JsonObject }?.get("error")
-                ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-        }.getOrNull()?.takeIf { it.isNotBlank() }
-        return Load.Failed(reason ?: Strings.current(Msg.SERVER_ANSWERED, e.response.status.value, e.response.status.description), e.response.status.value)
+        // The server explains errors as {"error": "...", "reason": "..."} (the reason is optional); fall back to the status line when there is no sentence or it is empty.
+        val body = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(e.response.bodyAsText()) as? kotlinx.serialization.json.JsonObject }.getOrNull()
+        fun field(name: String) = (body?.get(name) as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+        val status = e.response.status
+        return Load.Failed(field("error") ?: Strings.current(Msg.SERVER_ANSWERED, status.value, status.description), status.value, reason = field("reason"))
     }
     return Load.Failed(
         e.message ?: Strings.current(Msg.UNKNOWN_ERROR),

@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PrepInput
 import dev.tobins.mealplanner.api.SpareMove
+import dev.tobins.mealplanner.server.respondGenerationOff
 import dev.tobins.mealplanner.server.ConflictException
 import dev.tobins.mealplanner.server.generation.GenerationException
 import dev.tobins.mealplanner.server.user
@@ -70,10 +71,7 @@ fun Route.planRoutes() {
             delete { call.respond(call.user.plans.remove(call.week(), call.day(), call.slot())) }
             // Writes a new recipe for this meal with Claude and puts it in the plan; not for a meal that was cooked.
             post("/generate") {
-                val service = call.user.generation ?: return@post call.respond(
-                    HttpStatusCode.ServiceUnavailable,
-                    mapOf("error" to "Recipe generation is off: set ANTHROPIC_API_KEY on the server"),
-                )
+                val service = call.user.generation ?: return@post call.respondGenerationOff()
                 val (week, day, slot) = Triple(call.week(), call.day(), call.slot())
                 val plans = call.user.plans
                 call.unprocessableOnConflict { plans.requireReplaceable(week, day, slot) } ?: return@post
