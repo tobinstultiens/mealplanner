@@ -43,7 +43,7 @@ site to the owner, as before, set `COOKING_REPO_SHARED=0` (in the Ansible repo's
 accounts then set a site of their own on the recipe bank screen, or have none.
 
 The database and the cooking repo checkout live next to the NEVO file in
-`<docker_config_dir>/mealplanner`, owned by uid 1000 (the container runs as 1000:1000). So do the
+`<docker_config_dir>/mealplanner`, owned by the uid the container runs as (see "Which user" under "Backing up the database"). So do the
 recipe pictures, in `recipe-images/` next to the database (`MEALPLANNER_IMAGE_DIR` moves them): that
 folder must be on the same persistent volume as the database, since the database records which
 pictures exist. With `MEALPLANNER_DB_URL=jdbc:sqlite:/data/mealplanner.db` and `/data` mounted, as now,
@@ -58,36 +58,69 @@ the new container starts (take a backup first, see below). To update right away,
 
 ## Backing up the database
 
-The container applies pending migrations in one transaction when it starts: one that fails (an
-error in its SQL) changes nothing, and the old file stays as it was. So a backup does not guard against
-a migration that stops half-way. It guards against what the transaction cannot see: a migration that
-succeeds and moves data wrongly (`13.sqm` moved rows), a release that writes wrong data, a disk that
-fails. Without a copy, the old state cannot be got back.
+> **Not yet run on the real server.** The commands below were run against a throwaway WAL database on a
+> development machine (a live writer with an uncheckpointed write, `.backup`, the restore steps on a
+> copy), not on the server and not in the container. Everything marked "unverified" waits for the owner's
+> one real backup and restore (issue 166); remove the marks then.
+
+The container applies pending migrations when it starts, all of them and the new schema version in one
+transaction (SQLDelight's `JdbcSqliteDriver`), and SQLite's DDL is transactional. A migration that fails
+(an error in its SQL) is rolled back as a whole and the file stays as it was; `MigrationTest` forces
+such a failure after all migrations ran and shows the file unchanged. The server then does not start, and
+the old image can run on the old file. So a backup does not guard against a migration that stops
+half-way. It guards against what the transaction cannot see: a migration that succeeds and moves data
+wrongly (`13.sqm` moved rows), a release that writes wrong data, a disk that fails. Without a copy, the
+old state cannot be got back.
 
 Take it with SQLite's own copy, not with `cp`. The database is in WAL mode, so the newest writes live in
 `mealplanner.db-wal` until a checkpoint, and `cp mealplanner.db` of a running server can give a file
-that lacks them or that is torn. `.backup` copies a consistent state while the server runs; the
-container has no `sqlite3`, so run it on the host, on the file the container's `/data` is mounted from
-(a local disk, not a network share):
+that lacks them or that is torn. `.backup` copies a consistent state while the server runs, including
+what is still only in the log; the container has no `sqlite3`, so run it on the host, on the file the
+container's `/data` is mounted from (a local disk, not a network share). Run it as the user that owns the
+database (see "Which user" below): a reader needs write access to the `-shm` file of a live database.
+Create the folder once, with the same owner:
 
-    sqlite3 <docker_config_dir>/mealplanner/mealplanner.db ".backup '<docker_config_dir>/mealplanner/backup/mealplanner-$(date +%F).db'"
+    sudo -u '#<uid>' mkdir <docker_config_dir>/mealplanner/backup
+    sudo -u '#<uid>' sqlite3 <docker_config_dir>/mealplanner/mealplanner.db ".backup '<docker_config_dir>/mealplanner/backup/mealplanner-$(date +%F).db'"
 
-(`VACUUM INTO 'file'` does the same.) Do it from a daily cron job or systemd timer that runs before
-Watchtower's nightly pull, and delete the copies older than a week
-(`find .../backup -name 'mealplanner-*.db' -mtime +7 -delete`). Or stop the container first
-(`docker stop mealplanner`) and copy `mealplanner.db` together with `mealplanner.db-wal` and
-`mealplanner.db-shm`, if there are any. A copy on the same disk does not guard against the disk:
+(`VACUUM INTO 'file'` does the same, to a file that does not exist yet.) In a crontab every `%` must be
+written `\%`, or cron takes it as a line end, so there the line is
+
+    0 3 * * * sqlite3 <docker_config_dir>/mealplanner/mealplanner.db ".backup '<docker_config_dir>/mealplanner/backup/mealplanner-$(date +\%F).db'"
+
+in the crontab of that user (`sudo crontab -u '#<uid>' -e`; unverified: that cron accepts a numeric user
+here and the line runs). Or use a systemd timer, which has no such rule. Run it before Watchtower's
+nightly pull, and delete the copies older than a week
+(`find <docker_config_dir>/mealplanner/backup -name 'mealplanner-*.db' -mtime +7 -delete`). Or stop the
+container first (`docker stop mealplanner`) and copy `mealplanner.db` together with `mealplanner.db-wal`
+and `mealplanner.db-shm`, if there are any. A copy on the same disk does not guard against the disk:
 keep one on another machine as well. The pictures need none (see above).
+
+**Which user.** The Dockerfile creates `mealplanner` with uid **10001** and runs the container as it; the
+compose file or playbook is in the Ansible repo, not here. This document used to say 1000:1000, which is
+right only if that file sets `user: 1000:1000` (or the folder was created as 1000 and the container is
+run as 1000). Unverified: which one the deployed volume has. Find out with
+`docker exec mealplanner id` and `ls -ln <docker_config_dir>/mealplanner`: the uid the container
+runs as must own `mealplanner.db`, and that is the `<uid>` above and in the `chown` below. A container
+that cannot write the file fails to start or to write ("readonly database").
+
+**Before an update**, note the commit that runs now: `curl -s https://mealplanner.<DOMAIN>/health`
+shows `commit`. After the update `/health` shows the new one, so the old one is only to be found in what
+you wrote down, or among the `kick1999/mealplanner:<commit sha>` tags on Docker Hub (CI pushes one per
+commit; find the one of the commit before the merge in `git log`). Writing it down can be left to the
+backup job: `curl -s https://mealplanner.<DOMAIN>/health > <docker_config_dir>/mealplanner/backup/health-$(date +%F).json`
+(unverified; in a crontab mind the `\%`).
 
 **Going back** after a bad update:
 
 1. `docker stop mealplanner`.
 2. Put the copy in place of `mealplanner.db` and delete `mealplanner.db-wal` and `mealplanner.db-shm`
-   next to it (a leftover log of the new state would be replayed into the old file). Owner uid 1000, as
-   before.
-3. Start the image of before, not `:latest`: `kick1999/mealplanner:<commit sha>` (CI pushes one per
-   commit; `/health` says which commit ran before). The old image does not know the new schema, and
-   Watchtower would pull `:latest` again, so pin the tag in the container's `image` until a fix is merged.
+   next to it (a leftover log of the new state would be replayed into the old file). Done as root, the
+   file belongs to root and the container cannot write it: `chown <uid>:<uid> mealplanner.db` (the uid
+   of "Which user"), or copy as that user.
+3. Start the image of before, not `:latest`: `kick1999/mealplanner:<commit sha>`, the commit you noted
+   before the update. The old image does not know the new schema, and Watchtower would pull `:latest`
+   again, so pin the tag in the container's `image` until a fix is merged.
 
 Everything written since the copy is lost, so check the data of a release that has migrations (`git log`
 shows the new `.sqm` files) soon after the nightly update.

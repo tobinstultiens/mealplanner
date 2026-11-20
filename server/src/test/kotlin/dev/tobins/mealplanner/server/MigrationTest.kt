@@ -14,12 +14,18 @@ import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.ToppingInput
 import dev.tobins.mealplanner.api.ToppingsInput
+import app.cash.sqldelight.db.AfterVersion
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlSchema
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.OfferSource
 import kotlinx.coroutines.runBlocking
 import java.sql.DriverManager
 import java.sql.Statement
+import java.util.Properties
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.io.path.createTempDirectory
@@ -27,6 +33,7 @@ import kotlin.io.path.createTempFile
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class MigrationTest {
@@ -1198,5 +1205,55 @@ class MigrationTest {
         assertEquals("MEAL:1:200.0,SIDE:2:50.0", single(url, "SELECT role || ':' || ingredientId || ':' || grams FROM stockUse WHERE userId = 1 AND day = 3 ORDER BY role"))
         assertEquals("1", single(url, "SELECT count(*) FROM stockUse WHERE userId = 2"), "Bob's as it was")
         driver.close()
+    }
+
+    /** Everything the file holds: its schema, its version and every row of every table, to compare before and after. */
+    private fun everything(url: String): List<String> = DriverManager.getConnection(url).use { connection ->
+        fun query(sql: String): List<String> = connection.createStatement().executeQuery(sql).use { rows ->
+            val count = rows.metaData.columnCount
+            generateSequence { if (rows.next()) (1..count).joinToString("|") { rows.getString(it).orEmpty() } else null }.toList()
+        }
+        val tables = query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        query("SELECT type, name, sql FROM sqlite_master ORDER BY name") + query("PRAGMA user_version") +
+            tables.flatMap { table -> listOf(table) + query("SELECT * FROM \"$table\"") }
+    }
+
+    /**
+     * docs/deploy.md says a migration that fails changes nothing. The migrations of a start run in one
+     * transaction together with the new `user_version` (SQLDelight's JdbcSqliteDriver), and SQLite's DDL is
+     * transactional, so a failure half-way, after tables were rebuilt and rows moved, rolls it all back.
+     */
+    @Test
+    fun aMigrationThatFailsLeavesTheDatabaseAsItWas() {
+        val file = createTempFile("v1", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        val v1 = checkNotNull(javaClass.getResource("/schema/v1.sql")).readText()
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                v1.lines().joinToString("\n") { it.substringBefore("--") }
+                    .split(";").map { it.trim() }.filter { it.isNotEmpty() }
+                    .forEach(statement::execute)
+                statement.execute("INSERT INTO recipe (source, section, title, tagsJson, instructions, hasIngredientsBlock, problemsJson, kind) VALUES ('MANUAL', 'own', 'Old', '[]', '', 1, '[]', 'MEAL')")
+                statement.execute("PRAGMA user_version = 1")
+            }
+        }
+        val before = everything(url)
+
+        // All real migrations run, then one more statement fails: the last step of a migration going wrong.
+        val failing = object : SqlSchema<QueryResult.Value<Unit>> by Database.Schema {
+            override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
+                Database.Schema.migrate(driver, oldVersion, newVersion, *callbacks)
+                driver.execute(null, "ALTER TABLE noSuchTable ADD COLUMN x TEXT", 0, null)
+                return QueryResult.Unit
+            }
+        }
+        val properties = Properties().apply { put("foreign_keys", "true"); put("journal_mode", "WAL") }
+        assertFailsWith<Exception> { JdbcSqliteDriver(url, properties, failing) }
+
+        assertEquals(before, everything(url))
+        assertEquals(1, version(url))
+        // And the next start, with the real migrations, still works.
+        openDatabase(url).first.close()
+        assertEquals(Database.Schema.version.toInt(), version(url))
     }
 }
