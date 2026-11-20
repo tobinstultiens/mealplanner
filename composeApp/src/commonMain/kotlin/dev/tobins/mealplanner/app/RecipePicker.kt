@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSummary
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** The recipes to choose a meal from, in the two groups the picker shows: [rotation] first, then [others]. */
@@ -85,13 +84,7 @@ fun RecipePicker(
                 is Load.Ready -> Column {
                     RecipePickerBody(current.value, slot, onBrowseBank = onBrowseBank.takeIf { bank != null }) { recipe ->
                         scope.launch {
-                            try {
-                                onPick(recipe)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                error = e.message ?: t(Msg.PLAN_CHOOSE_FAILED)
-                            }
+                            error = failureOf { onPick(recipe) }
                         }
                     }
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

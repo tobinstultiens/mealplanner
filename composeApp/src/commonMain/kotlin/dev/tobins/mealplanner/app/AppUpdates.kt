@@ -61,7 +61,7 @@ object AppUpdates {
         val http = HttpClient { install(ContentNegotiation) { json(json) } }
         try {
             val response = http.get(url) { header("Accept", "application/vnd.github+json") }
-            check(response.status.isSuccess()) { Strings.current(Msg.GITHUB_ANSWERED, response.status.value) }
+            if (!response.status.isSuccess()) throw AppError(Strings.current(Msg.GITHUB_ANSWERED, response.status.value))
             return newer(response.body<GithubRelease>(), currentVersion)
         } finally {
             http.close()
@@ -130,3 +130,6 @@ fun UpdateDialog(update: AppUpdate, currentVersion: String, onUpdate: () -> Unit
         dismissButton = { androidx.compose.material3.TextButton(onClick = onLater) { androidx.compose.material3.Text(t(Msg.LATER)) } },
     )
 }
+
+/** What the settings say when the check for a newer app failed with [e]: a plain sentence, never GitHub's or the HTTP library's own text. */
+internal suspend fun updateCheckFailure(t: Strings, e: Throwable): String = sentence(t(Msg.CHECK_FAILED, reasonOf(e)))

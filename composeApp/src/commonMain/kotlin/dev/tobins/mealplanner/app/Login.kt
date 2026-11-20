@@ -192,13 +192,13 @@ class Login(
      * the code for tokens. An answer that belongs to it is used up, whatever it says, so it works once.
      */
     suspend fun finish(url: String): Session {
-        val pending = pending() ?: error(Strings.current(Msg.LOGIN_NOT_STARTED))
+        val pending = pending() ?: throw AppError(Strings.current(Msg.LOGIN_NOT_STARTED))
         val params = Url(url).parameters
         // Checked first, so that a foreign answer can neither end our login nor put its own text on screen.
-        check(params["state"] == pending.state) { Strings.current(Msg.LOGIN_ANSWER_MISMATCH) }
+        if (params["state"] != pending.state) throw AppError(Strings.current(Msg.LOGIN_ANSWER_MISMATCH))
         abandon()
-        params["error"]?.let { error(params["error_description"] ?: it) }
-        val code = params["code"] ?: error(Strings.current(Msg.LOGIN_NO_CODE))
+        params["error"]?.let { throw AppError(params["error_description"] ?: it) }
+        val code = params["code"] ?: throw AppError(Strings.current(Msg.LOGIN_NO_CODE))
         val response = http.submitForm(
             pending.tokenEndpoint,
             parameters {
@@ -209,7 +209,7 @@ class Login(
                 append("code_verifier", pending.verifier)
             },
         )
-        check(response.status.isSuccess()) { Strings.current(Msg.LOGIN_FAILED_STATUS, response.status.value) }
+        if (!response.status.isSuccess()) throw AppError(Strings.current(Msg.LOGIN_FAILED_STATUS, response.status.value))
         val tokens = json.decodeFromString<TokenResponse>(response.bodyAsText())
         // Called off while the provider answered (a log-out, another server: LoginExchange.logOut): nothing is kept.
         currentCoroutineContext().ensureActive()
@@ -300,7 +300,7 @@ class Login(
         if (!response.status.isSuccess()) {
             // The server explains itself as {"error": "..."}.
             val reason = runCatching { json.decodeFromString<Map<String, String>>(body)["error"] }.getOrNull()
-            error(reason ?: Strings.current(Msg.LOGIN_SETTINGS_STATUS, response.status.value))
+            throw AppError(reason ?: Strings.current(Msg.LOGIN_SETTINGS_STATUS, response.status.value))
         }
         return json.decodeFromString(body)
     }

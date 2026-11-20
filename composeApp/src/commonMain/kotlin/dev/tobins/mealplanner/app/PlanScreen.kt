@@ -165,10 +165,10 @@ fun PlanScreen(
             // A refusal (such as "this meal was eaten already") or a server from before the route: the picker shows why and stays open.
             when (val result = load { api.chooseRecipe(weekStart, day, slot, recipe.id) }) {
                 is Load.Ready -> {
-                    state = Load.Ready(result.value ?: throw IllegalStateException(t(Msg.PLAN_CHOOSE_UNSUPPORTED)))
+                    state = Load.Ready(result.value ?: throw AppError(t(Msg.PLAN_CHOOSE_UNSUPPORTED)))
                     choosingFor = null
                 }
-                is Load.Failed -> throw IllegalStateException(failureSentence(result))
+                is Load.Failed -> throw AppError(failureSentence(result))
                 Load.Loading -> Unit
             }
         }
