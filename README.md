@@ -905,7 +905,9 @@ What a run takes from outside the repository, and what holds each still:
   job prints them first (`./gradlew --version`), the `test` job also the browser's version.
 - **No test reaches the network.** Tests that need a server start one on the loopback; the one that checks
   a failing fetch of the cooking site points at `127.0.0.1:1`, where nothing listens, and logs JGit's
-  "connection failed" on purpose.
+  "connection failed" on purpose. The `test` job checks it: after the tests pass, it runs them again offline in
+  a network namespace with only the loopback (step "Test again without a network"), with nothing they need
+  left to fetch.
 
 A failed test prints its message and stack in the log (`exceptionFormat = FULL` for every test task in the
 root build file): a browser test's failure used to show only its class, `Error` for a Mocha timeout.

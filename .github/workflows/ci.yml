@@ -84,6 +84,19 @@ jobs:
         with:
           name: profile-test
           path: build/reports/profile/
+      # No test reaches the network (issue 306): the test tasks run again in a network namespace that has
+      # only the loopback, offline. The Test step above has resolved, downloaded and built everything they
+      # use, so this needs nothing from outside whatever the caches held. Its Gradle daemon is stopped first:
+      # one outside the namespace cannot be asked to release Gradle's cache locks.
+      - name: Test again without a network
+        run: |
+          ./gradlew --stop
+          sudo -E unshare --net -- bash -c '
+            ip link set lo up
+            if curl -sS --max-time 5 -o /dev/null https://repo.maven.apache.org/; then echo "The network is reachable"; exit 1; fi
+            exec sudo -E -u "$SUDO_USER" ./gradlew --offline \
+              :shared:jvmTest --rerun :shared:wasmJsBrowserTest --rerun :server:test --rerun \
+              :composeApp:testAndroidHostTest --rerun :composeApp:wasmJsBrowserTest --rerun'
 
   # The debug APK and lint. Release APKs are built by the Release workflow.
   android:
