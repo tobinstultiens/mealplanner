@@ -146,16 +146,6 @@ val WeekPlan.hasOwnMeals: Boolean
 fun sparesShown(spares: List<SparePortion>, weekStart: String, today: String): List<SparePortion> =
     spares.filter { weekStart <= it.lastDay && plusDays(weekStart, 6) >= today }
 
-/**
- * The lunch or dinner the card of [this] share proposes, to eat it there in one tap (the owner's choice, issue 263): the
- * first of its room that is empty in [plans] (the weeks the screen has), else the first of its room, where it takes the
- * place of a meal still to eat; null when no meal has room. The server lists the room in eating order, up to its last day.
- */
-fun SparePortion.proposal(plans: List<WeekPlan>): PrepSlot? {
-    fun isEmpty(slot: PrepSlot) = plans.any { plan -> plan.days.any { day -> day.date == slot.date && day.meals.none { it.slot == slot.slot } } }
-    return room.firstOrNull(::isEmpty) ?: room.firstOrNull()
-}
-
 /** `Wed 18 Nov · dinner`: a lunch or dinner a share in the box can go to. */
 fun slotLabel(slot: PrepSlot, t: Strings): String = "${dayLabel(slot.date, t.locale)} · ${t.slot(slot.slot)}"
 
@@ -338,12 +328,14 @@ fun removePrepText(prep: MealPrep, t: Strings): String {
 
 /**
  * A skipped prepped meal's share still in the box on [today]: when it was skipped and until when it keeps, or on its
- * last day that it is to eat today or throw away; [proposal] to eat it there in one tap ([SparePortion.proposal]), and
- * "Eat it on…" with the other later lunches and dinners that have room for it.
+ * last day that it is to eat today or throw away; the next free lunch or dinner to eat it in with one tap, as the server
+ * proposes it ([SparePortion.proposed]: one that is empty, so a tap never replaces a planned meal, issue 263), and
+ * "Eat it on…" with the other later lunches and dinners that have room for it, where replacing a meal is the user's choice.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SpareCard(spare: SparePortion, today: String, proposal: PrepSlot?, enabled: Boolean, onEat: (PrepSlot) -> Unit) {
+fun SpareCard(spare: SparePortion, today: String, enabled: Boolean, onEat: (PrepSlot) -> Unit) {
+    val proposal = spare.proposed?.takeIf { it in spare.room }
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {

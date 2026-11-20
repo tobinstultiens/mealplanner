@@ -225,7 +225,8 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   is skipped.
 - **A skipped meal's share** stays in the batch. `GET /api/preps/spare/{date}` lists the shares still in the box on
   that date (`SparePortion`), each with the later lunches and dinners up to its last day that have room (empty, or
-  a meal still to eat that is not locked and of no prep). On its last day it is to eat that day or throw away; from
+  a meal still to eat that is not locked and of no prep), and the next free one, in whichever week (`proposed`: the
+  earliest that is empty; for a side the earliest meal still to eat without a side; null when none is). On its last day it is to eat that day or throw away; from
   the day after, it is not listed, and it is never planned on its own. `POST
   /api/plans/{weekStart}/preps/{id}/spare` with `{"from": {"date": ..., "slot": ...}, "to": {...}}` eats it there:
   the meal there goes, the skipped meal keeps a share of 0 (and can no longer be marked eaten), and what the stock
@@ -237,7 +238,9 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   planned, and generating it keeps them; a week with only those counts as not planned yet (the "Plan next week"
   notification, buying ahead, whose suggested dinners are then no more than the dinners those meals leave free).
   Its shopping list buys nothing for them and says which week's list did (`ShoppingList.preppedBoughtIn`).
-  Today's "Dinner today" notification is only for a dinner with something to cook: not for a prepped later dinner.
+  Today's "Dinner today" notification is only for a dinner with something to cook: not for a prepped later dinner,
+  unless a side's batch is made next to it that evening, when it is about the side (`DinnerToday.side`); the dinner
+  that makes a batch says so (`DinnerToday.prep`), so its recipe speaks of the prep's later meals.
   A shortfall warning ("What was in a meal") counts what the batch took for its meals of the next week in the week
   it was made, whose stock it was cooked from.
 - **Sides.** `PrepInput.side` (0.25 or 0.5, else 400) makes the batch a side of that many servings next to the
@@ -277,8 +280,9 @@ day says "Cook 4 servings: 1 now, 3 for the prep's later meals", as cook mode do
 Mon 16 Nov: nothing to cook", with what is in that meal's box ("In this meal: 1.25 servings") rather than the recipe
 as written. A skipped meal's share still in the box today is a card above the days of the weeks it can still be eaten
 in (not on a week that is over): when it was skipped and until when it keeps (on its last day "eat it today or throw
-it away"), a button that eats it in the next free lunch or dinner that has room (else the next with room) in one tap,
-and "Eat it on…" with the others. A week whose only meals are of last week's batch still reads "Plan this week", and
+it away"), a button that eats it in the next free lunch or dinner within the days it keeps in one tap, as the server
+proposes it (an empty one, in whichever week; for a side a meal still to eat without one), none when no lunch or dinner
+is free, and "Eat it on…" with the others, where taking the place of a planned meal is the user's choice. A week whose only meals are of last week's batch still reads "Plan this week", and
 its Shopping says the meals were bought with last week's list. "Keeps once made" is only on a meal (a building block is
 never prepped), and while a choice is saved both numbers wait for the answer.
 
@@ -471,9 +475,9 @@ the device; each kind is an Android notification channel of its own, so the syst
 | Offers ending | An offer at one of the account's stores ends today or tomorrow, for a row of this week's shopping list still to buy (not ticked, still needed by a meal, not covered by a known amount at home), or a buy-ahead or stock-up row not ticked or dismissed; once per day, one notification naming them all ("3 offers for your list end today") | Shopping | On |
 | Plan next week | On Saturday and Sunday, while next week has no meals, whatever the offers ("Next week has no plan yet"; it works for every store, since only Jumbo lists next week's offers early); once per week | Plan, on next week | On |
 | Weigh-in | The newest weigh-in is 7 or more days old and there is a profile; once per 7 days, until one is entered | Progress | Off |
-| Dinner today | Today has a planned dinner that is neither eaten nor skipped; once per day | The recipe, from that meal (its servings to cook) | Off |
+| Dinner today | Today has a planned dinner that is neither eaten nor skipped and something to cook: its main, or else a side's prepped batch made next to it that evening ("Tonight's side: …"); a dinner that makes a prepped batch says its servings are for tonight and the prep's later meals; once per day | The recipe, from that meal (its servings to cook; on a prep day for the prep's later meals) | Off |
 | Mark what you ate | A meal of today is still planned; once per day | Today | Off |
-| Prepped food to throw away | The morning after a prepped batch's last day (its own: in a box or vacuum sealed), when the batch was made (a meal of it eaten) and a share of it was skipped and not eaten elsewhere ("Throw away 1 portion of Chili con carne" / "It kept until Mon 23 Nov."), or a meal or side of it was never marked ("1 portion of Chili con carne was not marked: eaten, or to throw away?"); sides say "side". Several batches go into one notification; once per batch, and only on the day after its last day | Plan, on the week of the first meal not marked, else on the week the batch was made | On (only an account that made a prep gets it) |
+| Prepped food to throw away | The morning after a prepped batch's last day (its own: in a box or vacuum sealed), when the batch was made (a meal of it eaten) and a share of it was skipped and not eaten elsewhere ("Throw away 1 portion of Chili con carne" / "It kept until Mon 23 Nov."), or a meal or side of it was never marked ("1 portion of Chili con carne was not marked: eaten, or to throw away?"); sides say "side". Several batches go into one notification; once per batch, and only on the day after its last day; a batch told later the same day is a notification of its own next to the first (an Android tag per batch) | Plan, on the week of the first meal not marked, else on the week the batch was made | On (only an account that made a prep gets it) |
 
 The server says what is due, the app decides whether to tell: `GET /api/notifications` answers, for the calling
 account and the server's today, the facts behind kinds 2 to 7 as data (`NotificationFacts`: names, dates, counts,

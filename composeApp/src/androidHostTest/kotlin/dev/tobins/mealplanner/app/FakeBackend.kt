@@ -98,6 +98,13 @@ class FakeBackend(
     /** Every call the server got, as `GET /api/recipes/bank`, for a test to tell that something was asked (or not). */
     val requests: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
 
+    /**
+     * The free lunch or dinner the server proposes for the share in the box ([spare]): none, as every slot of its room holds a
+     * meal in the sample week, unless a test sets one.
+     */
+    @Volatile
+    var spareProposed: PrepSlot? = null
+
     /** While set, a change of how long a recipe keeps waits for it to open before it is answered, as a slow server would. */
     @Volatile
     var keepsAnswer: java.util.concurrent.CountDownLatch? = null
@@ -183,7 +190,7 @@ class FakeBackend(
                 ),
             )
             parts.size == 3 && parts[1] == "days" -> json.encodeToString(day(parts[2]))
-            parts.size == 4 && parts[1] == "preps" && parts[2] == "spare" -> json.encodeToString(if (prepped) listOf(spare) else emptyList())
+            parts.size == 4 && parts[1] == "preps" && parts[2] == "spare" -> json.encodeToString(if (prepped) listOf(spare.copy(proposed = spareProposed)) else emptyList())
             // A share in the box eaten in another meal: the week as it was, as the test reads what was sent.
             method == "POST" && parts.size == 6 && parts[3] == "preps" && parts[5] == "spare" -> { changes += "POST $path $sent"; json.encodeToString(plan(parts[2])) }
             parts.size == 3 && parts[1] == "plans" -> json.encodeToString(plan(parts[2]))

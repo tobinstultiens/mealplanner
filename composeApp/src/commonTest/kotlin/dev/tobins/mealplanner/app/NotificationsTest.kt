@@ -9,6 +9,9 @@ import dev.tobins.mealplanner.api.WeighInDue
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -297,6 +300,49 @@ class NotificationsTest {
             val planner = at(run.second.toString().substring(11, 16))
             NotificationKind.entries.filter { it.fromHour == hour }.forEach { storage.saveNotificationOn(it, true) }
             assertTrue(NotificationKind.entries.filter { it.fromHour == hour }.all(planner::wanted), "the window of $hour is open at its run")
+        }
+    }
+
+    // --- Rough edges of prepped meals (issue 263)
+
+    @Test
+    fun aDinnerThatMakesAPrepSaysItCooksForThePrepsLaterMeals() {
+        val prep = all.copy(dinner = DinnerToday(12, "Chili con carne", 1.5, 6.0, "2026-11-16", 5, prep = true))
+        val notice = notice(NotificationKind.DINNER_TODAY, prep)
+        assertEquals("Tonight: Chili con carne" to "6 servings to cook: tonight's and the prep's later meals", notice.title to notice.text)
+        assertEquals("6 porties om te koken: voor vanavond en de latere maaltijden van de prep", notice(NotificationKind.DINNER_TODAY, prep, Strings.Dutch).text)
+        // The recipe opens as it does from the Plan on the prep day: the batch, for the prep's later meals, not tomorrow's lunch.
+        val meal = assertNotNull(notice.opening?.meal)
+        assertEquals("2026-11-21", meal.prepMadeOn)
+        assertEquals("Cook 6 servings: 1.5 now, 4.5 for the prep's later meals", meal.sentence(en))
+    }
+
+    @Test
+    fun aSideMadeTonightNextToAMainWithNothingToCookIsTheDinnerToCook() {
+        val side = all.copy(dinner = DinnerToday(15, "Lentil salad", 0.5, 1.5, "2026-11-16", 5, prep = true, side = true))
+        val notice = notice(NotificationKind.DINNER_TODAY, side)
+        assertEquals("Tonight's side: Lentil salad" to "1.5 servings to cook: tonight's and the prep's later meals", notice.title to notice.text)
+        assertEquals("Bijgerecht vanavond: Lentil salad", notice(NotificationKind.DINNER_TODAY, side, Strings.Dutch).title)
+        assertEquals(Route.Recipe(15), notice.opening?.route)
+        assertEquals("Cook 1.5 servings: 0.5 now, 1 for the prep's later meals", notice.opening?.meal?.sentence(en))
+    }
+
+    @Test
+    fun aBatchToldLaterTheSameDayGoesNextToTheFirstWhileOtherKindsReplaceTheirOlder() {
+        val first = at("08:05").due(pastLastDay(chili), null, en).single()
+        at("08:05").told(first)
+        val later = at("20:05").due(pastLastDay(chili, salad), null, en).single()
+        // Each batch has its own place in the tray, and its own tap.
+        assertNotEquals(first.tag, later.tag)
+        assertNotEquals(first.requestCode, later.requestCode)
+        assertEquals(first.tag, at("08:05").due(pastLastDay(chili), null, Strings.Dutch).firstOrNull()?.tag ?: first.tag, "the same batches keep their place")
+        assertEquals("throwAway:2026-11-21:7", first.tag)
+        assertEquals("throwAway:2026-11-21:9", later.tag)
+        // The other kinds replace their older notification, with the ids and request codes they always had.
+        allOn()
+        for (due in at("21:00").due(all, update, en).filter { it.kind != NotificationKind.THROW_AWAY }) {
+            assertNull(due.tag, "${due.kind}")
+            assertEquals(due.kind.ordinal, due.requestCode)
         }
     }
 }

@@ -286,7 +286,7 @@ fun PlanScreen(
                     }
                     for (spare in sparesShown(spares, weekStart, today)) {
                         item(key = "spare:${spare.prepId}:${spare.skipped.date}:${spare.skipped.slot}") {
-                            SpareCard(spare, today, spare.proposal(listOfNotNull(plan, nextWeek)), enabled = !busy) { slot ->
+                            SpareCard(spare, today, enabled = !busy) { slot ->
                                 change { api.eatSpare(weekStart, spare.prepId, SpareMove(spare.skipped, slot)) }
                             }
                         }

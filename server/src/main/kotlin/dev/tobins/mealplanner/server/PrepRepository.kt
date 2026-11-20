@@ -135,7 +135,8 @@ class PrepRepository(
     /**
      * The shares of skipped meals still in the box on [date]: of every batch that keeps until then or later,
      * each skipped meal whose share was not eaten elsewhere, with the lunches and dinners it can still go to
-     * ([room]). Never one past its last day: from the day after, it is not listed at all.
+     * ([room]) and the next free one of them to propose ([SparePortion.proposed]): empty for a meal's share, so that one
+     * tap never replaces a planned meal. Never one past its last day: from the day after, it is not listed at all.
      */
     fun spare(date: String): List<SparePortion> {
         val day = Batch.parseDate(date)
@@ -143,6 +144,8 @@ class PrepRepository(
         val weeks = HashMap<LocalDate, List<PlannedMeal>>()
         return Batch.load(db, userId, ids).values.sortedBy { it.madeOn }.flatMap { batch ->
             batch.meals.filter { it.meal.status == MealStatus.SKIPPED && it.share > 0.0 }.map { skipped ->
+                val weekOf = { week: LocalDate -> weeks.getOrPut(week) { plans.meals(week) } }
+                val room = room(batch, skipped, from = day, weekOf)
                 SparePortion(
                     prepId = batch.id,
                     recipeId = batch.recipeId,
@@ -151,8 +154,9 @@ class PrepRepository(
                     portions = skipped.share,
                     skipped = PrepSlot(skipped.date.toString(), skipped.meal.slot),
                     lastDay = batch.lastDay.toString(),
-                    room = room(batch, skipped, from = day) { week -> weeks.getOrPut(week) { plans.meals(week) } },
+                    room = room,
                     side = skipped.side,
+                    proposed = if (skipped.side) room.firstOrNull() else room.firstOrNull { isEmpty(it, weekOf) },
                 )
             }
         }
@@ -235,6 +239,12 @@ class PrepRepository(
             val (week, day, mealSlot) = Batch.placeOf(slot)
             if (skipped.side) hasRoomForSide(weekOf(week), day, mealSlot, batch.id) else hasRoom(week, weekOf(week), day, mealSlot, batch.id)
         }.toList()
+
+    /** Whether [slot] holds no meal, in its week as [weekOf] gives it: a free lunch or dinner to propose for a share ([SparePortion.proposed]). */
+    private fun isEmpty(slot: PrepSlot, weekOf: (LocalDate) -> List<PlannedMeal>): Boolean {
+        val (week, day, mealSlot) = Batch.placeOf(slot)
+        return weekOf(week).none { it.day == day && it.slot == mealSlot }
+    }
 
     private fun after(date: LocalDate, slot: MealSlot, meal: BatchMeal): Boolean =
         date > meal.date || (date == meal.date && slot.ordinal > meal.meal.slot.ordinal)

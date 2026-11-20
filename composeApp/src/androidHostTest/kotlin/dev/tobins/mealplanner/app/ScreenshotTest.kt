@@ -148,10 +148,10 @@ private fun prepSideChoices() {
 private fun spareOnItsLastDay() {
     val spare = SparePortion(
         1, 4, keepingRecipe.title, 1.0, PrepSlot(plusDays(FakeBackend.TODAY, -1), MealSlot.LUNCH), lastDay = FakeBackend.TODAY,
-        room = listOf(PrepSlot(FakeBackend.TODAY, MealSlot.DINNER)),
+        room = listOf(PrepSlot(FakeBackend.TODAY, MealSlot.DINNER)), proposed = PrepSlot(FakeBackend.TODAY, MealSlot.DINNER),
     )
-    // Today's dinner is the only meal with room, so the card proposes it and has no other.
-    Column(Modifier.padding(16.dp)) { SpareCard(spare, FakeBackend.TODAY, spare.proposal(emptyList()), enabled = true) {} }
+    // Today's dinner is empty and the only meal with room, so the card proposes it and has no other.
+    Column(Modifier.padding(16.dp)) { SpareCard(spare, FakeBackend.TODAY, enabled = true) {} }
 }
 
 /**

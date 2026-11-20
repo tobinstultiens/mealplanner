@@ -413,6 +413,33 @@ class PrepTest {
 
     // --- A skipped meal's share
 
+    /**
+     * Issue 263: the box card's one tap goes to the next free lunch or dinner, in whichever week, and never replaces a
+     * planned meal: with none empty, nothing is proposed, though the room still lists the meals that may be replaced.
+     */
+    @Test
+    fun aShareInTheBoxProposesTheNextEmptyLunchOrDinnerInWhicheverWeek() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        http.planned()
+        // Vacuum sealed, made Friday and kept until Wednesday after; Saturday's dinner skipped.
+        http.prep(k.salad.id, "2026-11-20", "2026-11-20" to DINNER, "2026-11-21" to DINNER, vacuum = true)
+        http.mark("2026-11-20", DINNER, MealStatus.EATEN)
+        http.mark("2026-11-21", DINNER, MealStatus.SKIPPED)
+        suspend fun spare() = http.spare("2026-11-21").single()
+
+        // Sunday's lunch and dinner hold planned meals; next week is empty: its Monday lunch is the first free one.
+        assertEquals(PrepSlot("2026-11-23", LUNCH), spare().proposed)
+        assertEquals(PrepSlot("2026-11-22", LUNCH), spare().room.first(), "Sunday may still be chosen to replace its meal")
+        // Next week planned too: nothing is free, so nothing is proposed.
+        http.planned(nextWeek)
+        assertNull(spare().proposed)
+        assertTrue(spare().room.isNotEmpty())
+        // Sunday's dinner emptied: an earlier free slot this week wins over any of next week.
+        http.delete(mealPath("2026-11-22", DINNER))
+        assertEquals(PrepSlot("2026-11-22", DINNER), spare().proposed)
+    }
+
     @Test
     fun aSkippedMealsShareIsOfferedForLaterMealsWithRoomWhileItKeepsAndNeverAfter() = testApplication {
         val http = start()
@@ -684,6 +711,7 @@ class PrepTest {
             listOf(PrepSlot("2026-11-18", DINNER), PrepSlot("2026-11-19", LUNCH), PrepSlot("2026-11-20", LUNCH), PrepSlot("2026-11-20", DINNER)),
             spare.room, "later meals still to eat without a side, up to Friday: not Thursday's dinner, which has one",
         )
+        assertEquals(PrepSlot("2026-11-18", DINNER), spare.proposed, "a side's free place is the next meal without a side (issue 263)")
         assertEquals(emptyList(), http.spare("2026-11-21"), "past its last day it is not offered")
         assertEquals(HttpStatusCode.Conflict, http.post("/api/plans/$week/preps/${spare.prepId}/spare") { setBody(SpareMove(spare.skipped, PrepSlot("2026-11-19", DINNER))) }.status)
 
