@@ -1,4 +1,4 @@
-// Frozen from v0.1.8 (1a56aa21c718bafd22d7c56d7176ef7e8bf7ca1c) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.9 (e273653477d0addbc6702688ec2e111c6fe11c0a) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import dev.tobins.mealplanner.released.recipes.IngredientLine

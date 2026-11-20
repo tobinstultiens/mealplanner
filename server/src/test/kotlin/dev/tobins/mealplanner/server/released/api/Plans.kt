@@ -1,4 +1,4 @@
-// Frozen from v0.1.8 (1a56aa21c718bafd22d7c56d7176ef7e8bf7ca1c) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.9 (e273653477d0addbc6702688ec2e111c6fe11c0a) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -50,7 +50,145 @@ data class PlannedMeal(
      * does not know adjustments shows the right numbers without this.
      */
     val adjusted: Boolean = false,
+    /**
+     * The prepped batch this meal is eaten from (issue 234); null for any other meal and from a server
+     * before preps. A prepped meal is always [locked]. The meal on the day the batch is made cooks all
+     * of it ([cookPortions]); the later ones are [leftover] and cook nothing, so an app that does not
+     * know preps shows them as leftovers.
+     */
+    val prep: MealPrep? = null,
+    /**
+     * The side next to this meal's main, taken from a prepped batch (issue 234, step 2); null for a meal without
+     * one and from a server before sides. The main keeps its own [portions], [kcal], [proteinG], [fibreG] and
+     * [cost]: the side's are its own, and the day's totals ([PlanDay], [DayView]) count both. It shares the
+     * meal's [status]: eaten, skipped or planned with it. An app that does not know sides shows the main alone.
+     */
+    val side: MealSide? = null,
+) {
+    /** The kcal of the meal with its [side]: what the meal and its day count. */
+    val totalKcal: Double get() = kcal + (side?.kcal ?: 0.0)
+
+    /** The protein of the meal with its [side]. */
+    val totalProteinG: Double get() = proteinG + (side?.proteinG ?: 0.0)
+
+    /** The fibre of the meal with its [side]; null when the main's is not known. */
+    val totalFibreG: Double? get() = fibreG?.let { it + (side?.fibreG ?: 0.0) }
+
+    /** The cost of the meal with its [side]; null when the main's is not known. */
+    val totalCost: Double? get() = cost?.let { it + (side?.cost ?: 0.0) }
+}
+
+/**
+ * A side next to a meal's main (issue 234, step 2): [portions] (a quarter or half a serving) of a prepped batch's
+ * recipe, added by hand; the planner never adds one. Its numbers are those of its portions of the recipe as the
+ * recipe is now, as a meal's fibre is.
+ */
+@Serializable
+data class MealSide(
+    val recipeId: Long,
+    val title: String,
+    val portions: Double,
+    val kcal: Double,
+    val proteinG: Double,
+    val fibreG: Double? = null,
+    /** Estimated euros for its portions with the week's offers; null when unknown. */
+    val cost: Double? = null,
+    /**
+     * The servings to cook when this meal is made, as [PlannedMeal.cookPortions]: the whole batch on the day it is
+     * made with this side, and 0 on its later days.
+     */
+    val cookPortions: Double,
+    /** The batch it is taken from: its [MealPrep.meals] hold this side ([PrepMeal.side]). */
+    val prep: MealPrep,
 )
+
+/**
+ * One batch of a recipe, cooked once on [madeOn] and eaten in [meals] until [lastDay] (issue 234). Started
+ * by hand only: the planner plans around it and never starts one.
+ */
+@Serializable
+data class MealPrep(
+    val id: Long,
+    /** ISO date it is made; its first meal is that day. */
+    val madeOn: String,
+    /** ISO date of the last day it keeps: [madeOn] plus the recipe's days for a normal box or [vacuum] sealed. */
+    val lastDay: String,
+    val vacuum: Boolean,
+    /** Every meal of the batch in eating order, also those in another plan week. */
+    val meals: List<PrepMeal>,
+) {
+    /** The servings in the batch: what is cooked and bought on [madeOn]. */
+    val portions: Double get() = meals.sumOf { it.portions }
+}
+
+/** A meal of a [MealPrep]: where it is eaten, its share of the batch and what became of it. */
+@Serializable
+data class PrepMeal(
+    val date: String,
+    val slot: MealSlot,
+    /** Its share of the batch: the meal's portions, or 0 when it was skipped and its share is eaten in another meal. */
+    val portions: Double,
+    val status: MealStatus,
+    /** True when this is a side next to the meal at [date]'s [slot], whose status it shares, rather than the meal itself. */
+    val side: Boolean = false,
+)
+
+/** A lunch or dinner on one date, as a prep names its meals. */
+@Serializable
+data class PrepSlot(
+    /** ISO date. */
+    val date: String,
+    val slot: MealSlot,
+)
+
+/**
+ * Body of `POST /api/plans/{weekStart}/preps`: [recipeId] made on [madeOn] in a normal box or [vacuum]
+ * sealed, and eaten in [meals] (lunches and dinners, the first on [madeOn], none after the day the
+ * recipe's keeps allow). Each meal gets the portion the planner would give it, within the profile's range;
+ * with [side], the batch is eaten as a side of that many servings (0.25 or 0.5) next to the meal in each
+ * of [meals], which keeps its main.
+ */
+@Serializable
+data class PrepInput(
+    val recipeId: Long,
+    val madeOn: String,
+    val vacuum: Boolean = false,
+    val meals: List<PrepSlot>,
+    val side: Double? = null,
+)
+
+/**
+ * The share of a skipped meal of a batch, still in the box (`GET /api/preps/spare/{date}`): to eat in a
+ * later lunch or dinner up to [lastDay]. On [lastDay] itself it is to eat that day or throw away; after
+ * it, it is not offered at all.
+ */
+@Serializable
+data class SparePortion(
+    val prepId: Long,
+    val recipeId: Long,
+    val title: String,
+    val portions: Double,
+    /** The meal that was skipped. */
+    val skipped: PrepSlot,
+    val lastDay: String,
+    /**
+     * The lunches and dinners it can still be eaten in, from the date asked about on, earliest first: empty or free to
+     * plan; for a [side], those with a meal still to eat that has no side yet.
+     */
+    val room: List<PrepSlot>,
+    /** True when the share is a side, which goes next to the meal it is eaten with. */
+    val side: Boolean = false,
+    /**
+     * The next free lunch or dinner of [room], which the app offers to eat it in with one tap (issue 263): the earliest
+     * that is empty, in whichever week; for a [side], the earliest of [room], as each is a meal still to eat without a
+     * side. Null when none is free: a meal planned there is only replaced by the user's own choice from [room].
+     */
+    val proposed: PrepSlot? = null,
+)
+
+/** Body of `POST /api/plans/{weekStart}/preps/{id}/spare`: eat the share of the skipped meal [from] in [to] instead. */
+@Serializable
+data class SpareMove(val from: PrepSlot, val to: PrepSlot)
 
 /**
  * The recipe the user puts in a meal's slot themselves (`PUT /api/plans/{weekStart}/meals/{day}/{slot}`).

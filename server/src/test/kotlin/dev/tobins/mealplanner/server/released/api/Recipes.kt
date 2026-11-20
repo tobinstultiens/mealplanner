@@ -1,4 +1,4 @@
-// Frozen from v0.1.8 (1a56aa21c718bafd22d7c56d7176ef7e8bf7ca1c) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.9 (e273653477d0addbc6702688ec2e111c6fe11c0a) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -43,7 +43,24 @@ data class RecipeSummary(
     val inRotation: Boolean = true,
     /** Its file has left the cooking site; an added recipe stays one of my recipes all the same. */
     val removedFromSite: Boolean = false,
+    /** Days it keeps once made in a normal box (issue 234); null: not for prepping that way, and from a server before preps. */
+    val keepsDays: Int? = null,
+    /** Days it keeps once made and vacuum sealed; null as [keepsDays]. */
+    val keepsVacuumDays: Int? = null,
 )
+
+/**
+ * Body of `PUT /api/recipes/{id}/keeps`: how many days the recipe keeps once made, in a normal box and
+ * vacuum sealed, each 1 to [MAX_DAYS]; null for a way it is not prepped. Its own route, so that released
+ * apps saving [RecipeSettings] leave it alone.
+ */
+@Serializable
+data class RecipeKeeps(val days: Int? = null, val vacuumDays: Int? = null) {
+    companion object {
+        /** A cooked meal keeps a week at most, also vacuum sealed: so a batch reaches into the next plan week, never further. */
+        const val MAX_DAYS = 7
+    }
+}
 
 /** Body of `PUT /api/recipes/{id}/added`: adds a bank recipe to my recipes, or puts it back in the bank. */
 @Serializable

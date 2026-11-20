@@ -1,4 +1,4 @@
-// Frozen from v0.1.8 (1a56aa21c718bafd22d7c56d7176ef7e8bf7ca1c) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.9 (e273653477d0addbc6702688ec2e111c6fe11c0a) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -27,10 +27,38 @@ data class NotificationFacts(
     val planNextWeek: String? = null,
     /** The newest weigh-in, when it is 7 or more days old and the account has a profile; null otherwise. */
     val weighIn: WeighInDue? = null,
-    /** Today's dinner, when one is planned and neither eaten nor skipped; null otherwise. */
+    /**
+     * Today's dinner, when one is planned, neither eaten nor skipped, and something is cooked for it: its main, or else
+     * the side next to it when that is a prepped batch made tonight ([DinnerToday.side]); null otherwise.
+     */
     val dinner: DinnerToday? = null,
     /** How many of today's meals are still planned: neither eaten nor skipped. */
     val mealsToMark: Int = 0,
+    /**
+     * The prepped batches whose last day was yesterday that may have left something in a box (issue 264), oldest
+     * first: made (one of their meals eaten) with a share skipped and not eaten elsewhere, or a meal never marked.
+     * Not a batch eaten completely, nor one never made. Each batch is here on that one day only.
+     */
+    val prepsPastLastDay: List<PrepPastLastDay> = emptyList(),
+)
+
+/**
+ * A prepped batch past its last day ([NotificationFacts.prepsPastLastDay]): its recipe, the day it was made and its
+ * last day (ISO), whether it was eaten as sides next to meals ([side]), and what of it may still be in a box. [left]
+ * counts the shares of skipped meals not eaten elsewhere: to throw away. [unmarked] counts the meals of it still
+ * planned, neither eaten nor skipped, which the app cannot tell from eaten; [firstUnmarked] is the day of the first.
+ */
+@Serializable
+data class PrepPastLastDay(
+    val prepId: Long,
+    val recipeId: Long,
+    val title: String,
+    val madeOn: String,
+    val lastDay: String,
+    val side: Boolean = false,
+    val left: Int = 0,
+    val unmarked: Int = 0,
+    val firstUnmarked: String? = null,
 )
 
 /** A row of the shopping list ([NotificationFacts.offersEnding]) by its name, and the day its offer ends (ISO): today or tomorrow. */
@@ -55,4 +83,14 @@ data class DinnerToday(
     /** The plan's week (its Monday, ISO) and the day in it, 0 for Monday. */
     val weekStart: String,
     val day: Int,
+    /**
+     * True when tonight's cooking makes a prepped batch (issue 234): [cookPortions] are for the prep's later meals too, not
+     * for tomorrow's leftover lunch (issue 263).
+     */
+    val prep: Boolean = false,
+    /**
+     * True when what is cooked tonight is the side next to the dinner, a prepped batch made tonight, while the dinner's
+     * main has nothing to cook (a later meal of another batch): the recipe, title and servings are the side's (issue 263).
+     */
+    val side: Boolean = false,
 )
