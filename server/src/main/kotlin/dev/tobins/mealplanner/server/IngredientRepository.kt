@@ -4,9 +4,12 @@ import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.offers.ExcludedMatch
+import dev.tobins.mealplanner.server.offers.OfferTerms
 import dev.tobins.mealplanner.shopping.ShopSection
 import dev.tobins.mealplanner.units.Dimension
 import dev.tobins.mealplanner.server.db.Ingredient as IngredientRow
@@ -61,13 +64,16 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     }
 
     /**
-     * Per ingredient, the names it is known by, for recognising it in store offers.
-     * Negligible ingredients (spices and the like) are left out.
+     * What the account's store offers are matched with: per ingredient, the names it is known by, and the offers the
+     * account said are not the ingredient ([OfferExclusionRepository]). Negligible ingredients (spices and the like) are
+     * left out.
      */
-    fun matchTerms(): Map<Long, List<String>> {
+    fun matchTerms(): OfferTerms {
         val ingredients = list().filterNot { it.negligible }.associateBy { it.id }
         val aliases = q.selectAliases(userId).executeAsList().groupBy({ it.ingredientId }, { it.text })
-        return ingredients.mapValues { (id, ingredient) -> listOf(ingredient.name) + aliases[id].orEmpty() }
+        val excluded = db.offerExclusionQueries.selectExcludedMatches(userId).executeAsList()
+            .mapTo(HashSet()) { ExcludedMatch(Store.valueOf(it.store), it.titleKey, it.ingredientId) }
+        return OfferTerms(ingredients.mapValues { (id, ingredient) -> listOf(ingredient.name) + aliases[id].orEmpty() }, excluded)
     }
 
     fun setStaple(id: Long, staple: Boolean) = db.writing { requireIngredient(id).also { pantry.setStaple(if (staple) 1 else 0, userId, id) } }

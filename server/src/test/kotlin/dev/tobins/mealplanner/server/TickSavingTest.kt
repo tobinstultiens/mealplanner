@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OfferExclusionRequest
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
@@ -203,6 +204,29 @@ class TickSavingTest {
         val row = http.chicken()
         assertEquals(emptyList(), row.offers)
         assertEquals(2.5 to Store.JUMBO, row.saved())
+    }
+
+    /**
+     * "Not this ingredient" (issue 316): the row's deal chip and saving go at once, and a tick stored with the deal's saving
+     * keeps it, as a tick whose offer ended does: it says what the shopping saved then. A tick made after it saves nothing.
+     */
+    @Test
+    fun aTickKeepsItsSavingWhenTheAccountSaysItsOfferIsNotTheIngredient() = testApplication {
+        val http = start()
+        val chicken = http.ready()
+        val key = "i${chicken.id}"
+        assertEquals(listOf("Jumbo Kipfilet 1 kg"), http.chicken().offers.map { it.title })
+        assertEquals(2.5 to Store.JUMBO, tick(monday, key).saved())
+
+        val excluded = OfferExclusionRequest(Store.JUMBO, "Jumbo Kipfilet 1 kg", chicken.id)
+        assertEquals(HttpStatusCode.OK, http.put("/api/offers/exclusions") { setBody(excluded) }.status)
+
+        val row = http.chicken()
+        assertEquals(emptyList(), row.offers, "no deal chip")
+        assertNull(row.savingToday(Store.entries.toSet(), monday), "and no saving to count")
+        assertEquals(2.5 to Store.JUMBO, row.saved(), "the stored tick keeps what it saved")
+        tick(monday, key, checked = false)
+        assertEquals(0.0 to null, tick(monday, key).saved(), "ticked now, the deal is no longer offered")
     }
 
     @Test

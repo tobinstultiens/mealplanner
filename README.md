@@ -1066,7 +1066,9 @@ one left. Removing the only one keeps the profile's weight, as what it was befor
 portions), `/api/offers` (weekly store offers;
 `POST /api/offers/refresh` fetches them now; today's offers, like the shopping list's, carry whether each of the
 account's offers is a good deal by its own pack's price history (`Offer.verdict`), and `GET /api/offers/verdicts` gives
-the verdicts with what they rest on, for reading; see `docs/data-sources.md`, "Is it a good deal?") and `/api/prices` (regular AH prices per ingredient, the
+the verdicts with what they rest on, for reading; see `docs/data-sources.md`, "Is it a good deal?"; `GET`, `PUT` and
+`DELETE /api/offers/exclusions` keep the offers the account said are not one of its ingredients, see "Which ingredient an
+offer is for" there) and `/api/prices` (regular AH prices per ingredient, the
 baseline for costing meals; `POST /api/prices/refresh` starts a lookup).
 
 Ingredient texts are linked without manual work where the match is clear: through the default

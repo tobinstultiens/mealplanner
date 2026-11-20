@@ -1,0 +1,31 @@
+-- Offers an account said are not one of its ingredients ("Not this ingredient", issue 316). Kept by the store, the
+-- offer's title as OfferExclusion.titleKey has it (lower case, no pack size, no first "Alle") and the ingredient, so that
+-- the same product stays apart from that ingredient in later weeks and other packs. The offers and the price history
+-- are shared and stay as they are: only this account's matches leave the pair out.
+CREATE TABLE offerExclusion (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    store TEXT NOT NULL,
+    titleKey TEXT NOT NULL,
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,               -- as the store wrote it when the account first excluded it, for the list
+    excludedAt TEXT NOT NULL,          -- instant of that first exclusion, to the second (UTC, fixed width)
+    PRIMARY KEY (userId, store, titleKey, ingredientId)
+);
+
+CREATE INDEX offerExclusion_ingredient ON offerExclusion(ingredientId);
+
+-- An exclusion sent again (twice, or late from a phone that was offline) keeps the first.
+insertExclusion:
+INSERT OR IGNORE INTO offerExclusion (userId, store, titleKey, ingredientId, title, excludedAt) VALUES (?, ?, ?, ?, ?, ?);
+
+deleteExclusion:
+DELETE FROM offerExclusion WHERE userId = ? AND store = ? AND titleKey = ? AND ingredientId = ?;
+
+selectExclusions:
+SELECT e.store, e.title, e.titleKey, e.ingredientId, i.name AS ingredientName, e.excludedAt
+FROM offerExclusion e JOIN ingredient i ON i.id = e.ingredientId AND i.userId = e.userId
+WHERE e.userId = ?
+ORDER BY e.excludedAt DESC, e.rowid DESC;
+
+selectExcludedMatches:
+SELECT store, titleKey, ingredientId FROM offerExclusion WHERE userId = ?;

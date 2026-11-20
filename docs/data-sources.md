@@ -122,6 +122,53 @@ most common texts, so that a new wording of a store is noticed.
 | `NTH_HALF_PRICE` | "2e halve prijs" | `dealPacks` (2) | (n - 0.5) / n (2e 0.75, 3e 0.83) |
 | `PRICE_PER_KG` | "1,00 per kilo", "1,09 per 500 gram", "100 gram voor 1.59" | `dealEuros`: per kg | none (a price per kg) |
 
+### Which ingredient an offer is for
+
+Each account's offers are matched to its own ingredients by the words of their titles (`OfferMatcher`), with the
+ingredient's name and aliases as terms; the longest term that occurs wins.
+
+- A term matches a whole word or its Dutch plural (-s, -en, -n, "banaan" to "bananen", "kip" to "kippen", and -zen
+  after two vowels: "saus" to "sauzen", "kaas" to "kazen"). A Dutch three-letter word that doubles its last letter
+  ("kip", "vis", "bes", "rog", "pit") takes no plain -s, so "Kips" (a liver sausage brand) is not chicken; other
+  short terms do, so an English alias "fig", "rib" or "nut" matches "figs", "ribs" and "nuts". "Kips" was the only
+  such word in the offers of 16 to 20 November 2026, and it is the first word of its titles like any brand, so a
+  rule by capital letters could not tell it apart.
+- A term of five letters or more also matches the end of a compound ("makreelfilet" ends with "filet"), unless the
+  front names a food of its own: a term of another of the account's ingredients that shares no name word with this
+  one ("kaneelbroodjes" is no white bread roll when cinnamon is "kaneel"; but "tomatenketchup" is "Tomato ketchup"),
+  or an animal of game or a less common meat ("hertenbiefstuk" is no beef steak).
+- A known name of another food that ends in an ingredient's word ("zoete aardappel") is not that ingredient, unless
+  the account knows an ingredient by that name.
+- Words after "met", "with" or "in" are a side ingredient; prepared products (a word ending in "saus" or "sauzen",
+  "mix", "sap", "smaak", "oven", "worst", "paté", "schnitzel" and so on) don't count unless the ingredient is itself
+  one ("sojasaus"); and some store categories (ready meals, cold cuts, snacks, drinks) are never an ingredient.
+
+**"Not this ingredient" (issue 316).** Rules will never be complete ("Hela curry" is a sauce, "Bolletje" a brand), so
+an account can say an offer is not one of its ingredients: `PUT /api/offers/exclusions` with the store, the offer's
+title and the ingredient. It is kept per account (`offerExclusion`) by the store, the title's key and the
+ingredient. The key is the title's words in lower case (runs of letters and digits), without its pack sizes (a
+number, or numbers in a row such as "125-150", followed by a unit: g, gr, gram, kg, kilo, ml, cl, l, liter,
+literflessen, stuk, stuks, pack, packs) and without a first "Alle" (`OfferExclusion.titleKey`). AH writes the pack
+into the title and Jumbo and Lidl beside it, so the same product at the same store has the same key in a later
+week and another pack: "AH Blauwe bessen 150 gram" and "AH Blauwe bessen 300 gram" are both "ah blauwe bessen", and
+Jumbo's "Conference peren", "Croky" and "Lipton" kept their titles from the week of 11 November to that of 18
+November under other packs ("Los per kilo" then "Bak 1 kilo"; bags of 150 or 200 gram then of 75 to 160; bottles of
+1.5 litre then of 500 ml). A number without a unit stays ("Heineken 0.0" is not "Heineken").
+
+Wherever the account's offers are matched, the pair is left out, and the offer is matched as if the ingredient
+were not in the catalogue (it may still be another ingredient whose term it has): `/api/offers`, the shopping list's
+offers (the deal chips and the savings counted from them), buying ahead and stocking up, the plan's cost with
+offers, the planning suggestions' "on offer" reason, the offers named to recipe generation, and the verdicts
+("Is it a good deal?", whose history rows are matched with the same exclusions). A row ticked before keeps the
+saving it stored, as one whose offer ended does: it says what the shopping saved then; a tick made after it saves
+nothing from that offer. The shared offers, regular prices and price history are not touched: the history's
+`ingredient` and the regular-price lookup match with every account's names and no account's exclusions.
+`GET /api/offers/exclusions` lists the account's exclusions, the latest first, with the title as first excluded,
+the key, the store, the ingredient's name and when; `DELETE /api/offers/exclusions?store=…&title=…&ingredientId=…`
+takes one back by any title of the same key. Both writes are idempotent (an exclusion sent again keeps the first
+title and time; taking back one that is gone changes nothing), so a phone may send them twice or late. An
+ingredient that is not the account's is a 404; a title without words or over 300 characters a 400.
+
 ## Regular prices (AH)
 
 Offers only say how much is taken off; to know what a meal costs, and so which offers make it
@@ -131,11 +178,8 @@ cheap, the server keeps a regular price per kg for each ingredient (`PriceReposi
   anonymous token as the offers) for up to four of the ingredient's names, Dutch ones first.
   `POST /api/prices/refresh` starts a lookup now; it takes a few minutes and `GET /api/prices`
   shows the result with the product each price came from.
-- A product counts for an ingredient when the offer matcher would give it that ingredient, with
-  two extra rules: words after "met", "with" or "in" are a side ingredient, and prepared products
-  (titles with a word ending in "saus", "mix", "sap", "smaak", "oven", "worst", "paté", "schnitzel"
-  and so on) don't count unless the ingredient is itself one ("sojasaus"). A three-letter word like
-  "kip" has no plain -s plural, so "Kips" (a liver sausage brand) is not chicken.
+- A product counts for an ingredient when the offer matcher would give it that ingredient (see "Which ingredient an
+  offer is for"), with every account's names for it and no account's exclusions: the prices are shared.
 - `priceBeforeBonus` is the regular price, also while the product is on offer. Per kg comes from
   the pack size (pieces need the ingredient's weight per piece), or else from the unit price text.
 - The product must sit in an AH aisle where the ingredient's kind of food is sold: its NEVO food
@@ -373,7 +417,7 @@ still change. Both answer for the calling account only, read and write nothing e
 
 **Which offers, and whose.** The offers valid today at the stores the account shops at that match one of its own
 ingredients, as `/api/offers` matches them. The history is shared, but its rows are matched again with the account's
-own names and aliases and the row's store category (`OfferMatcher`), never by the `ingredient` stored with them,
+own names and aliases, its exclusions ("Not this ingredient") and the row's store category (`OfferMatcher`), never by the `ingredient` stored with them,
 which was matched against every account's names: a row the account's matcher does not give the same ingredient (a
 week the store filed the product under cold cuts) is left out. Regular prices are read by the account's own
 ingredient names.

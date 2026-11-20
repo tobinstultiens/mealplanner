@@ -44,9 +44,9 @@ import java.time.LocalDate
  * Whether each of one account's current offers is a good deal, compared with its product's own history at its
  * store (docs/data-sources.md, "Is it a good deal?"). The offers are those valid today at the stores the
  * account shops at that match one of its own ingredients. The history is shared, but its rows are matched
- * again with the account's own names and the store's category ([OfferMatcher]), never by the `ingredient`
- * stored with them, which was matched against every account's names together; so is the regular price
- * history, read by the account's own ingredient names. Reads only.
+ * again with the account's own names, its exclusions ("Not this ingredient") and the store's category ([OfferMatcher]),
+ * never by the `ingredient` stored with them, which was matched against every account's names together; so is the
+ * regular price history, read by the account's own ingredient names. Reads only.
  */
 class DealVerdictRepository(
     private val db: Database,
@@ -104,11 +104,11 @@ class DealVerdictRepository(
         val page = valid.groupBy { it.store to normalised(it.title) }
         val read = read(onOffer, stores, now)
         val matcher = OfferMatcher(terms)
-        val matched = HashMap<Pair<String, String?>, Long?>()
+        val matched = HashMap<Triple<String, String, String?>, Long?>()
         val periods = read.periods.groupBy { it.store to it.productKey }
         return onOffer.map { offer ->
             val own = periods[offer.store.name to normalised(offer.title)].orEmpty()
-                .filter { row -> matched.getOrPut(row.title to row.category) { matcher.match(row.title, row.category) } == offer.ingredientId }
+                .filter { row -> matched.getOrPut(Triple(row.store, row.title, row.category)) { matcher.match(row.title, row.category, store = Store.valueOf(row.store)) } == offer.ingredientId }
             val regular = read.regular.filter { it.isFor(offer) }.mapNotNull { row -> row.packPrice?.let { RegularPrice(it, Instant.parse(row.firstSeen), Instant.parse(row.lastSeen)) } }
             val shown = page[offer.store to normalised(offer.title)].orEmpty()
             val packs = SamePacks(own.map { it.packKey } + (shown + offer).map { ProductKey.of(it).pack })

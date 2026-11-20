@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.OfferExclusionRequest
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepInput
 import dev.tobins.mealplanner.api.PrepSlot
@@ -135,6 +136,29 @@ class PlanningTest {
 
     private fun assertClose(expected: Double?, actual: Double?, what: String) =
         assertTrue(expected != null && actual != null && abs(expected - actual) < 1e-6, "$what: expected $expected, was $actual")
+
+    /** "Not this ingredient" (issue 316): an offer the account excluded saves nothing on the plan and suggests no dinner. */
+    @Test
+    fun anOfferTheAccountSaidIsNotItsIngredientIsNoGroundToSuggestADinnerAndSavesNothingOnThePlan() {
+        (0..7).forEach(::chickenDish)
+        (0..3).forEach(::beefDish)
+        val excluded = OfferExclusionRequest(Store.AH, "AH Chicken 1 kg", chicken.id)
+        assertTrue(suggest().any { SuggestionGround.ON_OFFER in it.grounds })
+        val plan = alice.plans.generate(week, seed = 1)
+        assertTrue(plan.cost!! < plan.costWithoutOffers!!, "chicken's offer saves on the plan")
+
+        alice.offerExclusions.exclude(excluded)
+
+        val suggestions = suggest()
+        assertTrue(suggestions.none { SuggestionGround.ON_OFFER in it.grounds || it.offers.isNotEmpty() }, "$suggestions")
+        assertTrue(suggestions.all { (it.savingPerServing ?: 0.0) < 1e-9 }, "$suggestions")
+        val costed = alice.plans.get(week)
+        assertClose(costed.costWithoutOffers, costed.cost, "the plan's cost without the offer")
+        // Taken back, it counts again.
+        alice.offerExclusions.takeBack(excluded)
+        assertTrue(suggest().any { SuggestionGround.ON_OFFER in it.grounds })
+        assertTrue(alice.plans.get(week).let { it.cost!! < it.costWithoutOffers!! })
+    }
 
     @Test
     fun fillTheRestWithNothingChosenIsGenerateForTheSameSeed() {
