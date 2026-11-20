@@ -158,7 +158,7 @@ fun ServerSettingsScreen(
                 if (systemColorsAvailable()) {
                     SwitchRow(t(Msg.SYSTEM_COLORS), t(Msg.SYSTEM_COLORS_HINT), systemColors, onSystemColors)
                 }
-                SwitchRow(t(Msg.PRODUCT_PICTURES), t(Msg.PRODUCT_PICTURES_HINT), productPictures, onProductPictures)
+                SwitchRow(t(Msg.PRODUCT_PICTURES), t(if (runsInBrowser()) Msg.PRODUCT_PICTURES_HINT_BROWSER else Msg.PRODUCT_PICTURES_HINT), productPictures, onProductPictures)
             }
             if (loggedIn) {
                 var shopsError by remember { mutableStateOf<String?>(null) }

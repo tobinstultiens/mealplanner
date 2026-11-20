@@ -25,7 +25,12 @@ private var backListening = false
 private fun listenForBack() {
     if (backListening) return
     backListening = true
-    window.addEventListener("popstate") { backEntries.maxByOrNull { it.order }?.onBack?.value?.invoke() }
+    window.addEventListener("popstate") {
+        // A typed address is not a back; [watchAddress] reports it.
+        if (!onAppEntry()) return@addEventListener
+        val handler = backEntries.maxByOrNull { it.order }?.onBack?.value
+        if (handler != null) handler() else restoreShownAddress()
+    }
 }
 
 /**
@@ -43,7 +48,7 @@ actual fun BackHandler(enabled: Boolean, rearm: Int, onBack: () -> Unit) {
     DisposableEffect(enabled, rearm) {
         if (!enabled) return@DisposableEffect onDispose {}
         listenForBack()
-        window.history.pushState(null, "")
+        pushBackEntry()
         val entry = BackEntry(order, currentOnBack)
         backEntries += entry
         onDispose { backEntries -= entry }

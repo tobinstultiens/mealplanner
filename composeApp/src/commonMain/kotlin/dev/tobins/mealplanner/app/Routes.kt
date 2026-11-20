@@ -149,6 +149,13 @@ interface RouteStore {
 
     /** Shows [hash] in the address without adding a history entry. */
     fun write(hash: String)
+
+    /**
+     * Calls [onChange] with the new address when the user typed or pasted one into the open page (or went back
+     * to an entry that was made that way), not when the app itself changed it or the browser's Back and Forward
+     * moved between the app's own entries (the back handlers answer those). Returns what stops it.
+     */
+    fun watch(onChange: (String) -> Unit): () -> Unit = {}
 }
 
 /** For platforms without addresses: the app always starts on Today. */

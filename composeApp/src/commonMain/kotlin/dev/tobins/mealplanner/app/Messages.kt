@@ -912,6 +912,20 @@ enum class Msg(private val english: String, private val dutch: String) {
     DINNER_NOTIFICATION_TEXT("{0} to cook", "{0} om te koken"),
     MEALS_TO_MARK_NOTIFICATION_TEXT("Mark what you ate.", "Geef aan wat je hebt gegeten."),
 
+    // --- The web client's last resort and its own wording (browser, not phone)
+    CRASH_TITLE("Something went wrong", "Er ging iets mis"),
+    CRASH_TEXT(
+        "The app stopped working. Reloading the page usually fixes it. Nothing was sent anywhere.",
+        "De app werkt niet meer. De pagina opnieuw laden lost het meestal op. Er is niets verstuurd.",
+    ),
+    CRASH_RELOAD("Reload", "Opnieuw laden"),
+    PRODUCT_PICTURES_HINT_BROWSER(
+        "Pictures are loaded from the stores' websites, so the stores can see this browser asking for them. Off shows a letter instead.",
+        "Foto's worden van de websites van de winkels geladen, dus de winkels zien dat deze browser ze opvraagt. Uit toont een letter.",
+    ),
+    TAP_TO_SHOP_BROWSER("Click to shop here", "Klik om hier te winkelen"),
+    STORE_SAVING_HINT_BROWSER("Saves about {0} · click to shop here", "Bespaart ongeveer {0} · klik om hier te winkelen"),
+
     // --- end of messages
     ;
 
