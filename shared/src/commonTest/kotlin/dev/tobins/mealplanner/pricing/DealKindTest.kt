@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.Store
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -242,6 +243,39 @@ class DealKindTest {
             assertNull(PackSize.millilitres(text), text)
             PackSize.toBuy(offer("2 voor 3,99", packSize = text, title = text), 500.0, 3.0)
         }
+    }
+
+    /** The bound is checked before any regex runs, so thousands of digits cost nothing and every target answers alike. */
+    @Test
+    fun aPackTextWithAHugeNumberOrOfHugeLengthIsNoSizeBeforeAnyRegexRuns() {
+        for (digits in listOf(10, 1_000, 100_000, 1_000_000)) {
+            val long = "9".repeat(digits)
+            for (text in listOf("$long g", "$long x 330 ml", "6 x $long ml", "$long stuks", "8 pakjes à $long stuks", "$long-pack à 1 liter", "500 g $long")) {
+                assertNull(PackSize.grams(text, gramsPerPiece = 50.0), text.take(40))
+                assertNull(PackSize.pieces(text), text.take(40))
+                assertNull(PackSize.millilitres(text), text.take(40))
+                assertFalse(PackSize.isVolume("$long ml"))
+            }
+        }
+        val prose = "gezellig ".repeat(30) + "500 g"
+        assertNull(PackSize.grams(prose))
+        assertNull(PackSize.toBuy(offer("2 voor 3,99", packSize = prose, title = prose), 500.0, 3.0))
+    }
+
+    /** Nine digits in a row are still read; the real pack texts of the stores read as before. */
+    @Test
+    fun theTextsStoresReallyWriteAreStillRead() {
+        assertEquals(1000.0, PackSize.grams("1000 g"))
+        assertEquals(4000.0, PackSize.grams("4-pack à 1 liter"))
+        assertEquals(400.0, PackSize.grams("2 verpakkingen à 200 gram"))
+        assertEquals(7920.0, PackSize.millilitres("Tray met 24 blikken à 33cl"))
+        assertEquals(1000.0, PackSize.millilitres("2 bekers à 500ml"))
+        assertEquals(40, PackSize.pieces("Verpakking met 8 pakjes à 5 stuks"))
+        assertEquals(48, PackSize.pieces("3x 16 stuks"))
+        assertEquals(300.0, PackSize.grams("2 x 150 g"))
+        assertEquals(1500.0, PackSize.millilitres("Alle flessen à 1,5 liter"))
+        assertEquals(1, PackSize.pieces("per stuk"))
+        assertEquals(999999999.0, PackSize.grams("999999999 g"))
     }
 
     /** A size that is finite but absurd (a denormal) gave an infinite price per kg and 2147483647 packs. */
