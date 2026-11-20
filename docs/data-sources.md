@@ -570,6 +570,28 @@ grams must be above 0 and at most 10 kg (`ShoppingCheck.MAX_GRAMS`), else the ti
 and nothing is stored. A tick without them (apps before it, or a row the stored list does not have)
 is on hand without an amount, as before.
 
+**A tick sent late keeps what the phone showed** (issue 116). A row of what the meals need, ticked while
+the phone had no connection (or without an answer), is sent later with `ShoppingCheck.shown`: the weight
+and pieces the row said, the saving of its offer as the phone counted it at the account's stores, the
+store of that offer, and the day it was ticked (`tickedOn`). A tick that goes out at once sends none of
+it, and the server works the tick out as always. The server keeps these for the row's tick instead of
+what the row says on arrival, for a row its list still has (the row's name is always the server's), and
+only within bounds; a figure out of bounds is left out, not refused, so the tick is stored all the same
+with the server's own figure for that part:
+
+- the weight is above 0, at most 10 kg and at most twice what the row says now (a plan changes, a row
+  does not double between two phones), pieces above 0 and at most twice the row's now, for a row that
+  counts pieces;
+- the saving is believed only when the tick is dated on an earlier day than the server's (a tick of
+  today still has its offer on the server's list, so the server works it out), no more than 56 days
+  back and not in the future; it is from 0 to the row's regular price (what its whole need costs), and a
+  row without a regular price saves nothing known. The store counts only with a saving above 0;
+- a tick that is there already stays as it is, so of two phones ticking the same row the first one
+  to arrive decides, and each account's ticks are its own.
+
+An app from before it sends none of these and a server from before it refuses the field (400): the
+app sends the tick again without it, which stores what the server says, as it did.
+
 **How much is left** shows where it is known. A row of the list whose ingredient is on hand for the
 week carries the grams left (`ShoppingItem.onHandGrams`), and the app says `300 g on hand, buy 200 g`
 under its name, `600 g on hand: enough` when that covers the need (with no packs to take), or `300 g
@@ -627,8 +649,8 @@ by the packs for that amount. Once ticked, a row keeps the saving it had at the 
 (`ShoppingItem.boughtSaving`, kept with the tick since version 16 of the database), so a store's header
 says what the shop saved and does not shrink as meals are eaten or the offer ends: the server works it
 out by the app's rules (`shopping/RowSaving.kt` in `shared`), at the account's stores, on the day it
-stores the tick (for a tick an offline phone sends later, the day it arrives, as a tick does not say
-when it was made). The row stays under the store whose offer it was bought with
+stores the tick (for a tick an offline phone sends later, what the phone showed when it was ticked,
+within bounds: "A tick sent late keeps what the phone showed", above). The row stays under the store whose offer it was bought with
 (`ShoppingItem.boughtOfferStore`) while that store is in use, also when the offer has ended or another
 store's is better now; a tick that saved nothing (the offer had ended, starts later, or is at a store
 not in use) keeps 0. Un-ticking gives the saving up; ticking it again, or ticking a row that needs more

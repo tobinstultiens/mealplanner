@@ -2,7 +2,9 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.Store
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.ServerResponseException
@@ -74,6 +76,9 @@ class ApiClientTest {
         // A fraction, which every platform writes alike; a whole 1000.0 may come out as 1000.
         api.setShoppingChecked("2026-11-16", "stock:i7", true, grams = 1000.5)
         assertEquals(listOf("""{"key":"i1","checked":true}""", """{"key":"stock:i7","checked":true,"grams":1000.5}"""), bodies)
+        // What a late tick showed goes as one object, with only the parts it has (a whole number may come out as 800 on a platform).
+        api.setShoppingChecked("2026-11-16", "i1", true, shown = ShoppingCheck.Shown(saving = 2.5, savingStore = Store.JUMBO, tickedOn = "2026-11-16"))
+        assertEquals("""{"key":"i1","checked":true,"shown":{"saving":2.5,"savingStore":"JUMBO","tickedOn":"2026-11-16"}}""", bodies.last())
     }
 
     /** A client whose server answers every request with [status] and [body], noting each path asked for. */

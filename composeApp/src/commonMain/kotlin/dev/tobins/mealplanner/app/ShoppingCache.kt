@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -22,9 +23,11 @@ class ShoppingCache(private val storage: SettingsStorage) {
         val pending: Map<String, Boolean> = emptyMap(),
         /** Of the waiting ticks of buy-ahead and stock-up items: the grams the list advised buying when ticked. */
         val advised: Map<String, Double> = emptyMap(),
+        /** Of the waiting ticks of rows of what the meals need: what the row showed when ticked, for the server to remember when it arrives late. */
+        val shown: Map<String, ShoppingCheck.Shown> = emptyMap(),
     ) {
         /** This entry without the waiting tick of [key]: the server has it, or refused it. */
-        fun settled(key: String) = copy(pending = pending - key, advised = advised - key)
+        fun settled(key: String) = copy(pending = pending - key, advised = advised - key, shown = shown - key)
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -69,12 +72,17 @@ class ShoppingCache(private val storage: SettingsStorage) {
      * [clear] (logging out) nothing of the previous account may be written back. Ticking off a
      * buy-ahead or stock-up item records the grams the list advises buying too ([advised]): the
      * answer to an earlier tick may replace the stored list with one that no longer advises it.
+     * Ticking off a row of what the meals need records what the row shows on [today] too ([shown]),
+     * with the offer's saving at the account's stores: a tick sent late has the offer's end behind it,
+     * and the server could no longer tell what it saved.
      */
-    fun choose(weekStart: String, key: String, checked: Boolean) {
+    fun choose(weekStart: String, key: String, checked: Boolean, today: String = todayIso()) {
         val entry = entry(weekStart) ?: return
         val grams = if (checked) (entry.list.buyAhead + entry.list.stockUp).firstOrNull { it.key == key }?.grams else null
         val advised = if (grams != null) entry.advised + (key to grams) else entry.advised - key
-        write(weekStart, entry.copy(pending = entry.pending + (key to checked), advised = advised))
+        val row = if (checked && !key.startsWith("x:")) entry.list.items.firstOrNull { it.key == key } else null
+        val shown = if (row != null) entry.shown + (key to row.shownAtTick(storage.shops(), today)) else entry.shown - key
+        write(weekStart, entry.copy(pending = entry.pending + (key to checked), advised = advised, shown = shown))
     }
 
     /**
@@ -94,6 +102,9 @@ class ShoppingCache(private val storage: SettingsStorage) {
 
     /** The grams the list advised buying of the buy-ahead or stock-up item [key] when its waiting tick was made; null if unknown. */
     fun advised(weekStart: String, key: String): Double? = entry(weekStart)?.advised?.get(key)
+
+    /** What the row [key] showed when its waiting tick was made ([choose]); null if unknown, and for an un-tick. */
+    fun shown(weekStart: String, key: String): ShoppingCheck.Shown? = entry(weekStart)?.shown?.get(key)
 
     /** The ticks of [weekStart] the server has not confirmed yet, by item key. */
     fun pending(weekStart: String): Map<String, Boolean> = entry(weekStart)?.pending.orEmpty()
