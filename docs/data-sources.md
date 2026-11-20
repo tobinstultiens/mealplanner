@@ -295,6 +295,14 @@ the first of the pack size and the title that gives a size at all. A "2 voor 7,0
 both packs' 3,96 litres. Deals by weight (`PRICE_PER_KG`) get no price per litre. Online-only deals keep
 their share; their text says where they apply.
 
+**Packs of several.** `PackSize` reads a pack of several as the count times the size of each: "4-pack à 1 liter"
+is 4 l, "2 verpakkingen à 200 gram" 400 g, "Tray met 24 blikken à 33cl" 7,92 l (as "6 x 330 ml" always was), "3x 16
+stuks" 48 pieces and "Verpakking met 8 pakjes à 5 stuks" 40. Not a multiple: a text with "alle" ("Alle flessen à
+1,5 liter": any bottle of that size), a range ("2 verpakkingen à 100-175 gram", no size to multiply) and a
+weight after the count ("500 gram à 2 stuks"). The history's pack key is the normalised text, so a changed reading
+moves no row to another product; the verdict reads rows again from their text, and the `eurosPerKg`,
+`eurosPerPiece` and `eurosPerLitre` stored with a row before 20 November 2026 are no input to anything.
+
 **Whose ingredient.** The `ingredient` of a row is the match at the time the row began, by every account's
 names together, and it is not changed afterwards: a match that was wrong stays, and an ingredient renamed
 since does not find its rows by name. An account's live offers are matched differently, by its own names

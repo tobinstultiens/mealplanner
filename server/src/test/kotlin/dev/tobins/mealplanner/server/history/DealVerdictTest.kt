@@ -160,6 +160,20 @@ class DealVerdictTest {
     }
 
     @Test
+    fun aFourPackOfSpaTouchCostsTheSamePerLitreAsTheSingleBottle() {
+        // Jumbo, 18 to 24 November 2026: the 4-pack à 1 liter for 4,00 and every 1 liter bottle for 1,00.
+        fun spa(packSize: String, deal: String) = offer(deal, packSize = packSize, title = "Spa Touch", store = Store.JUMBO)
+        val fourPack = spa("4-pack à 1 liter", "voor 4,00")
+        val bottle = spa("Alle flessen à 1 liter, per fles", "voor 1,00")
+        val verdict = verdict(today(fourPack), run(bottle, TODAY - 2, TODAY, TODAY - 2, TODAY + 4))
+
+        assertEquals(1.0, CurrentOffer(fourPack).measures.perLitre!!, 1e-9)
+        assertEquals(1.0, CurrentOffer(bottle).measures.perLitre!!, 1e-9)
+        assertNull(verdict.cheaperNow, "a bottle at 1,00 a litre is no cheaper than the 4-pack at 1,00 a litre")
+        assertTrue(verdict.verdict != Verdict.CHEAPER_ANOTHER_WAY, verdict.summary("Jumbo"))
+    }
+
+    @Test
     fun theMeasureIsTheOneMostEarlierOffersHave() {
         // Today's offer has a share and a price per kg; three earlier ones only a share, one only a price per kg.
         val now = offer("VOOR 4.00", price = 4.0, originalPrice = 8.0)
