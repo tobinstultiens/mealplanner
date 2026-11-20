@@ -1,13 +1,23 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.CheaperPack
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OffersState
+import dev.tobins.mealplanner.api.PastOffer
+import dev.tobins.mealplanner.api.PriceRaise
+import dev.tobins.mealplanner.api.PriceVerdict
+import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.api.VerdictKind
+import dev.tobins.mealplanner.api.VerdictMeasure
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.OfferHistory
 import dev.tobins.mealplanner.server.db.RegularPriceHistory
 import dev.tobins.mealplanner.server.history.CurrentOffer
 import dev.tobins.mealplanner.server.history.DealVerdict
 import dev.tobins.mealplanner.server.history.LOOKBACK_WEEKS
+import dev.tobins.mealplanner.server.history.MIN_DAYS_READ
 import dev.tobins.mealplanner.server.history.Measure
 import dev.tobins.mealplanner.server.history.Measures
 import dev.tobins.mealplanner.server.history.OfferIdentity
@@ -15,13 +25,17 @@ import dev.tobins.mealplanner.server.history.OfferPeriod
 import dev.tobins.mealplanner.server.history.OfferSighting
 import dev.tobins.mealplanner.server.history.ProductKey
 import dev.tobins.mealplanner.server.history.RegularPrice
+import dev.tobins.mealplanner.server.history.SamePacks
 import dev.tobins.mealplanner.server.history.Verdict
 import dev.tobins.mealplanner.server.history.isSameProduct
 import dev.tobins.mealplanner.server.history.judge
 import dev.tobins.mealplanner.server.history.normalised
+import dev.tobins.mealplanner.server.history.packName
 import dev.tobins.mealplanner.server.history.summary
 import dev.tobins.mealplanner.server.offers.OfferMatcher
 import kotlinx.serialization.Serializable
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -43,27 +57,64 @@ class DealVerdictRepository(
     private val history = PriceHistoryRepository(db)
 
     /** The verdicts on the account's offers valid at [now], by store, verdict and title. */
-    fun current(now: Instant): DealVerdicts {
+    fun current(now: Instant): DealVerdicts =
+        DealVerdicts(judged(now).map { (offer, verdict) -> view(offer, verdict) }.sortedWith(compareBy({ it.store }, { it.verdict }, { it.title })))
+
+    /**
+     * [state]'s offers with the verdicts on those of the account's offers valid at [now] ([Offer.verdict]), for the app
+     * (issue 118, step c). The others keep none.
+     */
+    fun on(state: OffersState, now: Instant): OffersState = attached(state, now) { verdictOf -> state.copy(offers = state.offers.map(verdictOf)) }
+
+    /**
+     * [list]'s offers with their verdicts, as [on] the offers: on every row's offers, the advice's and those of what is no
+     * longer needed, so that the list the app keeps offline has them too.
+     */
+    fun on(list: ShoppingList, now: Instant): ShoppingList = attached(list, now) { verdictOf ->
+        fun List<ShoppingItem>.judged() = map { item -> item.copy(offers = item.offers.map(verdictOf)) }
+        list.copy(items = list.items.judged(), buyAhead = list.buyAhead.judged(), stockUp = list.stockUp.judged(), noLongerNeeded = list.noLongerNeeded.judged())
+    }
+
+    /**
+     * [answer] with [attach] given each offer's verdict, or as it is when judging fails: a verdict is an extra, and a
+     * fault in reading the history must never cost the app its offers or its shopping list.
+     */
+    private fun <T> attached(answer: T, now: Instant, attach: ((Offer) -> Offer) -> T): T {
+        val verdicts = try {
+            judged(now).associate { (offer, verdict) -> OfferKey(offer) to priceVerdict(verdict) }
+        } catch (e: Exception) {
+            log.warn("Could not judge the offers; answering without verdicts", e)
+            return answer
+        }
+        return attach { offer -> verdicts[OfferKey(offer)]?.let { offer.copy(verdict = it) } ?: offer }
+    }
+
+    /**
+     * The account's offers valid at [now] with their verdicts. The packs of each product are read as [SamePacks] has
+     * them, in its history, on today's page and in the offer itself alike.
+     */
+    private fun judged(now: Instant): List<Pair<Offer, DealVerdict>> {
         val terms = ingredients.matchTerms()
         val names = ingredients.list().associate { it.id to it.name }
         val stores = shops()
         val valid = offers.state(serverDay(now), terms, names).offers.filter { OfferSighting.readable(it) }
         val onOffer = valid.filter { it.store in stores && it.ingredientId != null }
-        if (onOffer.isEmpty()) return DealVerdicts(emptyList())
+        if (onOffer.isEmpty()) return emptyList()
         // What each store shows of each product today: its stored offers, whichever ingredient they match.
-        val page = valid.groupBy({ it.store to normalised(it.title) }, ::CurrentOffer)
+        val page = valid.groupBy { it.store to normalised(it.title) }
         val read = read(onOffer, stores, now)
         val matcher = OfferMatcher(terms)
         val matched = HashMap<Pair<String, String?>, Long?>()
         val periods = read.periods.groupBy { it.store to it.productKey }
-        val verdicts = onOffer.map { offer ->
+        return onOffer.map { offer ->
             val own = periods[offer.store.name to normalised(offer.title)].orEmpty()
                 .filter { row -> matched.getOrPut(row.title to row.category) { matcher.match(row.title, row.category) } == offer.ingredientId }
             val regular = read.regular.filter { it.isFor(offer) }.mapNotNull { row -> row.packPrice?.let { RegularPrice(it, Instant.parse(row.firstSeen), Instant.parse(row.lastSeen)) } }
             val shown = page[offer.store to normalised(offer.title)].orEmpty()
-            view(offer, judge(CurrentOffer(offer), own.map { it.period() }, read.recordings[offer.store].orEmpty(), regular, serverDay(now), shown))
+            val packs = SamePacks(own.map { it.packKey } + (shown + offer).map { ProductKey.of(it).pack })
+            fun current(it: Offer) = CurrentOffer(it, packs[ProductKey.of(it).pack])
+            offer to judge(current(offer), own.map { it.period(packs) }, read.recordings[offer.store].orEmpty(), regular, serverDay(now), shown.map(::current))
         }
-        return DealVerdicts(verdicts.sortedWith(compareBy({ it.store }, { it.verdict }, { it.title })))
     }
 
     private class Read(val periods: List<OfferHistory>, val recordings: Map<Store, List<Instant>>, val regular: List<RegularPriceHistory>)
@@ -90,8 +141,8 @@ class DealVerdictRepository(
     private fun RegularPriceHistory.isFor(offer: Offer) =
         name.equals(offer.ingredientName, ignoreCase = true) && store == offer.store.name && isSameProduct(product, packSize, offer.title, offer.packSize)
 
-    private fun OfferHistory.period() = OfferPeriod(
-        identity = OfferIdentity(ProductKey(Store.valueOf(store), productKey, packKey), price, originalPrice, normalised(deal)),
+    private fun OfferHistory.period(packs: SamePacks) = OfferPeriod(
+        identity = OfferIdentity(ProductKey(Store.valueOf(store), productKey, packs[packKey]), price, originalPrice, normalised(deal)),
         deal = deal,
         measures = Measures.of(Offer(Store.valueOf(store), title, deal, price, originalPrice, packSize, category, validFrom, validUntil)),
         firstSeen = Instant.parse(firstSeen),
@@ -126,8 +177,68 @@ class DealVerdictRepository(
     private fun earlierOffer(run: OfferPeriod, endedEarly: Boolean = false) = EarlierOffer(
         run.validFrom.toString(), run.validUntil.toString(), run.deal,
         run.measures.paidShare, run.measures.perKg, run.measures.perLitre, run.measures.perPiece, run.measures.perPack,
-        pack = run.identity.product.pack, price = run.identity.price, endedEarly = endedEarly,
+        pack = run.identity.product.pack, price = run.identity.price, endedEarly = endedEarly, packName = packName(run.identity.product.pack),
     )
+
+    /**
+     * The verdict as the app gets it ([PriceVerdict]): the facts it words in English and Dutch, the offers it names
+     * valued in the verdict's measure, a pack named only where it is another than today's. Offers named apart (the
+     * one cheaper now, another pack shown now) are not repeated among those alongside; of the earlier offers the
+     * latest [EARLIER_SHOWN].
+     */
+    private fun priceVerdict(verdict: DealVerdict): PriceVerdict {
+        val measure = verdict.measure
+        fun past(run: OfferPeriod, valueIn: Measure? = measure, endedEarly: Boolean = false) = PastOffer(
+            from = run.validFrom.toString(),
+            until = run.validUntil.toString(),
+            deal = run.deal?.takeIf { it.isNotBlank() },
+            price = run.identity.price,
+            packName = run.identity.product.pack.takeIf { it != verdict.pack }?.let(::packName),
+            value = valueIn?.let { run.measures[it] },
+            endedEarly = endedEarly,
+        )
+        val cheaperNow = verdict.cheaperNow.takeIf { verdict.verdict == Verdict.CHEAPER_ANOTHER_WAY }
+        val named = listOfNotNull(cheaperNow, verdict.cheaperPack?.takeIf { it.now }?.offer)
+        return PriceVerdict(
+            verdict = VerdictKind.valueOf(verdict.verdict.name),
+            measure = measure?.let { VerdictMeasure.valueOf(it.name) },
+            value = verdict.value,
+            typical = verdict.typical,
+            betterThanUsual = verdict.betterThanUsual,
+            lastAsCheap = verdict.lastAsCheap?.let { past(it, endedEarly = it !in verdict.alongside && verdict.endedEarly(it)) },
+            daysRead = verdict.daysRead,
+            daysNeeded = MIN_DAYS_READ,
+            thisPack = verdict.otherPacks,
+            raise = verdict.raise?.let { PriceRaise(it.before, it.now) },
+            cheaperNow = cheaperNow?.let { past(it) },
+            cheaperPack = verdict.cheaperPack?.let { other ->
+                CheaperPack(past(other.offer, other.measure, endedEarly = !other.now && verdict.endedEarly(other.offer)), VerdictMeasure.valueOf(other.measure.name), other.now)
+            },
+            alongside = verdict.alongside.filter { it !in named }.map { past(it) },
+            earlier = verdict.earlier.sortedWith(compareBy({ it.validUntil }, { it.validFrom })).takeLast(EARLIER_SHOWN).reversed()
+                .map { past(it, endedEarly = verdict.endedEarly(it)) },
+        )
+    }
+
+    /** An offer as the verdicts and the answers that carry them both have it: what the store published, without what the server adds. */
+    private data class OfferKey(
+        val store: Store,
+        val title: String,
+        val packSize: String?,
+        val deal: String?,
+        val price: Double?,
+        val originalPrice: Double?,
+        val validFrom: String,
+        val validUntil: String,
+    ) {
+        constructor(offer: Offer) : this(offer.store, offer.title, offer.packSize, offer.deal, offer.price, offer.originalPrice, offer.validFrom, offer.validUntil)
+    }
+
+    private companion object {
+        /** The earlier offers the app's detail lists: the latest few say how it went lately; a year of them would not fit. */
+        const val EARLIER_SHOWN = 5
+        val log: Logger = LoggerFactory.getLogger(DealVerdictRepository::class.java)
+    }
 }
 
 /**
@@ -191,6 +302,8 @@ data class EarlierOffer(
     val price: Double? = null,
     /** Dated over today, but the store no longer shows it: it ended before its dates did. */
     val endedEarly: Boolean = false,
+    /** The pack in short, where the store's text gives a size ([packName]). */
+    val packName: String? = null,
 )
 
 /** Another pack's [offer] clearly cheaper in [measure], in which this offer comes to [value]; shown [now], or ended. */

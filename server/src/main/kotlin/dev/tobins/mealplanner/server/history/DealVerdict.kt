@@ -45,6 +45,7 @@ enum class Verdict {
  * ([cheaperNow]), and how many days the store was read since [firstRead], on how many of them the store dated the
  * product on offer at all, and on offer in today's pack and deal ([daysThisDeal]). [otherPacks] says the product was
  * offered in other packs too, which the verdict leaves out; [cheaperPack] is one of those that is or was cheaper.
+ * [pack] is today's pack, as its product's packs are known ([SamePacks]).
  */
 data class DealVerdict(
     val verdict: Verdict,
@@ -65,9 +66,13 @@ data class DealVerdict(
     val cheaperNow: OfferPeriod? = null,
     val otherPacks: Boolean = false,
     val cheaperPack: CheaperPack? = null,
+    val pack: String = "",
 ) {
     /** Whether [run], an ended offer, ended before the store's dates did: dated over [day], but no longer shown. */
     fun endedEarly(run: OfferPeriod) = !run.validUntil.isBefore(day)
+
+    /** A usual deal clearly below what its pack usually goes for, though not at the lowest: "better than usual". */
+    val betterThanUsual: Boolean get() = verdict == Verdict.USUAL_DEAL && value != null && typical != null && value < typical * (1 - TOLERANCE)
 }
 
 /**
@@ -176,6 +181,7 @@ fun judge(
         firstRead = days.firstOrNull(), raise = raise, day = day, alongside = alongside, cheaperNow = cheaperNow?.first,
         otherPacks = runs.any { it.identity.product.pack != pack },
         cheaperPack = cheaperPack(today.measures, runningOtherPacks, now = true) ?: cheaperPack(today.measures, endedOtherPacks, now = false),
+        pack = pack,
     )
     return when {
         raise != null && share != null && share >= NO_SAVING_SHARE -> facts.copy(verdict = Verdict.NOT_A_DEAL, measure = Measure.PAID_SHARE, value = share)

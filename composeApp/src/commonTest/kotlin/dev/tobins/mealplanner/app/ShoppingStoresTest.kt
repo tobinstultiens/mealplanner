@@ -264,6 +264,20 @@ class ShoppingStoresTest {
     }
 
     @Test
+    fun aSmallerOfferThatFitsTakesTheRowWhenTheDeepestDealWantsTwoPacks() {
+        // Issue 105, switched on by the owner: 450 g is one pack of 500 g, so Jumbo's "1+1 gratis" saves nothing on it;
+        // AH's 300 g at a quarter off does, so the row goes by AH's: its chip, its packs and its store group.
+        val jumbo = packOffer("500 g", "1+1 gratis").copy(store = Store.JUMBO)
+        val ah = packOffer("300 g", "25% korting", 0.75)
+        val row = packItem(450.0, null, jumbo).copy(offers = listOf(jumbo, ah))
+        assertEquals(ah, row.chipOffer(all, "2026-01-02"))
+        assertEquals("2 × 300 g", row.packsToBuy(ah)?.text(Strings.English))
+        val overview = storeOverview(listOf(row), all, "2026-01-02")
+        assertEquals(listOf(Store.AH), overview.stores.map { it.store })
+        assertEquals(1.0, overview.stores.single().saving!!, 1e-9)
+    }
+
+    @Test
     fun aStockUpRowOfADealForTwoPacksSaysTwoPacksAndCountsItsSaving() {
         // As the server advises it: both packs' weight and the regular price of both.
         val offer = packOffer("1 kg", "1+1 gratis")

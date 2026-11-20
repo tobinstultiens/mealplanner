@@ -42,6 +42,12 @@ data class Offer(
      * list items only; null when the deal can't be worked out or saves nothing.
      */
     val paidShare: Double? = null,
+    /**
+     * Whether this is a good deal by its price history (issue 118): filled in by the server on `/api/offers` for today
+     * and on the shopping list, for the account's offers valid today; null elsewhere, and when the server could not
+     * judge it.
+     */
+    val verdict: PriceVerdict? = null,
 )
 
 /**

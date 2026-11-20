@@ -18,18 +18,37 @@ fun Offer.validOn(today: String): Boolean = validFrom <= today && today <= valid
  * saves most. Offers that ended before [today] are ignored. One that is valid today wins over any that
  * starts later, so the list never promises what the till will not give; only an item with nothing
  * valid today shows the best of its coming offers.
+ *
+ * With [preferFitting] (issue 105; on, see [PREFER_FITTING_OFFER]), of today's offers one whose deal fits
+ * what is left to buy comes first ([fits]): a "1+1 gratis" on 500 g saves nothing on the one pack 450 g
+ * needs ([savingToday]), while 25 % off a smaller pack at another store does. An offer that fits but has no
+ * share may save nothing either, so then, and when none fits, the one that saves most is preferred as without.
  */
-fun ShoppingItem.bestOffer(shops: Set<Store>, today: String): Offer? {
+fun ShoppingItem.bestOffer(shops: Set<Store>, today: String, preferFitting: Boolean = PREFER_FITTING_OFFER): Offer? {
     val notEnded = offers.filter { it.store in shops && it.validUntil >= today }
-    return bestOffer(notEnded.filter { it.validOn(today) }) ?: bestOffer(notEnded)
+    val valid = notEnded.filter { it.validOn(today) }
+    val fitting = if (preferFitting) bestOffer(valid.filter { it.paidShare != null && fits(it) }) else null
+    return fitting ?: bestOffer(valid) ?: bestOffer(notEnded)
 }
+
+/**
+ * Whether a row whose deepest deal wants more packs than it needs goes by a smaller offer that fits (issue 105,
+ * [bestOffer]): yes, the owner's decision on #118 ("Switch it on"). A constant, not a setting: it keeps the rule from
+ * before (the deal that saves most, fitting or not) one word away, and both rules tested. The app and the server share
+ * this code, so the saving the server keeps for a tick follows the same rule as the app's store headers.
+ */
+const val PREFER_FITTING_OFFER = true
+
+/** Whether [offer]'s deal fits what is left to buy of this row: it wants no more packs than that needs, or that can't be told. */
+private fun ShoppingItem.fits(offer: Offer): Boolean = packsLeftToBuy(offer)?.dealFits != false
 
 /**
  * The offer that puts this item under a store: the preferred one when it is known to save
  * something. An item whose offers are only deals nobody could value (no share) is not claimed by
  * their store; it keeps its badge but is listed under any store.
  */
-fun ShoppingItem.savingOffer(shops: Set<Store>, today: String): Offer? = bestOffer(shops, today)?.takeIf { it.paidShare != null }
+fun ShoppingItem.savingOffer(shops: Set<Store>, today: String, preferFitting: Boolean = PREFER_FITTING_OFFER): Offer? =
+    bestOffer(shops, today, preferFitting)?.takeIf { it.paidShare != null }
 
 /** Less than a gram still to buy is nothing to buy, as the server drops a stock once less than a gram is left. */
 const val SCRAP_GRAMS = 1.0
@@ -106,7 +125,8 @@ private fun ShoppingItem.shareToBuy(): Double {
  * What this item saves when bought on [today] with its preferred offer in [shops] ([saving]); null
  * when nothing is known to be saved. An offer that only starts later saves nothing today, although its
  * badge stays on the row. Nor does a deal that wants more packs than what is left to buy needs ("1+1
- * gratis" for one pack): the saving would only be had by buying more than needed.
+ * gratis" for one pack): the saving would only be had by buying more than needed. With [preferFitting],
+ * such a deal is only preferred when no other offer that saves something fits ([bestOffer]).
  */
-fun ShoppingItem.savingToday(shops: Set<Store>, today: String): Double? =
-    bestOffer(shops, today)?.takeIf { it.validOn(today) && packsLeftToBuy(it)?.dealFits != false }?.let(::saving)
+fun ShoppingItem.savingToday(shops: Set<Store>, today: String, preferFitting: Boolean = PREFER_FITTING_OFFER): Double? =
+    bestOffer(shops, today, preferFitting)?.takeIf { it.validOn(today) && fits(it) }?.let(::saving)

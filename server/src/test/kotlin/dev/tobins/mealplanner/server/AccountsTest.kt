@@ -29,6 +29,7 @@ import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.PlanPriority
 import dev.tobins.mealplanner.api.PrepInput
@@ -56,6 +57,7 @@ import dev.tobins.mealplanner.api.StandardMeals
 import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.api.ToppingInput
 import dev.tobins.mealplanner.api.ToppingsInput
+import dev.tobins.mealplanner.api.VerdictKind
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeekPlanning
@@ -677,6 +679,52 @@ class AccountsTest {
         // Her own choice of stores is what limits hers.
         alice.put("/api/shops") { setBody(ShopsSetting(listOf(Store.LIDL))) }
         assertEquals(emptyList(), alice.verdicts())
+    }
+
+    @Test
+    fun theVerdictsReachTheAppWithTheOffersAndTheListOfTheirAccountOnly() = testApplication {
+        val today = serverToday()
+        val week = today.with(java.time.DayOfWeek.MONDAY).toString()
+        val samphire = Offer(Store.AH, "AH Zeekraal 100 gram", "1+1 gratis", category = "Groente, aardappelen", validFrom = today.toString(), validUntil = today.plusDays(6).toString())
+        val ah = object : OfferSource {
+            override val store = Store.AH
+            override suspend fun fetch() = listOf(samphire)
+        }
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = listOf(ah), priceSource = null, generator = null, verifier = TestTokens) }
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        suspend fun HttpClient.offered() = get("/api/offers").body<OffersState>().offers.single().verdict?.verdict
+        suspend fun HttpClient.listed() = get("/api/plans/$week/shopping").body<ShoppingList>().items.flatMap { it.offers }.map { it.verdict?.verdict }
+        // Alice cooks with samphire this week; Bob plans a meal of his own, without it.
+        for (name in listOf("alice", "bob")) {
+            val client = if (name == "alice") alice else bob
+            val line = if (name == "alice") "100 | g | zeekraal" else "100 | g | rice"
+            client.post("/api/ingredients") { setBody(IngredientInput(if (name == "alice") "Zeekraal" else "Rice")) }
+            val recipe = client.post("/api/recipes") { setBody(RecipeInput("Dinner", 1, line)) }.body<RecipeDetail>().summary
+            db.planQueries.upsertMeal(db.userQueries.selectBySubject("sub-$name").executeAsOne().id, week, 0, "DINNER", recipe.id, recipe.title, 1.0, 100.0, 5.0, 0, 0, "PLANNED")
+        }
+        alice.post("/api/offers/refresh")
+
+        assertEquals(VerdictKind.NOT_ENOUGH_HISTORY, alice.offered())
+        assertEquals(listOf(VerdictKind.NOT_ENOUGH_HISTORY), alice.listed())
+        // Bob sees the shared offer, but no verdict of hers on it, and nothing of her list.
+        assertNull(bob.offered())
+        assertEquals(emptyList(), bob.listed())
+        // A tick's answer carries the verdicts too, as the app shows the list it brings.
+        val key = alice.get("/api/plans/$week/shopping").body<ShoppingList>().items.single().key
+        val ticked = alice.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(key, true)) }.body<ShoppingList>()
+        assertEquals(listOf(VerdictKind.NOT_ENOUGH_HISTORY), ticked.items.flatMap { it.offers }.map { it.verdict?.verdict })
+        // What Bob chooses changes nothing of hers; her own stores do.
+        bob.put("/api/shops") { setBody(ShopsSetting(listOf(Store.JUMBO))) }
+        assertEquals(VerdictKind.NOT_ENOUGH_HISTORY, alice.offered())
+        alice.put("/api/shops") { setBody(ShopsSetting(listOf(Store.LIDL))) }
+        assertNull(alice.offered())
+        assertEquals(listOf<VerdictKind?>(null), alice.listed())
+        // Another day's offers are not judged: a verdict is about today.
+        alice.put("/api/shops") { setBody(ShopsSetting(listOf(Store.AH))) }
+        assertNull(alice.get("/api/offers?date=${today.plusDays(1)}").body<OffersState>().offers.single().verdict)
     }
 
     @Test

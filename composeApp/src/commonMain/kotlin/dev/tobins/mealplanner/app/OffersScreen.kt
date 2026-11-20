@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,11 +40,13 @@ import kotlinx.coroutines.launch
 
 /**
  * This week's store offers. By default only those for ingredients in the catalogue,
- * which are the ones that can end up in a plan.
+ * which are the ones that can end up in a plan. An offer the server judged by its price history says
+ * so under its deal, and a tap opens the verdict at length ([VerdictDetail]); [initiallyOpen] are the
+ * titles of offers open from the start, for the screenshots.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
+fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit, initiallyOpen: Set<String> = emptySet()) {
     val t = LocalStrings.current
     val today = rememberToday()
     val loaded = rememberLoad<OffersState>("offers")
@@ -108,7 +111,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit) {
                         }
                     }
                     items(shown, key = { "${it.store}|${it.url ?: it.title}|${it.validFrom}" }) { offer ->
-                        OfferRow(offer)
+                        OfferRow(offer, initiallyOpen = offer.title in initiallyOpen)
                         HorizontalDivider()
                     }
                 }
@@ -143,10 +146,24 @@ private fun SourceLine(status: OfferSourceStatus) {
     }
 }
 
+/** One offer; with a verdict, a tap opens and closes it at length under the row. */
 @Composable
-private fun OfferRow(offer: Offer) {
+private fun OfferRow(offer: Offer, initiallyOpen: Boolean) {
     val t = LocalStrings.current
-    Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    val verdict = offer.verdict
+    var open by rememberSaveable { mutableStateOf(initiallyOpen) }
+    val opens = if (verdict == null) Modifier else Modifier.clickable(onClickLabel = t(if (open) Msg.VERDICT_HIDE else Msg.VERDICT_SHOW)) { open = !open }
+    Column(opens.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp)) {
+        OfferLine(offer)
+        // Under the text, past the picture.
+        if (open && verdict != null) VerdictDetail(verdict, Modifier.padding(start = 48.dp + 12.dp, top = 6.dp))
+    }
+}
+
+@Composable
+private fun OfferLine(offer: Offer) {
+    val t = LocalStrings.current
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         ProductPicture(offer.imageUrl, offer.title)
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             offer.ingredientName?.let {
@@ -158,6 +175,7 @@ private fun OfferRow(offer: Offer) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            VerdictLabel(offer.verdict)
         }
     }
 }

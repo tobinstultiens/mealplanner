@@ -242,7 +242,12 @@ A row with an offer also says what to pick up (`PackSize.toBuy`, in the app only
 (`2 × 700 g`), from the offer's pack size and the weight (or, for packs in pieces, the pieces) the
 recipes need. When the deal wants more packs than that (`1+1 gratis` for one pack: `1 × 500 g · deal
 needs 2`) its saving is left out of the sums. Nothing is said when the pack cannot be read, or the item
-has no weighed amount.
+has no weighed amount. Such a deal gives way to another offer valid today, at a store in use, that saves something and
+fits (issue 105, the owner's "Switch it on" on #118; `PREFER_FITTING_OFFER` in `shared/.../shopping/RowSaving.kt`, a
+constant shared by the app and the server): 450 g of chicken goes by AH's 300 g at 25 % off (`2 × 300 g`), not by
+Jumbo's "1+1 gratis" on 500 g, for its badge, its store group, its saving and the saving its tick keeps. When none fits,
+the deal that saves most stays, with `deal needs 2` and no saving. The app up to v0.1.9 still counts by the rule from
+before, which kept the deep deal; a row it ticks gets the saving the server works out by this rule.
 Regular prices are AH's, so for Jumbo and Lidl that saving is an estimate against AH's price, and the
 app says so.
 
@@ -358,10 +363,13 @@ many have a category, an address and a price per litre, the recordings and timin
 
 For each of an account's offers, the server says whether it is a good deal compared with the same product's own
 history at the same store (`history/DealVerdict.kt`, `history/OfferPeriods.kt`, `history/RegularPrices.kt`,
-`DealVerdictRepository`). For now only `GET /api/offers/verdicts` gives the verdicts, so that the owner can read what
-they say about real offers before the app shows them (issue 118, step c); no app calls it, and its response type is the
-server's own (`DealVerdicts`), not one of the shared API types, so it may still change. It answers for the calling
-account only, reads and writes nothing else, and needs a login like every `/api/` route.
+`DealVerdictRepository`). The app gets them with the offers (issue 118, step c): each judged offer of `GET /api/offers`
+for today and of every answer that carries the week's shopping list has its verdict as `Offer.verdict` (`PriceVerdict`,
+an optional field of the shared API, below "In the app"), so the list the app keeps for the store, where it may have no
+network, keeps its verdicts too. `GET /api/offers/verdicts` gives them with everything they rest on and an English
+summary, for reading; its response type is the server's own (`DealVerdicts`), not one of the shared API types, so it may
+still change. Both answer for the calling account only, read and write nothing else, and need a login like every
+`/api/` route. A failure while judging leaves the offers and the list without verdicts rather than failing them.
 
 **Which offers, and whose.** The offers valid today at the stores the account shops at that match one of its own
 ingredients, as `/api/offers` matches them. The history is shared, but its rows are matched again with the account's
@@ -391,6 +399,26 @@ with each promotion, also for the same product the next week ("Mandarijnen, Net 
 the next). Telling products apart by it would make every week of a Jumbo product a product of its own. So they are told
 apart by the pack (the owner's decision, issue 197); two products under one title and one pack would still share a
 history.
+
+**Which texts are one pack** (`history/Packs.kt`, issue 118). A pack written another way one week would start a history
+of its own and stay "not enough history" for longer, so when the history is read (never when it is written: the rows
+keep the store's text) the pack texts of one product are compared without:
+- markup and Jumbo's footnotes, the lines of a subtitle after a line break that start with "M.u.v." (what the deal leaves
+  out), "De korting is al verwerkt …" or "Maximaal N … per bestelling": "Alle flesjes à 500 ml, per flesje<br />M.u.v.
+  Gekoeld", with or without empty lines after it, is "Alle flesjes à 500 ml, per flesje". Other lines stay: "Land van
+  herkomst: Frankrijk" and "…: Italië" tell two wines apart;
+- the weight of an approximate pack ("ca. 450 g", "Schaal circa 700 gram"): those alike but for a weight within 5 % of the
+  lightest of them (`SAME_PACK_SHARE`) are one pack, known by the lightest's text. A pack a tenth heavier is another one,
+  and so is a weight the store states exactly.
+
+Measured on the offers stored on 15, 16, 18 and 20 November 2026 (420 products of a store and title seen on more than one
+night): 5 had another set of pack texts from one night to the next, and none was one pack written another way. Four were
+Jumbo brand titles of which one product ended (Conference peren "Los per kilo", Croky, Duyvis and Lipton's 1,5 litre),
+and one was Lidl's smoothie, whose "500 ml" was gone from the second night on; a pack without a size is not taken for
+one with it. AH gives no pack size: its sizes are in the title ("AH Mager rundergehakt 300 gram"), and no AH title of
+those nights differed from another only in its size. Should an AH weight drift ("ca. 450 g" one week, "ca. 460 g" the
+next), that title is another product, which these rules do not join. Left alone too, as they can mean another product:
+", per fles" or not, and "Los, per kilo" against "Los, per stuk".
 
 **Which rows are one offer, and which offers are earlier** (`joinOffers`, `judge`). Rows of one product (store and
 title) are one offer when they have the same pack and the same deal as the customer sees it (the deal text, or for an
@@ -552,7 +580,40 @@ alongside may have run all along. When the product came in other packs too, it s
 before in this pack", "less than ever in this pack", "no earlier offer of this pack ended"). The response gives, with
 each earlier offer and offer alongside, its pack, its price and whether it ended early, and the cheaper pack
 (`cheaperPack`: the offer, the measure, today's value in it, and whether it is shown now); all of these were added
-in issue 197 and are optional.
+in issue 197 and are optional. Each offer named also has its pack in short (`packName`, below).
+
+**In the app** (issue 118, step c). `Offer.verdict` (`api/Verdicts.kt`) holds the facts the app words, in English and
+Dutch: the verdict, the measure, today's and the usual value, whether a usual deal is better than usual, the latest offer
+at least as cheap, the days read and needed, whether the product came in other packs ("for this pack"), a raise, the
+offer cheaper now, the cheaper pack, the offers alongside (without those already named) and the five latest earlier
+offers of the pack, newest first. Each offer named gives its store dates, its deal text or else its price, its value in
+the verdict's measure, whether it ended early, and, where it is another pack than today's, a short name of that pack.
+The short name (`packName`) is made on the server so that the app need not read the stores' texts: the size alone, in
+units' symbols and with the stores' decimal comma, so it reads the same in both languages ("Alle flessen à 1,5 liter" is
+"1,5 l", "Tray 24x250ml" "24 × 250 ml", "Schaal circa 700 gram, per 100 gram" "ca. 700 g", "1 stuk, doorsnede van 14 cm"
+"14 cm"); none for a text with several sizes ("Zak 500 gram of 1 kilo"), a count of pieces or no size, and the app then
+names the offer by its deal. Every field has a default and the enums read as their default when unknown, so a later
+server can add a verdict without breaking this app.
+
+The app shows a few words under the deal, on the Offers screen and on a line of its own under the shopping row (by
+section and per store; the row's whole width, aligned under the deal chip, so the words wrap between words only at any
+font size), only for the verdicts that call for action (the owner's choice on #118): "Real deal" (in the theme's
+primary colour and bold, the only one that stands out), "Can be cheaper", "No real discount" and "Usually cheaper".
+Nothing for a usual deal, one better than usual or always on offer, while there is not enough history (every offer for
+the first eight weeks of recording), or with nothing to compare by, so that the screens do not fill with it; the detail
+says each of them. A tap on an offer opens the verdict at length under it: one line ("Real deal: lowest so far,
+€13.30/kg", "Usually cheaper: €2.34, now €2.75 (last on 1 Nov)", "Too new to judge (2 of 56 days)"), the other pack, a raise and the
+offers alongside, and the latest earlier offers ("19–25 Oct · "1+1 gratis" · €1.87/kg · Ended early"). An earlier offer
+is named by the days it ran ("as low as before (19–25 Oct)"), and "last on" names the last of them. A line that holds
+today's offer against an earlier price gives today's in the same terms ("now €2.75"), as the deal chip beside it shows a
+pack's price, which a price per kg cannot be compared with by eye. A tap on a
+shopping row's deal chip shows the same line and notes under the deal in the snackbar; when an offer of the row has
+earlier offers, the snackbar has "Price history", which opens the same detail as the Offers screen in a dialog (a
+snackbar has no room for a list). Early on, with no earlier offers yet, the snackbar is as it was.
+
+Every answer that carries the shopping list, ticks included, judges the account's offers again. On a made-up year of
+history (26,281 rows, 1,113 recordings, a file database, `DealVerdictRealDataTest`) that took 41 to 60 ms for an account
+with 39 offers for its ingredients, on a desktop processor; nothing is kept in memory between answers.
 
 A copy of a real database can be read with
 `PRICE_HISTORY_DB=/path/to/copy.db ./gradlew :server:test --tests '*DealVerdictRealDataTest*' --rerun -i`: it copies the
