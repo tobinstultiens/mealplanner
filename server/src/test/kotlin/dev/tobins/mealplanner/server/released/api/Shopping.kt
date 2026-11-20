@@ -1,4 +1,4 @@
-// Frozen from v0.1.8 (1a56aa21c718bafd22d7c56d7176ef7e8bf7ca1c) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.9 (e273653477d0addbc6702688ec2e111c6fe11c0a) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.EncodeDefault
@@ -171,6 +171,12 @@ data class ShoppingList(
      * never take it for something to buy.
      */
     val noLongerNeeded: List<ShoppingItem> = emptyList(),
+    /**
+     * The first day (a Monday, ISO) of the earliest week whose list bought a prepped batch eaten in this week (issue
+     * 263): a batch is bought in the week it is made, so its meals and sides here buy nothing. Null when none of this
+     * week's meals or sides is of a batch made in an earlier week. For the app to say why such a week has nothing to buy.
+     */
+    val preppedBoughtIn: String? = null,
 )
 
 /**
