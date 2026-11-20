@@ -816,8 +816,9 @@ What a run takes from outside the repository, and what holds each still:
   on `gradle/libs.versions.toml` and that lock, saved only by a green job, so the registry is needed only
   when one of them changes.
 - **The browser** for the Wasm tests: Chrome for Testing at the version `CHROME_VERSION` in the `test` job,
-  checked against `CHROME_SHA256`, kept in the cache and handed to Karma as `CHROME_BIN`; it is downloaded
-  only when the cache has no copy. A new version needs both values (the hash of
+  checked against `CHROME_SHA256`, kept in the cache and handed to Karma as `CHROME_BIN`, with its setuid
+  sandbox helper (`CHROME_DEVEL_SANDBOX`: Ubuntu forbids the user namespaces of Chrome's other sandbox); it is
+  downloaded only when the cache has no copy. A new version needs both values (the hash of
   `chrome-linux64.zip`). Locally Karma uses the Chrome it finds, or `CHROME_BIN`.
 - **The JDK** is the latest Temurin 17 that `actions/setup-java` offers, and Gradle the wrapper's; each Gradle
   job prints them first (`./gradlew --version`), the `test` job also the browser's version.

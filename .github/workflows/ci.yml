@@ -50,11 +50,17 @@ jobs:
             "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-linux64.zip"
           echo "$CHROME_SHA256  $RUNNER_TEMP/chrome.zip" | sha256sum --check
           unzip -q "$RUNNER_TEMP/chrome.zip" -d ~/chrome-for-testing
-      # Karma starts the browser named by CHROME_BIN. Started once here, so a browser that cannot run fails
-      # in this step and says so, not as a test failure.
+      # Karma starts the browser named by CHROME_BIN. Ubuntu forbids the user namespaces Chrome's sandbox
+      # needs, so it uses its setuid helper, as the packaged Chrome does; the cache does not keep the owner and
+      # the setuid bit, hence on every run. Started once here, so a browser that cannot run fails in this step
+      # and says so, not as a test failure.
       - name: Versions
         run: |
           chrome=$HOME/chrome-for-testing/chrome-linux64/chrome
+          sudo chown root:root "$chrome"_sandbox
+          sudo chmod 4755 "$chrome"_sandbox
+          echo "CHROME_DEVEL_SANDBOX=${chrome}_sandbox" >> "$GITHUB_ENV"
+          export CHROME_DEVEL_SANDBOX=${chrome}_sandbox
           echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
           echo "YARN_CACHE_FOLDER=$HOME/.cache/yarn" >> "$GITHUB_ENV"
           "$chrome" --version
