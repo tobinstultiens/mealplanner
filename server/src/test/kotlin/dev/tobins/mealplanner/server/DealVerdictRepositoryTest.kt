@@ -40,9 +40,9 @@ class DealVerdictRepositoryTest {
         return listOfNotNull(samphire, Offer(Store.AH, "AH Jong belegen kaas", "25% korting", category = "Kaas", validFrom = monday, validUntil = sunday))
     }
 
-    private fun recordTenWeeks() {
+    private fun recordTenWeeks(store: Store = Store.AH, offersOn: (Int) -> List<Offer> = ::offersOn) {
         val source = object : OfferSource {
-            override val store = Store.AH
+            override val store = store
             var night = 0
             override suspend fun fetch() = offersOn(night)
         }
@@ -93,6 +93,29 @@ class DealVerdictRepositoryTest {
         // Only at the stores he shops at.
         assertEquals(emptyList(), verdicts(bob, shops = setOf(Store.JUMBO, Store.LIDL)))
         assertEquals(listOf("Zeekraal"), verdicts(alice).map { it.ingredient })
+    }
+
+    /** Issue 197: "now" is what the store shows today, not what its dates say. */
+    @Test
+    fun aPriceTheStoreReplacedMidWeekIsNoLongerOnOffer() {
+        val alice = users.resolve(Identity("sub-alice", "alice")).id
+        IngredientRepository(db, foods, alice).create(IngredientInput("Kipfilet"))
+        // Lidl: chicken for 2,29 on Thursday and Friday, then 2,49 on the same dates (nights 66 to 72).
+        recordTenWeeks(Store.LIDL) { n ->
+            val chicken = when (n) {
+                66, 67 -> 2.29
+                in 68..72 -> 2.49
+                else -> null
+            }?.let { Offer(Store.LIDL, "Kipfilet", null, it, packSize = "500 g", validFrom = serverDay(night(66)).toString(), validUntil = serverDay(night(72)).toString()) }
+            listOfNotNull(chicken, Offer(Store.LIDL, "Jong belegen kaas", null, 4.99, validFrom = serverDay(night(n)).toString(), validUntil = serverDay(night(n)).toString()))
+        }
+
+        val verdict = verdicts(alice).single()
+        // Today's 2,49 for 500 g, €4,98 a kg; 2,29 is not on offer now, and ended early.
+        assertEquals(4.98 to emptyList(), verdict.value to verdict.alongside)
+        assertEquals(listOf(Triple(2.29, "2026-11-19", true)), verdict.earlier.map { Triple(it.price, it.from, it.endedEarly) })
+        assertEquals(Verdict.NOT_ENOUGH_HISTORY, verdict.verdict, verdict.summary)
+        assertEquals(false, "Also on offer now" in verdict.summary, verdict.summary)
     }
 
     private companion object {

@@ -98,6 +98,27 @@ data class CurrentOffer(val offer: Offer) {
 }
 
 /**
+ * What the store shows today, which "right now" goes by (issue 197): the rows of its latest [recording] and its stored
+ * offers, the [page] (both from one refresh, unless recording that refresh failed). A store's dates alone do not say an
+ * offer is still there: Lidl changes a price mid-week on the same dates, and an offer dated over months can be
+ * withdrawn long before its end.
+ */
+class TodaysPage(private val rows: List<OfferPeriod>, private val recording: Instant?, private val page: List<CurrentOffer>) {
+    /**
+     * [run] as the store shows it today, or null when it shows it no more. Its dates stay the store's; its price is
+     * the one shown today, from the page or else the latest recording (the lower, should it show two), never the
+     * lowest price the run had, which may be gone: "cheaper right now" is about what can be bought now.
+     */
+    fun asShown(run: OfferPeriod): OfferPeriod? {
+        val onPage = page.filter { it.isItself(run) }.map { Triple(it.identity, it.offer.deal, it.measures) }
+        val recorded = rows.filter { recording != null && it.lastSeen >= recording && it.offerKey == run.offerKey && it.touches(run.validFrom, run.validUntil) }
+            .map { Triple(it.identity, it.deal, it.measures) }
+        val (identity, deal, measures) = onPage.ifEmpty { recorded }.reduceOrNull { a, b -> if (cheaper(b.first, a.first)) b else a } ?: return null
+        return run.copy(identity = identity, deal = deal, measures = measures)
+    }
+}
+
+/**
  * The deal as the customer sees it: the store's deal text ("25% korting", "VOOR 1.99"), or, for an offer without
  * one (Lidl), its price. The price of a deal with a text is not part of it: AH states a price with some "25%
  * korting" offers, which moves with the price before while the deal stays the same.
@@ -124,7 +145,8 @@ private fun cheaper(a: OfferIdentity, b: OfferIdentity): Boolean = compareValues
  * - A price that changed while the deal stayed (AH showing another price before mid-week, and a "25% korting"
  *   price with it) is the same offer. It is measured at its lowest price, the row with the lowest price before
  *   ([cheaper]): the price the customer could have had while it ran, against the lowest price before it, as a
- *   reduction is measured ([REFERENCE_DAYS]). Today's offer is not measured so: [judge] takes it as it is today.
+ *   reduction is measured ([REFERENCE_DAYS]). Offers shown today are not measured so: [judge] takes today's offer,
+ *   and those running alongside it, as the store shows them today ([TodaysPage]).
  * Dates that neither share a day nor run on mean the store ended the offer and began it again: two offers.
  */
 fun joinOffers(periods: List<OfferPeriod>): List<OfferPeriod> =
