@@ -62,6 +62,8 @@ import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShopsSetting
+import dev.tobins.mealplanner.api.StandardMeal
+import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.api.Store
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
@@ -218,13 +220,46 @@ private fun removePrepQuestion(made: Boolean = false, sides: Boolean = false, mi
 }
 
 @Composable
-private fun recipePicker(api: ApiClient) {
+private fun recipePicker(api: ApiClient, standard: Boolean = false) {
     val recipes by produceState<List<RecipeSummary>?>(null) { value = api.recipes() }
+    val t = LocalStrings.current
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(LocalStrings.current(Msg.PLAN_CHOOSE_FOR, "dinner", "Friday"), style = MaterialTheme.typography.headlineSmall)
-        // Two recipes of each group: the dialog lists 480 dp at most, and both headings are to be seen.
-        recipes?.filter { it.id in setOf(2L, 3L, 5L, 6L) }?.let { RecipePickerBody(it, MealSlot.DINNER, onBrowseBank = {}, onPick = {}) }
+        Text(t(Msg.PLAN_CHOOSE_FOR, "dinner", "Friday"), style = MaterialTheme.typography.headlineSmall)
+        // Two recipes of each group: the dialog lists 480 dp at most, and both headings are to be seen. With [standard] the two out
+        // of the rotation are standard meals, first under their own heading, for a later meal of a prep still to make (issue 265).
+        recipes?.filter { it.id in setOf(2L, 3L, 5L, 6L) }?.let {
+            if (standard) {
+                RecipePickerBody(it, MealSlot.DINNER, standard = setOf(3L, 6L), note = t(Msg.PICKER_SHRINKS_PREP), onBrowseBank = {}, onPick = {})
+            } else {
+                RecipePickerBody(it, MealSlot.DINNER, onBrowseBank = {}, onPick = {})
+            }
+        }
     }
+}
+
+/** Two standard meals for lunch (issue 265), the second with an ingredient that is out. */
+private val sampleStandardMeals = listOf(
+    StandardMeal(3, "Tuna pasta salad", MealSlot.LUNCH, 1.0, 610.0, 38.0, 4.0),
+    StandardMeal(6, "Shakshuka with feta and crusty bread", MealSlot.LUNCH, 1.25, 700.0, 36.0, 6.0, missing = listOf("Eggs", "Feta")),
+)
+
+/** The skip sheet's body, as the Plan shows it when a lunch is skipped: a dialog is a window the picture does not include. */
+@Composable
+private fun skipSheet() {
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(LocalStrings.current(Msg.SKIP_SHEET_TITLE, "Chickpea salad with feta and roasted peppers"), style = MaterialTheme.typography.headlineSmall)
+        SkipSheetBody(sampleStandardMeals, enabled = true) {}
+    }
+}
+
+/** A recipe's standard-meal switch just turned on: what it made staples, and a line linked to nothing. */
+@Composable
+private fun standardSwitch() {
+    val marked = StandardSwitch(
+        RecipeDetail(keepingRecipe.copy(standardMeal = true), emptyList(), "", emptyList()),
+        addedStaples = listOf("Chicken thigh fillet", "Coconut milk", "Spinach"), unlinked = listOf("lemon, juiced"),
+    )
+    Column(Modifier.padding(16.dp)) { StandardMealRow(standard = true, report = marked, enabled = true) {} }
 }
 
 /** The cooking-site dialog's body on a server that offers its site, with [choice] made and [url] typed. */
@@ -315,6 +350,8 @@ enum class Shot(
     val weekRest: Boolean = false,
     /** The prep of [prepped] kept vacuum sealed (issue 263). */
     val vacuum: Boolean = false,
+    /** The fake backend's week with standard meals and today's lunch skipped (issue 265). */
+    val standardMeals: Boolean = false,
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
     val dutch: Boolean = false,
     val heightDp: Int = 640,
@@ -387,6 +424,19 @@ enum class Shot(
     // No recipe of mine is in the rotation, so the week stays empty and says why, with a way to the Recipes tab.
     PLAN_EMPTY_ROTATION(emptyWeek = true, emptyRecipes = true, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     RECIPE_PICKER(heightDp = 1300, content = { api, _ -> recipePicker(api) }),
+    // Standard meals (issue 265): Today with a skipped lunch and its chips, the Plan's skip sheet, the recipe's switch and the
+    // picker with them first; in Dutch, and the sheet, switch and picker at font scale 2.
+    TODAY_STANDARD(standardMeals = true, heightDp = 1500, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    TODAY_STANDARD_NL(standardMeals = true, dutch = true, heightDp = 1600, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    SKIP_SHEET(heightDp = 420, content = { _, _ -> skipSheet() }),
+    SKIP_SHEET_NL(dutch = true, heightDp = 460, content = { _, _ -> skipSheet() }),
+    SKIP_SHEET_X2(heightDp = 760, fontScale = 2.0f, content = { _, _ -> skipSheet() }),
+    STANDARD_SWITCH(heightDp = 340, content = { _, _ -> standardSwitch() }),
+    STANDARD_SWITCH_NL(dutch = true, heightDp = 400, content = { _, _ -> standardSwitch() }),
+    STANDARD_SWITCH_X2(heightDp = 560, fontScale = 2.0f, content = { _, _ -> standardSwitch() }),
+    RECIPE_PICKER_STANDARD(heightDp = 1400, content = { api, _ -> recipePicker(api, standard = true) }),
+    RECIPE_PICKER_STANDARD_NL(dutch = true, heightDp = 1400, content = { api, _ -> recipePicker(api, standard = true) }),
+    RECIPE_PICKER_STANDARD_X2(heightDp = 2200, fontScale = 2.0f, content = { api, _ -> recipePicker(api, standard = true) }),
     SHOPPING(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false) }),
     SHOPPING_MODE(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = true) }),
     SHOPPING_WITHOUT_JUMBO(heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false, shops = setOf(Store.AH, Store.LIDL)) }),
@@ -585,6 +635,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     private val backend = FakeBackend(
         shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, mixed = shot.mixed, tailOnly = shot.tailOnly, weekRest = shot.weekRest,
         vacuum = shot.vacuum,
+        standardMeals = shot.standardMeals,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)

@@ -51,6 +51,7 @@ import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKeeps
+import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeCost
 import dev.tobins.mealplanner.api.RecipeNutrition
@@ -163,6 +164,8 @@ fun RecipeDetailScreen(
     // A recipe of the bank is read-only until it is added: whether the planner may pick it is asked for with the adding.
     var pickOnAdd by rememberSaveable(recipeId) { mutableStateOf(true) }
     var acting by remember { mutableStateOf(false) }
+    // What marking it a standard meal here made staples (issue 265), said under the switch while the recipe is open.
+    var standardMarked by remember(recipeId) { mutableStateOf<StandardSwitch?>(null) }
     var confirmingDelete by remember { mutableStateOf(false) }
     // Cook mode and its ticks live as long as the recipe is open (App forgets them with the screen).
     var cookMode by rememberSaveable(recipeId) { mutableStateOf(initiallyCooking) }
@@ -338,6 +341,24 @@ fun RecipeDetailScreen(
                                 val result = load { api.setRecipeRotation(recipeId, inRotation) }
                                 acting = false
                                 settle(result, Msg.ROTATION_FAILED)
+                            }
+                        }
+                        // A building block is no standard meal (issue 265). Busy while saving, as for the rotation.
+                        if (recipe.summary.kind == RecipeKind.MEAL) {
+                            StandardMealRow(recipe.summary.standardMeal, standardMarked, enabled = !acting) { standard ->
+                                acting = true
+                                scope.launch {
+                                    val result = load { api.setStandardMeal(recipeId, standard) }
+                                    acting = false
+                                    when (result) {
+                                        is Load.Ready -> {
+                                            standardMarked = result.value.takeIf { standard }
+                                            state = Load.Ready(result.value.recipe)
+                                        }
+                                        is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.STANDARD_FAILED))
+                                        Load.Loading -> Unit
+                                    }
+                                }
                             }
                         }
                         PlannerSettings(recipe.summary) { settings ->

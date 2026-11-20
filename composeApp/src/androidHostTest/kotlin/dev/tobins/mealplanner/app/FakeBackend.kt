@@ -45,6 +45,12 @@ import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.SparePortion
+import dev.tobins.mealplanner.api.ClosedSlot
+import dev.tobins.mealplanner.api.StandardChosen
+import dev.tobins.mealplanner.api.StandardInput
+import dev.tobins.mealplanner.api.StandardMeal
+import dev.tobins.mealplanner.api.StandardMeals
+import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.LaterShortfall
@@ -103,6 +109,12 @@ class FakeBackend(
     private val growing: Boolean = false,
     /** Friday's dinner (the lentil soup, whose leftovers are Saturday's lunch) is eaten, so that lunch keeps its recipe too (issue 191). */
     private val dinnerEaten: Boolean = false,
+    /**
+     * The tuna pasta salad and the shakshuka are standard meals (issue 265), offered for lunch and dinner, the shakshuka with
+     * no eggs at home; today's (Wednesday's) lunch is skipped; the eaten breakfast takes none. Without it the server is one
+     * from before standard meals.
+     */
+    private val standardMeals: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -208,6 +220,12 @@ class FakeBackend(
             parts.size == 3 && parts[1] == "plans" -> json.encodeToString(plan(parts[2]))
             // What was in a meal; every meal of the week is Wednesday's dinner here.
             parts.size == 7 && parts[1] == "plans" && parts[6] == "lines" -> json.encodeToString(mealLines(method, sent))
+            parts.size == 4 && parts[1] == "plans" && parts[3] == "standard-meals" -> if (standardMeals) json.encodeToString(standardOffer(parts[2])) else null
+            // A standard meal in a slot: the week as it was, as the test reads what was sent; the eggs are staples again.
+            method == "PUT" && parts.size == 7 && parts[1] == "plans" && parts[6] == "standard" -> {
+                changes += "PUT $path $sent"
+                json.encodeToString(StandardChosen(plan(parts[2]), addedStaples = listOf("Eggs")))
+            }
             // Choosing a recipe for a meal: the plan, which already has such a choice.
             parts.size == 6 && parts[1] == "plans" && parts[3] == "meals" -> json.encodeToString(plan(parts[2]))
             parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(shopping(parts[2]))
@@ -279,6 +297,7 @@ class FakeBackend(
                 index == 4 && meal.slot == MealSlot.DINNER ->
                     meal.copy(recipeId = 5, title = "Lentil soup", locked = true, fibreG = 12.6, status = if (dinnerEaten) MealStatus.EATEN else MealStatus.PLANNED)
                 index == 5 && meal.slot == MealSlot.LUNCH -> meal.copy(recipeId = 5, title = "Lentil soup", leftover = true, fibreG = 12.6)
+                standardMeals && index == 2 && meal.slot == MealSlot.LUNCH -> meal.copy(status = MealStatus.SKIPPED)
                 else -> meal
             }
         }.map { meal -> if (prepped) prepped(meal) else meal }.map { meal -> if (sides || mixed) withSide(meal) else meal }.map { meal ->
@@ -388,6 +407,22 @@ class FakeBackend(
         rest = if (emptyWeek || !weekRest) emptyList() else listOf(
             WeekRest("Crème fraîche", 100.0, 1.10), WeekRest("Koriander", 12.0, 0.60), WeekRest("Bieslook", 8.0, 0.40),
             WeekRest("Gember", 25.0, 0.20), WeekRest("Peterselie", 10.0, 0.10),
+        ),
+    )
+
+    /** The standard meals of [standardMeals] for each of their slots, sized as the server would; the eaten breakfast takes none. */
+    private fun standardOffer(weekStart: String) = StandardMeals(
+        weekStart,
+        meals = listOf(MealSlot.LUNCH, MealSlot.DINNER).flatMap { slot ->
+            listOf(
+                StandardMeal(3, "Tuna pasta salad", slot, 1.0, 610.0, 38.0, 4.0),
+                StandardMeal(6, "Shakshuka", slot, 1.25, 700.0, 36.0, 6.0, missing = listOf("Eggs")),
+            )
+        },
+        // With [prepped], Monday's dinner makes the batch, which takes no standard meal, skipped or not.
+        closed = listOfNotNull(
+            ClosedSlot(2, MealSlot.BREAKFAST, "This meal was eaten already"),
+            ClosedSlot(0, MealSlot.DINNER, "This meal makes the prepped batch, which stays in the plan with it").takeIf { prepped },
         ),
     )
 
@@ -666,6 +701,14 @@ class FakeBackend(
                 val id = parts[2].toLong()
                 keepElsewhere(id, json.decodeFromString<RecipeKeeps>(sent))
                 detailJson(id)
+            }
+            // Marking a standard meal makes its ingredients staples; one line is linked to nothing.
+            "standard" -> {
+                val id = parts[2].toLong()
+                val standard = json.decodeFromString<StandardInput>(sent).standard
+                rows.replaceAll { if (it.id == id) it.copy(standardMeal = standard) else it }
+                val switch = if (standard) StandardSwitch(recipeDetail(id), listOf("Chicken thigh fillet", "Spinach"), listOf("juiced")) else StandardSwitch(recipeDetail(id))
+                json.encodeToString(switch)
             }
             "rotation" -> if (many) {
                 val input = json.decodeFromString<ManyRotationInput>(sent)

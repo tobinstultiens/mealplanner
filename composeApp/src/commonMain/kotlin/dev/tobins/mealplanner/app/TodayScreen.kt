@@ -47,6 +47,8 @@ import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.StandardMeal
+import dev.tobins.mealplanner.api.StandardMeals
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -75,6 +77,9 @@ fun TodayScreen(
     val snackbar = remember { SnackbarHostState() }
     val pictures by rememberRecipePictureUrls(api)
     val scope = rememberCoroutineScope()
+    // The week's standard meals (issue 265), offered under a skipped meal; none from a server before them.
+    val week = mondayOf(date)
+    var standard by remember(week) { mutableStateOf<StandardMeals?>(null) }
 
     LaunchedEffect(now) {
         if (now != today) {
@@ -84,6 +89,7 @@ fun TodayScreen(
         }
     }
     LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.day(date) } }
+    LaunchedEffect(week, reload, frontReturns) { (load { api.standardMeals(week) } as? Load.Ready)?.let { standard = it.value } }
 
     /** Shows another day the user stepped to, from its top. */
     fun show(other: String) {
@@ -145,6 +151,15 @@ fun TodayScreen(
                             onOpenSide = { side -> onOpenRecipe(side.recipeId, side.toCook(meal.status == MealStatus.SKIPPED)) },
                             onStatus = { status -> change { api.setMealStatus(day.weekStart, day.dayIndex, meal.slot, status) } },
                             onAdjust = { onAdjust(MealPlace(day.weekStart, day.dayIndex, meal.slot)) },
+                            // Only a skipped meal's place is offered: a chip there takes it at once.
+                            standardChoices = if (meal.status == MealStatus.SKIPPED) standardChoices(standard, day.dayIndex, meal.slot) else emptyList(),
+                            onPickStandard = { choice ->
+                                change {
+                                    // Today's and a past day's meal was eaten: that is why it is picked here.
+                                    val chosen = api.chooseStandard(day.weekStart, day.dayIndex, meal.slot, choice.recipeId, eaten = day.date <= today)
+                                    if (chosen.addedStaples.isNotEmpty()) scope.launch { snackbar.showSnackbar(t(Msg.STANDARD_RESTOCK, chosen.addedStaples.joinToString(", "))) }
+                                }
+                            },
                         )
                     }
                     if (day.extras.isNotEmpty()) SectionHeader(t(Msg.ALSO_EATEN))
@@ -243,6 +258,9 @@ private fun MealCard(
     onOpenSide: (MealSide) -> Unit,
     onStatus: (MealStatus) -> Unit,
     onAdjust: () -> Unit,
+    /** The standard meals that can take the skipped meal's place (issue 265); empty for any other meal. */
+    standardChoices: List<StandardMeal> = emptyList(),
+    onPickStandard: (StandardMeal) -> Unit = {},
 ) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
@@ -285,6 +303,10 @@ private fun MealCard(
                         TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text(t(Msg.UNDO)) }
                     }
                 }
+            }
+            if (standardChoices.isNotEmpty()) {
+                Text(t(Msg.STANDARD_INSTEAD), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                StandardChips(standardChoices, enabled = true, onPick = onPickStandard)
             }
         }
     }
