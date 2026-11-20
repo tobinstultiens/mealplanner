@@ -52,6 +52,8 @@ tasks.test {
     // Let PackRestMeasurementTest find a local checkout of the cooking repo and the NEVO file (neither is in CI).
     systemProperty("cookingRepo", providers.gradleProperty("cookingRepo").orElse(rootDir.resolve("../cooking").path).get())
     systemProperty("nevoCsv", providers.gradleProperty("nevoCsv").orElse(rootDir.resolve("data/nevo/NEVO2025_v9.0.csv").path).get())
+    // A database with a night of offers for PlanningSuggestionsMeasurementTest, read only (none by default: it is skipped).
+    systemProperty("offersDb", providers.gradleProperty("offersDb").orElse("").get())
 }
 
 // What the server says it runs (BuildInfo, GET /health): the commit (GITHUB_SHA in CI, else "dev") and the

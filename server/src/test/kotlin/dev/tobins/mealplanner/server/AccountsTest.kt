@@ -13,6 +13,8 @@ import dev.tobins.mealplanner.api.AuthConfig
 import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.DayView
+import dev.tobins.mealplanner.api.DinnerMove
+import dev.tobins.mealplanner.api.DinnerSuggestions
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.IngredientSection
@@ -56,6 +58,7 @@ import dev.tobins.mealplanner.api.ToppingInput
 import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.api.WeekPlanning
 import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.server.history.Verdict
 import dev.tobins.mealplanner.server.offers.OfferSource
@@ -344,6 +347,44 @@ class AccountsTest {
         assertEquals(alicesWeek, alice.get("/api/plans/$week").body<WeekPlan>())
         assertEquals(alicesPantry, alice.get("/api/pantry").body<Pantry>())
         assertEquals(setOf(stew.id), alice.get("/api/plans/$week/standard-meals").body<StandardMeals>().meals.mapTo(HashSet()) { it.recipeId })
+    }
+
+    @Test
+    fun anotherAccountsPlanningCanNeitherBeReadNorChanged() = testApplication {
+        start()
+        val week = "2026-11-16"
+        val profile = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        val (alice, bob) = listOf("alice", "bob").map { name -> clientFor(name).also { it.put("/api/profile") { setBody(profile) } } }
+        val (stew, soup) = listOf("Alice's stew", "Alice's soup").map { title ->
+            alice.post("/api/recipes") { setBody(recipe.copy(title = title, mealSlots = listOf(MealSlot.DINNER))) }.body<RecipeDetail>().summary
+        }
+        bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's stew", mealSlots = listOf(MealSlot.DINNER))) }
+        // Alice chooses her stew for the week's dinners and hides her soup.
+        alice.put("/api/plans/$week/planning/picks/${stew.id}")
+        val alicesPlanning = alice.put("/api/plans/$week/planning/not-this-week/${soup.id}").body<WeekPlanning>()
+        assertEquals(listOf(stew.id) to listOf(soup.id), alicesPlanning.picks.map { it.recipeId } to alicesPlanning.notThisWeek.map { it.recipeId })
+
+        // Bob reads none of it, finds none of her recipes, and can neither choose nor hide hers (404); taking hers out changes nothing.
+        val bobsPlanning = bob.get("/api/plans/$week/planning").body<WeekPlanning>()
+        assertEquals(emptyList(), bobsPlanning.picks)
+        assertEquals(emptyList(), bobsPlanning.notThisWeek)
+        assertEquals(0, bob.get("/api/plans/$week").body<WeekPlan>().dinnersChosen)
+        assertEquals(listOf("Bob's stew"), bob.get("/api/plans/$week/planning/suggestions?q=").body<DinnerSuggestions>().suggestions.map { it.title })
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/$week/planning/picks/${soup.id}").status)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/$week/planning/not-this-week/${stew.id}").status)
+        assertTrue(bob.delete("/api/plans/$week/planning/picks/${stew.id}").status.isSuccess())
+        assertTrue(bob.delete("/api/plans/$week/planning/not-this-week/${soup.id}").status.isSuccess())
+        // His "Done" plans his week with his own recipe, and leaves hers as they were.
+        val bobsWeek = bob.post("/api/plans/$week/planning/done").body<WeekPlan>()
+        assertTrue(bobsWeek.days.flatMap { it.meals }.none { it.recipeId == stew.id || it.recipeId == soup.id })
+        assertEquals(alicesPlanning, alice.get("/api/plans/$week/planning").body<WeekPlanning>())
+        assertEquals(1, alice.get("/api/plans/$week").body<WeekPlan>().dinnersChosen)
+
+        // Her "Done" puts her stew on a day; Bob can't move her dinner: his week has none there (his stew has no nutrition to plan with).
+        val alicesWeek = alice.post("/api/plans/$week/planning/done").body<WeekPlan>()
+        val dinner = alicesWeek.days.flatMap { it.meals }.single { it.recipeId == stew.id && it.slot == MealSlot.DINNER }
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/plans/$week/meals/${dinner.day}/DINNER/move") { setBody(DinnerMove((dinner.day + 1) % 7)) }.status)
+        assertEquals(alicesWeek, alice.get("/api/plans/$week").body<WeekPlan>())
     }
 
     @Test

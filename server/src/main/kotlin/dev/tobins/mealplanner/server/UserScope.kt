@@ -42,6 +42,7 @@ class UserScope(
         )
     }
     val preps by lazy { PrepRepository(db, accountId, plans, recipes, profiles, today) }
+    val planning by lazy { PlanningRepository(db, accountId, plans, recipes, stock, today) }
     val standardMeals by lazy { StandardMealRepository(db, recipes, ingredients, stock, plans, profiles) }
     val shopping by lazy {
         ShoppingListRepository(

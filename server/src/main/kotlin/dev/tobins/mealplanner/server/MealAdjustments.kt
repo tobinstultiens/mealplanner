@@ -65,11 +65,11 @@ class MealAdjustments(
      * catalogue as they are now, as fibre is for every meal; it is [PlannedMeal.adjusted]. Any other meal
      * keeps the kcal and protein stored when it was planned, with the fibre of its portions of the recipe.
      * So one rule holds for an adjusted meal's three numbers, and putting it back to its recipe needs
-     * nothing restored: the stored numbers were never changed.
+     * nothing restored: the stored numbers were never changed. [changes] are those of the week's meals as stored; a caller
+     * with meals not stored yet, which have none, passes none.
      */
-    fun withNutrition(start: LocalDate, meals: List<PlannedMeal>): List<PlannedMeal> {
+    fun withNutrition(start: LocalDate, meals: List<PlannedMeal>, changes: Map<Pair<Int, MealSlot>, Map<Long, Double>> = changesIn(start)): List<PlannedMeal> {
         val fibre = recipes.fibrePerServing(meals.map { it.recipeId })
-        val changes = changesIn(start)
         val adjusted = meals.filter { (it.day to it.slot) in changes }
         if (adjusted.isEmpty()) return meals.map { it.copy(fibreG = fibre[it.recipeId]?.let { perServing -> perServing * it.portions }) }
         val recipeLines = recipes.linesWithIngredients(adjusted.map { it.recipeId })

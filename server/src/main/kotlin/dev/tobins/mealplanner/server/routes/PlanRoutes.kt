@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.server.routes
 
+import dev.tobins.mealplanner.api.DinnerMove
 import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealChoice
@@ -68,10 +69,36 @@ fun Route.planRoutes() {
         // The standard meals for each of their slots, at the portion each gets, and the slots none can take (issue 265).
         get("/standard-meals") { call.respond(call.user.standardMeals.week(call.week())) }
 
+        // The planning screen (issue 255): the dinners chosen for the week and the recipes hidden for it, each change
+        // answering the WeekPlanning as it is then; the suggestions; and "Done", which plans the week with the chosen dinners.
+        route("/planning") {
+            get { call.respond(call.user.planning.get(call.week())) }
+            // ?seen=12,15 leaves out what the screen showed already ("Show others"); ?q=pasta searches every meal of mine.
+            get("/suggestions") {
+                val count = call.request.queryParameters["count"]?.let { it.toIntOrNull() ?: throw IllegalArgumentException("count must be a number") }
+                    ?: DEFAULT_SUGGESTIONS
+                call.respond(call.user.planning.suggestions(call.week(), call.seen(), count, call.request.queryParameters["q"]))
+            }
+            route("/picks/{recipeId}") {
+                put { call.respond(call.user.planning.pick(call.week(), call.recipeId())) }
+                delete { call.respond(call.user.planning.unpick(call.week(), call.recipeId())) }
+            }
+            route("/not-this-week/{recipeId}") {
+                put { call.respond(call.user.planning.hide(call.week(), call.recipeId())) }
+                delete { call.respond(call.user.planning.unhide(call.week(), call.recipeId())) }
+            }
+            post("/done") { call.respond(call.user.planning.done(call.week())) }
+        }
+
         route("/meals/{day}/{slot}") {
             // A standard meal in place of what is there, body {"recipeId": 12, "eaten": true}; locked, as a choice by hand.
             put("/standard") { call.respond(call.user.standardMeals.choose(call.week(), call.day(), call.slot(), call.receive<StandardChoice>())) }
             post("/reroll") { call.respond(call.user.plans.reroll(call.week(), call.day(), call.slot())) }
+            // A dinner to another day, body {"toDay": 3}, swapping with the dinner there (issue 255); 409 for one that stays.
+            post("/move") {
+                if (call.slot() != MealSlot.DINNER) throw IllegalArgumentException("Only a dinner moves to another day")
+                call.respond(call.user.plans.moveDinner(call.week(), call.day(), call.receive<DinnerMove>().toDay))
+            }
             put("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
             delete("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
             // The user's own choice of recipe, body {"recipeId": 12}; locked, so replanning keeps it.
@@ -114,3 +141,12 @@ fun Route.planRoutes() {
 }
 
 private fun RoutingCall.prepId() = parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Prep id must be a number")
+
+private fun RoutingCall.recipeId() = parameters["recipeId"]?.toLongOrNull() ?: throw IllegalArgumentException("Recipe id must be a number")
+
+/** The recipes the planning screen showed already, `?seen=12,15`; none without it. */
+private fun RoutingCall.seen(): Set<Long> = request.queryParameters["seen"].orEmpty().split(',').filter { it.isNotBlank() }
+    .mapTo(HashSet()) { it.trim().toLongOrNull() ?: throw IllegalArgumentException("seen must be recipe ids separated by commas") }
+
+/** Suggestions on one screen of the planning screen, as the owner asked for about six (issue 255). */
+private const val DEFAULT_SUGGESTIONS = 6

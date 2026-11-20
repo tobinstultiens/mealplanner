@@ -35,6 +35,54 @@ DELETE FROM planMeal WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?
 setLocked:
 UPDATE planMeal SET locked = ? WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?;
 
+-- The last week each recipe was eaten in before the given week (issue 255): planned there as a meal of its own, not
+-- skipped. A meal still planned in a week that is over counts as eaten, as nobody marks every meal.
+selectLastEaten:
+SELECT recipeId, max(weekStart) AS weekStart FROM planMeal
+WHERE userId = ? AND weekStart < ? AND status != 'SKIPPED' AND leftover = 0
+GROUP BY recipeId;
+
+-- A dinner chosen for a week on the planning screen (issue 255) and not yet put on a day, or (refused 1) a recipe hidden
+-- there for that week only ("Not this week"). The picks go when the week is planned with them, every row when the week
+-- is over, and a row with its recipe.
+CREATE TABLE planPick (
+    userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
+    weekStart TEXT NOT NULL,           -- ISO date of the plan's first day
+    recipeId INTEGER NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    refused INTEGER NOT NULL,          -- 0: chosen; 1: hidden for the week
+    position INTEGER NOT NULL,         -- the order the rows of a week were made in
+    PRIMARY KEY (userId, weekStart, recipeId)
+);
+
+CREATE INDEX planPick_recipe ON planPick(recipeId);
+
+-- The week's picks and hidden recipes, in the order they were made, with the title the recipe has now.
+selectPicks:
+SELECT planPick.recipeId, planPick.refused, recipe.title FROM planPick
+JOIN recipe ON recipe.id = planPick.recipeId AND recipe.userId = planPick.userId
+WHERE planPick.userId = ? AND planPick.weekStart = ?
+ORDER BY planPick.position;
+
+countPicks:
+SELECT count(*) FROM planPick WHERE userId = ? AND weekStart = ? AND refused = 0;
+
+-- Chooses a recipe or hides it, in place of what the row of it was, as the last of the week's rows.
+upsertPick:
+INSERT OR REPLACE INTO planPick (userId, weekStart, recipeId, refused, position)
+VALUES (:userId, :weekStart, :recipeId, :refused,
+    (SELECT coalesce(max(position), 0) + 1 FROM planPick WHERE userId = :userId AND weekStart = :weekStart));
+
+deletePick:
+DELETE FROM planPick WHERE userId = ? AND weekStart = ? AND recipeId = ? AND refused = ?;
+
+-- The week's picks once they are on days; the hidden recipes stay until the week is over.
+deletePicksPlaced:
+DELETE FROM planPick WHERE userId = ? AND weekStart = ? AND refused = 0;
+
+-- Every row of the weeks that started before the given ISO date, which are over.
+deletePicksEnded:
+DELETE FROM planPick WHERE userId = ? AND weekStart < ?;
+
 -- What one meal ate that differs from its recipe (issue 226), one row per ingredient: grams is the amount
 -- eaten of it in this meal, 0 for a recipe line left out. The recipe stays as it is. The rows go with their
 -- meal, so replacing or removing the meal drops them, and with the ingredient when it leaves the catalogue.

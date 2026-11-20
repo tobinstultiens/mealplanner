@@ -870,6 +870,9 @@ or its dinner, is un-eaten:
 | Choosing, writing | anything else, or an empty slot | replaced or filled; it holds no stock |
 | Planning or replanning the week (`POST generate`) | locked, eaten, skipped; the planned leftover lunch of an eaten dinner; a lunch that keeps a share | kept as it is; the rest is planned around it |
 | Planning or replanning the week | any other meal | planned anew; it holds no stock |
+| Planning the week with dinners chosen (`POST planning/done`) | as for planning the week | kept as it is; the chosen dinners go on the other days |
+| Moving a dinner to another day (`POST meals/{day}/DINNER/move`) | either dinner as the first row, or of a prepped batch, with a side or a share in the box under it; its leftover lunch eaten, skipped, locked or with a side | 409, nothing changes |
+| Moving a dinner | any other dinner | it and the dinner on that day swap days, with what was in them; their leftover lunches follow; they hold no stock |
 | Removing (`DELETE meals/{day}/{slot}`) | as the first row | 409, nothing changes |
 | Removing | any other meal | removed; it holds no stock, and an eaten leftover lunch of a removed dinner keeps its own share |
 | Deleting a recipe | planned this week or later | 409, naming the days |

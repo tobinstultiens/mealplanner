@@ -32,6 +32,11 @@ data class PlanCandidate(
      * opening no packs.
      */
     val freshUses: List<FreshUse> = emptyList(),
+    /**
+     * Euros per serving at regular prices, without the week's offers; null when unknown. Not scored: the saving it tells
+     * apart from [costPerServing] is what makes a recipe one to suggest for its offers ([DinnerPool]).
+     */
+    val regularCostPerServing: Double? = null,
 )
 
 data class PlanRequest(
@@ -61,6 +66,11 @@ data class PlanRequest(
     val overShareCap: Double? = null,
     /** Told of every pick the planner makes on its own, for measuring it; null, the default, is nobody. */
     val onPick: ((Pick) -> Unit)? = null,
+    /**
+     * The recipes of [locked] meals that are not [candidates], such as one chosen by hand from outside the rotation: the
+     * planner knows them for those meals' leftovers and packs, as it knows its candidates, and never picks them.
+     */
+    val known: List<PlanCandidate> = emptyList(),
     /** Same seed, same plan. */
     val seed: Long = 0,
 ) {
@@ -94,7 +104,8 @@ data class Pick(
  * - Breakfast and snack are routines: one choice, repeated all week. A pinned routine
  *   is used as long as it is plannable; otherwise the planner chooses.
  * - Dinner is a different recipe each day; what a dinner recipe yields beyond the
- *   portion eaten becomes the next day's lunch.
+ *   portion eaten becomes the next day's lunch. So does a locked dinner's, when its recipe is a
+ *   candidate or [PlanRequest.known].
  * - Portions are adjusted in quarter servings to fit the slot's share of the calories, within
  *   the request's [PortionRange]; a recipe too light to fill half its share at the largest
  *   portion is not a meal there.
@@ -128,7 +139,7 @@ object WeekPlanner {
             }
         }
 
-        val byId = request.candidates.associateBy { it.recipeId }
+        val byId = (request.known + request.candidates).associateBy { it.recipeId }
         var yesterdaysDinner: PlanCandidate? = null
         // What yesterday's dinner left over: the recipe and how many servings remain.
         var leftoverForLunch: Pair<PlanCandidate, Double>? = null
@@ -150,13 +161,13 @@ object WeekPlanner {
             leftoverForLunch = null
 
             val lockedDinner = meals.firstOrNull { it.day == day && it.slot == MealSlot.DINNER }
-            val dinner = lockedDinner?.let { locked -> request.candidates.firstOrNull { it.recipeId == locked.recipeId } }
+            val dinner = lockedDinner?.let { locked ->
+                request.candidates.firstOrNull { it.recipeId == locked.recipeId } ?: request.known.firstOrNull { it.recipeId == locked.recipeId }
+            }
                 ?: if (lockedDinner == null) pick(MealSlot.DINNER, day, usable, meals, byId, request, yesterdaysDinner, random) else null
             if (dinner != null) {
                 val eaten = lockedDinner ?: meal(dinner, day, MealSlot.DINNER, request).also { meals += it }
-                val remaining = dinner.servings - eaten.portions
-                // A prepped batch is made for its own meals only: nothing of it is left for the next lunch.
-                if (eaten.prep == null && remaining >= PortionRange.LEAST_LEFTOVER) leftoverForLunch = dinner to remaining
+                leftoverServings(dinner, eaten)?.let { leftoverForLunch = dinner to it }
             }
             yesterdaysDinner = dinner
         }
@@ -197,14 +208,27 @@ object WeekPlanner {
                 sameTagAsYesterday = yesterdaysDinner != null && candidate.tags.firstOrNull() == yesterdaysDinner.tags.firstOrNull() &&
                     candidate.tags.isNotEmpty(),
                 jitter = random.nextDouble(),
-                packs = packs?.let { open ->
-                    val servings = portionsFor(candidate, budgetSlot, request.targets, request.portions)
-                    request.packWeights.reuse * open.reusable(day, candidate.freshUses, servings) -
-                        request.packWeights.waste * open.wasted(day, candidate.freshUses, servings)
-                } ?: 0.0,
+                packs = packs?.let { packTerm(candidate, it, day, budgetSlot, request) } ?: 0.0,
             )
         }
     }
+
+    /**
+     * The pack term of [score] ([PackWeights]) for [candidate] as a [slot] meal on [day], with the packs [open] then:
+     * euros of their rest it uses up, less euros of rest it leaves by opening new ones.
+     */
+    fun packTerm(candidate: PlanCandidate, open: OpenPacks, day: Int, slot: MealSlot, request: PlanRequest): Double {
+        val servings = portionsFor(candidate, slot, request.targets, request.portions)
+        return request.packWeights.reuse * open.reusable(day, candidate.freshUses, servings) -
+            request.packWeights.waste * open.wasted(day, candidate.freshUses, servings)
+    }
+
+    /**
+     * How the planner rates [candidate] as a dinner of a week whose days are not known yet (issue 255): [score] with what
+     * does not depend on a day only, so no yesterday's tag and no jitter. [uses] and [packs] ([packTerm]) as for a pick.
+     */
+    fun rateDinner(candidate: PlanCandidate, request: PlanRequest, uses: Int, packs: Double): Double =
+        score(candidate, MealSlot.DINNER, request, uses, sameTagAsYesterday = false, jitter = 0.0, packs = packs)
 
     /**
      * The best of [pool] by [rate], the first of equals; tells the request's [PlanRequest.onPick] what the best and the
@@ -239,7 +263,7 @@ object WeekPlanner {
      * not planned again while another recipe fits the slot (issue 263). A penalty alone was not enough: with a small
      * rotation every recipe is repeated, and a batch's meals weigh no more than another recipe's repeats.
      */
-    private fun prepped(meals: List<PlannedMeal>): Set<Long> =
+    fun prepped(meals: List<PlannedMeal>): Set<Long> =
         meals.mapNotNullTo(HashSet()) { meal -> meal.recipeId.takeIf { meal.prep != null } } + meals.mapNotNull { it.side?.recipeId }
 
     /**
@@ -247,7 +271,7 @@ object WeekPlanner {
      * no use of its own: it comes with the dinner. Every meal or side of a prepped batch is: the batch was made for
      * all of them, so planning its recipe once more would fill much of the week with one recipe (issue 263).
      */
-    private fun uses(recipeId: Long, meals: List<PlannedMeal>): Int =
+    fun uses(recipeId: Long, meals: List<PlannedMeal>): Int =
         meals.count { it.recipeId == recipeId && (!it.leftover || it.prep != null) } + meals.count { it.side?.recipeId == recipeId }
 
     /**
@@ -357,8 +381,29 @@ object WeekPlanner {
         request: PlanRequest,
         leftover: Boolean = false,
         available: Double? = null,
+    ): PlannedMeal = mealOf(candidate, day, slot, request.targets, request.portions, leftover, available)
+
+    /**
+     * The servings of [candidate] left for the next day's lunch when [eaten] is its dinner: null when that is too little to
+     * be a meal ([PortionRange.LEAST_LEFTOVER]), and for a prepped batch, which is made for its own meals only.
+     */
+    fun leftoverServings(candidate: PlanCandidate, eaten: PlannedMeal): Double? =
+        (candidate.servings - eaten.portions).takeIf { eaten.prep == null && it >= PortionRange.LEAST_LEFTOVER }
+
+    /**
+     * [candidate] as a [slot] meal on [day], at the portion [portionsFor] gives it with [targets] and [range] (with
+     * [available], no more than that many servings), and the numbers of that portion: every meal the planner plans.
+     */
+    fun mealOf(
+        candidate: PlanCandidate,
+        day: Int,
+        slot: MealSlot,
+        targets: DailyTargets,
+        range: PortionRange,
+        leftover: Boolean = false,
+        available: Double? = null,
     ): PlannedMeal {
-        val portions = portionsFor(candidate, slot, request.targets, request.portions, available)
+        val portions = portionsFor(candidate, slot, targets, range, available)
         return PlannedMeal(
             day = day,
             slot = slot,

@@ -645,6 +645,20 @@ class WeekPlannerTest {
     }
 
     @Test
+    fun aLockedDinnerOfARecipeThePlannerKnowsButDoesNotPickLeavesItsLeftoversForTheNextLunch() {
+        val own = candidate(90, DINNER, kcal = 650.0, protein = 45.0)
+        val locked = listOf(PlannedMeal(2, DINNER, 90, "Recipe 90", 1.25, 812.5, 56.25, locked = true))
+        val request = PlanRequest(targets, pantryOfRecipes, locked = locked, seed = 3)
+
+        val unknown = WeekPlanner.plan(request)
+        val known = WeekPlanner.plan(request.copy(known = listOf(own)))
+
+        assertFalse(unknown.at(3, LUNCH).recipeId == 90L, "without it, Thursday's lunch is another recipe")
+        assertEquals(90L to true, known.at(3, LUNCH).let { it.recipeId to it.leftover }, "with it, Wednesday's leftovers")
+        assertTrue(known.none { it.recipeId == 90L && it.day != 2 && it.slot == DINNER }, "and it is never picked for another dinner")
+    }
+
+    @Test
     fun recipesWithoutFreshUsesPlanAsBefore() {
         val request = PlanRequest(targets, pantryOfRecipes, seed = 5)
 
