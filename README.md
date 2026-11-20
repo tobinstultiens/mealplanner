@@ -243,7 +243,9 @@ them. Only by hand: the planner never starts a prep nor adds a side, it plans ar
   notification, buying ahead, whose suggested dinners are then no more than the dinners those meals leave free).
   Its shopping list buys nothing for them and says which week's list did (`ShoppingList.preppedBoughtIn`).
   Today's "Dinner today" notification is only for a dinner with something to cook: not for a prepped later dinner,
-  unless a side's batch is made next to it that evening, when it is about the side (`DinnerToday.side`); the dinner
+  unless a side's batch is made next to it that evening, when it is about the side (`DinnerToday.side`: its tap opens
+  the side's recipe with the dinner's place, and as a side follows its meal, cook mode's "Mark as eaten" marks the
+  dinner, side and all); the dinner
   that makes a batch says so (`DinnerToday.prep`), so its recipe speaks of the prep's later meals.
   A shortfall warning ("What was in a meal") counts what the batch took for its meals of the next week in the week
   it was made, whose stock it was cooked from.

@@ -325,17 +325,22 @@ class NotificationsTest {
         assertEquals("Bijgerecht vanavond: Lentil salad", notice(NotificationKind.DINNER_TODAY, side, Strings.Dutch).title)
         assertEquals(Route.Recipe(15), notice.opening?.route)
         assertEquals("Cook 1.5 servings: 0.5 now, 1 for the prep's later meals", notice.opening?.meal?.sentence(en))
+        // The side's recipe opens with its dinner's place: a side follows its meal (the owner's decision), so "Mark as eaten"
+        // in cook mode marks the dinner, side and all.
+        assertEquals(MealPlace("2026-11-16", 5, MealSlot.DINNER) to true, notice.opening?.meal?.let { it.place to it.planned })
     }
 
     @Test
     fun aBatchToldLaterTheSameDayGoesNextToTheFirstWhileOtherKindsReplaceTheirOlder() {
         val first = at("08:05").due(pastLastDay(chili), null, en).single()
+        // The same batches, made again before they are remembered (a post that was not saved), keep their place, in any language.
+        val again = at("09:05").due(pastLastDay(chili), null, Strings.Dutch).single()
+        assertEquals(first.tag to first.requestCode, again.tag to again.requestCode, "the same batches keep their place")
         at("08:05").told(first)
         val later = at("20:05").due(pastLastDay(chili, salad), null, en).single()
         // Each batch has its own place in the tray, and its own tap.
         assertNotEquals(first.tag, later.tag)
         assertNotEquals(first.requestCode, later.requestCode)
-        assertEquals(first.tag, at("08:05").due(pastLastDay(chili), null, Strings.Dutch).firstOrNull()?.tag ?: first.tag, "the same batches keep their place")
         assertEquals("throwAway:2026-11-21:7", first.tag)
         assertEquals("throwAway:2026-11-21:9", later.tag)
         // The other kinds replace their older notification, with the ids and request codes they always had.
