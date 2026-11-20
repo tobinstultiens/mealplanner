@@ -77,14 +77,18 @@ class PlanRepository(
      * Plans the week starting [start] as [generate] says, around the meals it keeps ([kept]) and the meals [chosen] makes
      * of them: the dinners chosen on the planning screen (issue 255), on their days. Every other meal is replaced by a
      * newly planned one. A chosen meal is stored as [chosen] has it, locked or not; a meal the planner adds, unlocked,
-     * and never of the recipes [excluded] (those hidden for the week). With nothing chosen nor excluded this is [generate]
-     * itself. In the caller's transaction, which takes the write lock.
+     * and never of the recipes [hidden] for the week. Those are taken out of the candidates and left known
+     * ([PlanRequest.known]) rather than excluded: a kept dinner of one still leaves its leftovers for the next lunch, which
+     * an excluded recipe would not. With nothing chosen nor hidden this is [generate] itself. In the caller's
+     * transaction, which takes the write lock.
      */
-    internal fun fillWeek(start: LocalDate, seed: Long, excluded: Set<Long> = emptySet(), chosen: (kept: List<PlannedMeal>) -> List<PlannedMeal>) {
+    internal fun fillWeek(start: LocalDate, seed: Long, hidden: Set<Long> = emptySet(), chosen: (kept: List<PlannedMeal>) -> List<PlannedMeal>) {
         val week = meals(start)
         val kept = kept(start, week)
         val placed = chosen(kept)
-        val planned = plan(request(start, locked = kept + placed, seed = seed).copy(excluded = excluded))
+        val request = request(start, locked = kept + placed, seed = seed)
+        val (notPicked, candidates) = request.candidates.partition { it.recipeId in hidden }
+        val planned = plan(request.copy(candidates = candidates, known = request.known + notPicked))
         for (old in week.filterNot { it in kept }) q.deleteMeal(userId, start.toString(), old.day.toLong(), old.slot.name)
         val lockedByHand = placed.filter { it.locked }.mapTo(HashSet()) { it.day to it.slot }
         planned.filter { new -> kept.none { it.day == new.day && it.slot == new.slot } }

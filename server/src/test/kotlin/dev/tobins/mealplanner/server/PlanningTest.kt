@@ -351,6 +351,38 @@ class PlanningTest {
     }
 
     @Test
+    fun aChosenDinnerWhoseRecipeLostItsAmountsIsListedAsNotPlannableUntilItIsTakenOut() {
+        (0..3).forEach(::beefDish)
+        val (kept, lost) = listOf("Kept", "Lost").map { recipe(it, "1600 | g | Beef") }
+        listOf(kept, lost).forEach { alice.planning.pick(week, it) }
+
+        alice.recipes.update(lost, RecipeInput("Lost", 4, "| | salt to taste", "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER)))
+
+        val planning = alice.planning.get(week)
+        assertEquals(listOf(kept to true, lost to false), planning.picks.map { it.recipeId to it.plannable })
+        assertEquals(listOf(0.0, 0.0, 0.0), planning.picks[1].let { listOf(it.portions, it.kcal, it.proteinG) })
+        assertEquals(2, alice.plans.get(week).dinnersChosen)
+        val refused = assertFailsWith<ConflictException> { alice.planning.done(week) }
+        assertEquals("\"Lost\" has no amounts to plan with: take it out first", refused.message)
+
+        alice.planning.unpick(week, lost)
+        assertTrue(alice.planning.done(week, seed = 1).meals().any { it.recipeId == kept && it.slot == MealSlot.DINNER && it.locked })
+    }
+
+    @Test
+    fun hidingTheRecipeOfAKeptDinnerKeepsItsLeftoverLunchAndPlansItNowhereElse() {
+        val dinners = (0..7).map(::beefDish)
+        alice.plans.choose(week, 2, MealSlot.DINNER, dinners[0])
+        alice.planning.hide(week, dinners[0])
+
+        val plan = alice.planning.done(week, seed = 4)
+
+        val thursday = plan.meals().single { it.day == 3 && it.slot == MealSlot.LUNCH }
+        assertEquals(dinners[0] to true, thursday.recipeId to thursday.leftover, "Wednesday's dinner, kept, leaves its leftovers")
+        assertEquals(listOf(2 to MealSlot.DINNER, 3 to MealSlot.LUNCH), plan.meals().filter { it.recipeId == dinners[0] }.map { it.day to it.slot })
+    }
+
+    @Test
     fun noMoreDinnersCanBeChosenThanThereAreDaysToPutThemOn() {
         val dinners = (0..7).map(::beefDish)
         dinners.take(6).forEach { alice.planning.pick(week, it) }

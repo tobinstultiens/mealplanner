@@ -147,8 +147,10 @@ fun App(
     var openRecipeId by rememberSaveable { mutableStateOf(start.recipeId) }
     // The planned meal the open recipe was opened from, for how much to cook; none from the recipe list.
     var openMeal by rememberSaveable(stateSaver = MealToCook.Saver) { mutableStateOf(opened?.meal) }
-    // The week a tapped notification asked the Plan to show, and how often one asked: each asking shows it afresh.
+    // The week a tapped notification asked the Plan to show, whether on its planning screen, and how often one asked:
+    // each asking shows it afresh.
     var planWeek by rememberSaveable { mutableStateOf(opened?.week) }
+    var planPlanning by rememberSaveable { mutableStateOf(opened?.planning == true) }
     var planAsked by rememberSaveable { mutableIntStateOf(0) }
     // Null: no editor open. -1: a new recipe. Otherwise the id of the recipe being edited.
     var editing by rememberSaveable { mutableStateOf(start.editing) }
@@ -193,6 +195,7 @@ fun App(
         if (wasLoggedIn && !loggedIn) {
             (Tab.entries.map { "tab:${it.slug}" } + openKeys).forEach(screenStates::removeState)
             planWeek = null
+            planPlanning = false
         }
         wasLoggedIn = loggedIn
     }
@@ -208,6 +211,7 @@ fun App(
         openMeal = opening.meal
         opening.week?.let {
             planWeek = it
+            planPlanning = opening.planning
             planAsked++
         }
         editing = now.editing
@@ -482,6 +486,7 @@ fun App(
                                         onOpenBank = { tab = Tab.RECIPES; bankOpen = true },
                                         onAdjust = { adjusting = it },
                                         startWeek = planWeek,
+                                        startPlanning = planPlanning,
                                     )
                                 }
                                 Tab.SHOPPING -> ShoppingScreen(shopping, storage, accountShops, onOpenPantry = { pantryOpen = true }, onOpenOffers = { offersOpen = true })

@@ -217,8 +217,6 @@ enum class Msg(private val english: String, private val dutch: String) {
     // The fresh ingredients the week leaves over (issue 244): {0} is the euros, {1} the list; MORE ends a long list.
     WEEK_REST("About {0} of fresh ingredients left over: {1}", "Ongeveer {0} aan verse ingrediënten over: {1}"),
     WEEK_REST_MORE("{0} and {1} more", "{0} en nog {1}"),
-    REPLAN("Replan unlocked meals", "Plan niet-vergrendelde maaltijden opnieuw"),
-    PLAN_WEEK("Plan this week", "Plan deze week"),
     NO_RECIPES_FOR(
         "No recipes yet for: {0}. Days stay below the target until those exist.",
         "Nog geen recepten voor: {0}. De dagen blijven onder je doel tot die er zijn.",
@@ -1006,6 +1004,67 @@ enum class Msg(private val english: String, private val dutch: String) {
         "Lijn: trend. Stippen: dagelijkse metingen. Klik op de grafiek om een dag af te lezen.",
     ),
 
+    // --- Planning the week (issue 255): the planning screen, its suggestions and strip, "Another recipe" for a dinner, moving a dinner
+    PLAN_THE_WEEK("Plan the week", "Plan de week"),
+    PLANNING_TITLE("Plan the week of {0}", "Plan de week van {0}"),
+    PLANNING_LOAD_FAILED("Could not load the planning", "De planning kon niet worden geladen"),
+    PLANNING_OLD_SERVER(
+        "This server plans the week in one go: update it to choose the dinners yourself.",
+        "Deze server plant de week in één keer: werk hem bij om zelf het avondeten te kiezen.",
+    ),
+    PLANNING_ALL_CHOSEN("A dinner is chosen for every day that is open.", "Voor elke open dag is een avondeten gekozen."),
+    PLANNING_NO_OPEN_DAYS("Every day has a dinner that stays.", "Elke dag heeft al een avondeten dat blijft."),
+    PLANNING_STRIP_TITLE("The week so far", "De week tot nu toe"),
+    PLANNING_STRIP_NOTE(
+        "The meals that stay and the dinners chosen, with their leftovers, against what those meals should give.",
+        "De maaltijden die blijven en het gekozen avondeten, met restjes, tegenover wat die maaltijden zouden moeten geven.",
+    ),
+    PLANNING_STRIP_EMPTY("Nothing chosen yet: tap a suggestion to add it.", "Nog niets gekozen: tik op een suggestie om die toe te voegen."),
+    PLANNING_COST("≈ {0}", "≈ {0}"),
+    PLANNING_COST_SAVED("≈ {0}, {1} saved by offers", "≈ {0}, {1} bespaard met aanbiedingen"),
+    PLANNING_TOTALS("{0} of {1} kcal · {2} of {3} g protein", "{0} van {1} kcal · {2} van {3} g eiwit"),
+    PLANNING_TOTALS_FIBRE(
+        "{0} of {1} kcal · {2} of {3} g protein · {4} of {5} g fibre",
+        "{0} van {1} kcal · {2} van {3} g eiwit · {4} van {5} g vezels",
+    ),
+    PLANNING_CHOSEN("Chosen dinners", "Gekozen avondeten"),
+    PLANNING_TAKE_OUT("Take {0} out", "{0} weghalen"),
+    PLANNING_NOT_PLANNABLE("Has no amounts any more, so it can't be planned: take it out", "Heeft geen hoeveelheden meer, dus kan niet worden gepland: haal het weg"),
+    PLANNING_SUGGESTIONS("Suggestions", "Suggesties"),
+    PLANNING_SHOW_OTHERS("Show others", "Andere tonen"),
+    PLANNING_SOMETHING_ELSE("Something else", "Iets anders"),
+    PLANNING_SEARCH("Search my recipes", "Zoek in mijn recepten"),
+    PLANNING_SEARCH_NONE("None of your meals has that in its title.", "Geen van je maaltijden heeft dat in de titel."),
+    PLANNING_BACK_TO_SUGGESTIONS("Back to the suggestions", "Terug naar de suggesties"),
+    PLANNING_NO_MORE(
+        "No more suggestions. Search all your recipes, or start again from the first.",
+        "Geen suggesties meer. Zoek in al je recepten, of begin opnieuw bij de eerste.",
+    ),
+    PLANNING_START_AGAIN("Start again", "Opnieuw beginnen"),
+    PLANNING_NOT_THIS_WEEK("Not this week", "Deze week niet"),
+    PLANNING_SHOW_AGAIN("Show again", "Weer tonen"),
+    PLANNING_DONE("Done", "Klaar"),
+    PLANNING_FILL_REST("Fill the rest", "Vul de rest aan"),
+    PLANNING_CHOOSE("Choose", "Kiezen"),
+    // A suggestion's reasons, one line each: {0} of ON_OFFER is the offers, each OFFER or OFFER_DEAL; of FAVOURITE, RATED and WEEKS.
+    REASON_ON_OFFER("On offer: {0}", "In de aanbieding: {0}"),
+    REASON_OFFER("{0} at {1}", "{0} bij {1}"),
+    REASON_OFFER_DEAL("{0} at {1} ({2})", "{0} bij {1} ({2})"),
+    REASON_THERE("Uses what is there: {0}", "Gebruikt wat er is: {0}"),
+    REASON_PACK_REST("the rest of the {0} from {1}", "de rest {0} van {1}"),
+    REASON_FAVOURITE("Favourite: {0}", "Favoriet: {0}"),
+    REASON_RATED("rated {0} of 5", "{0} van 5 sterren"),
+    REASON_NOT_TRIED("Not tried yet", "Nog niet geprobeerd"),
+    SUGGESTION_PRICE("{0} a serving", "{0} per portie"),
+    SUGGESTION_PRICE_SAVED("{0} a serving, {1} saved", "{0} per portie, {1} bespaard"),
+    ANOTHER_DINNER_TITLE("Another dinner for {0}", "Ander avondeten voor {0}"),
+    PLANNERS_CHOICE("Let the planner choose", "Laat de planner kiezen"),
+    MOVE_TO_DAY("Move to another day…", "Naar een andere dag…"),
+    MOVE_TITLE("Move {0} to", "{0} verplaatsen naar"),
+    MOVE_SWAPS("swaps with {0}", "ruilt met {0}"),
+    MOVE_NO_DINNER("no dinner yet", "nog geen avondeten"),
+    MOVE_STAYS("{0} stays on its day", "{0} blijft op zijn dag"),
+
     // --- end of messages
     ;
 
@@ -1029,6 +1088,11 @@ enum class Plural(
     /** For an amount that may be fractional: the count only picks the form, `{1}` is the amount as written. */
     SERVINGS_AMOUNT("{1} serving", "{1} servings", "{1} portie", "{1} porties"),
     PACK_PIECES("{0} piece", "{0} pieces", "{0} stuk", "{0} stuks"),
+
+    /** Planning the week (issue 255): the dinners left to choose, what Continue planning says, and a favourite's weeks. */
+    DINNERS_TO_CHOOSE("{0} dinner still to choose", "{0} dinners still to choose", "Nog {0} avondeten te kiezen", "Nog {0} avondeten te kiezen"),
+    CONTINUE_PLANNING("Continue planning: {0} dinner chosen", "Continue planning: {0} dinners chosen", "Verder plannen: {0} avondeten gekozen", "Verder plannen: {0} avondeten gekozen"),
+    REASON_WEEKS("not eaten for {0} week", "not eaten for {0} weeks", "{0} week niet gegeten", "{0} weken niet gegeten"),
 
     /** For an amount that may be fractional, as [SERVINGS_AMOUNT]: `1.5 pieces`. */
     PIECES_AMOUNT("{1} piece", "{1} pieces", "{1} stuk", "{1} stuks"),

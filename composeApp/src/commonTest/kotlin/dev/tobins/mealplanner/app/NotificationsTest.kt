@@ -179,7 +179,7 @@ class NotificationsTest {
     fun eachOpensItsScreen() {
         assertEquals(null, notice(NotificationKind.UPDATE).opening, "the app, which offers the update")
         assertEquals(Opening(Route.TabRoute(Tab.SHOPPING)), notice(NotificationKind.OFFERS_ENDING).opening)
-        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-23"), notice(NotificationKind.PLAN_NEXT_WEEK).opening, "the Plan, on next week")
+        assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-23", planning = true), notice(NotificationKind.PLAN_NEXT_WEEK).opening, "the planning screen of next week")
         assertEquals(Opening(Route.TabRoute(Tab.PROGRESS)), notice(NotificationKind.WEIGH_IN).opening)
         assertEquals(Opening(Route.TabRoute(Tab.TODAY)), notice(NotificationKind.MEALS_TO_MARK).opening)
         // The recipe from that meal, with its servings to cook and the way to mark it eaten.

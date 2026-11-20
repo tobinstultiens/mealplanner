@@ -2,7 +2,7 @@ package dev.tobins.mealplanner.app
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -90,12 +90,13 @@ class PlanMenuTest {
     }
 
     @Test
-    fun aLockedMealCannotBeSwappedForAnother() {
+    fun aLockedDinnerGetsSuggestionsForAnotherRecipe() {
         show()
-        // Friday's lentil soup was chosen, so it is locked: choosing again is left, another recipe is greyed.
+        // Friday's lentil soup was chosen, so it is locked: "Another recipe" opens the suggestions to choose from (issue 255),
+        // which a locked dinner may take as it may take a recipe chosen by hand.
         openMenuOf("Fri 20 Nov")
         assertOffered("Another recipe", "Choose a recipe…")
-        compose.onNodeWithText("Another recipe").assertIsNotEnabled()
+        compose.onNodeWithText("Another recipe").assertIsEnabled()
     }
 
     @Test

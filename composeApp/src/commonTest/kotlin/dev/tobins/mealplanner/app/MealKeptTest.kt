@@ -85,4 +85,23 @@ class MealKeptTest {
         assertFalse(meal(0, DINNER, prep = gone).shareGone("2026-11-16"))
         assertFalse(meal(1, LUNCH, MealStatus.SKIPPED).shareGone("2026-11-17"), "no prep")
     }
+
+    @Test
+    fun aDinnerMovesToAnotherDayUnlessItStaysOnItsDayOrItsLeftoversCannotFollow() {
+        val dinner = meal(0, DINNER, recipe = 5)
+        val leftovers = meal(1, LUNCH, leftover = true, recipe = 5)
+        fun canMove(meal: PlannedMeal, after: List<PlannedMeal> = listOf(leftovers)) = meal.canMove("2026-11-16", emptyList(), after)
+
+        assertTrue(canMove(dinner))
+        assertTrue(canMove(dinner.copy(status = MealStatus.SKIPPED)), "a skipped dinner moves too")
+        assertTrue(canMove(dinner.copy(locked = true)), "a locked one keeps its lock")
+        assertTrue(canMove(dinner, after = listOf(meal(1, LUNCH, recipe = 7))), "the next lunch is no leftovers of it")
+        assertFalse(canMove(dinner.copy(status = MealStatus.EATEN)))
+        assertFalse(canMove(dinner.copy(prep = prep(share("2026-11-16", DINNER), share("2026-11-17", DINNER)))))
+        assertFalse(canMove(dinner.copy(side = MealSide(9, "Salad", 0.5, 200.0, 10.0, cookPortions = 0.0, prep = prep()))))
+        assertFalse(canMove(meal(0, LUNCH)), "only dinners move")
+        for (stuck in listOf(leftovers.copy(locked = true), leftovers.copy(status = MealStatus.SKIPPED), leftovers.copy(status = MealStatus.EATEN))) {
+            assertFalse(canMove(dinner, after = listOf(stuck)), "its leftovers can't follow: $stuck")
+        }
+    }
 }

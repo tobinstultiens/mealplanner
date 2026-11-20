@@ -60,3 +60,16 @@ fun PlannedMeal.shareGone(date: String): Boolean {
     val ofBatch = prep?.meals?.firstOrNull { it.date == date && it.slot == slot && !it.side } ?: return false
     return status == MealStatus.SKIPPED && ofBatch.portions == 0.0
 }
+
+/**
+ * Whether this dinner, on the day [date], may move to another day or give its day to another dinner (issue 255), as the
+ * server lets it (`PlanRepository.whyStaysOnItsDay`): not one that keeps its recipe ([whyKept]), of a prepped batch or
+ * with a side, which are eaten on their days; and its leftover lunch in [dayAfter], if it has one, must be able to follow
+ * it: still planned, not locked and without a side. A skipped prepped meal's share in the box under it, which the plan
+ * does not show, the server refuses with a sentence of its own.
+ */
+fun PlannedMeal.canMove(date: String, dayBefore: List<PlannedMeal>, dayAfter: List<PlannedMeal>): Boolean {
+    if (slot != MealSlot.DINNER || whyKept(date, dayBefore) != null || prep != null || side != null) return false
+    val leftovers = dayAfter.firstOrNull { it.slot == MealSlot.LUNCH && it.leftover && it.prep == null && it.recipeId == recipeId }
+    return leftovers == null || (leftovers.status == MealStatus.PLANNED && !leftovers.locked && leftovers.side == null)
+}

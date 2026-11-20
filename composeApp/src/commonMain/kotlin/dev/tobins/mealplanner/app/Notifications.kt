@@ -180,7 +180,7 @@ private fun dueNotifications(facts: NotificationFacts, told: Set<Long>, t: Strin
         DueNotification(NotificationKind.OFFERS_ENDING, t.plural(ending, offers.size), offers.joinToString(", ") { it.name }, Opening(Route.TabRoute(Tab.SHOPPING)), facts.date)
     },
     facts.planNextWeek?.let { week ->
-        DueNotification(NotificationKind.PLAN_NEXT_WEEK, t(Msg.PLAN_NOTIFICATION_TITLE), t(Msg.PLAN_NOTIFICATION_TEXT), Opening(Route.TabRoute(Tab.PLAN), week = week), week)
+        DueNotification(NotificationKind.PLAN_NEXT_WEEK, t(Msg.PLAN_NOTIFICATION_TITLE), t(Msg.PLAN_NOTIFICATION_TEXT), Opening(Route.TabRoute(Tab.PLAN), week = week, planning = true), week)
     },
     facts.weighIn?.let { due ->
         DueNotification(NotificationKind.WEIGH_IN, t(Msg.WEIGH_IN_NOTIFICATION_TITLE), t.plural(Plural.LAST_WEIGH_IN, due.daysAgo), Opening(Route.TabRoute(Tab.PROGRESS)), facts.date)

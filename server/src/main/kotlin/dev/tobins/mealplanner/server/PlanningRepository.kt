@@ -126,7 +126,7 @@ class PlanningRepository(
         db.writing {
             forgetEndedWeeks()
             val (picked, hidden) = rows(start).partition { it.refused == 0L }
-            plans.fillWeek(start, seed, excluded = hidden.mapTo(HashSet()) { it.recipeId }) { kept ->
+            plans.fillWeek(start, seed, hidden = hidden.mapTo(HashSet()) { it.recipeId }) { kept ->
                 if (picked.isEmpty()) return@fillWeek emptyList()
                 val every = plans.candidates(start, everyMeal = true).associateBy { it.recipeId }
                 val dinners = picked.map { row -> candidateOf(row.recipeId, every) ?: throw ConflictException("\"${row.title}\" has no amounts to plan with: take it out first") }
@@ -160,7 +160,9 @@ class PlanningRepository(
             weekStart = start.toString(),
             targets = targets,
             openDays = days,
-            picks = week.picked.map { candidate ->
+            picks = week.chosen.map { row ->
+                val candidate = week.picked.firstOrNull { it.recipeId == row.recipeId }
+                    ?: return@map DinnerPick(row.recipeId, row.title, 0.0, 0.0, 0.0, plannable = false)
                 val dinner = week.pool.dinnerOf(candidate)
                 val price = costOf(candidate.recipeId)
                 DinnerPick(
@@ -195,7 +197,10 @@ class PlanningRepository(
         val byId: Map<Long, PlanCandidate> = every.associateBy { it.recipeId }
         private val rows = rows(start)
         val hidden = rows.filter { it.refused != 0L }
-        val picked: List<PlanCandidate> = rows.filter { it.refused == 0L }.mapNotNull { candidateOf(it.recipeId, byId) }
+        /** The rows of the dinners chosen, also one whose recipe can no longer be planned, which the screen lists to take out. */
+        val chosen = rows.filter { it.refused == 0L }
+        /** The dinners chosen that can be planned, as the planner sees them. */
+        val picked: List<PlanCandidate> = chosen.mapNotNull { candidateOf(it.recipeId, byId) }
         val pool = DinnerPool.Week(request, kept, picked, weeksSinceEaten(start))
     }
 
