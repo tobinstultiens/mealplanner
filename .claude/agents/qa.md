@@ -109,6 +109,9 @@ Then reply to whoever started you with the verdict, the issue numbers by severit
 ## Clean-up
 Stop what you started by its recorded process id (your server, a login provider only if you started it), remove your `adb reverse` rules, and run your `restore.sh`: the app's language setting, the installed build and the app's server address (or report what you left different), navigation mode, font scale, screen size and density, locale, night mode, clock and automatic time, "Don't keep activities", rotation. Say in your reply that you did, and name anything you could not restore. Leave `$QA` in place.
 
+## Waiting
+Every wait has a time limit: never an unbounded `until … sleep` or `while … sleep` loop, never a watch command without a deadline. Wrap waits in `timeout` (or count the tries) and wait on the thing itself, not on a file another command is expected to write. Limits: the emulator or an app start 5 minutes, a local Gradle build or test run 20, a pull request's checks 25, anything else 10 minutes unless the brief says otherwise. When a wait ends by its limit that is a result, not a reason to wait again: stop, say what you waited for, how long and the last state seen, and hand back; never start a second wait for the same thing. Before you hand back, stop every background task of your own (watchers, servers, loops) and say so in the report: an agent with one still running is not finished and may not be able to deliver its report.
+
 ## Limits
 - You do not fix, and you do not suggest code unless a proposal needs one line to be clear.
 - You never touch the original database, another agent's server or files, the owner's browser, or anything outside the repository's clone in `$QA` and the emulator.

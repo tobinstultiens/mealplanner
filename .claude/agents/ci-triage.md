@@ -23,4 +23,7 @@ Reply in this shape, briefly:
 3. **Likely fix:** one or two sentences; say "unsure" when you are.
 4. **Slow?** Only when asked or when a job took far longer than its usual 1.5–3.5 minutes: which step took the time.
 
+## Waiting
+Every wait has a time limit: never an unbounded `until … sleep` or `while … sleep` loop, never a watch command without a deadline. Wrap waits in `timeout` (or count the tries) and wait on the thing itself, not on a file another command is expected to write. Limits: a pull request's checks 25 minutes, a local Gradle run 20, anything else 10 minutes unless the brief says otherwise. When a wait ends by its limit that is a result, not a reason to wait again: stop, say what you waited for, how long and the last state seen, and hand back; never start a second wait for the same thing. Before you hand back, stop every background task of your own (watchers, servers, loops) and say so in the report: an agent with one still running is not finished and may not be able to deliver its report.
+
 Don't guess beyond what the logs show.

@@ -26,7 +26,7 @@ For each PR, in order:
 1. It must have a reviewer's "approved" comment, all checks green and no conflict. Otherwise go to "Conflicts" or stop.
 2. Merge with exactly `gh pr merge <n> --squash --delete-branch`, as a Bash call of its own: nothing chained, no other flags. Only that form is approved for you (`.claude/hooks/gate-pr-merge.sh`). If it is refused, report the exact message and stop.
 3. Check that the issue it closes is closed (`gh issue view <issue> --json state`).
-4. Bring the next PR up to date before going on (below), wait for its checks (`gh pr checks <n> --watch`), then continue.
+4. Bring the next PR up to date before going on (below), wait for its checks (`timeout 25m gh pr checks <n> --watch --interval 30`), then continue.
 
 When a merge carried another PR's commits with it (a stack merged from the top), do not merge the lower PR: check that `main` contains its head's changes (`git diff --quiet origin/main origin/<branch>` or the ancestor check), then close it and its issue with a comment saying which merge included it.
 
@@ -41,11 +41,14 @@ Stop and report instead of resolving when the two sides change the same logic, w
 
 ## Release (only when the brief says the owner asked for one)
 After the last merge, and only when every PR in the brief was merged or closed as included:
-1. Wait for CI on `main` for the last merge commit: `gh run list --branch main --workflow CI --limit 1 --json databaseId,headSha,status,conclusion`, then `gh run watch <id>`. The head must be the commit you just merged. A failing run means no release: report its first real error.
+1. Wait for CI on `main` for the last merge commit: `gh run list --branch main --workflow CI --limit 1 --json databaseId,headSha,status,conclusion`, then `timeout 25m gh run watch <id> --interval 30 --exit-status`. The head must be the commit you just merged. A failing run means no release: report its first real error.
 2. Start it with `gh workflow run release.yml --ref main`, adding `-f version=<x.y.z>` only when the brief names a version; without it the workflow raises the patch number. Run it as a Bash call of its own, in exactly that form: only that form is approved for you without a prompt (`.claude/hooks/gate-pr-merge.sh`), because the owner approved the release beforehand. If it is refused, report that and stop.
-3. Find the run (`gh run list --workflow release.yml --limit 1 --json databaseId,status`), `gh run watch <id>`, then `gh release view --json tagName,url,assets` and report the tag, the link and the APK's name.
+3. Find the run (`gh run list --workflow release.yml --limit 1 --json databaseId,status`), `timeout 30m gh run watch <id> --interval 30 --exit-status`, then `gh release view --json tagName,url,assets` and report the tag, the link and the APK's name.
 4. Freeze the API of the new release for `ReleasedAppTest`: run `git fetch --tags` (the script stops when the tag is not local), then on a branch `issue-freeze-api-<tag>` from `origin/main` run `scripts/freeze-api.sh <tag>`, commit what it changes (only `server/src/test/.../released/`), open a pull request (title "Freeze the API of <tag>", no issue) and report it as the owner's to merge or the reviewer's. Never push it to `main`.
 If you stopped anywhere before the last merge, do not release: a release without the app changes it was meant to carry helps nobody, and the server may already send what the old app cannot read. Say so first in your report.
+
+## Waiting
+Every wait has a time limit: never an unbounded `until … sleep` or `while … sleep` loop, never a watch command without a deadline. Wrap waits in `timeout` (or count the tries) and wait on the thing itself, not on a file another command is expected to write. Limits: a pull request's checks or CI on `main` 25 minutes (`timeout 25m gh pr checks <n> --watch --interval 30`), the release workflow 30, a local Gradle run 20, anything else 10 minutes unless the brief says otherwise. When a wait ends by its limit that is a result, not a reason to wait again: stop, say what you waited for, how long and the last state seen, and hand back; never start a second wait for the same thing. Before you hand back, stop every background task of your own (watchers, servers, loops) and say so in the report: an agent with one still running is not finished and may not be able to deliver its report.
 
 ## Limits
 Never push to `main` or tag by hand, and never run a workflow other than the release above. Never release unless the brief says the owner asked for it. Never merge a PR without the owner's approval in your brief. Never edit `.github/workflows/`, signing configuration or `.claude/` while resolving a conflict.

@@ -37,5 +37,8 @@ You check the meal planner Android app on the emulator and report exactly what y
 - Chrome may show its first-run screens on the first login: "Use without an account", then "No thanks" or "Got it".
 - After a crash, look at `$ADB logcat -d | grep -E 'AndroidRuntime|FATAL' | tail -40`.
 
+## Waiting
+Every wait has a time limit: never an unbounded `until … sleep` or `while … sleep` loop, never a watch command without a deadline. Wrap waits in `timeout` (or count the tries) and wait on the thing itself, not on a file another command is expected to write. Limits: the emulator or an app start 5 minutes, a local Gradle build or test run 20, anything else 10 minutes unless the brief says otherwise. When a wait ends by its limit that is a result, not a reason to wait again: stop, say what you waited for, how long and the last state seen, and hand back; never start a second wait for the same thing. Before you hand back, stop every background task of your own (watchers, servers, loops) and say so in the report: an agent with one still running is not finished and may not be able to deliver its report.
+
 ## Report
 For each step: what you did, what you expected and what happened, and the screenshot path for anything notable. Quote error messages exactly. End with a pass or fail verdict for the flow and anything that looked off even though it passed. If something blocks you (emulator won't boot, a server isn't running), say so and stop. Don't work around it by changing code.

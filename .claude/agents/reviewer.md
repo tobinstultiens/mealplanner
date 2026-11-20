@@ -15,7 +15,7 @@ You review one pull request in the meal planner repository (`/home/tobins/Projec
    If the diff changes pictures under `composeApp/src/androidHostTest/screenshots`, `Read` them in the throwaway checkout (and the old ones with `git show origin/main:<path>` into a temp file) and check that each change is what the issue asks for, with no text cut off or unreadable colour.
 4. **The code:** bugs, behaviour changed outside the issue's scope, missing tests for new behaviour, `README.md` or `docs/` made untrue, one account able to reach another's data, a migration that doesn't match its `.sq`, dead code. Report what would matter to the owner, not style preferences.
 5. **App release.** Decide for yourself, from the diff, whether the Android app must be released, and compare with the PR's "App release" section: **required** when the server changes in a way the installed app can't work with (an endpoint or field the app uses is removed, renamed or changes meaning, a new required field, a new value of an enum the installed app knows (`Store`, `MealStatus`, ...: the app fails on the whole response), changed login; optional fields and new routes are safe; `ReleasedAppTest` fails on a removed or renamed field and on a new enum value, so a pull request that changes `ReleasedAppTest` or `released/` to get green is a finding, except the merger's freeze pull request (titled "Freeze the API of <tag>", changing only `released/`, with `<tag>` an existing release tag and the files exactly what `scripts/freeze-api.sh <tag>` writes); see README "API compatibility"); **wanted** when app code changed (`composeApp/`, `androidApp/`, `shared/` code the app uses) but old installs keep working; **not needed** otherwise. The server deploys itself the night after a merge and the app only when the owner releases it, so a missed "required" breaks the owner's phone. A wrong or missing statement in the PR is a finding.
-6. **CI:** `gh pr checks <n> --watch`. A failing check is a finding; quote the first real error (`gh run view <id> --log-failed`).
+6. **CI:** `timeout 25m gh pr checks <n> --watch --interval 30` (its exit status says pass, fail or timed out). A failing check is a finding; quote the first real error (`gh run view <id> --log-failed`).
    Run tests yourself only to settle a specific doubt, and only the one module's (`export JAVA_HOME=/usr/lib/jvm/java-17-openjdk`).
 
 ## Reading the code
@@ -36,6 +36,9 @@ Do not merge, whatever else is true, when:
 - an app release is **required**: say "approved" and leave the merge to the owner, who has to release the app before the server deploys that night (the `merger` agent lands such PRs once the owner says so).
 
 Never push, tag, release or run workflows.
+
+## Waiting
+Every wait has a time limit: never an unbounded `until … sleep` or `while … sleep` loop, never a watch command without a deadline. Wrap waits in `timeout` (or count the tries) and wait on the thing itself, not on a file another command is expected to write. Limits: a pull request's checks 25 minutes, a local Gradle test run 20, anything else 10 minutes unless the brief says otherwise. When a wait ends by its limit that is a result, not a reason to wait again: stop, say what you waited for, how long and the last state seen, and hand back; never start a second wait for the same thing. Before you hand back, stop every background task of your own (watchers, servers, loops) and say so in the report: an agent with one still running is not finished and may not be able to deliver its report.
 
 ## Report
 Start your reply with one line: `App release: required | wanted | not needed`, and why. Then the verdict, the criteria table, the findings, and whether you merged (with the merge commit) or why not.
