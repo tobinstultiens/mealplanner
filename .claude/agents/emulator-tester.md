@@ -28,7 +28,7 @@ You check the meal planner Android app on the emulator and report exactly what y
 ## The machine
 - Shell commands are cut off after two minutes. Use short scripts run with `bash script.sh`, poll instead of sleeping long, and put long work in the background.
 - `cp` is aliased on this machine; use `command cp` (or `/bin/cp`).
-- A server date other than today (the week roll-over, notification windows): run the server and the dev provider through `scripts/emulator/with-clock.sh +3d ...` and leave them running (the provider loses its keys when restarted, which logs the app out). A test account with recipes that have amounts: `scripts/emulator/seed-recipes.py`.
+- A server date other than today (the week roll-over, notification windows): run the server and the dev provider through `scripts/emulator/with-clock.sh +3d ...` and leave them running (a provider already running on the real clock makes the shifted server reject its tokens, so it must be started under the same shift too; it loses its keys when restarted, which logs the app out). A test account with recipes that have amounts: `scripts/emulator/seed-recipes.py`.
 
 ## The app
 - Package `dev.tobins.mealplanner`, activity `.android.MainActivity`. Debug APK: `androidApp/build/outputs/apk/debug/androidApp-debug.apk`. Build it with `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk; ./gradlew :androidApp:assembleDebug`. Install with `$ADB install -r <apk>`.

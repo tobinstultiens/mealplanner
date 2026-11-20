@@ -23,6 +23,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Test
         run: ./gradlew :shared:allTests :server:test :server:verifyMainDatabaseMigration :composeApp:allTests --profile
+      # The browser tests can fail with a bare "Error"; the reports hold what the console said.
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/build/test-results/**
+            **/build/reports/tests/**
+          retention-days: 7
       - name: Upload build profile
         if: always()
         uses: actions/upload-artifact@v4
@@ -120,6 +130,13 @@ jobs:
         run: |
           scripts/agent-cost --self-test
           scripts/code-map --self-test
+      # The helpers for the emulator (scripts/emulator): plain Python on made-up input; the clock shim's
+      # test builds a small C library and skips itself without gcc (ubuntu-latest has it).
+      - name: Self-tests of the emulator helpers
+        run: |
+          python3 -I scripts/emulator/screen.py --self-test
+          python3 -I scripts/emulator/seed-recipes.py --self-test
+          scripts/emulator/with-clock.sh --self-test
 
   # The server image: built and started on every run, so what only shows at start is found before the
   # merge and not the morning after; pushed only on main. Same registry and secrets as the cooking
