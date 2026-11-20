@@ -19,6 +19,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.MealSlot
@@ -109,6 +111,9 @@ fun RecipePicker(
 fun RecipePickerBody(recipes: List<RecipeSummary>, slot: MealSlot, onBrowseBank: (() -> Unit)?, onPick: (RecipeSummary) -> Unit) {
     val t = LocalStrings.current
     var query by remember { mutableStateOf("") }
+    val searchField = remember { FocusRequester() }
+    // In the browser typing goes to the search at once; on a phone the keyboard would hide the list, so it waits for a tap.
+    if (runsInBrowser()) LaunchedEffect(Unit) { searchField.requestFocus() }
     val shown = pickableRecipes(recipes, slot, query)
     val headings = shown.rotation.isNotEmpty() && shown.others.isNotEmpty()
     Column {
@@ -117,7 +122,7 @@ fun RecipePickerBody(recipes: List<RecipeSummary>, slot: MealSlot, onBrowseBank:
             onValueChange = { query = it },
             label = { Text(t(Msg.SEARCH_RECIPES)) },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().focusRequester(searchField),
         )
         if (shown.all.isEmpty()) {
             Text(t(Msg.NO_RECIPES_MATCH), Modifier.padding(top = 16.dp))

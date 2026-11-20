@@ -9,10 +9,10 @@
     <title>Meal planner</title>
     <style>
         /* The page's colour until the app has drawn itself: the device's, or the choice made in Settings (see the script below). */
-        :root { --page: #f7fbf1; }
-        @media (prefers-color-scheme: dark) { :root { --page: #10140f; } }
-        :root[data-theme="light"] { --page: #f7fbf1; }
-        :root[data-theme="dark"] { --page: #10140f; }
+        :root { --page: #f7fbf1; --ink: #191d17; }
+        @media (prefers-color-scheme: dark) { :root { --page: #10140f; --ink: #e1e4d9; } }
+        :root[data-theme="light"] { --page: #f7fbf1; --ink: #191d17; }
+        :root[data-theme="dark"] { --page: #10140f; --ink: #e1e4d9; }
         html, body { height: 100%; margin: 0; background: var(--page); }
     </style>
     <script>

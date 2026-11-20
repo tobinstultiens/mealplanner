@@ -17,7 +17,10 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
@@ -549,6 +552,8 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
             compose.waitForIdle()
             if (shot.name.startsWith("FOCUS")) {
                 compose.onNodeWithTag(FOCUSED).requestFocus().assertIsFocused()
+                // The ring shows for a keyboard user only; a key press (a harmless one) says this is one.
+                compose.onNodeWithTag(FOCUSED).performKeyInput { pressKey(Key.ShiftLeft) }
                 compose.waitForIdle()
             }
             compose.onNodeWithTag(FRAME).captureRoboImage(

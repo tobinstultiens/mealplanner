@@ -25,6 +25,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -188,7 +189,7 @@ fun App(
     val open = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen, bankOpen, adjusting)
 
     /** Opens what a notification tapped while the app runs asks for, keeping what holds unsaved typing (see [OpenScreens.opening]). */
-    fun openFromOutside(opening: Opening) {
+    fun openFromOutside(opening: Opening): OpenScreens {
         val now = OpenScreens(tab, openRecipeId, editing, mapping, profileOpen, pantryOpen, offersOpen, pricesOpen, serverOpen, bankOpen, adjusting)
             .opening(opening.route.openScreens())
         tab = now.tab
@@ -207,6 +208,7 @@ fun App(
         serverOpen = now.settings
         bankOpen = now.bank
         adjusting = now.adjusting
+        return now
     }
     LaunchedEffect(openings) {
         // The one taken at the start is applied once more: where Android restored the screens' saved state (its
@@ -215,6 +217,15 @@ fun App(
         openings?.requests?.collect(::openFromOutside)
     }
     LaunchedEffect(open, session != null) { addressFor(open, loggedIn = session != null)?.let(routes::write) }
+    // A new address typed or pasted into the open page: open it as a tapped notification would (what holds typing
+    // stays in front), then show the address of what is open, which differs where that stayed. Without a login the
+    // address is left alone, and what it asks for is shown again once the login is done.
+    val followAddress = rememberUpdatedState { hash: String ->
+        if (session != null) addressFor(openFromOutside(Opening(parseRoute(hash))), loggedIn = true)?.let(routes::write)
+    }
+    DisposableEffect(routes) { onDispose(routes.watch { followAddress.value(it) }) }
+    // A login made in another tab of the browser is the login of this one too.
+    DisposableEffect(storage) { onDispose(storage.watch { if (session == null) session = storage.session() }) }
     // Leaving the Plan tab the plan may have changed: the current week's list is fetched for the shop.
     var previousTab by remember { mutableStateOf(tab) }
     LaunchedEffect(tab) {
@@ -283,7 +294,7 @@ fun App(
     MealPlannerTheme(dark, systemColors) {
       // On a wide browser window the app keeps a phone-like column in the middle.
       Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).focusRing(), contentAlignment = Alignment.TopCenter) {
-       Box(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
+       Box(Modifier.widthIn(max = ContentColumnWidthDp.dp).fillMaxSize()) {
         // Any error message can offer the server settings, since a wrong address is the usual cause.
         update?.let { found ->
             if (updater != null) {
@@ -518,6 +529,9 @@ private fun NavigationLabel(text: String) {
         Text(text, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall.copy(fontSize = LabelFontSize, letterSpacing = 0.sp))
     }
 }
+
+/** The width of the column the app keeps in the middle of a wide window; the web client also needs it to find the margins (wheel scrolling). */
+internal const val ContentColumnWidthDp = 760
 
 /** The size of the bottom bar labels before the font scale: "Boodschappen" in Dutch is the widest. */
 private val LabelFontSize = 10.sp

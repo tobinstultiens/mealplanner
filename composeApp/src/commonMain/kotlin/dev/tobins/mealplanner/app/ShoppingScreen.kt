@@ -315,7 +315,9 @@ internal fun ShoppingScreen(
                             item { ShopsInUse(shops, ::chooseShops) }
                             overview.stores.forEach { group ->
                                 item(key = "s:${group.store.name}") {
-                                    val hint = group.saving?.let { t(Msg.STORE_SAVING_HINT, formatEuro(it, t.locale)) } ?: t(Msg.TAP_TO_SHOP)
+                                    val browser = runsInBrowser()
+                                    val hint = group.saving?.let { t(if (browser) Msg.STORE_SAVING_HINT_BROWSER else Msg.STORE_SAVING_HINT, formatEuro(it, t.locale)) }
+                                        ?: t(if (browser) Msg.TAP_TO_SHOP_BROWSER else Msg.TAP_TO_SHOP)
                                     GroupHeader(group.title(t), hint, onClick = { chooseStore(group.store) })
                                 }
                                 groupItems(group.store.name, group.items) { row(it, it.chipOffer(shops, today)) }

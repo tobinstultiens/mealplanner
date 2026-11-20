@@ -10,6 +10,12 @@ interface SettingsStorage {
 
     /** Forgets [key], so stored lists that are no longer needed take no room. */
     fun remove(key: String)
+
+    /**
+     * Calls [onChange] when another window of the app (a second browser tab) changed a stored value, so that a
+     * login made there is noticed. Returns what stops it; storage no other window shares never calls it.
+     */
+    fun watch(onChange: () -> Unit): () -> Unit = {}
 }
 
 /** Keeps everything in memory; for previews and tests. */

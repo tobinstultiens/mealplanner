@@ -22,6 +22,8 @@ kotlin {
             commonWebpackConfig { outputFileName = "composeApp.js" }
         }
         binaries.executable()
+        // @JsFun and `external` are how the web code talks to the browser; say so once instead of in every file.
+        compilerOptions { optIn.add("kotlin.js.ExperimentalWasmJsInterop") }
     }
 
     sourceSets {

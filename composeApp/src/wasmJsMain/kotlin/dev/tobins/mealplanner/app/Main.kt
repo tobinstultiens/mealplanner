@@ -6,21 +6,25 @@ import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
+import org.w3c.dom.events.Event
 
 /** Settings in the browser's localStorage, per site. */
 private object LocalStorageSettings : SettingsStorage {
     override fun get(key: String): String? = localStorage.getItem(key)
 
-    override fun set(key: String, value: String) = localStorage.setItem(key, value)
+    override fun set(key: String, value: String) {
+        localStorage.setItem(key, value)
+        showPageLanguage(Strings.of(appLanguage(), deviceLocaleTag()).language)
+    }
 
     override fun remove(key: String) = localStorage.removeItem(key)
-}
 
-/** The open screen lives in the address fragment; changing it adds no history entry, so the back button is untouched. */
-private object AddressRoutes : RouteStore {
-    override fun read(): String = window.location.hash
-
-    override fun write(hash: String) = window.history.replaceState(window.history.state, "", hash)
+    // The browser tells a window only of changes made by the other windows of the site.
+    override fun watch(onChange: () -> Unit): () -> Unit {
+        val listener: (Event) -> Unit = { onChange() }
+        window.addEventListener("storage", listener)
+        return { window.removeEventListener("storage", listener) }
+    }
 }
 
 private const val ROUTE_AFTER_LOGIN = "route.afterLogin"
@@ -38,6 +42,10 @@ private object SameTabLogin : LoginLauncher {
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
+    keepFocusInPage()
+    listenForBack()
+    showPageLanguage(Strings.of(LocalStorageSettings.appLanguage(), deviceLocaleTag()).language)
+    installCrashPage { Strings.of(LocalStorageSettings.appLanguage(), deviceLocaleTag()).language }
     // The web client is served by the server itself, so the API lives at the same address.
     val defaults = ServerSettings(url = window.location.origin)
     // Lives as long as the page, which a login leaves and comes back to.
@@ -51,6 +59,8 @@ fun main() {
         window.sessionStorage.removeItem(ROUTE_AFTER_LOGIN)
         window.history.replaceState(null, "", window.location.pathname + route)
     }
+    claimStartEntry(afterLogin = callback != null)
+    forwardWheelFromMargins(window, ContentColumnWidthDp)
     ComposeViewport(document.body!!) {
         App(defaults, LocalStorageSettings, SameTabLogin, logins, routes = AddressRoutes)
     }
