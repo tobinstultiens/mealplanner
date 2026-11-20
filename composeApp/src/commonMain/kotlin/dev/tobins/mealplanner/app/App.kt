@@ -530,10 +530,10 @@ private fun NavigationLabel(text: String) {
     }
 }
 
-/** The size of the bottom bar labels before the font scale: "Boodschappen" in Dutch is the widest. */
 /** The width of the column the app keeps in the middle of a wide window; the web client also needs it to find the margins (wheel scrolling). */
 internal const val ContentColumnWidthDp = 760
 
+/** The size of the bottom bar labels before the font scale: "Boodschappen" in Dutch is the widest. */
 private val LabelFontSize = 10.sp
 
 /** The font scale at which "Progress" still clears its tab's edges on a 360 dp wide screen. */

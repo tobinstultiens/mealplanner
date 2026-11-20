@@ -12,13 +12,18 @@ private const val CRASH_PAGE_ID = "crash-page"
 /**
  * The text behind a page-level failure, for "Details": the stack of the error (or of what a promise was rejected
  * with) when there is one, else its message. Empty for an `error` event that carries no error at all, such as
- * the browser's own "ResizeObserver loop completed with undelivered notifications", which breaks nothing.
+ * the browser's own "ResizeObserver loop completed with undelivered notifications", which breaks nothing, and
+ * for a request that found no server (the browser's `TypeError: Failed to fetch`, Firefox's "NetworkError when
+ * attempting to fetch", Safari's "Load failed", or Ktor's `Fail to fetch` around one): the screens catch those as
+ * a lost connection and say so in their own line, and the page still works. Only a failed fetch is told apart
+ * this way; any other error, a request's error answer included, is not.
  */
 @JsFun(
     """(e) => {
         const cause = e.type === 'error' ? e.error : e.reason;
         if (cause == null) return e.type === 'error' ? '' : 'The promise was rejected with nothing.';
-        return String(cause.stack || cause.message || cause);
+        const lostConnection = /^(TypeError|Error): (Failed to fetch|Fail to fetch|NetworkError when attempting to fetch|Load failed)/.test(String(cause));
+        return lostConnection ? '' : String(cause.stack || cause.message || cause);
     }""",
 )
 private external fun describeFailure(event: JsAny): String

@@ -16,6 +16,10 @@ private external fun newTarget(): EventTarget
 @JsFun("(target, error) => target.dispatchEvent(new ErrorEvent('error', { message: 'x', error: error === '' ? null : new Error(error) }))")
 private external fun uncaughtError(target: EventTarget, error: String)
 
+/** Says an uncaught error of the given [kind] (`TypeError` or `Error`) with [message]. */
+@JsFun("(target, kind, message) => target.dispatchEvent(new ErrorEvent('error', { message, error: kind === 'TypeError' ? new TypeError(message) : new Error(message) }))")
+private external fun uncaughtOf(target: EventTarget, kind: String, message: String)
+
 @JsFun("(target, reason) => { const e = new Event('unhandledrejection'); e.reason = new Error(reason); target.dispatchEvent(e); }")
 private external fun rejectedPromise(target: EventTarget, reason: String)
 
@@ -66,6 +70,25 @@ class CrashPageTest {
         assertEquals(1, document.querySelectorAll("#crash-page").length)
         val details = page().querySelector("pre")?.textContent.orEmpty()
         assertTrue("first" in details && "second" in details)
+    }
+
+    @Test
+    fun aRequestThatFoundNoServerShowsNothingBecauseTheScreensHandleIt() {
+        val target = newTarget()
+        installCrashPage(target) { Language.ENGLISH }
+        uncaughtOf(target, "TypeError", "Failed to fetch")
+        uncaughtOf(target, "TypeError", "NetworkError when attempting to fetch resource.")
+        uncaughtOf(target, "TypeError", "Load failed")
+        uncaughtOf(target, "Error", "Fail to fetch")
+        assertNull(document.getElementById("crash-page"))
+    }
+
+    @Test
+    fun otherErrorsStillShowEvenWithFetchInTheirText() {
+        val target = newTarget()
+        installCrashPage(target) { Language.ENGLISH }
+        uncaughtOf(target, "TypeError", "Cannot read properties of undefined while handling a Failed to fetch")
+        assertNotNull(document.getElementById("crash-page"))
     }
 
     @Test

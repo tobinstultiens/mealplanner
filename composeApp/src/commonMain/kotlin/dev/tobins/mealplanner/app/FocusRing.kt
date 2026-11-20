@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -50,8 +51,9 @@ fun Modifier.focusRing(): Modifier {
         .pointerInput(Unit) {
             awaitPointerEventScope {
                 while (true) {
-                    awaitPointerEvent(PointerEventPass.Initial)
-                    byKeyboard = false
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    // A press, not a move: the mouse passing over the window does not hide a ring the keyboard put there.
+                    if (event.type == PointerEventType.Press) byKeyboard = false
                 }
             }
         }
