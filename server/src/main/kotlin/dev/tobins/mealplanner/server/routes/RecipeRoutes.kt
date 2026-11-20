@@ -9,6 +9,7 @@ import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RotationInput
+import dev.tobins.mealplanner.api.StandardInput
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.server.respondGenerationOff
@@ -83,6 +84,8 @@ fun Route.recipeRoutes(cooking: CookingSync) {
         put("/settings") { call.respond(call.user.recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }
         // How many days it keeps once made (issue 234), body {"days": 3, "vacuumDays": 6}; null for a way it is not prepped.
         put("/keeps") { call.respond(call.user.recipes.setKeeps(call.id(), call.receive<RecipeKeeps>())) }
+        // A standard meal (issue 265), body {"standard": true}: marking makes its ingredients staples and says which.
+        put("/standard") { call.respond(call.user.recipes.setStandard(call.id(), call.receive<StandardInput>().standard)) }
         put("/rating") { call.respond(call.user.recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
         put("/added") { call.respond(call.user.recipes.setAdded(call.id(), call.receive<AddedInput>())) }
         put("/rotation") { call.respond(call.user.recipes.setRotation(call.id(), call.receive<RotationInput>())) }

@@ -20,6 +20,7 @@ import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.RecipeTopping
 import dev.tobins.mealplanner.api.RotationInput
+import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.planner.FreshUse
@@ -436,6 +437,54 @@ class RecipeRepository(
         return find(id)!!
     }
 
+    /**
+     * Makes one of my meals a standard meal (issue 265), or no longer one. Marking makes the ingredients it is made of
+     * staples ([standardIngredients]), as what is always at home, and says which were not yet; unmarking leaves the
+     * staples as they are, as other meals may need them. Its own route, so that released apps saving [RecipeSettings]
+     * leave it alone. Only a meal of mine with amounts is one: a bank recipe ([requireMine]), a building block and a
+     * recipe with nothing to size a portion by are a [ConflictException]; another account's is not there (404).
+     */
+    fun setStandard(id: Long, standard: Boolean): StandardSwitch {
+        val (added, unlinked) = db.writing {
+            val row = requireMine(id)
+            if (!standard) {
+                q.setStandardMeal(0, userId, id)
+                return@writing emptyList<String>() to emptyList()
+            }
+            if (row.kind == RecipeKind.COMPONENT.name) throw ConflictException("A building block is no standard meal: make it a meal first")
+            candidate(id) ?: throw ConflictException("This recipe has no amounts to plan with")
+            q.setStandardMeal(1, userId, id)
+            val (made, unlinked) = standardIngredients(id)
+            val added = made.filterNot { it.isStaple }
+            for (ingredient in added) ingredients.setStaple(ingredient.id, true)
+            added.map { it.name } to unlinked
+        }
+        return StandardSwitch(find(id)!!, added, unlinked)
+    }
+
+    /**
+     * What a standard meal [id] is made of, as the pantry's staples go (issue 265): the ingredients its lines are linked
+     * to, each once, in the recipe's order, but not those that count for nothing (spices, water), which the shopping
+     * list never buys; and the texts of its lines linked to none yet, but not those used to taste.
+     */
+    internal fun standardIngredients(id: Long): Pair<List<Ingredient>, List<String>> {
+        val resolve = ingredients.resolver()
+        val linked = ArrayList<Ingredient>()
+        val unlinked = LinkedHashSet<String>()
+        for (line in linesOf(id)) {
+            val ingredient = resolve(line)
+            when {
+                ingredient != null -> if (!ingredient.negligible) linked += ingredient
+                line.amount != null || !NutritionCalculator.isSeasoning(line.ingredientText, null) -> unlinked += IngredientLine.coreText(line.ingredientText)
+            }
+        }
+        return linked.distinctBy { it.id } to unlinked.toList()
+    }
+
+    /** My standard meals (issue 265) as plan candidates: the meals marked so that have amounts to size a portion by, by title. */
+    fun standardMeals(): List<PlanCandidate> =
+        mine().filter { it.standardMeal != 0L && it.kind == RecipeKind.MEAL.name }.mapNotNull { candidate(it.id) }
+
     fun updateSettings(id: Long, settings: RecipeSettings): RecipeDetail {
         db.writing {
             q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
@@ -590,6 +639,7 @@ class RecipeRepository(
         removedFromSite = removedAt != null,
         keepsDays = keepsDays?.toInt(),
         keepsVacuumDays = keepsVacuumDays?.toInt(),
+        standardMeal = standardMeal != 0L,
     )
 
     private fun Boolean.toLong() = if (this) 1L else 0L

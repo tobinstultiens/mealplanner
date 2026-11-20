@@ -234,7 +234,8 @@ them, or one batch partly each way (issue 269). Only by hand: the planner never 
   the day after, it is not listed, and it is never planned on its own. `POST
   /api/plans/{weekStart}/preps/{id}/spare` with `{"from": {"date": ..., "slot": ...}, "to": {...}}` eats it there:
   the meal there goes, the skipped meal keeps a share of 0 (and can no longer be marked eaten), and what the stock
-  gave for it goes along, so the batch, the list and the stock stay as they were. The morning after the last day,
+  gave for it goes along, so the batch, the list and the stock stay as they were. A standard meal may take the skipped
+  meal's slot meanwhile; its share stays in the box all the same ("Standard meals"). The morning after the last day,
   the "Prepped food to throw away" notification (issue 264) names what may still be in a box: the shares of skipped
   meals or sides not eaten elsewhere, and the meals of the batch never marked, portions and sides counted apart
   (`PrepPastLastDay.left` and `unmarked` count both, `leftSides` and `unmarkedSides` the sides among them; `side`,
@@ -277,8 +278,9 @@ them, or one batch partly each way (issue 269). Only by hand: the planner never 
   0, as a skipped meal of a batch does: the batch is still made that day, with that meal, which shows the batch to
   cook and can't be removed on its own.
 - Kept in `prep` and `prepPortion` (version 20 of the database). A `prepPortion` row is a meal's share of a batch,
-  with a role: `MEAL` for the slot's meal, `SIDE` for a side next to it, with its own portions. What a side takes
-  from the stock is kept under its meal apart from the main's (`stockUse.role`, version 21).
+  with a role: `MEAL` for the slot's meal, `SIDE` for a side next to it, with its own portions, and `BOX` for a skipped
+  meal's share whose slot a standard meal took ("Standard meals"). What a side takes from the stock is kept under its
+  meal apart from the main's (`stockUse.role`, version 21), and so is what a share in the box took.
 
 **In the app.** A recipe's settings have "Keeps once made": in a box and vacuum sealed, each "not prepped" or 1 to 7
 days. On the Plan, "Prep a recipe…" under the replan button, or "Prep this recipe…" in the menu of a lunch or dinner
@@ -324,6 +326,47 @@ remove the made-on day's meal comes as a sentence. Of a meal with a side it show
 numbers, while the day's totals count the side; marking the meal eaten eats the side with it. Of a batch eaten both
 ways it shows the meals as above and each side's meal with its main, and the meal that makes it cooks all of it,
 the sides' share too.
+
+## Standard meals
+
+A standard meal (issue 265) is one of my meals I can always make from what is at home, such as eggs on bread, offered
+in one tap where a meal falls away. Only by hand: the planner never places one for being one, and picks a standard
+meal in the rotation as any other recipe.
+
+- **Marking.** `PUT /api/recipes/{id}/standard` with `{"standard": true}` makes one of my meals a standard meal, per
+  account, and answers `StandardSwitch`: the recipe (`RecipeSummary.standardMeal`), the ingredients it made staples
+  (`addedStaples`: those its lines are linked to that were not yet, each once, without those that count for nothing,
+  such as spices and water, which the list never buys) and its lines linked to no ingredient yet (`unlinked`, without
+  those used to taste), which could not be made one. `{"standard": false}` unmarks it and leaves the staples. 409 for a
+  bank recipe, a building block and a recipe without amounts; 404 for another account's. Its own route, so a released
+  app saving `PUT .../settings` leaves it alone; making the recipe a building block, or putting it back in the bank,
+  ends it.
+- **Offered.** `GET /api/plans/{weekStart}/standard-meals` (`StandardMeals`) lists the standard meals for each of the
+  slots the recipe is set to be planned as (its "Plan as"), each at the portion that slot gets within the profile's
+  range, as a recipe chosen by hand ("Portion per meal"), with its kcal, protein and fibre there, and in `missing` the
+  ingredients of it the pantry has not at home that week: neither a staple nor on hand. `closed` names the slots whose
+  meal no standard meal can take, and why: an eaten meal, the leftover lunch of an eaten dinner, the meal that makes a
+  prepped batch (skipped or not), a later meal of a batch that was made and is not skipped (skipping it opens the
+  slot), and a meal with a prepped side, which is eaten or skipped with whatever is in the slot.
+- **Chosen.** `PUT /api/plans/{weekStart}/meals/{day}/{slot}/standard` with `{"recipeId": 12, "eaten": true}` puts it
+  in the slot in place of what is there, sized as above and locked, as a recipe chosen by hand; with `eaten` it is
+  marked eaten at once (what Today asks for a meal of today or a day before), so the day's calories, protein and fibre
+  count it and it takes what it eats from the stock, given back when it is un-eaten, as for any meal. Its ingredients
+  that were `missing` are made staples again, as a standard meal's ingredients are: the shopping list then names them
+  among the staples, to restock, and has no row of them, as for every staple; the answer (`StandardChosen`) has the
+  week and those names. 409 for a recipe that is not one of my standard meals or not set for the slot, and for a
+  `closed` slot; 404 for another account's recipe.
+- **Prepped meals.** A standard meal takes the place of a skipped later meal of a prepped batch too: the skipped share
+  stays in the batch, in the box (`GET /api/preps/spare/{date}`), and is eaten elsewhere as any skipped share is; the
+  batch is as large as it was and still cooked on its made-on day. Replanning, rerolling or choosing another recipe for
+  that slot keeps the share in the box; removing the standard meal puts the skipped meal back in its slot with its
+  share. A prep or a side of that batch can't take the slot then (409). What was in the skipped meal (issue 226) goes
+  with its slot: a share in the box is eaten as its recipe has it. Kept as a `prepPortion` row of role `BOX` under the
+  slot, with what the stock gave for it under `stockUse.role` `BOX`; the recipe's switch is `recipe.standardMeal`
+  (version 22 of the database).
+
+An installed app that knows nothing of standard meals shows one as the meal it is, locked, and the skipped prepped
+meal's share in the box as before.
 
 ## Fibre and what the planner weighs most
 
@@ -801,7 +844,8 @@ and per meal `reroll`, `lock`, `status` and delete; `PUT meals/{day}/{slot}` wit
 locked, and a skipped meal leaves the day's and the week's totals; a meal that was eaten, or the leftover lunch of an eaten
 dinner, keeps its recipe and its place: `reroll`, `PUT` and delete answer 409, `POST meals/{day}/{slot}/generate` 422, and
 `generate` keeps it; see `docs/data-sources.md`, "Un-eating"; `preps` and `preps/{id}` with `preps/{id}/spare` for prepped
-meals, `DELETE meals/{day}/{slot}/side` for a side, and `GET /api/preps/spare/{date}`, see "Prepped meals"), `/api/days/{date}` and `/api/log` (what was eaten)
+meals, `DELETE meals/{day}/{slot}/side` for a side, and `GET /api/preps/spare/{date}`, see "Prepped meals"; `GET standard-meals`
+and `PUT meals/{day}/{slot}/standard`, with `PUT /api/recipes/{id}/standard`, see "Standard meals"), `/api/days/{date}` and `/api/log` (what was eaten)
 `/api/weights` (weight log, trend and target suggestion; the newest weighing is the profile's weight, so the targets follow it:
 a weighing for an earlier day leaves the profile alone, and removing the newest one gives the profile the weight of the newest
 one left. Removing the only one keeps the profile's weight, as what it was before is not stored; plans already made keep their

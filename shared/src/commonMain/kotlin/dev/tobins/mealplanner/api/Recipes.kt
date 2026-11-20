@@ -46,6 +46,11 @@ data class RecipeSummary(
     val keepsDays: Int? = null,
     /** Days it keeps once made and vacuum sealed; null as [keepsDays]. */
     val keepsVacuumDays: Int? = null,
+    /**
+     * A standard meal (issue 265): one of my meals I can always make from what is at home, offered in one tap where a
+     * meal of one of its [mealSlots] falls away. The planner picks it as any other recipe. False from a server before them.
+     */
+    val standardMeal: Boolean = false,
 )
 
 /**

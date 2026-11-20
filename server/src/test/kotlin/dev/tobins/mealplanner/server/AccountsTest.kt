@@ -48,6 +48,10 @@ import dev.tobins.mealplanner.api.ShoppingRowKey
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.SpareMove
+import dev.tobins.mealplanner.api.StandardChoice
+import dev.tobins.mealplanner.api.StandardInput
+import dev.tobins.mealplanner.api.StandardMeals
+import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.api.ToppingInput
 import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.api.Store
@@ -307,6 +311,39 @@ class AccountsTest {
         assertEquals(alicesWeek, alice.get("/api/plans/$week").body<WeekPlan>())
         assertEquals(alicesSpare, alice.get("/api/preps/spare/2026-11-18").body<List<SparePortion>>())
         assertEquals(3, alice.get("/api/recipes/${stew.id}").body<RecipeDetail>().summary.keepsDays)
+    }
+
+    @Test
+    fun anotherAccountsStandardMealsCanNeitherBeReadNorChanged() = testApplication {
+        start()
+        val week = "2026-11-16"
+        val profile = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        val (alice, bob) = listOf("alice", "bob").map { name -> clientFor(name).also { it.put("/api/profile") { setBody(profile) } } }
+        // Each has beef of their own and a stew for dinner; Alice makes hers a standard meal, which makes her beef a staple, and eats it on Tuesday.
+        val bobsBeef = listOf(alice, bob).map { it.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>() }.last()
+        val stew = alice.post("/api/recipes") { setBody(recipe.copy(mealSlots = listOf(MealSlot.DINNER))) }.body<RecipeDetail>().summary
+        val bobsStew = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's stew", mealSlots = listOf(MealSlot.DINNER))) }.body<RecipeDetail>().summary
+        assertEquals(listOf("Beef"), alice.put("/api/recipes/${stew.id}/standard") { setBody(StandardInput(true)) }.body<StandardSwitch>().addedStaples)
+        assertTrue(alice.put("/api/plans/$week/meals/1/DINNER/standard") { setBody(StandardChoice(stew.id, eaten = true)) }.status.isSuccess())
+        val alicesWeek = alice.get("/api/plans/$week").body<WeekPlan>()
+        val alicesPantry = alice.get("/api/pantry").body<Pantry>()
+
+        // Bob reads none of her standard meals, and can neither mark, unmark nor choose hers: each a 404.
+        assertEquals(emptyList(), bob.get("/api/plans/$week/standard-meals").body<StandardMeals>().meals)
+        for (standard in listOf(true, false)) {
+            assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/${stew.id}/standard") { setBody(StandardInput(standard)) }.status)
+        }
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/$week/meals/2/DINNER/standard") { setBody(StandardChoice(stew.id)) }.status)
+        assertTrue(bob.get("/api/plans/$week").body<WeekPlan>().days.all { it.meals.isEmpty() })
+        assertEquals(emptyList(), bob.get("/api/pantry").body<Pantry>().staples, "her marking made none of his staples")
+
+        // His own marking makes his beef a staple, not hers, and his stew is no standard meal of hers to choose.
+        assertEquals(listOf("Beef"), bob.put("/api/recipes/${bobsStew.id}/standard") { setBody(StandardInput(true)) }.body<StandardSwitch>().addedStaples)
+        assertEquals(listOf(bobsBeef.id), bob.get("/api/pantry").body<Pantry>().staples.map { it.id })
+        assertEquals(HttpStatusCode.NotFound, alice.put("/api/plans/$week/meals/2/DINNER/standard") { setBody(StandardChoice(bobsStew.id)) }.status)
+        assertEquals(alicesWeek, alice.get("/api/plans/$week").body<WeekPlan>())
+        assertEquals(alicesPantry, alice.get("/api/pantry").body<Pantry>())
+        assertEquals(setOf(stew.id), alice.get("/api/plans/$week/standard-meals").body<StandardMeals>().meals.mapTo(HashSet()) { it.recipeId })
     }
 
     @Test

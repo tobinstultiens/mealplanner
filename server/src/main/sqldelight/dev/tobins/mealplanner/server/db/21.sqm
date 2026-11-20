@@ -1,0 +1,8 @@
+-- Version 21 -> 22: standard meals (issue 265). A column of a recipe, per account as recipes are, so no table is
+-- rebuilt and no row is touched: no recipe is a standard meal until the account says so.
+--
+-- A skipped meal's share of a prepped batch whose slot a standard meal takes stays in the box as a prepPortion row
+-- of role BOX, and what the stock gave for it as stockUse rows of that role: values of existing TEXT columns, so
+-- nothing else changes.
+
+ALTER TABLE recipe ADD COLUMN standardMeal INTEGER NOT NULL DEFAULT 0;
