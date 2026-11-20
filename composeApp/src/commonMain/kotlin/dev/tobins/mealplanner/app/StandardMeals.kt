@@ -4,16 +4,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.MealSlot
@@ -26,11 +23,13 @@ import kotlin.math.roundToInt
 
 /**
  * The standard meals (issue 265) to offer in [day]'s [slot] of the week [offer] is of: those set to be planned as [slot],
- * at the portion it gets. None where the server says no standard meal can take the slot's meal ([StandardMeals.closed]),
- * and none from a server before standard meals ([offer] null).
+ * at the portion it gets, but not the recipe of the meal just [skipped] there, which is what was not wanted. None where the
+ * server says no standard meal can take the slot's meal ([StandardMeals.closed]), and none from a server before standard
+ * meals ([offer] null).
  */
-fun standardChoices(offer: StandardMeals?, day: Int, slot: MealSlot): List<StandardMeal> =
-    if (offer == null || offer.closed.any { it.day == day && it.slot == slot }) emptyList() else offer.meals.filter { it.slot == slot }
+fun standardChoices(offer: StandardMeals?, day: Int, slot: MealSlot, skipped: Long? = null): List<StandardMeal> =
+    if (offer == null || offer.closed.any { it.day == day && it.slot == slot }) emptyList()
+    else offer.meals.filter { it.slot == slot && it.recipeId != skipped }
 
 /** What a chip of [this] standard meal says first: `Eggs on bread · 553 kcal`, the calories at the slot's portion. */
 fun StandardMeal.chipText(strings: Strings): String = strings(Msg.STANDARD_CHIP, title, kcal.roundToInt())
@@ -66,7 +65,8 @@ fun standardReport(switch: StandardSwitch, strings: Strings): List<String> = lis
 @Composable
 fun StandardChips(choices: List<StandardMeal>, enabled: Boolean, onPick: (StandardMeal) -> Unit, modifier: Modifier = Modifier) {
     val t = LocalStrings.current
-    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+    // Spaced both ways: chips of two lines, or at a large font, wrap onto rows that would otherwise touch.
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         for (choice in choices) {
             AssistChip(
                 enabled = enabled,
@@ -115,10 +115,7 @@ fun SkipSheetBody(choices: List<StandardMeal>, enabled: Boolean, onPick: (Standa
 fun StandardMealRow(standard: Boolean, report: StandardSwitch?, enabled: Boolean, onChange: (Boolean) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(t(Msg.STANDARD_MEAL), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-            Switch(checked = standard, onCheckedChange = onChange, enabled = enabled)
-        }
+        SwitchRow(t(Msg.STANDARD_MEAL), standard, enabled, onChange)
         val hint = listOf(t(if (standard) Msg.STANDARD_ON_HINT else Msg.STANDARD_OFF_HINT)) + report?.let { standardReport(it, t) }.orEmpty()
         for (line in hint) {
             Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

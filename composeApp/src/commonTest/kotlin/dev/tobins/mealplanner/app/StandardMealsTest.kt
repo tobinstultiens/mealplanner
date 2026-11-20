@@ -36,6 +36,7 @@ class StandardMealsTest {
     fun aSlotIsOfferedTheStandardMealsSetForItUnlessNoneCanTakeItsPlace() {
         assertEquals(listOf("Eggs on bread"), standardChoices(offer, 1, MealSlot.LUNCH).map { it.title }, "not the yoghurt bowl, set for snack only")
         assertEquals(listOf("Eggs on bread", "Yoghurt bowl"), standardChoices(offer, 1, MealSlot.SNACK).map { it.title })
+        assertEquals(listOf("Yoghurt bowl"), standardChoices(offer, 1, MealSlot.SNACK, skipped = 1).map { it.title }, "not the recipe just skipped")
         assertEquals(emptyList(), standardChoices(offer, 2, MealSlot.LUNCH), "Wednesday's lunch is closed")
         assertEquals(emptyList(), standardChoices(offer, 1, MealSlot.DINNER))
         assertEquals(emptyList(), standardChoices(null, 1, MealSlot.LUNCH), "a server before standard meals offers none")

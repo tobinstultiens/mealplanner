@@ -226,6 +226,8 @@ class FakeBackend(
                 changes += "PUT $path $sent"
                 json.encodeToString(StandardChosen(plan(parts[2]), addedStaples = listOf("Eggs")))
             }
+            // A meal taken out of the plan: the week as it was, as the test reads what was sent.
+            method == "DELETE" && parts.size == 6 && parts[1] == "plans" && parts[3] == "meals" -> { changes += "DELETE $path"; json.encodeToString(plan(parts[2])) }
             // Choosing a recipe for a meal: the plan, which already has such a choice.
             parts.size == 6 && parts[1] == "plans" && parts[3] == "meals" -> json.encodeToString(plan(parts[2]))
             parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(shopping(parts[2]))

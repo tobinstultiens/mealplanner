@@ -384,7 +384,7 @@ fun PlanScreen(
                                     val status = if (meal.status == MealStatus.SKIPPED) MealStatus.PLANNED else MealStatus.SKIPPED
                                     // Skipped, the standard meals for its slot are offered at once, unless none can take its place.
                                     val offer: suspend () -> Unit = {
-                                        val choices = standardChoices(standard, meal.day, meal.slot)
+                                        val choices = standardChoices(standard, meal.day, meal.slot, skipped = meal.recipeId)
                                         if (status == MealStatus.SKIPPED && choices.isNotEmpty()) skipped = meal to choices
                                     }
                                     change(then = offer) {
@@ -393,6 +393,9 @@ fun PlanScreen(
                                     }
                                 },
                                 onToggleLock = { meal -> change { api.setMealLocked(weekStart, meal.day, meal.slot, !meal.locked) } },
+                                // A standard meal placed by hand goes again; one placed over a skipped prepped meal brings it back.
+                                standardRecipes = standard?.meals?.mapTo(HashSet()) { it.recipeId }.orEmpty(),
+                                onRemove = { meal -> change { api.removeMeal(weekStart, meal.day, meal.slot) } },
                                 onAdjust = { meal -> onAdjust(MealPlace(weekStart, meal.day, meal.slot)) },
                                 onPrep = { meal ->
                                     val date = plusDays(weekStart, meal.day)
@@ -442,6 +445,9 @@ private fun DayCard(
     onChoose: (Int, MealSlot) -> Unit,
     onToggleSkipped: (PlannedMeal) -> Unit,
     onToggleLock: (PlannedMeal) -> Unit,
+    /** The recipes that are my standard meals (issue 265): a meal of one can be taken out of the plan ([onRemove]). */
+    standardRecipes: Set<Long>,
+    onRemove: (PlannedMeal) -> Unit,
     onAdjust: (PlannedMeal) -> Unit,
     onPrep: (PlannedMeal) -> Unit,
     /** Removes a prep after naming its meals: the meal's own or its side's, with the title of its recipe. */
@@ -530,6 +536,10 @@ private fun DayCard(
                                 // Left out for a skipped meal, where it would be greyed with no reason: eat it after all first.
                                 if (kept == null && meal.status != MealStatus.SKIPPED) {
                                     DropdownMenuItem(text = { Text(t(Msg.WRITE_NEW_RECIPE)) }, enabled = !meal.locked, onClick = { menu = false; onGenerate(meal) })
+                                }
+                                // Only where the server lets it go: not a meal that keeps its recipe, of a prep, or with a side.
+                                if (kept == null && meal.prep == null && meal.side == null && meal.recipeId in standardRecipes) {
+                                    DropdownMenuItem(text = { Text(t(Msg.REMOVE_STANDARD_MEAL)) }, onClick = { menu = false; onRemove(meal) })
                                 }
                                 val lunchOrDinner = meal.slot == MealSlot.LUNCH || meal.slot == MealSlot.DINNER
                                 val prep = meal.prep

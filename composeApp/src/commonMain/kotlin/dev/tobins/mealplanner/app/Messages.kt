@@ -886,6 +886,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     SKIP_SHEET_TEXT("Eat one of your standard meals instead?", "Een van je standaardmaaltijden eten in plaats daarvan?"),
     SKIP_SHEET_LEAVE("Leave it empty", "Leeg laten"),
     PICKER_STANDARD("My standard meals", "Mijn standaardmaaltijden"),
+    REMOVE_STANDARD_MEAL("Remove from the plan", "Uit het plan halen"),
     PICKER_SHRINKS_PREP(
         "This meal is from a prepped batch still to make: another recipe here makes the batch smaller.",
         "Deze maaltijd komt uit een prep die nog gemaakt wordt: een ander recept hier maakt de prep kleiner.",

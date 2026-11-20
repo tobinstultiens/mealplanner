@@ -152,7 +152,7 @@ fun TodayScreen(
                             onStatus = { status -> change { api.setMealStatus(day.weekStart, day.dayIndex, meal.slot, status) } },
                             onAdjust = { onAdjust(MealPlace(day.weekStart, day.dayIndex, meal.slot)) },
                             // Only a skipped meal's place is offered: a chip there takes it at once.
-                            standardChoices = if (meal.status == MealStatus.SKIPPED) standardChoices(standard, day.dayIndex, meal.slot) else emptyList(),
+                            standardChoices = if (meal.status == MealStatus.SKIPPED) standardChoices(standard, day.dayIndex, meal.slot, skipped = meal.recipeId) else emptyList(),
                             onPickStandard = { choice ->
                                 change {
                                     // Today's and a past day's meal was eaten: that is why it is picked here.

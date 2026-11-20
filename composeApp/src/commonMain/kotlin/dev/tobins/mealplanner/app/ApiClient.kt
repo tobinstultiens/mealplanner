@@ -497,6 +497,12 @@ class ApiClient(
     /** The standard meals for each slot of the week starting [weekStart], and the slots none can take; null from a server before them. */
     suspend fun standardMeals(weekStart: String): StandardMeals? = unlessUnknown { http.get("api/plans/$weekStart/standard-meals").body<StandardMeals>() }
 
+    /**
+     * Takes the meal in [day]'s [slot] of the week starting [weekStart] out of the plan; a standard meal placed over a skipped
+     * prepped meal gives the slot back to it (issue 265). The server refuses a meal that keeps its recipe (409).
+     */
+    suspend fun removeMeal(weekStart: String, day: Int, slot: MealSlot): WeekPlan = http.delete("api/plans/$weekStart/meals/$day/${slot.name}").body()
+
     /** Puts standard meal [recipeId] in [day]'s [slot] of the week starting [weekStart], eaten at once when [eaten]. */
     suspend fun chooseStandard(weekStart: String, day: Int, slot: MealSlot, recipeId: Long, eaten: Boolean): StandardChosen =
         http.put("api/plans/$weekStart/meals/$day/${slot.name}/standard") {

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
@@ -464,15 +466,27 @@ private fun AddFromBank(pick: Boolean, busy: Boolean, onPick: (Boolean) -> Unit,
     }
 }
 
+/**
+ * A setting's [label] with its switch at the end of the line: the whole line toggles it, as a tap on the words is meant
+ * for the switch too, and reads as one switch to TalkBack.
+ */
+@Composable
+internal fun SwitchRow(label: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+    }
+}
+
 /** The switch that puts one of my recipes in the rotation the planner picks from, with a line on what that means. */
 @Composable
 private fun RotationRow(inRotation: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(t(Msg.IN_MY_ROTATION), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-            Switch(checked = inRotation, onCheckedChange = onChange, enabled = enabled)
-        }
+        SwitchRow(t(Msg.IN_MY_ROTATION), inRotation, enabled, onChange)
         Text(
             t(if (inRotation) Msg.ROTATION_ON_HINT else Msg.ROTATION_OFF_HINT),
             style = MaterialTheme.typography.bodySmall,

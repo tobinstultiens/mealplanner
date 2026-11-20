@@ -118,6 +118,47 @@ class StandardMealScreensTest {
 
     // --- The Plan
 
+    /** Opens the swap menu of the [slot] ("lunch", "dinner") of the day headed [label], the Plan's list item [item]. */
+    private fun openMenuOf(label: String, slot: String, item: Int) {
+        waitFor("Prep a recipe…")
+        compose.onNode(hasScrollAction()).performScrollToIndex(item)
+        waitFor(label)
+        // The positions are read once the list has settled where it was scrolled to.
+        compose.waitForIdle()
+        val dayTop = compose.onNodeWithText(label).fetchSemanticsNode().boundsInRoot.top
+        val buttons = compose.onAllNodesWithContentDescription("Swap $slot").fetchSemanticsNodes()
+        val own = buttons.withIndex().filter { it.value.boundsInRoot.top > dayTop }.minBy { it.value.boundsInRoot.top }.index
+        compose.onAllNodesWithContentDescription("Swap $slot")[own].performClick()
+        waitFor("Not eating this")
+    }
+
+    @Test
+    fun theSkipSheetLeavesOutTheRecipeThatWasSkipped() {
+        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
+        // Tuesday's lunch is the tuna pasta salad, itself a standard meal for lunch: the sheet offers the shakshuka only.
+        openMenuOf("Tue 17 Nov", "lunch", item = 2)
+        compose.onNodeWithText("Not eating this").performClick()
+        waitFor("Eat one of your standard meals instead?")
+        assertEquals(1, count("Shakshuka · 700"))
+        assertEquals(0, count("Tuna pasta salad · 610"))
+    }
+
+    @Test
+    fun aStandardMealCanBeTakenOutOfThePlan() {
+        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
+        // Tuesday's lunch is the tuna pasta salad, a standard meal: removing it is what gives a skipped prepped meal its slot back.
+        openMenuOf("Tue 17 Nov", "lunch", item = 2)
+        compose.onNodeWithText("Remove from the plan").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it == "DELETE /api/plans/${FakeBackend.WEEK_START}/meals/1/LUNCH" } }
+    }
+
+    @Test
+    fun aMealOfAnotherRecipeHasNoEntryToTakeItOut() {
+        show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
+        openMenuOf("Mon 16 Nov", "dinner", item = 1)
+        assertEquals(0, count("Remove from the plan"), "the chicken thighs are no standard meal")
+    }
+
     /** Opens the swap menu of the dinner of the first day (Monday) on the Plan. */
     private fun openMondayDinnerMenu() {
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithContentDescription("Swap dinner").fetchSemanticsNodes().isNotEmpty() }
@@ -202,16 +243,9 @@ class StandardMealScreensTest {
     fun thePickerSaysWhenChoosingMakesAPrepStillToMakeSmaller() {
         useBackend(standardMeals = true, prepped = true)
         show { PlanScreen(api, { _, _ -> }, {}, {}, {}) }
-        // Tuesday's lunch is a later meal of the chicken thighs, a batch no meal of which was eaten yet.
-        // The box card comes before the days: Tuesday is scrolled to by its heading.
-        waitFor("Prep a recipe…")
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Tue 17 Nov"))
-        waitFor("Tue 17 Nov")
-        val dayTop = compose.onNodeWithText("Tue 17 Nov").fetchSemanticsNode().boundsInRoot.top
-        val buttons = compose.onAllNodesWithContentDescription("Swap lunch").fetchSemanticsNodes()
-        val own = buttons.withIndex().filter { it.value.boundsInRoot.top > dayTop }.minBy { it.value.boundsInRoot.top }.index
-        compose.onAllNodesWithContentDescription("Swap lunch")[own].performClick()
-        waitFor("Choose a recipe…")
+        // Tuesday's lunch is a later meal of the chicken thighs, a batch no meal of which was eaten yet. The box card comes
+        // before the days, so Tuesday is the list's fourth item.
+        openMenuOf("Tue 17 Nov", "lunch", item = 3)
         compose.onNodeWithText("Choose a recipe…").performClick()
         waitFor("This meal is from a prepped batch still to make: another recipe here makes the batch smaller.")
     }
@@ -222,15 +256,19 @@ class StandardMealScreensTest {
     fun markingARecipeAStandardMealSaysWhatItMadeStaples() {
         show { RecipeDetailScreen(api, 4, null, onBack = {}, onEdit = {}) }
         waitFor("Standard meal: I can always make this")
-        compose.onNodeWithText("Standard meal: I can always make this").performScrollTo()
-        // The switch on the label's line.
-        val label = compose.onNodeWithText("Standard meal: I can always make this").fetchSemanticsNode().boundsInRoot
-        val switches = compose.onAllNodes(isToggleable()).fetchSemanticsNodes()
-        val own = switches.indices.minBy { kotlin.math.abs(switches[it].boundsInRoot.center.y - label.center.y) }
-        compose.onAllNodes(isToggleable())[own].performClick()
+        // A tap on the words toggles it, as the whole line is the switch.
+        compose.onNode(isToggleable() and hasText("Standard meal: I can always make this")).performScrollTo().performClick()
         waitFor("Now staples: Chicken thigh fillet, Spinach")
         waitFor("Not linked to an ingredient, so not a staple: juiced")
         assertTrue(backend.changes.any { it == "PUT /api/recipes/4/standard {\"standard\":true}" }, backend.changes.toString())
+    }
+
+    @Test
+    fun theRotationsLineTogglesFromItsWordsToo() {
+        show { RecipeDetailScreen(api, 4, null, onBack = {}, onEdit = {}) }
+        waitFor("In my rotation")
+        compose.onNode(isToggleable() and hasText("In my rotation")).performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it == "PUT /api/recipes/4/rotation {\"inRotation\":false}" } }
     }
 
     @Test

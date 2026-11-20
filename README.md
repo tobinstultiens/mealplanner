@@ -382,16 +382,20 @@ meal in the rotation as any other recipe.
   (version 22 of the database).
 
 **In the app.** One of my meals' recipe screen has "Standard meal: I can always make this" under "In my rotation"
-(not on a building block); switched on, it says which ingredients are now staples and which lines are linked to no
-ingredient, while the recipe is open. On Today, a skipped meal shows "Instead, one of my standard meals:" with a chip
-per standard meal for its slot, its calories at the slot's portion and, on a second line, an ingredient that is not at
-home ("no eggs at home"); one tap puts it there, eaten for today or a day before and still to eat for a day to come. On
-the Plan, "Not eating this" opens the skip sheet with the same chips at once, and one tap puts the meal there still to
-eat; "Leave it empty" keeps the skip. No chips where the server says the slot can't take one, and none when no standard
-meal is set for the slot, so the skip is then as before. "Choose a recipe…" and an empty slot's picker list the
-standard meals for the slot first, under "My standard meals", put in by the same route; on a later meal of a prep
-still to make, still planned, the picker says that another recipe there makes the batch smaller. Choosing one whose
-ingredient was out says that it is back among the staples, to restock. Against a server from before standard meals
+(not on a building block); the whole line toggles it, as it does "In my rotation". Switched on, it says which
+ingredients are now staples and which lines are linked to no ingredient, while the recipe is open. On Today, a skipped
+meal shows "Instead, one of my standard meals:" with a chip per standard meal for its slot, other than the recipe just
+skipped, its calories at the slot's portion and, on a second line, an ingredient that is not at home ("no egg at home",
+by the catalogue's name); one tap puts it there, eaten for today or a day before and still to eat for a day to come.
+On the Plan, "Not eating this" opens the skip sheet with the same chips at once, and one tap puts the meal there still
+to eat; "Leave it empty" keeps the skip. No chips where the server says the slot can't take one, and none when no
+standard meal is set for the slot, so the skip is then as before. "Choose a recipe…" and an empty slot's picker list
+the standard meals for the slot first, under "My standard meals", put in by the same route; on a later meal of a prep
+still to make, still planned, the picker says that another recipe there makes the batch smaller. A standard meal's
+menu on the Plan has "Remove from the plan" (unless it keeps its recipe, such as one eaten): the slot is empty again,
+or holds again the skipped prepped meal whose place it took. Choosing one whose ingredient was out says that it is
+back among the staples, to restock; the shopping list names it among the staples it uses, without marking it as one
+to restock, as the server keeps no record of which staples a standard meal made again. Against a server from before standard meals
 the app shows none of this, and the switch's change fails with the server's answer.
 
 An installed app that knows nothing of standard meals shows one as the meal it is, locked, and the skipped prepped
