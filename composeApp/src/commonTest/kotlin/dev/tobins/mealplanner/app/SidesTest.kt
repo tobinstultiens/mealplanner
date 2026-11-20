@@ -45,7 +45,7 @@ class SidesTest {
     @Test
     fun eachMealOfAPrepIsEatenAsTheMealOrAsASideOnlyNextToAMealThatCanTakeOne() {
         // Issue 269: "Eaten as" is how the next lunch or dinner picked is eaten, and each one picked keeps how it was picked.
-        val hosts = setOf(PrepSlot("2026-11-18", LUNCH), PrepSlot("2026-11-19", LUNCH))
+        val hosts = mapOf(PrepSlot("2026-11-18", LUNCH) to 9L, PrepSlot("2026-11-19", LUNCH) to 9L)
         val chosen = PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-17").toggled("2026-11-17", DINNER)
             .eatenAs(0.25).toggled("2026-11-18", LUNCH).eatenAs(0.5).toggled("2026-11-19", LUNCH)
         assertNull(chosen.problem)
@@ -73,6 +73,18 @@ class SidesTest {
     }
 
     @Test
+    fun aSideCannotGoNextToAMealOfItsOwnRecipe() {
+        // The server refuses it (no plate holds one recipe twice), so the dialog does not offer it.
+        val hosts = mapOf(PrepSlot("2026-11-18", LUNCH) to 1L, PrepSlot("2026-11-19", LUNCH) to 9L)
+        val asSide = PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-17").eatenAs(0.5)
+        assertFalse(asSide.canTake("2026-11-18", LUNCH, hosts))
+        assertTrue(asSide.canTake("2026-11-19", LUNCH, hosts))
+        assertEquals(asSide, asSide.tapped("2026-11-18", LUNCH, hosts), "tapping it picks nothing")
+        // As the meal itself any slot will do, and one picked as a side before the recipe changed can still be taken off.
+        assertTrue(asSide.eatenAs(null).canTake("2026-11-18", LUNCH, hosts))
+    }
+
+    @Test
     fun aSideCanGoNextToALunchOrDinnerStillToEatThatHasNone() {
         val day = PlanDay(
             "2026-11-17",
@@ -83,7 +95,7 @@ class SidesTest {
         )
         val next = PlanDay("2026-11-18", listOf(meal(2, LUNCH, side = side(0.0)), meal(2, DINNER)), 0.0, 0.0)
         val week = WeekPlan("2026-11-16", DailyTargets(2000, 120), listOf(day, next), emptyList())
-        assertEquals(setOf(PrepSlot("2026-11-17", DINNER), PrepSlot("2026-11-18", DINNER)), sideHosts(week, null))
+        assertEquals(mapOf(PrepSlot("2026-11-17", DINNER) to 2L, PrepSlot("2026-11-18", DINNER) to 2L), sideHosts(week, null))
     }
 
     @Test

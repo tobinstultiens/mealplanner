@@ -112,14 +112,21 @@ data class PrepChoice(
         return copy(meals = if (old != null && old.side == side) others else others + PrepSlot(date, slot, side))
     }
 
-    /** Whether [slot] on [date] can be eaten the way [side] says: as a side only next to a meal of [hosts] ([sideHosts]). */
-    fun canTake(date: String, slot: MealSlot, hosts: Set<PrepSlot>): Boolean = side == null || PrepSlot(date, slot) in hosts
+    /**
+     * Whether [slot] on [date] can be eaten the way [side] says: as a side only next to a meal of [hosts] ([sideHosts])
+     * whose main is not [recipe], as the server refuses a side of the main's own recipe.
+     */
+    fun canTake(date: String, slot: MealSlot, hosts: Map<PrepSlot, Long>): Boolean {
+        if (side == null) return true
+        val main = hosts[PrepSlot(date, slot)] ?: return false
+        return main != recipe?.id
+    }
 
     /**
      * After a tap on [slot] on [date]: [toggled] where it [canTake] the way [side] says; else, when it was picked another
      * way, no longer picked, so that a slot picked can always be taken off.
      */
-    fun tapped(date: String, slot: MealSlot, hosts: Set<PrepSlot>): PrepChoice =
+    fun tapped(date: String, slot: MealSlot, hosts: Map<PrepSlot, Long>): PrepChoice =
         if (canTake(date, slot, hosts)) toggled(date, slot) else copy(meals = meals.filterTo(LinkedHashSet()) { it != picked(date, slot) })
 
     /** With the lunches and dinners picked next eaten as the meals themselves ([side] null) or as a side of [side] servings. */
@@ -203,7 +210,7 @@ fun PrepDialog(
     start: PrepChoice,
     weekDays: List<String>,
     recipes: List<RecipeSummary>,
-    hosts: Set<PrepSlot>,
+    hosts: Map<PrepSlot, Long>,
     onDismiss: () -> Unit,
     onSave: suspend (PrepInput) -> String?,
 ) {
@@ -246,7 +253,7 @@ fun PrepDialog(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<RecipeSummary>, hosts: Set<PrepSlot>, onChange: (PrepChoice) -> Unit) {
+fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<RecipeSummary>, hosts: Map<PrepSlot, Long>, onChange: (PrepChoice) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         if (recipes.isEmpty()) {

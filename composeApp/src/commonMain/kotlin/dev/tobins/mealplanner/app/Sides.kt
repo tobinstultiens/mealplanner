@@ -57,14 +57,15 @@ fun MealSide.toCook(skipped: Boolean): MealToCook = MealToCook(recipeId, portion
 
 /**
  * The lunches and dinners of [weeks] a side can go next to: those with a meal still to eat that has no side yet, as the
- * server takes them. A week not loaded (null) offers none.
+ * server takes them, each with the id of the recipe of its main, which a side may not be of (no plate holds one recipe
+ * twice; [PrepChoice.canTake] looks at it). A week not loaded (null) offers none.
  */
-fun sideHosts(vararg weeks: WeekPlan?): Set<PrepSlot> = weeks.filterNotNull().flatMap { week ->
+fun sideHosts(vararg weeks: WeekPlan?): Map<PrepSlot, Long> = weeks.filterNotNull().flatMap { week ->
     week.days.flatMap { day ->
         day.meals.filter { it.slot in setOf(MealSlot.LUNCH, MealSlot.DINNER) && it.status == MealStatus.PLANNED && it.side == null }
-            .map { PrepSlot(day.date, it.slot) }
+            .map { PrepSlot(day.date, it.slot) to it.recipeId }
     }
-}.toSet()
+}.toMap()
 
 /**
  * The batches a side next to [meal] of [week] can be added to, which makes them larger (issue 269), as the server takes

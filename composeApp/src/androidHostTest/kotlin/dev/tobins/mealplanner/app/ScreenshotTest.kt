@@ -127,7 +127,7 @@ private fun prepChoices() {
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
         // The days from today on are offered: Monday and Tuesday have passed.
-        PrepChoices(samplePrep, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe), hosts = emptySet()) {}
+        PrepChoices(samplePrep, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe), hosts = emptyMap()) {}
     }
 }
 
@@ -138,7 +138,7 @@ private fun prepChoices() {
 @Composable
 private fun prepSideChoices() {
     val hosts = listOf(0 to MealSlot.DINNER, 1 to MealSlot.LUNCH, 2 to MealSlot.LUNCH, 3 to MealSlot.LUNCH, 3 to MealSlot.DINNER)
-        .mapTo(HashSet()) { (day, slot) -> PrepSlot(plusDays(FakeBackend.TODAY, day), slot) }
+        .associate { (day, slot) -> PrepSlot(plusDays(FakeBackend.TODAY, day), slot) to 5L }
     val choice = PrepChoice(keepingRecipe, FakeBackend.TODAY, firstDay = FakeBackend.TODAY)
         .eatenAs(0.5).toggled(FakeBackend.TODAY, MealSlot.DINNER).toggled(plusDays(FakeBackend.TODAY, 2), MealSlot.LUNCH)
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -155,7 +155,7 @@ private fun prepSideChoices() {
 @Composable
 private fun prepMixedChoices() {
     val hosts = listOf(1 to MealSlot.LUNCH, 1 to MealSlot.DINNER, 2 to MealSlot.LUNCH, 3 to MealSlot.LUNCH)
-        .mapTo(HashSet()) { (day, slot) -> PrepSlot(plusDays(FakeBackend.TODAY, day), slot) }
+        .associate { (day, slot) -> PrepSlot(plusDays(FakeBackend.TODAY, day), slot) to 5L }
     val choice = PrepChoice(keepingRecipe, FakeBackend.TODAY, firstDay = FakeBackend.TODAY)
         .toggled(FakeBackend.TODAY, MealSlot.DINNER).toggled(plusDays(FakeBackend.TODAY, 3), MealSlot.DINNER)
         .eatenAs(0.25).toggled(plusDays(FakeBackend.TODAY, 1), MealSlot.LUNCH)

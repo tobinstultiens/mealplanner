@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.DailyTargets
 import dev.tobins.mealplanner.api.DayView
@@ -98,6 +99,8 @@ class FakeBackend(
     private val weekRest: Boolean = false,
     /** The prep of [prepped] kept vacuum sealed rather than in a box, which its labels say (issue 263). */
     private val vacuum: Boolean = false,
+    /** The week lists a batch of the chickpea salad still to make, made today, that can take a side next to a later meal (issue 263). */
+    private val growing: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -365,11 +368,18 @@ class FakeBackend(
         emptySlots = listOf(MealSlot.BREAKFAST, MealSlot.DINNER, MealSlot.SNACK),
     )
 
+    /** The batch of [growing]: today's dinner makes it and it keeps three days, with no side of it in the week yet. */
+    private val growingPrep = MealPrep(
+        id = 2, madeOn = TODAY, lastDay = plusDays(TODAY, 3), vacuum = false,
+        meals = listOf(PrepMeal(TODAY, MealSlot.DINNER, 1.0, MealStatus.PLANNED)),
+    )
+
     private fun plan(weekStart: String) = if (tailOnly) tailWeek(weekStart) else WeekPlan(
         weekStart = weekStart,
         targets = targets,
         days = (0..6).map { if (emptyWeek) PlanDay(plusDays(weekStart, it), emptyList(), 0.0, 0.0, 0.0) else planDay(it) },
         emptySlots = if (emptyWeek) MealSlot.entries else emptyList(),
+        batchesToMake = if (growing) listOf(BatchToMake(2, "Chickpea salad with feta and roasted peppers", growingPrep)) else emptyList(),
         cost = if (emptyWeek) null else 61.40,
         costWithoutOffers = if (emptyWeek) null else 68.95,
         rest = if (emptyWeek || !weekRest) emptyList() else listOf(
