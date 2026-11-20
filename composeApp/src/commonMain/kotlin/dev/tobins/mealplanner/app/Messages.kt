@@ -304,6 +304,31 @@ enum class Msg(private val english: String, private val dutch: String) {
     REMOVE_SIDE("Remove the side", "Bijgerecht verwijderen"),
     REMOVE_SIDE_PREP("Remove the side's prep…", "Prep van het bijgerecht verwijderen…"),
     SPARE_SIDE_TITLE("A side in the box: {0}", "Een bijgerecht in het bakje: {0}"),
+    // --- One batch eaten partly as meals and partly as sides (issue 269)
+    PREP_EATEN_AS_HINT(
+        "Each lunch or dinner you pick below is eaten as chosen here. Switch in between to have one batch as the meal on some days and as a side on others.",
+        "Elke lunch of elk avondeten dat je hieronder kiest, eet je zoals hier gekozen. Wissel tussendoor om één prep op sommige dagen als maaltijd en op andere als bijgerecht te eten.",
+    ),
+    PREP_SLOT_SIDE("{0} · side {1}", "{0} · bijgerecht {1}"),
+    REMOVE_PREP_MIXED_TEXT(
+        "This takes its meals out of the plan: {0}. The meals with one of its sides keep their main and lose the side: {1}.",
+        "Hiermee gaan de maaltijden ervan uit het plan: {0}. De maaltijden met een bijgerecht ervan houden hun hoofdgerecht en verliezen het bijgerecht: {1}.",
+    ),
+    REMOVE_PREP_MIXED_MADE_TEXT(
+        "One of its meals, or a meal with one of its sides, was eaten, so the batch was cooked and stays in the plan. Mark the meals you do not eat, or do not eat it with, skipped instead: {0}.",
+        "Een van de maaltijden ervan, of een maaltijd met een bijgerecht ervan, is gegeten, dus de prep is gekookt en blijft in het plan. Zet de maaltijden die je niet eet, of waarbij je het niet eet, op overgeslagen: {0}.",
+    ),
+    ADD_SIDE_TITLE("A side for {0}", "Bijgerecht bij {0}"),
+    ADD_SIDE_HINT(
+        "From a prep still to make: it grows by the side, and is bought and cooked with it.",
+        "Uit een prep die nog gemaakt moet worden: die wordt groter met het bijgerecht, en wordt er zo voor gekocht en gekookt.",
+    ),
+    ADD_SIDE_FROM("From the prep of", "Uit de prep van"),
+    ADD_SIDE_BATCH("Made {0} · keeps until {1}", "Gemaakt {0} · goed tot {1}"),
+    ADD_SIDE_SIZE("The side", "Het bijgerecht"),
+    ADD_SIDE_NEW_PREP("Prep a new side…", "Nieuw bijgerecht preppen…"),
+    THROW_AWAY_MIXED("Throw away {0} and {1} of {2}", "Gooi {0} en {1} {2} weg"),
+    UNMARKED_MIXED("{0} and {1} of {2} were not marked: eaten, or to throw away?", "{0} en {1} {2} staan nog open: gegeten, of weggooien?"),
     COOK_PREP("Cook {0}: {1} now, {2} for the prep's later meals", "Kook {0}: {1} nu, {2} voor de latere maaltijden van de prep"),
     NOTHING_TO_COOK_PREPPED("Prepped on {0}: nothing to cook", "Geprept op {0}: niets te koken"),
     IN_THIS_MEAL("In this meal: {0}", "In deze maaltijd: {0}"),
@@ -1041,6 +1066,10 @@ enum class Plural(
         "{0} side of {1} was not marked: eaten, or to throw away?", "{0} sides of {1} were not marked: eaten, or to throw away?",
         "{0} bijgerecht {1} staat nog open: gegeten, of weggooien?", "{0} bijgerechten {1} staan nog open: gegeten, of weggooien?",
     ),
+
+    /** A batch's portions and sides counted apart, as [Msg.THROW_AWAY_MIXED] and [Msg.UNMARKED_MIXED] name them (issue 269). */
+    PORTIONS("{0} portion", "{0} portions", "{0} portie", "{0} porties"),
+    SIDES("{0} side", "{0} sides", "{0} bijgerecht", "{0} bijgerechten"),
 
     /** The count is that of the batches; `{1}` is their last day. */
     KEPT_UNTIL("It kept until {1}.", "They kept until {1}.", "Het was goed tot {1}.", "Ze waren goed tot {1}."),

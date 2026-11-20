@@ -139,10 +139,46 @@ private fun prepSideChoices() {
     val hosts = listOf(0 to MealSlot.DINNER, 1 to MealSlot.LUNCH, 2 to MealSlot.LUNCH, 3 to MealSlot.LUNCH, 3 to MealSlot.DINNER)
         .mapTo(HashSet()) { (day, slot) -> PrepSlot(plusDays(FakeBackend.TODAY, day), slot) }
     val choice = PrepChoice(keepingRecipe, FakeBackend.TODAY, firstDay = FakeBackend.TODAY)
-        .eatenAs(0.5, hosts).toggled(FakeBackend.TODAY, MealSlot.DINNER).toggled(plusDays(FakeBackend.TODAY, 2), MealSlot.LUNCH)
+        .eatenAs(0.5).toggled(FakeBackend.TODAY, MealSlot.DINNER).toggled(plusDays(FakeBackend.TODAY, 2), MealSlot.LUNCH)
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
         PrepChoices(choice, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe), hosts) {}
+    }
+}
+
+/**
+ * One batch eaten both ways (issue 269): today's and Saturday's dinner as the meal, a quarter of a serving next to Thursday's
+ * lunch and half a serving next to Friday's; half a serving is chosen for the next one picked, so only the meals a side can
+ * go next to (and those picked already) can be tapped.
+ */
+@Composable
+private fun prepMixedChoices() {
+    val hosts = listOf(1 to MealSlot.LUNCH, 1 to MealSlot.DINNER, 2 to MealSlot.LUNCH, 3 to MealSlot.LUNCH)
+        .mapTo(HashSet()) { (day, slot) -> PrepSlot(plusDays(FakeBackend.TODAY, day), slot) }
+    val choice = PrepChoice(keepingRecipe, FakeBackend.TODAY, firstDay = FakeBackend.TODAY)
+        .toggled(FakeBackend.TODAY, MealSlot.DINNER).toggled(plusDays(FakeBackend.TODAY, 3), MealSlot.DINNER)
+        .eatenAs(0.25).toggled(plusDays(FakeBackend.TODAY, 1), MealSlot.LUNCH)
+        .eatenAs(0.5).toggled(plusDays(FakeBackend.TODAY, 2), MealSlot.LUNCH)
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
+        PrepChoices(choice, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe), hosts) {}
+    }
+}
+
+/**
+ * "Add a prepped side…" on Friday's dinner: the chicken thighs made today and the chickpea salad made on Monday can still take
+ * a side, the first chosen, of half a serving.
+ */
+@Composable
+private fun addSideChoices() {
+    val batches = listOf(
+        GrowableBatch(MealPrep(1, FakeBackend.TODAY, plusDays(FakeBackend.TODAY, 3), false, emptyList()), keepingRecipe.id, keepingRecipe.title),
+        GrowableBatch(MealPrep(2, FakeBackend.WEEK_START, plusDays(FakeBackend.WEEK_START, 4), false, emptyList()), 2, "Chickpea salad with feta and roasted peppers"),
+    )
+    val slot = PrepSlot(plusDays(FakeBackend.TODAY, 2), MealSlot.DINNER)
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(LocalStrings.current(Msg.ADD_SIDE_TITLE, slotLabel(slot, LocalStrings.current)), style = MaterialTheme.typography.headlineSmall)
+        AddSideChoices(batches, batches.first(), 0.5, onBatch = {}, onPortions = {}, onNewPrep = {})
     }
 }
 
@@ -159,10 +195,10 @@ private fun spareOnItsLastDay() {
 
 /**
  * The question that removes [samplePrep], whose Friday lunch is skipped already; once [made] (today's dinner eaten), what
- * the dialog says instead, of a batch eaten as the meals or as [sides].
+ * the dialog says instead, of a batch eaten as the meals, as [sides], or [mixed]: Thursday's and Friday's lunches as sides.
  */
 @Composable
-private fun removePrepQuestion(made: Boolean = false, sides: Boolean = false) {
+private fun removePrepQuestion(made: Boolean = false, sides: Boolean = false, mixed: Boolean = false) {
     val prep = MealPrep(
         1, FakeBackend.TODAY, plusDays(FakeBackend.TODAY, 3), false,
         samplePrep.input().meals.mapIndexed { i, meal ->
@@ -171,7 +207,7 @@ private fun removePrepQuestion(made: Boolean = false, sides: Boolean = false) {
                 i == 2 -> MealStatus.SKIPPED
                 else -> MealStatus.PLANNED
             }
-            PrepMeal(meal.date, meal.slot, 1.0, status, side = sides)
+            PrepMeal(meal.date, meal.slot, 1.0, status, side = sides || (mixed && meal.slot == MealSlot.LUNCH))
         },
     )
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -270,6 +306,8 @@ enum class Shot(
     val prepped: Boolean = false,
     /** The fake backend's week with a side prepped next to three meals (issue 234, step 2). */
     val sides: Boolean = false,
+    /** The fake backend's week with that batch eaten as a side next to two meals and as the meal at a third (issue 269). */
+    val mixed: Boolean = false,
     /** The fake backend's week holding only a lunch of last week's batch (issue 263). */
     val tailOnly: Boolean = false,
     /** The screen in Dutch (the others are English), for a screen whose texts are longer there. */
@@ -290,7 +328,7 @@ enum class Shot(
     PLAN_PREP_NL(prepped = true, dutch = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     // The Prep dialog's body, as a dialog is a window of its own: in both languages, and at the largest font.
     PREP_CHOICES(heightDp = 1300, content = { _, _ -> prepChoices() }),
-    PREP_CHOICES_NL(dutch = true, heightDp = 1350, content = { _, _ -> prepChoices() }),
+    PREP_CHOICES_NL(dutch = true, heightDp = 1550, content = { _, _ -> prepChoices() }),
     PREP_CHOICES_X2(heightDp = 2000, fontScale = 2.0f, content = { _, _ -> prepChoices() }),
     // Half a serving of a salad as a side next to three meals: the side under each, what the meal comes to with it, and the
     // days it takes over the calories (issue 234, step 2); in both languages, and on Today, where the batch is made.
@@ -299,9 +337,20 @@ enum class Shot(
     TODAY_SIDES(sides = true, heightDp = 2000, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     TODAY_SIDES_NL(sides = true, dutch = true, heightDp = 2000, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     // The Prep dialog eaten as a side: only the meals a side can go next to can be picked.
-    PREP_SIDE_CHOICES(heightDp = 1300, content = { _, _ -> prepSideChoices() }),
-    PREP_SIDE_CHOICES_NL(dutch = true, heightDp = 1300, content = { _, _ -> prepSideChoices() }),
+    PREP_SIDE_CHOICES(heightDp = 1500, content = { _, _ -> prepSideChoices() }),
+    PREP_SIDE_CHOICES_NL(dutch = true, heightDp = 1650, content = { _, _ -> prepSideChoices() }),
     PREP_SIDE_CHOICES_X2(heightDp = 2000, fontScale = 2.0f, content = { _, _ -> prepSideChoices() }),
+    // One batch as a side next to two meals and as the meal of a third: each labelled as what it is (issue 269).
+    PLAN_MIXED(mixed = true, heightDp = 4800, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_MIXED_NL(mixed = true, dutch = true, heightDp = 4800, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // The Prep dialog with meals picked as the meal and as sides of both sizes (issue 269).
+    PREP_MIXED_CHOICES(heightDp = 1400, content = { _, _ -> prepMixedChoices() }),
+    PREP_MIXED_CHOICES_NL(dutch = true, heightDp = 1600, content = { _, _ -> prepMixedChoices() }),
+    PREP_MIXED_CHOICES_X2(heightDp = 2200, fontScale = 2.0f, content = { _, _ -> prepMixedChoices() }),
+    // "Add a prepped side…" with two batches still to make that can take it (issue 269).
+    ADD_SIDE_CHOICES(heightDp = 700, content = { _, _ -> addSideChoices() }),
+    ADD_SIDE_CHOICES_NL(dutch = true, heightDp = 760, content = { _, _ -> addSideChoices() }),
+    ADD_SIDE_CHOICES_X2(heightDp = 1200, fontScale = 2.0f, content = { _, _ -> addSideChoices() }),
     // Removing a prep names every meal that goes, and which were skipped; once made, it says beforehand that it stays (issue 263).
     REMOVE_PREP(heightDp = 420, content = { _, _ -> removePrepQuestion() }),
     REMOVE_PREP_NL(dutch = true, heightDp = 420, content = { _, _ -> removePrepQuestion() }),
@@ -309,6 +358,11 @@ enum class Shot(
     REMOVE_PREP_MADE_NL(dutch = true, heightDp = 560, content = { _, _ -> removePrepQuestion(made = true) }),
     REMOVE_SIDE_PREP_MADE(heightDp = 560, content = { _, _ -> removePrepQuestion(made = true, sides = true) }),
     REMOVE_SIDE_PREP_MADE_NL(dutch = true, heightDp = 640, content = { _, _ -> removePrepQuestion(made = true, sides = true) }),
+    // Of a batch eaten as meals and as sides, in words of both (issue 269).
+    REMOVE_MIXED_PREP(heightDp = 500, content = { _, _ -> removePrepQuestion(mixed = true) }),
+    REMOVE_MIXED_PREP_NL(dutch = true, heightDp = 560, content = { _, _ -> removePrepQuestion(mixed = true) }),
+    REMOVE_MIXED_PREP_MADE(heightDp = 640, content = { _, _ -> removePrepQuestion(made = true, mixed = true) }),
+    REMOVE_MIXED_PREP_MADE_NL(dutch = true, heightDp = 720, content = { _, _ -> removePrepQuestion(made = true, mixed = true) }),
     // A week whose only meal is of last week's batch: still to plan, no recipes missing, and nothing to buy because last week's list bought it.
     PLAN_PREPPED_TAIL(tailOnly = true, heightDp = 2400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     SHOPPING_PREPPED_TAIL(tailOnly = true, content = { api, _ -> shopping(api, shoppingMode = false) }),
@@ -518,7 +572,9 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     @get:Rule
     val compose = createEmptyComposeRule()
 
-    private val backend = FakeBackend(shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, tailOnly = shot.tailOnly)
+    private val backend = FakeBackend(
+        shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, mixed = shot.mixed, tailOnly = shot.tailOnly,
+    )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)
 

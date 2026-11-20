@@ -1,17 +1,31 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.DailyTargets
+import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
@@ -19,11 +33,13 @@ import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.WeekPlan
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /*
  * Sides (issue 234, step 2): a quarter or half a serving of a prepped batch next to a lunch's or dinner's main, added
- * by hand. The main keeps its own portion; the side is eaten or skipped with it, and the day counts both.
+ * by hand, from a new prep or one still to make (issue 269). The main keeps its own portion; the side is eaten or skipped
+ * with it, and the day counts both.
  */
 
 /** The portions a side may be, in servings: what the Prep dialog offers and the server takes. */
@@ -48,6 +64,106 @@ fun sideHosts(vararg weeks: WeekPlan?): Set<PrepSlot> = weeks.filterNotNull().fl
             .map { PrepSlot(day.date, it.slot) }
     }
 }.toSet()
+
+/** A batch still to make that a side can be added to (issue 269): its [prep], and its recipe's id and [title]. */
+data class GrowableBatch(val prep: MealPrep, val recipeId: Long, val title: String)
+
+/**
+ * The batches of [week] a side next to [meal] can be added to, which makes them larger (issue 269), as the server takes
+ * them: still to make (no meal of them eaten), with their first share before [meal] and their last day not before it,
+ * neither [meal]'s own nor of its recipe, so that no plate holds one recipe twice. None when [meal] can't take a side: not
+ * a lunch or dinner still to eat from [today] on, or with one already. Only batches with a meal or side in [week] are known.
+ */
+fun growable(week: WeekPlan, meal: PlannedMeal, today: String): List<GrowableBatch> {
+    val date = plusDays(week.weekStart, meal.day)
+    val canTakeOne = meal.slot in setOf(MealSlot.LUNCH, MealSlot.DINNER) && meal.status == MealStatus.PLANNED && meal.side == null && date >= today
+    if (!canTakeOne) return emptyList()
+    val batches = week.days.flatMap { it.meals }.flatMap { other ->
+        listOfNotNull(other.prep?.let { GrowableBatch(it, other.recipeId, other.title) }, other.side?.let { GrowableBatch(it.prep, it.recipeId, it.title) })
+    }.distinctBy { it.prep.id }
+    return batches.filter { batch ->
+        val first = batch.prep.meals.firstOrNull()
+        first != null && !batch.prep.made && date <= batch.prep.lastDay &&
+            (first.date < date || (first.date == date && first.slot.ordinal < meal.slot.ordinal)) &&
+            meal.prep?.id != batch.prep.id && meal.recipeId != batch.recipeId
+    }
+}
+
+/**
+ * "Add a prepped side…" when [batches] can take one (issue 269): a side of one of them next to the meal at [slot], of a
+ * quarter or half a serving, which makes that batch larger; or [onNewPrep], the Prep dialog for a new one. [onAdd] adds
+ * it, and says why when the server refuses.
+ */
+@Composable
+fun AddSideDialog(
+    slot: PrepSlot,
+    batches: List<GrowableBatch>,
+    onDismiss: () -> Unit,
+    onNewPrep: () -> Unit,
+    onAdd: suspend (GrowableBatch, Double) -> String?,
+) {
+    val t = LocalStrings.current
+    val scope = rememberCoroutineScope()
+    var batch by remember { mutableStateOf(batches.first()) }
+    var portions by remember { mutableStateOf(SIDE_PORTIONS.last()) }
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(t(Msg.ADD_SIDE_TITLE, slotLabel(slot, t))) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                AddSideChoices(batches, batch, portions, onBatch = { batch = it; error = null }, onPortions = { portions = it; error = null }, onNewPrep = onNewPrep)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !saving,
+                onClick = {
+                    saving = true
+                    scope.launch {
+                        error = onAdd(batch, portions)
+                        saving = false
+                    }
+                },
+            ) { Text(t(Msg.ADD)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+    )
+}
+
+/**
+ * The body of [AddSideDialog]: the batches to take the side from, each with the day it is made and its last day, the side's
+ * servings, and a new prep instead. A dialog is a window of its own, so the screenshot tests take this.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AddSideChoices(
+    batches: List<GrowableBatch>,
+    batch: GrowableBatch,
+    portions: Double,
+    onBatch: (GrowableBatch) -> Unit,
+    onPortions: (Double) -> Unit,
+    onNewPrep: () -> Unit,
+) {
+    val t = LocalStrings.current
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+        Text(t(Msg.ADD_SIDE_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(Msg.ADD_SIDE_FROM), style = MaterialTheme.typography.labelLarge)
+        for (each in batches) {
+            val detail = t(Msg.ADD_SIDE_BATCH, dayLabel(each.prep.madeOn, t.locale), dayLabel(each.prep.lastDay, t.locale))
+            RadioOption(each.title, detail, selected = each == batch) { onBatch(each) }
+        }
+        Text(t(Msg.ADD_SIDE_SIZE), style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+            for (size in SIDE_PORTIONS) {
+                FilterChip(selected = size == portions, onClick = { onPortions(size) }, label = { Text(servingsText(size, t)) })
+            }
+        }
+        TextButton(onClick = onNewPrep) { Text(t(Msg.ADD_SIDE_NEW_PREP)) }
+    }
+}
 
 /**
  * What the day card says (a note, not a refusal) when [this] day has sides and goes over [targets]: the kcal it goes over by

@@ -433,8 +433,30 @@ class NotificationsTest {
         http.mark(2, "DINNER", MealStatus.EATEN)
         http.mark(2, "LUNCH", MealStatus.SKIPPED)
 
-        val due = PrepPastLastDay(id, salad.id, "Chicken salad", "2026-11-17", "2026-11-20", side = true, left = 1, unmarked = 1, firstUnmarked = "2026-11-19")
+        val due = PrepPastLastDay(id, salad.id, "Chicken salad", "2026-11-17", "2026-11-20", side = true, left = 1, unmarked = 1, firstUnmarked = "2026-11-19", leftSides = 1, unmarkedSides = 1)
         assertEquals(listOf(due), facts("2026-11-21").prepsPastLastDay, "Wednesday lunch's side in the box, Thursday's not marked; Tuesday's was eaten elsewhere")
+    }
+
+    @Test
+    fun aBatchOfMealsAndSidesIsDueWithItsPortionsAndSidesCountedApart() = testApplication {
+        start()
+        val http = clientFor("t").ready()
+        // Issue 269: the salad is Tuesday's dinner and Wednesday's dinner, and a side next to Wednesday's lunch and Thursday's dinner bowl.
+        for ((day, slot) in listOf(2 to "LUNCH", 3 to "DINNER")) http.plan("t", day, slot, title = "Bowl $day $slot")
+        val salad = http.salad(days = 3)
+        val shares = listOf(PrepSlot("2026-11-17", MealSlot.DINNER), PrepSlot("2026-11-18", MealSlot.LUNCH, side = 0.5), PrepSlot("2026-11-18", MealSlot.DINNER), PrepSlot("2026-11-19", MealSlot.DINNER, side = 0.25))
+        val plan = http.post("/api/plans/$week/preps") { setBody(PrepInput(salad.id, "2026-11-17", meals = shares)) }.body<WeekPlan>()
+        val id = plan.days[1].meals.single { it.slot == MealSlot.DINNER }.prep!!.id
+        // Made on Tuesday; Wednesday's lunch with its side and Wednesday's dinner skipped; Thursday's dinner never marked.
+        http.mark(1, "DINNER", MealStatus.EATEN)
+        http.mark(2, "LUNCH", MealStatus.SKIPPED)
+        http.mark(2, "DINNER", MealStatus.SKIPPED)
+
+        val due = PrepPastLastDay(
+            id, salad.id, "Chicken salad", "2026-11-17", "2026-11-20",
+            side = false, left = 2, unmarked = 1, firstUnmarked = "2026-11-19", leftSides = 1, unmarkedSides = 1,
+        )
+        assertEquals(listOf(due), facts("2026-11-21").prepsPastLastDay, "a portion and a side in the box, and a side not marked")
     }
 
     @Test

@@ -43,9 +43,11 @@ data class NotificationFacts(
 
 /**
  * A prepped batch past its last day ([NotificationFacts.prepsPastLastDay]): its recipe, the day it was made and its
- * last day (ISO), whether it was eaten as sides next to meals ([side]), and what of it may still be in a box. [left]
- * counts the shares of skipped meals not eaten elsewhere: to throw away. [unmarked] counts the meals of it still
- * planned, neither eaten nor skipped, which the app cannot tell from eaten; [firstUnmarked] is the day of the first.
+ * last day (ISO), and what of it may still be in a box. [left] counts the shares of skipped meals not eaten elsewhere:
+ * to throw away. [unmarked] counts the shares of it still planned, neither eaten nor skipped, which the app cannot tell
+ * from eaten; [firstUnmarked] is the day of the first. Both count meals and sides; [leftSides] and [unmarkedSides] say
+ * how many of them are sides (issue 269), as a batch may be eaten partly as meals and partly as sides.
+ * [side] is true when every share is a side: what apps before issue 269 word the batch by.
  */
 @Serializable
 data class PrepPastLastDay(
@@ -58,6 +60,8 @@ data class PrepPastLastDay(
     val left: Int = 0,
     val unmarked: Int = 0,
     val firstUnmarked: String? = null,
+    val leftSides: Int = 0,
+    val unmarkedSides: Int = 0,
 )
 
 /** A row of the shopping list ([NotificationFacts.offersEnding]) by its name, and the day its offer ends (ISO): today or tomorrow. */

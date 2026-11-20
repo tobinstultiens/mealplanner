@@ -191,7 +191,9 @@ class NotificationsTest {
     // --- Prepped food to throw away (issue 264)
 
     private val chili = PrepPastLastDay(7, 14, "Chili con carne", "2026-11-17", "2026-11-20", left = 1)
-    private val salad = PrepPastLastDay(9, 15, "Lentil salad", "2026-11-18", "2026-11-20", side = true, left = 1, unmarked = 1, firstUnmarked = "2026-11-19")
+    private val salad = PrepPastLastDay(
+        9, 15, "Lentil salad", "2026-11-18", "2026-11-20", side = true, left = 1, unmarked = 1, firstUnmarked = "2026-11-19", leftSides = 1, unmarkedSides = 1,
+    )
 
     /** Saturday 21 November's facts with nothing due but [batches] past their last day. */
     private fun pastLastDay(vararg batches: PrepPastLastDay, date: String = "2026-11-21") = NotificationFacts(date, prepsPastLastDay = batches.toList())
@@ -233,6 +235,25 @@ class NotificationsTest {
                 "Ze waren goed tot vr 20 nov.",
             throwAway(chili, salad, strings = Strings.Dutch),
         )
+    }
+
+    @Test
+    fun aBatchEatenAsMealsAndSidesCountsItsPortionsAndSidesApart() {
+        // Issue 269: a portion and two sides left in the box, a portion and a side not marked; the batch is not all sides.
+        val mixed = salad.copy(side = false, left = 3, leftSides = 2, unmarked = 2, unmarkedSides = 1)
+        assertEquals(
+            "Throw away 1 portion and 2 sides of Lentil salad" to
+                "It kept until Fri 20 Nov. 1 portion and 1 side of Lentil salad were not marked: eaten, or to throw away?",
+            throwAway(mixed),
+        )
+        assertEquals(
+            "Gooi 1 portie en 2 bijgerechten Lentil salad weg" to
+                "Het was goed tot vr 20 nov. 1 portie en 1 bijgerecht Lentil salad staan nog open: gegeten, of weggooien?",
+            throwAway(mixed, strings = Strings.Dutch),
+        )
+        // Only sides left of it, or only portions: each as what it is, whatever the rest of the batch was.
+        assertEquals("Throw away 2 sides of Lentil salad", throwAway(mixed.copy(left = 2, unmarked = 0, unmarkedSides = 0)).first)
+        assertEquals("Throw away 1 portion of Lentil salad", throwAway(mixed.copy(left = 1, leftSides = 0)).first)
     }
 
     @Test

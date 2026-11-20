@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.SpareMove
 import dev.tobins.mealplanner.server.respondGenerationOff
 import dev.tobins.mealplanner.server.ConflictException
@@ -52,12 +53,14 @@ fun Route.planRoutes() {
         post("/generate") { call.respond(call.user.plans.generate(call.week())) }
 
         // Prepped meals (issue 234), each answering this week's plan: make a batch, body PrepInput; remove one with all its
-        // meals; eat the share of one of its skipped meals in a later meal, body {"from": {...}, "to": {"date": ..., "slot": ...}}.
+        // meals; eat the share of one of its skipped meals in a later meal, body {"from": {...}, "to": {"date": ..., "slot": ...}};
+        // grow one still to make by a side next to a later meal (issue 269), body {"date": ..., "slot": ..., "side": 0.5}.
         route("/preps") {
             post { call.respond(call.user.preps.create(call.week(), call.receive<PrepInput>())) }
             route("/{id}") {
                 delete { call.respond(call.user.preps.remove(call.week(), call.prepId())) }
                 post("/spare") { call.respond(call.user.preps.eatSpare(call.week(), call.prepId(), call.receive<SpareMove>())) }
+                post("/sides") { call.respond(call.user.preps.addSide(call.week(), call.prepId(), call.receive<PrepSlot>())) }
             }
         }
 

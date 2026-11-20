@@ -30,6 +30,7 @@ import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepMeal
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -56,9 +57,11 @@ fun preppable(recipes: List<RecipeSummary>): List<RecipeSummary> =
 fun prepDays(weekStart: String, today: String): List<String> = (0..6).map { plusDays(weekStart, it) }.filter { it >= today }
 
 /**
- * What the Prep dialog has chosen so far: the recipe, the day it is made, how it is kept and the meals it is eaten in.
- * [firstDay] is the earliest day it may be made: today ([prepDays]). With [side], the batch is eaten as a side of that
- * many servings next to the meals planned in [meals] (issue 234, step 2), which keep their own.
+ * What the Prep dialog has chosen so far: the recipe, the day it is made, how it is kept and the lunches and dinners it is
+ * eaten in, each as the meal itself or as a side of [PrepSlot.side] servings next to the meal planned there, which keeps
+ * its own (issue 234, step 2): one batch may be both (issue 269). [side] is how a lunch or dinner picked next is eaten,
+ * the dialog's "Eaten as": as the meal (null) or as a side of that many servings. [firstDay] is the earliest day it may be
+ * made: today ([prepDays]).
  */
 data class PrepChoice(
     val recipe: RecipeSummary?,
@@ -82,7 +85,7 @@ data class PrepChoice(
             keeps == null -> Msg.PREP_NOT_THIS_WAY
             meals.none { it.date == madeOn } -> Msg.PREP_FIRST_ON_MADE_DAY
             // A batch is made once for several meals; as a side that may be one meal short, so say why.
-            meals.size < 2 -> if (side == null) Msg.PREP_TWO_MEALS else Msg.PREP_TWO_SIDES
+            meals.size < 2 -> if (meals.any { it.side == null }) Msg.PREP_TWO_MEALS else Msg.PREP_TWO_SIDES
             else -> null
         }
 
@@ -93,18 +96,31 @@ data class PrepChoice(
         return next.copy(meals = meals.filterTo(LinkedHashSet()) { it.date in next.days })
     }
 
-    /** With [slot] on [date] eaten from it, or not any more. */
+    /** The lunch or dinner at [date]'s [slot] as picked, with how it is eaten; null when it is not picked. */
+    fun picked(date: String, slot: MealSlot): PrepSlot? = meals.firstOrNull { it.date == date && it.slot == slot }
+
+    /** With [slot] on [date] eaten from it the way [side] says, or not any more when it was picked that way already. */
     fun toggled(date: String, slot: MealSlot): PrepChoice {
-        val meal = PrepSlot(date, slot)
-        return copy(meals = if (meal in meals) meals - meal else meals + meal)
+        val old = picked(date, slot)
+        val others = meals.filterTo(LinkedHashSet()) { it != old }
+        return copy(meals = if (old != null && old.side == side) others else others + PrepSlot(date, slot, side))
     }
 
-    /** Eaten as the meals themselves ([side] null) or as a side of [side] servings, then only next to the meals of [hosts] ([sideHosts]). */
-    fun eatenAs(side: Double?, hosts: Set<PrepSlot>): PrepChoice =
-        copy(side = side, meals = if (side == null) meals else meals.filterTo(LinkedHashSet()) { it in hosts })
+    /** Whether [slot] on [date] can be eaten the way [side] says: as a side only next to a meal of [hosts] ([sideHosts]). */
+    fun canTake(date: String, slot: MealSlot, hosts: Set<PrepSlot>): Boolean = side == null || PrepSlot(date, slot) in hosts
 
-    /** What the server is sent; only once [problem] is null. */
-    fun input(): PrepInput = PrepInput(recipe!!.id, madeOn, vacuum, meals.sortedWith(compareBy({ it.date }, { it.slot.ordinal })), side)
+    /**
+     * After a tap on [slot] on [date]: [toggled] where it [canTake] the way [side] says; else, when it was picked another
+     * way, no longer picked, so that a slot picked can always be taken off.
+     */
+    fun tapped(date: String, slot: MealSlot, hosts: Set<PrepSlot>): PrepChoice =
+        if (canTake(date, slot, hosts)) toggled(date, slot) else copy(meals = meals.filterTo(LinkedHashSet()) { it != picked(date, slot) })
+
+    /** With the lunches and dinners picked next eaten as the meals themselves ([side] null) or as a side of [side] servings. */
+    fun eatenAs(side: Double?): PrepChoice = copy(side = side)
+
+    /** What the server is sent, each meal saying how it is eaten (issue 269); only once [problem] is null. */
+    fun input(): PrepInput = PrepInput(recipe!!.id, madeOn, vacuum, meals.sortedWith(compareBy({ it.date }, { it.slot.ordinal })))
 }
 
 /**
@@ -121,11 +137,14 @@ val MealPrep.made: Boolean get() = meals.any { it.status == MealStatus.EATEN }
  * The meals of [prep] as a sentence names them, each with what sets it apart: `Mon 16 Nov lunch (eaten), Tue 17 Nov dinner
  * (side, skipped)`. So a question about the prep shows which of them were eaten or skipped already.
  */
-fun prepMealsText(prep: MealPrep, t: Strings): String =
-    prep.meals.joinToString(", ") { meal ->
+fun prepMealsText(prep: MealPrep, t: Strings): String = prepMealsText(prep.meals, t, noteSides = true)
+
+/** [meals] of a prep as [prepMealsText] names them; a side noted as one only with [noteSides]. */
+private fun prepMealsText(meals: List<PrepMeal>, t: Strings, noteSides: Boolean): String =
+    meals.joinToString(", ") { meal ->
         val name = "${dayLabel(meal.date, t.locale)} ${t.slot(meal.slot)}"
         val notes = listOfNotNull(
-            Msg.PREP_NOTE_SIDE.takeIf { meal.side },
+            Msg.PREP_NOTE_SIDE.takeIf { noteSides && meal.side },
             Msg.PREP_NOTE_EATEN.takeIf { meal.status == MealStatus.EATEN },
             Msg.PREP_NOTE_SKIPPED.takeIf { meal.status == MealStatus.SKIPPED },
         )
@@ -206,10 +225,11 @@ fun PrepDialog(
 }
 
 /**
- * The Prep dialog's body: the recipe, the day it is made, how it is kept, whether it is eaten as the meal or as a side
- * next to it, and a row per day it keeps with its lunch and dinner, so no day past the last can be picked; as a side,
- * only the meals of [hosts] can be. Under it why it can't be made yet. A dialog is a window of its own, so the
- * screenshot tests take this.
+ * The Prep dialog's body: the recipe, the day it is made, how it is kept, how the lunches and dinners picked next are
+ * eaten (as the meal, or as a side next to it), and a row per day it keeps with its lunch and dinner, so no day past the
+ * last can be picked. Each picked one says how it is eaten, so one batch can be both (issue 269); as a side, only the
+ * meals of [hosts] can be picked. Under it why it can't be made yet. A dialog is a window of its own, so the screenshot
+ * tests take this.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -262,11 +282,12 @@ fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<Recipe
             for (side in listOf(null) + SIDE_PORTIONS) {
                 FilterChip(
                     selected = choice.side == side,
-                    onClick = { onChange(choice.eatenAs(side, hosts)) },
+                    onClick = { onChange(choice.eatenAs(side)) },
                     label = { Text(side?.let { t(Msg.PREP_AS_SIDE, servingsText(it, t)) } ?: t(Msg.PREP_AS_MEAL)) },
                 )
             }
         }
+        Text(t(Msg.PREP_EATEN_AS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (choice.side != null) {
             Text(t(Msg.PREP_SIDE_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -275,19 +296,24 @@ fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<Recipe
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 Text(dayLabel(day, t.locale), modifier = Modifier.padding(top = Spacing.Related))
                 for (slot in listOf(MealSlot.LUNCH, MealSlot.DINNER)) {
-                    val meal = PrepSlot(day, slot)
+                    val picked = choice.picked(day, slot)
                     FilterChip(
-                        selected = meal in choice.meals,
-                        // A side needs a meal to go with; one picked already can always be taken off.
-                        enabled = choice.side == null || meal in hosts || meal in choice.meals,
-                        onClick = { onChange(choice.toggled(day, slot)) },
-                        label = { Text(t.slot(slot, capitalised = true)) },
+                        selected = picked != null,
+                        enabled = picked != null || choice.canTake(day, slot, hosts),
+                        onClick = { onChange(choice.tapped(day, slot, hosts)) },
+                        label = { Text(prepSlotText(slot, picked?.side, t)) },
                     )
                 }
             }
         }
         choice.problem?.let { Text(t(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
+}
+
+/** A lunch or dinner of the Prep dialog as it is eaten: `Dinner`, or as a side `Dinner · side 0.5`. */
+fun prepSlotText(slot: MealSlot, side: Double?, t: Strings): String {
+    val name = t.slot(slot, capitalised = true)
+    return side?.let { t(Msg.PREP_SLOT_SIDE, name, formatAmount(it, t.locale)) } ?: name
 }
 
 /**
@@ -315,14 +341,20 @@ fun RemovePrepText(prep: MealPrep) {
 }
 
 /**
- * What removing [prep] does, naming its meals: every meal goes, or of a prep eaten as sides every side, as the meals stay.
- * Of a prep that was [made]: that it stays, and its meals are to be skipped instead, in the words of how it is eaten.
+ * What removing [prep] does, naming its meals: every meal goes, of a prep eaten as sides every side, as the meals they go
+ * with stay. Of one eaten both ways (issue 269) in two parts, as two different things happen: the meals that go, and the
+ * meals that stay with their main and lose the side. Of a prep that was [made]: that it stays, and its meals are to be
+ * skipped instead, in the words of how it is eaten.
  */
 fun removePrepText(prep: MealPrep, t: Strings): String {
-    val sides = prep.meals.all { it.side }
     val text = when {
-        prep.made -> if (sides) Msg.REMOVE_PREP_SIDES_MADE_TEXT else Msg.REMOVE_PREP_MADE_TEXT
-        else -> if (sides) Msg.REMOVE_PREP_SIDES_TEXT else Msg.REMOVE_PREP_TEXT
+        prep.meals.all { it.side } -> if (prep.made) Msg.REMOVE_PREP_SIDES_MADE_TEXT else Msg.REMOVE_PREP_SIDES_TEXT
+        prep.meals.none { it.side } -> if (prep.made) Msg.REMOVE_PREP_MADE_TEXT else Msg.REMOVE_PREP_TEXT
+        prep.made -> Msg.REMOVE_PREP_MIXED_MADE_TEXT
+        else -> {
+            val (sides, meals) = prep.meals.partition { it.side }
+            return t(Msg.REMOVE_PREP_MIXED_TEXT, prepMealsText(meals, t, noteSides = false), prepMealsText(sides, t, noteSides = false))
+        }
     }
     return t(text, prepMealsText(prep, t))
 }

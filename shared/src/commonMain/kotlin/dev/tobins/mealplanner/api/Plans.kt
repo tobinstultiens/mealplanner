@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.api
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /** The meals of a day, in eating order. [share] is the part of the daily calories a slot gets. */
@@ -133,19 +135,30 @@ data class PrepMeal(
 )
 
 /** A lunch or dinner on one date, as a prep names its meals. */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class PrepSlot(
     /** ISO date. */
     val date: String,
     val slot: MealSlot,
+    /**
+     * Only in what the app sends (issue 269): in [PrepInput.meals], the batch is eaten here as a side of this many servings
+     * (0.25 or 0.5) next to the slot's meal, null as the meal itself; in `POST .../preps/{id}/sides`, the side's servings.
+     * Null in every answer. Left out of the JSON when null, so a slot reads and is sent as before it was there: a server
+     * from before issue 269 refuses a field it does not know, also in a [SpareMove].
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val side: Double? = null,
 )
 
 /**
  * Body of `POST /api/plans/{weekStart}/preps`: [recipeId] made on [madeOn] in a normal box or [vacuum]
  * sealed, and eaten in [meals] (lunches and dinners, the first on [madeOn], none after the day the
- * recipe's keeps allow). Each meal gets the portion the planner would give it, within the profile's range;
- * with [side], the batch is eaten as a side of that many servings (0.25 or 0.5) next to the meal in each
- * of [meals], which keeps its main.
+ * recipe's keeps allow). A meal of it gets the portion the planner would give that slot, within the profile's range;
+ * a side next to a slot's meal, which keeps its main, is of the servings its [PrepSlot.side] says (issue 269), so one
+ * batch may be eaten partly as meals and partly as sides.
+ * [side] is how apps before issue 269 ask for a batch eaten only as sides: every one of [meals] a side of that many
+ * servings. It is null when the meals say it each; both at once is a 400.
  */
 @Serializable
 data class PrepInput(

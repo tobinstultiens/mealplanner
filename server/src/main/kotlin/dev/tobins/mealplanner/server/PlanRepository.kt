@@ -356,8 +356,8 @@ class PlanRepository(
      * a staple, one to taste, one some line of the week can't weigh) counts as not known at home, so it is
      * never short: there would be no row to ask for it again, and the warning would say what the list doesn't.
      * Nothing without an adjusted meal in the week. [week] is the week as the shopping list counts it
-     * ([forShopping]): a prepped batch made this week is cooked as one meal, with what each of its meals had; one
-     * made next to a meal as its side is a meal of its own there, which can't be adjusted, so it has no changes.
+     * ([forShopping]): a prepped batch made this week is cooked as one meal, with what each of its meals had, also
+     * one made next to a meal as its side, which is a meal of its own there.
      */
     fun shortfallsIn(start: LocalDate, week: List<PlannedMeal>): Shortfalls {
         val lines = recipes.linesWithIngredients(week.map { it.recipeId })
@@ -367,9 +367,8 @@ class PlanRepository(
         val toCook = stillToCook(start, week).toSet()
         val cooked = week.filter { it in toCook || shareTaken(start, it, week) }.sortedBy { cookingOrder(it, week) }
         val noRow = lines.values.flatMapTo(HashSet(), ::withoutWeighedRow)
-        val changesOf = { meal: PlannedMeal -> if (isCookedAsSide(start, meal)) null else changes[meal.day to meal.slot] }
         val (elsewhere, here) = cookedAcrossWeeks(start)
-        return shortfalls(adjustments.demands(cooked, lines, changesOf, toCook), stock.atHome(start, elsewhere, here) + noRow.associateWith { null })
+        return shortfalls(adjustments.demands(cooked, lines, changes::get, toCook), stock.atHome(start, elsewhere, here) + noRow.associateWith { null })
     }
 
     /**
@@ -385,28 +384,32 @@ class PlanRepository(
     }
 
     /**
-     * The changes of [week]'s meals by day and slot ([MealAdjustments.changesIn]), [week] as [forShopping] has it:
-     * a prepped batch, one meal there, has what all its meals ate of each ingredient one of them changed, in
-     * whichever week they are. A batch cooked as a side has none ([isCookedAsSide]) and leaves its meal's alone.
-     * [lines] are the recipes' lines.
+     * The changes of [week]'s adjusted meals ([MealAdjustments.changesIn]), [week] as [forShopping] has it, by meal rather
+     * than slot, as a batch cooked as a side shares its slot with the meal it goes with, whose changes are that meal's
+     * own. A prepped batch, one meal there, has what all its meals ate of each ingredient one of them changed, in
+     * whichever week they are ([batchChanges]); also a batch cooked as a side, whose meals may be eaten as meals too
+     * (issue 269). [lines] are the recipes' lines.
      */
-    private fun changesForShopping(start: LocalDate, week: List<PlannedMeal>, lines: Map<Long, RecipeLines>): Map<Pair<Int, MealSlot>, Map<Long, Double>> {
-        val changes = adjustments.changesIn(start).toMutableMap()
-        val ofBatches = week.filterNot { isCookedAsSide(start, it) }
-            .mapNotNull { meal -> meal.prep?.let { prep -> batchesOf(listOf(meal))[prep.id]?.let { meal to it } } }
-        for ((meal, batch) in ofBatches) {
-            val recipe = lines[batch.recipeId]
-            val shares = batch.meals.filter { it.share > 0.0 }
-            // A side can't be adjusted: what its meal changed is the main's.
-            val changed = shares.associateWith { if (it.side) emptyMap() else adjustments.changesOf(it.week, it.meal) }
-            val ids = changed.values.flatMapTo(HashSet()) { it.keys }
-            changes.remove(meal.day to meal.slot)
-            if (ids.isEmpty() || recipe == null) continue
-            changes[meal.day to meal.slot] = ids.associateWith { id ->
-                shares.sumOf { share -> changed.getValue(share)[id] ?: gramsUsed(recipe, share.share)[id] ?: 0.0 }
-            }
-        }
-        return changes
+    private fun changesForShopping(start: LocalDate, week: List<PlannedMeal>, lines: Map<Long, RecipeLines>): Map<PlannedMeal, Map<Long, Double>> {
+        val ofSlots = adjustments.changesIn(start)
+        val batches = batchesOf(week)
+        return week.mapNotNull { meal ->
+            val batch = meal.prep?.let { batches[it.id] }
+            val changes = if (batch == null) ofSlots[meal.day to meal.slot] else batchChanges(batch, lines[batch.recipeId])
+            changes?.let { meal to it }
+        }.toMap()
+    }
+
+    /**
+     * What [batch], cooked as one meal, ate of each ingredient one of its meals changed: those meals' grams, and the others'
+     * from its [recipe]; null when none of its meals was adjusted. A side can't be adjusted: what its meal changed is the main's.
+     */
+    private fun batchChanges(batch: Batch, recipe: RecipeLines?): Map<Long, Double>? {
+        val shares = batch.meals.filter { it.share > 0.0 }
+        val changed = shares.associateWith { if (it.side) emptyMap() else adjustments.changesOf(it.week, it.meal) }
+        val ids = changed.values.flatMapTo(HashSet()) { it.keys }
+        if (ids.isEmpty() || recipe == null) return null
+        return ids.associateWith { id -> shares.sumOf { share -> changed.getValue(share)[id] ?: gramsUsed(recipe, share.share)[id] ?: 0.0 } }
     }
 
     /**
@@ -675,8 +678,8 @@ class PlanRepository(
      * made this week is one meal of all its portions, where it is made, with the batch's status
      * ([Batch.status]); the other meals of a batch are not there, wherever it was made, as they cook and buy
      * nothing. So the batch is bought once, in the week it is made, also for meals the week after. A batch made
-     * with a side is that one meal too, next to the meal the side goes with, in its slot ([isCookedAsSide]); the
-     * meal's main is there as itself.
+     * with a side is that one meal too, next to the meal the side goes with, in its slot (its `prep` has a side
+     * there); the meal's main is there as itself.
      */
     fun forShopping(start: LocalDate, week: List<PlannedMeal> = meals(start)): List<PlannedMeal> {
         val batches = batchesOf(week)
@@ -699,15 +702,6 @@ class PlanRepository(
         }
         // A side is bought with its batch, where that is cooked: the meals here are their mains.
         return meals.map { it.copy(side = null) } + cookedAsSides
-    }
-
-    /**
-     * Whether [meal], of the week starting [start] as [forShopping] has it, is a batch cooked next to the meal in its slot
-     * as that meal's side, rather than the meal itself: its batch has a side there.
-     */
-    private fun isCookedAsSide(start: LocalDate, meal: PlannedMeal): Boolean {
-        val date = start.plusDays(meal.day.toLong()).toString()
-        return meal.prep?.meals?.any { it.side && it.date == date && it.slot == meal.slot } == true
     }
 
     /** Whether the week starting [start] has meals of its own: the meals of a batch made the week before are there before it is planned. */

@@ -215,6 +215,25 @@ class WeekPlannerTest {
     }
 
     @Test
+    fun aBatchEatenAsAMealAndAsASideCountsEachShareAndGetsNoSideFromThePlanner() {
+        // Issue 269: recipe 17 made on Tuesday's dinner, eaten then as the meal and on Thursday as a side next to recipe 13.
+        val prep = MealPrep(
+            id = 3, madeOn = "2026-11-17", lastDay = "2026-11-20", vacuum = false,
+            meals = listOf(PrepMeal("2026-11-17", DINNER, 1.0, MealStatus.PLANNED), PrepMeal("2026-11-19", DINNER, 0.5, MealStatus.PLANNED, side = true)),
+        )
+        val batch = listOf(
+            PlannedMeal(1, DINNER, 17, "Recipe 17", 1.0, 810.0, 80.0, locked = true, prep = prep),
+            PlannedMeal(3, DINNER, 13, "Recipe 13", 1.0, 600.0, 45.0, locked = true, side = MealSide(17, "Recipe 17", 0.5, 405.0, 40.0, cookPortions = 0.0, prep = prep)),
+        )
+        val plan = WeekPlanner.plan(PlanRequest(targets, favourite17, locked = batch))
+
+        assertEquals(batch, batch.map { plan.at(it.day, it.slot) }, "the batch's meal and side stay as they are")
+        assertEquals(1, plan.count { it.recipeId == 17L }, "the batch's recipe is not planned again as a main: ${plan.filter { it.recipeId == 17L }}")
+        assertEquals(1, plan.count { it.side != null }, "the planner adds no side")
+        assertEquals(7, plan.filter { it.slot == DINNER }.size, "every dinner is planned all the same")
+    }
+
+    @Test
     fun excludedAndRecentRecipesAreAvoided() {
         val plan = WeekPlanner.plan(PlanRequest(targets, pantryOfRecipes, excluded = setOf(10L), recent = setOf(11L)))
         val dinners = plan.filter { it.slot == DINNER }.map { it.recipeId }

@@ -29,6 +29,7 @@ import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.SparePortion
@@ -460,6 +461,15 @@ class ApiClient(
 
     /** Takes prep [id] out of the plan with all its meals, in every week; answers the week starting [weekStart]. */
     suspend fun removePrep(weekStart: String, id: Long): WeekPlan = http.delete("api/plans/$weekStart/preps/$id").body()
+
+    /**
+     * Adds a side of [PrepSlot.side] servings of prep [id], still to make, next to the meal at [side]'s slot, which makes the
+     * batch larger (issue 269); answers the week starting [weekStart].
+     */
+    suspend fun addSide(weekStart: String, id: Long, side: PrepSlot): WeekPlan = http.post("api/plans/$weekStart/preps/$id/sides") {
+        contentType(ContentType.Application.Json)
+        setBody(side)
+    }.body()
 
     /** Takes the side next to the meal in [day]'s [slot] out of its batch (issue 234, step 2); the meal keeps its main. */
     suspend fun removeSide(weekStart: String, day: Int, slot: MealSlot): WeekPlan = http.delete("api/plans/$weekStart/meals/$day/${slot.name}/side").body()

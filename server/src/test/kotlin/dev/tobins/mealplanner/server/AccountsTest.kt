@@ -349,6 +349,40 @@ class AccountsTest {
     }
 
     @Test
+    fun anotherAccountsBatchOfMealsAndSidesCanNeitherGrowNorBeRead() = testApplication {
+        start()
+        val week = "2026-11-16"
+        val profile = Profile(weightKg = 70.0, heightCm = 170.0, ageYears = 30, sex = Sex.FEMALE, activity = ActivityLevel.LIGHT)
+        val (alice, bob) = listOf("alice", "bob").map { name -> clientFor(name).also { it.put("/api/profile") { setBody(profile) } } }
+        // Issue 269: Alice's salad is her Tuesday dinner and half a serving next to her bowl on Wednesday's lunch; she has a bowl on Thursday too.
+        val salad = alice.post("/api/recipes") { setBody(recipe.copy(title = "Alice's salad")) }.body<RecipeDetail>().summary
+        val bowl = alice.post("/api/recipes") { setBody(recipe.copy(title = "Alice's bowl")) }.body<RecipeDetail>().summary
+        alice.put("/api/recipes/${salad.id}/keeps") { setBody(RecipeKeeps(days = 3)) }
+        for (meal in listOf("2/LUNCH", "3/DINNER")) alice.put("/api/plans/$week/meals/$meal") { setBody(MealChoice(bowl.id)) }
+        val shares = listOf(PrepSlot("2026-11-17", MealSlot.DINNER), PrepSlot("2026-11-18", MealSlot.LUNCH, side = 0.5))
+        val plan = alice.post("/api/plans/$week/preps") { setBody(PrepInput(salad.id, "2026-11-17", meals = shares)) }.body<WeekPlan>()
+        val id = plan.days[1].meals.single { it.slot == MealSlot.DINNER }.prep!!.id
+        val alicesWeek = alice.get("/api/plans/$week").body<WeekPlan>()
+        val thursday = PrepSlot("2026-11-19", MealSlot.DINNER, side = 0.5)
+
+        // Bob, with a bowl of his own on Thursday, can't add a side of her batch next to it, and doesn't see her batch.
+        val bobsBowl = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's bowl")) }.body<RecipeDetail>().summary
+        for (meal in listOf("2/LUNCH", "3/DINNER")) bob.put("/api/plans/$week/meals/$meal") { setBody(MealChoice(bobsBowl.id)) }
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/plans/$week/preps/$id/sides") { setBody(thursday) }.status)
+        assertTrue(bob.get("/api/plans/$week").body<WeekPlan>().days.flatMap { it.meals }.all { it.prep == null && it.side == null })
+        // His own batch of meals and sides in the same slots, grown by a side on Thursday, leaves hers as it is; she can't grow his.
+        val bobsSalad = bob.post("/api/recipes") { setBody(recipe.copy(title = "Bob's salad")) }.body<RecipeDetail>().summary
+        bob.put("/api/recipes/${bobsSalad.id}/keeps") { setBody(RecipeKeeps(days = 3)) }
+        val bobs = bob.post("/api/plans/$week/preps") { setBody(PrepInput(bobsSalad.id, "2026-11-17", meals = shares)) }.body<WeekPlan>()
+        val bobsId = bobs.days[1].meals.single { it.slot == MealSlot.DINNER }.prep!!.id
+        val grown = bob.post("/api/plans/$week/preps/$bobsId/sides") { setBody(thursday) }.body<WeekPlan>()
+        assertEquals(listOf(false, true, true), grown.days[3].meals.single { it.slot == MealSlot.DINNER }.side!!.prep.meals.map { it.side })
+        assertEquals(HttpStatusCode.NotFound, alice.post("/api/plans/$week/preps/$bobsId/sides") { setBody(thursday) }.status)
+
+        assertEquals(alicesWeek, alice.get("/api/plans/$week").body<WeekPlan>())
+    }
+
+    @Test
     fun eachAccountKeepsItsOwnPriorityAndFibreTarget() = testApplication {
         start()
         val alice = clientFor("alice")

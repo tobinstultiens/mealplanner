@@ -703,7 +703,8 @@ until it is made; the list of a later week buys nothing for the batch's meals th
 did (`ShoppingList.preppedBoughtIn`, the earliest when there are several). A side taken from a batch (step 2) takes its share as its recipe has it (a side can't be
 adjusted), kept under the meal it is next to but apart from that meal's own (`stockUse.role` `SIDE`), so eating
 or un-eating the meal's main moves only the main's share, and the side's goes with its batch; a new main for the
-meal keeps the side's share where it is. A batch made with a side is one meal of the list next to that meal. What was at home for a week's shortfalls (`atHome`, below) counts what each meal of the week
+meal keeps the side's share where it is. A batch made with a side is one meal of the list next to that meal, also one
+eaten partly as meals (issue 269), whose shortfall walk then counts what its meals had as adjusted. What was at home for a week's shortfalls (`atHome`, below) counts what each meal of the week
 took, but a batch by the week it was made in, whose stock it was cooked from (issue 263): the shares of its meals
 and sides in the next week count there, and not in the next week.
 
