@@ -686,9 +686,7 @@ root build to every module with Robolectric among its dependencies, resolves tha
 dependency (`robolectric-android-all` in `gradle/libs.versions.toml`, so Gradle's retries and the CI cache
 apply and a failure says so at dependency resolution) and sets `robolectric.offline`. A new Robolectric
 version, or a test at another SDK (`@Config(sdk = ...)`), needs the matching `android-all-instrumented`
-version in the catalog; without it the test fails at once, naming the missing jar. The Wasm npm install is
-checked before webpack (`verifyWasmNpmInstall` in the root build file): a package of
-`kotlin-js-store/wasm/yarn.lock` missing from `build/wasm/node_modules` fails there with that message.
+version in the catalog; without it the test fails at once, naming the missing jar. See also [CI](#ci).
 
 ## Database changes
 
@@ -790,6 +788,39 @@ own each run: `tap.sh` (taps the clickable node whose whole text matches, then p
 `texts.sh`, `shot.sh`, `seed-recipes.py` (recipes with amounts for a test account) and
 `with-clock.sh` (server and dev login provider on another day). Each has a self-test that needs no
 emulator; `scripts/emulator/README.md` says how to run them.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request: the jobs `test`, `android`,
+`screenshots`, `server-jar` and `scripts` side by side, then `image`. A run's result must depend on the commit
+and on nothing else (issue 306). A failure that is not the commit's fault is recorded in that issue with its
+run id and its cause is removed; a job is not re-run to get a green check.
+
+What a run takes from outside the repository, and what holds each still:
+
+- **Maven artifacts** (Google, Maven Central; Robolectric's jar also from Google's mirror of Central): resolved
+  by Gradle and cached by `gradle/actions/setup-gradle`. Robolectric runs offline (see
+  [Screenshot tests](#screenshot-tests)).
+- **Node.js and yarn**: downloaded by the Kotlin plugin through Gradle, at versions the Kotlin version fixes.
+- **npm packages for Wasm**, from the npm registry by yarn, each checked against the integrity hash of its lock
+  entry. Two installs: the Kotlin plugin's tooling (webpack, Karma, Mocha; locked by the plugin's own
+  `yarn.lock`) into `~/.kotlin/kotlin-npm-tooling`, and the project's packages (`kotlin-js-store/wasm/yarn.lock`)
+  into `build/wasm`. A lock that would change fails `kotlinWasmStoreYarnLock`. They run one at a time (the
+  build service `OneYarnAtATime` in the root build file): the plugin makes concurrent yarns wait for each
+  other with `--mutex network`, and a yarn that waits over a minute quits, reporting success, without
+  installing anything, which left `@js-joda/core` and `ws` out of CI builds whose tooling install was slow
+  (issue 306). `verifyWasmNpmInstall` checks before webpack and before every Wasm browser test that each
+  package of `kotlin-js-store/wasm/yarn.lock` is in `build/wasm/node_modules`, and fails with a message
+  saying so. Another build on the same machine can still hold yarn's mutex that long; locally, delete
+  `build/wasm` and build again.
+- **The browser** for the Wasm tests: the Chrome preinstalled on the runner image (Karma's `ChromeHeadless`), a
+  version that changes with the image.
+- **No test reaches the network.** Tests that need a server start one on the loopback; the one that checks
+  a failing fetch of the cooking site points at `127.0.0.1:1`, where nothing listens, and logs JGit's
+  "connection failed" on purpose.
+
+A failed test prints its message and stack in the log (`exceptionFormat = FULL` for every test task in the
+root build file): a browser test's failure used to show only its class, `Error` for a Mocha timeout.
 
 ## Releases
 
