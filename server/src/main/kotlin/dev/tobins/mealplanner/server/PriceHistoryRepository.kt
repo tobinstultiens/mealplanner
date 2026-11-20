@@ -168,6 +168,14 @@ class PriceHistoryRepository(private val db: Database) {
     fun recordings(store: Store, from: Instant, until: Instant): List<OfferRecording> =
         q.selectOfferRecordings(store.name, seen(from), seen(until)).executeAsList()
 
+    /**
+     * Whether [store] was recorded with an offer for the catalogue [ingredient] (by name, any case) that saves
+     * something and was valid on some day from [from] to [until] (both included): what a late tick's saving
+     * store is believed by (see [savingFor]).
+     */
+    fun offered(store: Store, ingredient: String, from: LocalDate, until: LocalDate): Boolean =
+        q.selectOfferedBetween(store.name, ingredient, from.toString(), until.toString()).executeAsOne()
+
     /** The regular prices of the ingredient [names] (any case) at every store, last seen from [from] on. */
     fun regularPrices(names: Collection<String>, from: Instant): List<RegularPriceHistory> =
         if (names.isEmpty()) emptyList() else q.selectRegularPrices(names.distinct(), seen(from)).executeAsList()

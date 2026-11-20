@@ -585,9 +585,18 @@ with the server's own figure for that part:
   does not double between two phones), pieces above 0 and at most twice the row's now, for a row that
   counts pieces;
 - the saving is believed only when the tick is dated on an earlier day than the server's (a tick of
-  today still has its offer on the server's list, so the server works it out), no more than 56 days
-  back and not in the future; it is from 0 to the row's regular price (what its whole need costs), and a
-  row without a regular price saves nothing known. The store counts only with a saving above 0;
+  today still has its offer on the server's list, so the server works it out) and no more than 56 days
+  back. A phone's clock may run ahead: a date one day after the server's counts as the server's day (so
+  the server works that tick out); a date further ahead is not believed, and neither is its store. The
+  saving is from 0 to the row's regular price (what its whole need costs) in proportion to the amount
+  the phone showed against what the row says now (so a need that shrank since does not cut a real
+  saving down, nor a need that grew let one grow), and a row without a regular price saves nothing
+  known;
+- the store of that saving counts only for one of the account's stores that was recorded in the price
+  history with an offer for the row's ingredient valid from a day before to a day after the tick's day;
+  otherwise the saving is kept without a store (its amount is bounded by the row all the same; only the
+  store header it is listed under is unknown). It counts only with a saving above 0, and another
+  account's stores never count;
 - a tick that is there already stays as it is, so of two phones ticking the same row the first one
   to arrive decides, and each account's ticks are its own.
 
