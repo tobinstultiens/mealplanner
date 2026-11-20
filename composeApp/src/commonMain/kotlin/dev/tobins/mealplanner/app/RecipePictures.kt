@@ -57,9 +57,9 @@ fun pictureUrls(recipes: List<RecipeSummary>): Map<Long, String> =
  * extra, the screen works without.
  */
 @Composable
-fun rememberMyRecipes(api: ApiClient): State<List<RecipeSummary>?> {
+fun rememberMyRecipes(api: ApiClient, asked: Any? = null): State<List<RecipeSummary>?> {
     val recipes = remember(api) { mutableStateOf<List<RecipeSummary>?>(null) }
-    LaunchedEffect(api) { runCatching { api.recipes() }.onSuccess { recipes.value = it } }
+    LaunchedEffect(api, asked) { runCatching { api.recipes() }.onSuccess { recipes.value = it } }
     return recipes
 }
 

@@ -33,6 +33,7 @@ import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RecipeCost
 import dev.tobins.mealplanner.api.RecipeDetail
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSource
@@ -88,12 +89,23 @@ class FakeBackend(
     private val prepped: Boolean = false,
     /** The week with half a serving of the chickpea salad prepped as a side next to three meals (issue 234, step 2). */
     private val sides: Boolean = false,
+    /** The week holding only Monday's lunch of the chicken thighs prepped the Sunday before ([tailPrep]), not planned yet (issue 263). */
+    private val tailOnly: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
 
     /** Every call the server got, as `GET /api/recipes/bank`, for a test to tell that something was asked (or not). */
     val requests: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+
+    /** While set, a change of how long a recipe keeps waits for it to open before it is answered, as a slow server would. */
+    @Volatile
+    var keepsAnswer: java.util.concurrent.CountDownLatch? = null
+
+    /** Sets how long recipe [id] keeps as another device would, without the app asking. */
+    fun keepElsewhere(id: Long, keeps: RecipeKeeps) {
+        rows.replaceAll { if (it.id == id) it.copy(keepsDays = keeps.days, keepsVacuumDays = keeps.vacuumDays) else it }
+    }
 
     /** A sentence that makes every change of recipes answer 409, as the server does for a recipe planned on Friday. */
     @Volatile
@@ -172,6 +184,8 @@ class FakeBackend(
             )
             parts.size == 3 && parts[1] == "days" -> json.encodeToString(day(parts[2]))
             parts.size == 4 && parts[1] == "preps" && parts[2] == "spare" -> json.encodeToString(if (prepped) listOf(spare) else emptyList())
+            // A share in the box eaten in another meal: the week as it was, as the test reads what was sent.
+            method == "POST" && parts.size == 6 && parts[3] == "preps" && parts[5] == "spare" -> { changes += "POST $path $sent"; json.encodeToString(plan(parts[2])) }
             parts.size == 3 && parts[1] == "plans" -> json.encodeToString(plan(parts[2]))
             // What was in a meal; every meal of the week is Wednesday's dinner here.
             parts.size == 7 && parts[1] == "plans" && parts[6] == "lines" -> json.encodeToString(mealLines(method, sent))
@@ -304,7 +318,31 @@ class FakeBackend(
         return chicken.copy(status = ofPrep.status, leftover = meal.day > 0, locked = true, prep = prep)
     }
 
-    private fun plan(weekStart: String) = WeekPlan(
+    /** The chicken thighs prepped on the Sunday before the week, eaten then and at Monday's lunch: the week's only meal ([tailOnly]). */
+    private val tailPrep = MealPrep(
+        id = 3, madeOn = plusDays(WEEK_START, -1), lastDay = plusDays(WEEK_START, 1), vacuum = false,
+        meals = listOf(PrepMeal(plusDays(WEEK_START, -1), MealSlot.DINNER, 1.5, MealStatus.EATEN), PrepMeal(WEEK_START, MealSlot.LUNCH, 1.25, MealStatus.PLANNED)),
+    )
+
+    /** The week of [tailOnly]: Monday's lunch from last week's batch, nothing else; as the server says, no breakfast, dinner or snack in it. */
+    private fun tailWeek(weekStart: String) = WeekPlan(
+        weekStart = weekStart,
+        targets = targets,
+        days = (0..6).map { day ->
+            val meals = if (day == 0) {
+                listOf(
+                    meal(0, MealSlot.LUNCH, 4, "Slow-cooked chicken thighs with coconut, lemon and spinach", 1012.5, 68.75, 6.6, cost = 4.9)
+                        .copy(portions = 1.25, leftover = true, locked = true, prep = tailPrep, cookPortions = 0.0),
+                )
+            } else {
+                emptyList()
+            }
+            PlanDay(plusDays(weekStart, day), meals, meals.sumOf { it.kcal }, meals.sumOf { it.proteinG }, meals.sumOf { it.fibreG ?: 0.0 })
+        },
+        emptySlots = listOf(MealSlot.BREAKFAST, MealSlot.DINNER, MealSlot.SNACK),
+    )
+
+    private fun plan(weekStart: String) = if (tailOnly) tailWeek(weekStart) else WeekPlan(
         weekStart = weekStart,
         targets = targets,
         days = (0..6).map { if (emptyWeek) PlanDay(plusDays(weekStart, it), emptyList(), 0.0, 0.0, 0.0) else planDay(it) },
@@ -381,6 +419,8 @@ class FakeBackend(
 
     private fun shopping(weekStart: String): ShoppingList {
         if (emptyWeek) return ShoppingList(weekStart, emptyList(), emptyList())
+        // The week's only meal is of last week's batch, which last week's list bought.
+        if (tailOnly) return ShoppingList(weekStart, emptyList(), emptyList(), preppedBoughtIn = plusDays(WEEK_START, -7))
         // In walking order, as the server sends it: by shop section, then by name. The regular price is the
         // amount needed at the price per kg of `prices`; the pepper, counted in pieces only, has none.
         fun item(key: String, name: String, grams: Double?, pieces: Double?, section: ShopSection, recipe: String?, checked: Boolean = false, offers: List<Offer> = emptyList(), imageUrl: String? = null, regularPrice: Double? = null, knownGrams: Double? = null, otherAmounts: List<String> = emptyList(), boughtGrams: Double? = null, onHand: Boolean = false, onHandGrams: Double? = null, toComeGrams: Double? = null) =
@@ -579,6 +619,12 @@ class FakeBackend(
                     val ingredient = names.getValue(input.ingredientId)
                     RecipeTopping(ingredient.id, ingredient.name, input.grams, ingredient.gramsPerPiece)
                 })
+                detailJson(id)
+            }
+            "keeps" -> {
+                keepsAnswer?.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                val id = parts[2].toLong()
+                keepElsewhere(id, json.decodeFromString<RecipeKeeps>(sent))
                 detailJson(id)
             }
             "rotation" -> if (many) {

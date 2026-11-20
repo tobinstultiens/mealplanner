@@ -83,7 +83,10 @@ fun PlanScreen(
     var busy by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val myRecipes by rememberMyRecipes(api)
+    // My recipes again whenever the app comes back to the front or a prep is started: what keeps may have been set
+    // elsewhere meanwhile, and the Prep dialog offers the recipes that keep (issue 263).
+    var prepsStarted by remember { mutableIntStateOf(0) }
+    val myRecipes by rememberMyRecipes(api, frontReturns to prepsStarted)
     val pictures = myRecipes?.let(::pictureUrls).orEmpty()
     // Known once my recipes are: with none of them in the rotation the planner has nothing to pick from, which is why slots stay empty.
     val emptyRotation = myRecipes?.let(::rotationIsEmpty) == true
@@ -93,6 +96,7 @@ fun PlanScreen(
     var choosingFor by remember { mutableStateOf<Pair<Int, MealSlot>?>(null) }
     // The prep being made (issue 234), the prep being removed with the title of its recipe, and the shares of skipped prepped meals still in the box.
     var prepping by remember { mutableStateOf<PrepChoice?>(null) }
+    LaunchedEffect(prepping != null) { if (prepping != null) prepsStarted++ }
     var removingPrep by remember { mutableStateOf<Pair<String, MealPrep>?>(null) }
     var spares by remember { mutableStateOf<List<SparePortion>>(emptyList()) }
     val preppable = myRecipes?.let(::preppable).orEmpty()
@@ -228,6 +232,8 @@ fun PlanScreen(
             is Load.Ready -> {
                 val plan = current.value
                 val hasMeals = plan.days.any { it.meals.isNotEmpty() }
+                // Meals of last week's batch alone do not plan the week: its slots are not missing recipes yet.
+                val planned = plan.hasOwnMeals
                 LazyColumn(
                     Modifier.padding(padding).fillMaxSize(),
                     state = listState,
@@ -254,7 +260,7 @@ fun PlanScreen(
                                 )
                             }
                             Button(enabled = !busy, onClick = { change { api.generatePlan(weekStart) } }) {
-                                Text(if (hasMeals) t(Msg.REPLAN) else t(Msg.PLAN_WEEK))
+                                Text(if (planned) t(Msg.REPLAN) else t(Msg.PLAN_WEEK))
                             }
                             // A prep is made today or later: a week that is over has no day for it.
                             val days = prepDays(weekStart, today)
@@ -269,7 +275,7 @@ fun PlanScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 TextButton(onClick = onOpenRecipes) { Text(t(Msg.OPEN_RECIPES)) }
-                            } else if (hasMeals && plan.emptySlots.isNotEmpty()) {
+                            } else if (planned && plan.emptySlots.isNotEmpty()) {
                                 Text(
                                     t(Msg.NO_RECIPES_FOR, plan.emptySlots.joinToString { t.slot(it) }),
                                     style = MaterialTheme.typography.bodySmall,
@@ -278,9 +284,9 @@ fun PlanScreen(
                             }
                         }
                     }
-                    for (spare in spares) {
+                    for (spare in sparesShown(spares, weekStart, today)) {
                         item(key = "spare:${spare.prepId}:${spare.skipped.date}:${spare.skipped.slot}") {
-                            SpareCard(spare, today, enabled = !busy) { slot ->
+                            SpareCard(spare, today, spare.proposal(listOfNotNull(plan, nextWeek)), enabled = !busy) { slot ->
                                 change { api.eatSpare(weekStart, spare.prepId, SpareMove(spare.skipped, slot)) }
                             }
                         }

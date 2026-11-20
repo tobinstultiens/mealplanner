@@ -150,4 +150,24 @@ class CookModeScreenTest {
         waitFor("Cook")
         compose.onNodeWithText("Step 1 · Now").assertDoesNotExist()
     }
+
+    /** Issue 263: cook mode says what it cooks for whom, as the recipe does, also on the day a batch is made. */
+    @Test
+    fun cookModeOfAPrepDaySaysWhatItCooksForTheLaterMeals() {
+        show(MealToCook(4, 1.5, 4.0, skipped = false, prepMadeOn = "2026-11-18"))
+        waitFor("Step 1 · Now")
+        compose.onNodeWithText("Cook 4 servings: 1.5 now, 2.5 for the prep's later meals").assertExists()
+        // The recipe's 2 servings twice over: the batch.
+        compose.onNodeWithText("1400 g chicken thigh fillet", substring = true).assertExists()
+    }
+
+    /** Issue 263: a later meal of a batch cooks nothing; cook mode shows what is in its box, under a heading that says so. */
+    @Test
+    fun cookModeOfALaterPreppedMealShowsWhatIsInItsBox() {
+        show(MealToCook(4, 1.25, 0.0, skipped = false, prepMadeOn = "2026-11-16"))
+        waitFor("Step 1 · Now")
+        compose.onNodeWithText("Prepped on Mon 16 Nov: nothing to cook").assertExists()
+        compose.onNodeWithText("In this meal: 1.25 servings").assertExists()
+        compose.onNodeWithText("Ingredients").assertDoesNotExist()
+    }
 }

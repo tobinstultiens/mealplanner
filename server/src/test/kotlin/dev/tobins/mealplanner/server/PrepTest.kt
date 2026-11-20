@@ -379,6 +379,38 @@ class PrepTest {
         assertEquals(listOf(2 to 175.0), shortfallsAfter("2026-11-24"))
     }
 
+    /** Issue 263: a week with only meals of last week's batch buys nothing, and its list says which week's list bought them. */
+    @Test
+    fun aWeekWithOnlyMealsOfAnEarlierBatchSaysWhichListBoughtThem() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        http.prep(k.salad.id, "2026-11-22", "2026-11-22" to DINNER, "2026-11-23" to LUNCH, "2026-11-24" to DINNER)
+
+        val next = http.get("/api/plans/$nextWeek/shopping").body<ShoppingList>()
+        assertTrue(next.items.isEmpty(), "${next.items}")
+        assertEquals(week, next.preppedBoughtIn)
+        assertNull(http.get("/api/plans/$week/shopping").body<ShoppingList>().preppedBoughtIn, "this week's list buys the batch itself")
+    }
+
+    /** Issue 263: a batch made already is refused for removal in the words of how it is eaten. */
+    @Test
+    fun aMadeBatchIsRefusedInTheWordsOfHowItIsEaten() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        http.planned()
+        val meals = http.prep(k.salad.id, "2026-11-17", "2026-11-17" to DINNER, "2026-11-18" to LUNCH).body<WeekPlan>().at("2026-11-17", DINNER)!!.prep!!
+        val sides = http.prep(k.salad.id, "2026-11-19", "2026-11-19" to DINNER, "2026-11-20" to LUNCH, side = 0.5).body<WeekPlan>().at("2026-11-19", DINNER)!!.side!!.prep
+        http.mark("2026-11-17", DINNER, MealStatus.EATEN)
+        http.mark("2026-11-19", DINNER, MealStatus.EATEN)
+
+        val meal = http.delete("/api/plans/$week/preps/${meals.id}")
+        assertEquals(HttpStatusCode.Conflict, meal.status)
+        assertTrue(meal.bodyAsText().contains("This prepped batch was made already: mark the meals you do not eat skipped instead"), meal.bodyAsText())
+        val side = http.delete("/api/plans/$week/preps/${sides.id}")
+        assertEquals(HttpStatusCode.Conflict, side.status)
+        assertTrue(side.bodyAsText().contains("This prepped side was made already: mark the meals you do not eat it with skipped instead"), side.bodyAsText())
+    }
+
     // --- A skipped meal's share
 
     @Test
@@ -558,10 +590,9 @@ class PrepTest {
     fun aRecipeEatenOnlyAsASideIsNotDeletedWhileItIsPlanned() = testApplication {
         val http = start()
         val k = http.kitchen()
-        // Recipes planned in weeks that are over may go, so this one is eaten this week.
-        val monday = Batch.mondayOf(serverToday())
-        http.planned(monday.toString())
-        http.prep(k.salad.id, monday.toString(), monday.toString() to DINNER, monday.plusDays(1).toString() to LUNCH, weekStart = monday.toString(), side = 0.5)
+        // Recipes planned in weeks that are over may go, so this one is eaten in the server's week.
+        http.planned()
+        http.prep(k.salad.id, week, week to DINNER, "2026-11-17" to LUNCH, side = 0.5)
         val deleted = http.delete("/api/recipes/${k.salad.id}")
         assertEquals(HttpStatusCode.Conflict, deleted.status, deleted.bodyAsText())
         assertTrue(deleted.bodyAsText().contains("Planned on"), deleted.bodyAsText())

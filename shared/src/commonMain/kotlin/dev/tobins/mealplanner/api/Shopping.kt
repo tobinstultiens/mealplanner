@@ -170,6 +170,12 @@ data class ShoppingList(
      * never take it for something to buy.
      */
     val noLongerNeeded: List<ShoppingItem> = emptyList(),
+    /**
+     * The first day (a Monday, ISO) of the earliest week whose list bought a prepped batch eaten in this week (issue
+     * 263): a batch is bought in the week it is made, so its meals and sides here buy nothing. Null when none of this
+     * week's meals or sides is of a batch made in an earlier week. For the app to say why such a week has nothing to buy.
+     */
+    val preppedBoughtIn: String? = null,
 )
 
 /**

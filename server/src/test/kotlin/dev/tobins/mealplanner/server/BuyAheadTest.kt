@@ -234,7 +234,9 @@ class BuyAheadTest {
         http.delete("/api/plans/$week/preps/${prep.id}")
         val all = http.post("/api/plans/$week/preps") { setBody(PrepInput(filler.id, "2026-11-22", meals = dinners + PrepSlot("2026-11-29", MealSlot.DINNER))) }
         assertEquals(HttpStatusCode.OK, all.status, all.bodyAsText())
-        assertEquals(emptyList(), http.list().buyAhead)
+        val full = http.list()
+        assertEquals(emptyList(), full.buyAhead)
+        assertTrue(full.buyAheadProvisional, "next week still has no plan of its own, as the docs say")
     }
 
     @Test

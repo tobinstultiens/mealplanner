@@ -126,13 +126,13 @@ class ReleasedAppTest {
 
     private lateinit var db: dev.tobins.mealplanner.server.db.Database
 
-    /** A server with a NEVO fixture, five recipes of the cooking site, offers and a plan's worth of everything else. */
     /**
      * The server's today: the Monday of [week] unless a test moves it, so that the preps made in a newer app are made on days
      * still to come and a batch ends when the test says, whenever it runs.
      */
     private var today: java.time.LocalDate = java.time.LocalDate.parse(week)
 
+    /** A server with a NEVO fixture, five recipes of the cooking site, offers and a plan's worth of everything else. */
     private fun ApplicationTestBuilder.start(): HttpClient {
         val repo = createTempDirectory("cooking").toFile()
         for (i in 0..4) File(repo, "content/recipes/meal-$i.md").apply { parentFile.mkdirs() }.writeText(meal("Meal $i", if (i == 0) "1 | g | dragon fruit\n" else ""))

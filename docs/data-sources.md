@@ -658,7 +658,8 @@ kept under its own meal, from the stock that counts from the week the batch is m
 next week: what was bought ahead for that week is not used for it. Eating more of its meals takes nothing; the
 last eaten one un-eaten gives every share back. A skipped meal's share eaten in a later meal moves what it took
 along. The shopping list counts the batch as one meal of all its portions on its made-on day, still to cook
-until it is made. A side taken from a batch (step 2) takes its share as its recipe has it (a side can't be
+until it is made; the list of a later week buys nothing for the batch's meals there and names the week whose list
+did (`ShoppingList.preppedBoughtIn`, the earliest when there are several). A side taken from a batch (step 2) takes its share as its recipe has it (a side can't be
 adjusted), kept under the meal it is next to but apart from that meal's own (`stockUse.role` `SIDE`), so eating
 or un-eating the meal's main moves only the main's share, and the side's goes with its batch; a new main for the
 meal keeps the side's share where it is. A batch made with a side is one meal of the list next to that meal. What was at home for a week's shortfalls (`atHome`, below) counts what each meal of the week
