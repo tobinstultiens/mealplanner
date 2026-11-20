@@ -8,13 +8,26 @@ import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.recipes.IngredientLine
 import kotlin.math.ceil
 
-/** Pack sizes as stores write them: "500 g", "1,5 l", "2 x 250 g", "ca. 600 g", "3 stuks", "per stuk". */
+/**
+ * Pack sizes as stores write them: "500 g", "1,5 l", "2 x 250 g", "ca. 600 g", "3 stuks", "per stuk", and
+ * packs of several: "4-pack à 1 liter", "Tray met 24 blikken à 33cl", "3x 16 stuks" (all N times the size).
+ * A text that says "alle" ("Alle flessen à 1,5 liter") names any item of that size, not a multiple.
+ */
 object PackSize {
     private const val NUMBER = """(\d+(?:[.,]\d+)?)"""
+    private const val PACK_PREFIX = """(?:^|[\s(])(\d+)(?:-pack\s*à|\s*x|\s+([a-zëï]+)\s+[àx])\s*"""
     private val multi = Regex("""(\d+)\s*x\s*$NUMBER\s*(kilogram|kg|kilo|gram|gr|g|liter|lt|l|ml|cl)\b""")
     private val single = Regex("""$NUMBER\s*(kilogram|kg|kilo|gram|gr|g|liter|lt|l|ml|cl)\b""")
     private val pieces = Regex("""(\d+)\s*(stuks|stuk|st)\b""")
     private val volume = Regex("""\d\s*(liter|lt|l|ml|cl)\b""")
+    private const val UNITS = "kilogram|kg|kilo|gram|gr|g|liter|lt|l|ml|cl"
+
+    /** "4-pack à 1 liter", "2 verpakkingen à 200 gram", "24 blikken x 33 cl": a count, then the size of each. A range ("à 100-175 gram") is no size. */
+    private val packsOf = Regex("""$PACK_PREFIX$NUMBER\s*($UNITS)\b""")
+
+    /** "8 pakjes à 5 stuks", "3x 16 stuks", "4-pack à 6 stuks": a count, then the pieces in each. */
+    private val piecesPerPack = Regex("""$PACK_PREFIX(\d+)\s*(?:stuks|stuk|st)\b""")
+    private val everyItem = Regex("""\balle\b""")
 
     /**
      * Grams in a pack, or null when the text gives no size that can be converted: volumes
@@ -25,17 +38,32 @@ object PackSize {
         multi.find(t)?.let { m ->
             return finite(count(m.groupValues[1]), number(m.groupValues[2])) { count, amount -> count * toGrams(amount, m.groupValues[3], gramsPerMl) }
         }
+        packOf(t)?.let { m ->
+            return finite(count(m.groupValues[1]), number(m.groupValues[3])) { count, amount -> count * toGrams(amount, m.groupValues[4], gramsPerMl) }
+        }
         single.find(t)?.let { m -> return number(m.groupValues[1])?.let { finite(toGrams(it, m.groupValues[2], gramsPerMl)) } }
-        val found = pieces.find(t)
-        val count = if (found != null) found.groupValues[1].toIntOrNull()?.toDouble() else if (t.contains("per stuk")) 1.0 else null
+        val count = pieces(t)?.toDouble()
         return if (count != null && gramsPerPiece != null) finite(count * gramsPerPiece) else null
     }
 
     /** The number of pieces in a pack written as "3 stuks" (or "per stuk": 1), null when the text counts none. */
     fun pieces(text: String?): Int? {
         val t = text?.lowercase() ?: return null
+        piecesInPack(t)?.let { return it }
         return pieces.find(t)?.let { it.groupValues[1].toIntOrNull() } ?: if (t.contains("per stuk")) 1 else null
     }
+
+    /** The pieces of a pack of packs ("8 pakjes à 5 stuks": 40, "3x 16 stuks": 48), null for another text. */
+    private fun piecesInPack(t: String): Int? {
+        if (everyItem.containsMatchIn(t)) return null
+        val m = piecesPerPack.find(t)?.takeIf { it.groupValues[2] !in allUnits } ?: return null
+        val total = finite(count(m.groupValues[1]), count(m.groupValues[3])) { a, b -> a * b } ?: return null
+        return total.takeIf { it <= Int.MAX_VALUE }?.toInt()
+    }
+
+    /** A pack of several written as "4-pack à 1 liter" or "24 blikken à 33 cl", unless the text speaks of every item of a size ("alle"). */
+    private fun packOf(t: String): MatchResult? =
+        if (everyItem.containsMatchIn(t)) null else packsOf.find(t)?.takeIf { it.groupValues[2] !in allUnits }
 
     /** True when [text] gives a volume ("1,5 l", "6 x 330 ml"): a size that is no weight without a density. */
     fun isVolume(text: String): Boolean = volume.containsMatchIn(text.lowercase())
@@ -49,10 +77,16 @@ object PackSize {
         multi.findAll(t).firstOrNull { it.groupValues[3] in volumeUnits }?.let { m ->
             return finite(count(m.groupValues[1]), number(m.groupValues[2])) { count, amount -> count * toMillilitres(amount, m.groupValues[3]) }
         }
+        packOf(t)?.takeIf { it.groupValues[4] in volumeUnits }?.let { m ->
+            return finite(count(m.groupValues[1]), number(m.groupValues[3])) { count, amount -> count * toMillilitres(amount, m.groupValues[4]) }
+        }
         return single.findAll(t).firstOrNull { it.groupValues[2] in volumeUnits }?.let { m -> number(m.groupValues[1])?.let { finite(toMillilitres(it, m.groupValues[2])) } }
     }
 
     private val volumeUnits = setOf("liter", "lt", "l", "ml", "cl")
+
+    /** Words after a count that are a unit, not the kind of pack: "500 g à 3 stuks" is no pack of packs. */
+    private val allUnits = UNITS.split('|').toSet()
 
     private fun toMillilitres(amount: Double, unit: String): Double = when (unit) {
         "l", "lt", "liter" -> amount * 1000

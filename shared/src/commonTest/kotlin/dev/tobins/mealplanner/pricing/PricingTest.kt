@@ -61,6 +61,50 @@ class PricingTest {
         assertNull(PackSize.toBuy(packOffer("500 g"), null, null))
     }
 
+    // Packs of several, from the real offers of 18 to 24 November 2026 (Jumbo, Lidl).
+
+    @Test
+    fun aPackOfSeveralIsReadAsTheCountTimesTheSize() {
+        assertEquals(4000.0, PackSize.millilitres("4-pack à 1 liter"))
+        assertEquals(4000.0, PackSize.grams("4-pack à 1 liter"), "a litre is a kilogram unless told otherwise")
+        assertEquals(1000.0, PackSize.millilitres("2 bekers à 500ml"))
+        assertEquals(7920.0, PackSize.millilitres("Tray met 24 blikken à 33cl"))
+        assertEquals(7920.0, PackSize.millilitres("24 blikken x 33 cl"))
+        assertEquals(400.0, PackSize.grams("2 verpakkingen à 200 gram"))
+        assertEquals(48, PackSize.pieces("3x 16 stuks"))
+        assertEquals(40, PackSize.pieces("Verpakking met 8 pakjes à 5 stuks"))
+        assertEquals(30.0, PackSize.grams("6 stuks à 5 g"), "N stuks à X is N times X")
+        assertEquals(240.0, PackSize.grams("3x 16 stuks", gramsPerPiece = 5.0))
+    }
+
+    @Test
+    fun whatReadCorrectlyBeforeReadsTheSame() {
+        assertEquals(1500.0, PackSize.millilitres("Alle flessen à 1,5 liter, per fles"), "any bottle of that size is no multiple")
+        assertEquals(1000.0, PackSize.millilitres("Alle flessen à 1 liter, per fles"))
+        assertEquals(4, PackSize.pieces("Alle verpakkingen à 4 stuks, per verpakking"))
+        assertEquals(2, PackSize.pieces("Schaal à 2 stuks"))
+        assertEquals(20, PackSize.pieces("Verpakking à 20 stuks"))
+        assertEquals(175.0, PackSize.grams("2 verpakkingen à 100-175 gram"), "a range gives no size to multiply")
+        assertEquals(300.0, PackSize.grams("3 verpakkingen à 133 - 300 gram"))
+        assertEquals(750.0, PackSize.millilitres("Alle pakken à 750 ml - 1 liter of set met 6 pakjes à 200 ml"))
+        assertEquals(2100.0, PackSize.grams("6x 350 gram of 6x 400 gram"))
+        assertEquals(6000.0, PackSize.millilitres("Tray 24x250ml"))
+        assertEquals(300.0, PackSize.grams("2 x 150 g"))
+        assertEquals(500.0, PackSize.grams("Zak 500 gram à 2 stuks"), "a weight is not a kind of pack")
+        assertNull(PackSize.millilitres("Rivella 1.5 literflessen 4-pack"), "unread before and still")
+    }
+
+    @Test
+    fun theShoppingListBuysPacksOfTheWholePackOfSeveral() {
+        // 900 g of it: two packs of 2 x 200 g are 800 g, three are 1200 g. Read as 200 g it was five.
+        assertEquals(PacksToBuy(3, 400.0, null, 1), PackSize.toBuy(packOffer("2 verpakkingen à 200 gram"), 900.0, null))
+        // 100 crackers from "8 pakjes à 5 stuks": 3 packs of 40, not 20 of 5.
+        assertEquals(PacksToBuy(3, null, 40, 1), PackSize.toBuy(packOffer("Verpakking met 8 pakjes à 5 stuks"), null, 100.0))
+        assertEquals(1, PackSize.toBuy(packOffer("3x 16 stuks"), null, 48.0)?.packs)
+        // Lidl's "2 x 150 g" was already right.
+        assertEquals(2, PackSize.toBuy(packOffer("2 x 150 g"), 500.0, null)?.packs)
+    }
+
     @Test
     fun packsADealNeeds() {
         assertEquals(2, Discounts.packsNeeded("1+1 gratis"))
