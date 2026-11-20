@@ -40,7 +40,6 @@ import dev.tobins.mealplanner.server.prices.PriceSource
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.time.Duration
@@ -146,26 +145,16 @@ fun Application.module(
     val cooking = CookingSync(users, config.dataDir, serverSite, config.cookingRepoShared, ::scope, config.cookingFetchInterval)
 
     // Cooking sites the server fetches itself: synced a few times a day.
-    launch {
-        while (true) {
-            cooking.syncScheduled()
-            delay(CookingSync.EVERY_HOURS.hours)
-        }
-    }
+    launch { repeatEvery(CookingSync.EVERY_HOURS.hours, "Cooking site sync") { cooking.syncScheduled() } }
     if (config.fetchOffers) {
         // Stores publish their offers weekly; checking every six hours and fetching
-        // what is older than a day keeps up without hammering them.
+        // what is older than a day keeps up without hammering them. Each job is logged
+        // on its own, so that one failing does not skip the other or end the loop.
         launch {
-            while (true) {
-                offers.refresh(olderThan = Duration.ofHours(24))
+            repeatEvery(6.hours, "Offer round") {
+                logged("Offer refresh") { offers.refresh(olderThan = Duration.ofHours(24)) }
                 // Regular prices barely move; a weekly lookup (a few minutes of searches) is enough.
-                try {
-                    prices.refresh(olderThan = Duration.ofDays(7))
-                } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    log.warn("Price lookup failed: ${e.message}")
-                }
-                delay(6.hours)
+                logged("Price lookup") { prices.refresh(olderThan = Duration.ofDays(7)) }
             }
         }
     }
