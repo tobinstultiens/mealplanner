@@ -48,11 +48,11 @@ class TrackingRepository(
         val day = parseDate(entry.date)
         require(entry.description.isNotBlank()) { "description must not be blank" }
         require(entry.kcal in 0.0..10000.0 && entry.proteinG in 0.0..1000.0) { "kcal and proteinG must be plausible, non-negative numbers" }
-        q.insertLog(userId, day.toString(), entry.description.trim(), entry.kcal, entry.proteinG)
+        db.writing { q.insertLog(userId, day.toString(), entry.description.trim(), entry.kcal, entry.proteinG) }
         return day(day.toString())
     }
 
-    fun deleteLog(id: Long) = q.deleteLog(userId, id)
+    fun deleteLog(id: Long) = db.writing { q.deleteLog(userId, id) }
 
     fun weights(): WeightLog {
         val entries = WeightTrend.withTrend(

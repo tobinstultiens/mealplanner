@@ -100,7 +100,7 @@ class FoodRepository(private val db: Database) {
         }
         // Validate every row before touching the table.
         rows.forEach(::basisOf)
-        db.transaction {
+        db.writing {
             q.deleteAllFoods()
             for (row in rows) {
                 val values = nutrients.map { row[it].replace(',', '.').toDoubleOrNull() }

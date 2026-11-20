@@ -20,7 +20,7 @@ import kotlin.math.abs
  * meal may be adjusted, and moving the stock when it was eaten already, is [PlanRepository.adjust]'s.
  */
 class MealAdjustments(
-    db: Database,
+    private val db: Database,
     private val userId: Long,
     private val recipes: RecipeRepository,
     private val catalogue: IngredientRepository,
@@ -169,8 +169,10 @@ class MealAdjustments(
                 else -> true
             }
         }
-        q.deleteMealLines(userId, start.toString(), meal.day.toLong(), meal.slot.name)
-        for (change in kept) q.insertMealLine(userId, start.toString(), meal.day.toLong(), meal.slot.name, change.ingredientId, change.grams)
+        db.writing {
+            q.deleteMealLines(userId, start.toString(), meal.day.toLong(), meal.slot.name)
+            for (change in kept) q.insertMealLine(userId, start.toString(), meal.day.toLong(), meal.slot.name, change.ingredientId, change.grams)
+        }
     }
 
     /** [meal]'s recipe with what each line means; a recipe that is gone has no lines. */

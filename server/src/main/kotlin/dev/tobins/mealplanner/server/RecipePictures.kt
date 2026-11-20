@@ -13,7 +13,7 @@ import java.security.MessageDigest
  * pages show, kept as `<root>/<account id>/<recipe id>.jpg`. Those names come from ids in the
  * database, never from a request or a page.
  */
-class RecipePictures(db: Database, root: File, private val userId: Long) {
+class RecipePictures(private val db: Database, root: File, private val userId: Long) {
     private val q = db.recipeQueries
     private val dir = File(root, userId.toString())
 
@@ -25,7 +25,7 @@ class RecipePictures(db: Database, root: File, private val userId: Long) {
      * recipes. A picture whose file is unchanged (same SHA-256) is left alone; one that cannot be used
      * is logged and remembered by its hash, so it is logged once and not tried again until it changes.
      * Runs outside a database transaction: a photo takes a moment to scale, and other requests must
-     * not wait for the write lock meanwhile.
+     * not wait for the write lock meanwhile. Each picture is stored on its own ([setPicture]).
      *
      * @throws IOException when a copy cannot be written; the next sync tries again.
      */
@@ -37,7 +37,7 @@ class RecipePictures(db: Database, root: File, private val userId: Long) {
         for (row in q.selectPictures(userId).executeAsList()) {
             val source = row.sourcePath?.let(pictures::get)
             if (source == null) {
-                if (row.imageSourceHash != null) q.setPicture(null, null, userId, row.id)
+                if (row.imageSourceHash != null) setPicture(row.id, null, null)
                 continue
             }
             val hash = try {
@@ -54,12 +54,12 @@ class RecipePictures(db: Database, root: File, private val userId: Long) {
                 WebPicture.of(source)
             } catch (e: UnusablePicture) {
                 log.warn("Picture ${source.name} of recipe ${row.sourcePath} (account $userId) is not shown: ${e.message}")
-                q.setPicture(hash, null, userId, row.id)
+                setPicture(row.id, hash, null)
                 skipped++
                 continue
             }
             write(row.id, copy)
-            q.setPicture(hash, sha256(copy).take(VERSION_LENGTH), userId, row.id)
+            setPicture(row.id, hash, sha256(copy).take(VERSION_LENGTH))
             stored++
         }
         return Outcome(stored, unchanged, removed = removeStrays(), skipped)
@@ -74,8 +74,13 @@ class RecipePictures(db: Database, root: File, private val userId: Long) {
 
     /** Forgets every picture of the account, e.g. when it changes its cooking site. */
     fun removeAll() {
-        q.clearPictures(userId)
+        db.writing { q.clearPictures(userId) }
         dir.deleteRecursively()
+    }
+
+    /** Stores what recipe [recipeId]'s picture is now: the [hash] of its file, and the [version] of its copy when it has one. */
+    private fun setPicture(recipeId: Long, hash: String?, version: String?) {
+        db.writing { q.setPicture(hash, version, userId, recipeId) }
     }
 
     private fun copyOf(recipeId: Long) = File(dir, "$recipeId.jpg")

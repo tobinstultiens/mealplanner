@@ -108,7 +108,7 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
                 val today = serverDay(now)
                 refusal(source.store, offers.size, q.selectOffersValidOn(today.toString()).executeAsList().count { it.store == source.store.name })
                     ?.let { throw RefusedResult(it) }
-                db.transaction {
+                db.writing {
                     q.deleteOffers(source.store.name)
                     offers.forEach {
                         q.insertOffer(
@@ -129,17 +129,21 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
             } catch (e: RefusedResult) {
                 // Said loudly: the nightly job has nobody watching, and this means a store's page probably changed.
                 log.error("Refused the offers of ${source.store.label}, kept the stored ones: ${e.message}")
-                q.ensureSource(source.store.name)
-                q.recordFailure(e.message!!, source.store.name)
+                recordFailure(source.store, e.message!!)
             } catch (e: Exception) {
                 log.warn("Could not fetch offers from ${source.store.label}: ${e.message}")
-                q.ensureSource(source.store.name)
-                q.recordFailure(e.message ?: e::class.simpleName ?: "unknown error", source.store.name)
+                recordFailure(source.store, e.message ?: e::class.simpleName ?: "unknown error")
             }
         }
         val today = serverDay(now)
         warnings(today).forEach { log.warn(it) }
         return state(today)
+    }
+
+    /** Keeps why [store]'s fetch failed, for [problems] and the health check; its offers stay as they were. */
+    private fun recordFailure(store: Store, message: String): Unit = db.writing {
+        q.ensureSource(store.name)
+        q.recordFailure(message, store.name)
     }
 
     /** A fetch that parsed but cannot be the store's real week; thrown to keep the stored offers like a failed fetch. */
@@ -167,7 +171,7 @@ class OfferRepository(private val db: Database, private val sources: List<OfferS
      */
     private fun recordHistory(store: Store, offers: List<Offer>, ingredientOf: (Offer) -> String?, now: Instant) {
         try {
-            db.transaction {
+            db.writing {
                 history.pruneOffers(now)
                 history.recordOffers(store, offers, ingredientOf, now)
             }

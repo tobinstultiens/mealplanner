@@ -18,11 +18,13 @@ class ShopsRepository(private val db: Database, private val userId: Long) {
     /** Saves the account's stores; null goes back to every store. An empty list is refused. */
     fun save(setting: ShopsSetting): ShopsSetting {
         val stores = setting.stores
-        if (stores == null) {
-            db.userQueries.deleteUserMeta(userId, KEY)
-        } else {
-            require(stores.isNotEmpty()) { "Choose at least one store" }
-            db.userQueries.upsertUserMeta(userId, KEY, Json.encodeToString(stores.distinct().sortedBy { it.ordinal }.map { it.name }))
+        require(stores == null || stores.isNotEmpty()) { "Choose at least one store" }
+        db.writing {
+            if (stores == null) {
+                db.userQueries.deleteUserMeta(userId, KEY)
+            } else {
+                db.userQueries.upsertUserMeta(userId, KEY, Json.encodeToString(stores.distinct().sortedBy { it.ordinal }.map { it.name }))
+            }
         }
         return setting()
     }

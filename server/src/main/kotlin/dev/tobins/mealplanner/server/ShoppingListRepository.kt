@@ -397,7 +397,7 @@ class ShoppingListRepository(
         val key = ShoppingKey.parse(input.key)
         require(key is ShoppingKey.Ingredient || key is ShoppingKey.Text) { "Only rows of what the meals need are ticked again, not ${input.key}" }
         val row = neededRow(start, key)
-        db.transaction {
+        db.writing {
             if (q.deleteCheck(userId, start.toString(), key.toString()).value == 0L) throw NotFoundException("No tick of ${input.key} in the week of $start")
             if (row == null) throw ConflictException("No meal of the week of $start needs ${input.key} any more")
             insertTick(start, key, row)
@@ -479,10 +479,10 @@ class ShoppingListRepository(
      * one that is not on this week's list (added later, or bought in another week) is refused (409);
      * un-ticking one that was not ticked off in this week changes nothing. Another account's is a 404.
      */
-    private fun setBought(start: LocalDate, id: Long, bought: Boolean) = db.transaction {
+    private fun setBought(start: LocalDate, id: Long, bought: Boolean): Unit = db.writing {
         val week = start.toString()
         val changed = if (bought) q.tickExtra(week, userId, id).value else q.untickExtra(userId, id, week).value
-        if (changed > 0) return@transaction
+        if (changed > 0) return@writing
         val item = q.selectExtra(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No own item with id $id")
         if (bought) throw ConflictException("${item.name} is not on the shopping list of the week of $week")
     }
@@ -500,9 +500,9 @@ class ShoppingListRepository(
         require(name.codePointCount(0, name.length) <= ShoppingExtraInput.MAX_NAME_LENGTH) {
             "name must be at most ${ShoppingExtraInput.MAX_NAME_LENGTH} characters"
         }
-        db.transaction {
-            // Inserted first, then counted: the insert takes the write lock, so two adds at once
-            // can't both pass the count; over the limit, the transaction takes it back.
+        db.writing {
+            // Inserted first, then counted: over the limit, the transaction takes it back. Two adds at
+            // once can't both pass the count, as each takes the write lock first.
             q.insertExtra(userId, name, week)
             if (q.countOpenExtras(userId).executeAsOne() > ShoppingExtraInput.MAX_OPEN) {
                 throw ConflictException(
@@ -518,7 +518,7 @@ class ShoppingListRepository(
     fun deleteExtra(weekStart: String, id: Long): ShoppingList {
         // Checked first, so that a bad week deletes nothing.
         parseWeekStart(weekStart)
-        if (q.deleteExtra(userId, id).value == 0L) throw NotFoundException("No own item with id $id")
+        db.writing { if (q.deleteExtra(userId, id).value == 0L) throw NotFoundException("No own item with id $id") }
         return get(weekStart)
     }
 
@@ -526,7 +526,7 @@ class ShoppingListRepository(
     fun setDismissed(weekStart: String, group: ShoppingAdviceGroup, dismissed: Boolean): ShoppingList {
         val start = parseWeekStart(weekStart)
         val key = ShoppingKey.Dismissed(group).toString()
-        if (dismissed) q.insertCheck(userId, start.toString(), key, null, null, null, null, null) else q.deleteCheck(userId, start.toString(), key)
+        db.writing { if (dismissed) q.insertCheck(userId, start.toString(), key, null, null, null, null, null) else q.deleteCheck(userId, start.toString(), key) }
         return get(weekStart)
     }
 }

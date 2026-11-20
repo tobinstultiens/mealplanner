@@ -162,7 +162,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      * stays as it was, as a tick of a ticked item changes nothing. An ingredient on hand by hand gets
      * none, so un-ticking never takes away what was put there by hand.
      */
-    fun putOnHandFrom(id: Long, week: LocalDate, grams: Double?, source: StockSource) {
+    fun putOnHandFrom(id: Long, week: LocalDate, grams: Double?, source: StockSource): Unit = db.writing {
         requireIngredient(id)
         pantry.insertStock(week.toString(), source.name, java.time.Instant.now().toString(), grams, id, userId)
     }
@@ -286,7 +286,7 @@ class StockRepository(private val db: Database, foods: FoodRepository, private v
      * Keeps [uses] under [meal] again as they were ([taken]): the stock stays as it is, as they were never given back. For
      * a side whose meal's main was replaced (issue 234), which takes the rows kept under the meal's slot with it.
      */
-    fun keep(meal: MealRef, uses: List<SelectStockUses>) {
+    fun keep(meal: MealRef, uses: List<SelectStockUses>): Unit = db.writing {
         for (use in uses) {
             pantry.insertStockUse(
                 userId, meal.week.toString(), meal.day.toLong(), meal.slot.name, meal.role, use.ingredientId, use.fromWeek, use.source, use.addedAt, use.grams,

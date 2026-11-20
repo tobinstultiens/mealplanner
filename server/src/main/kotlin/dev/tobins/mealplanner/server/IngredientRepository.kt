@@ -70,13 +70,13 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         return ingredients.mapValues { (id, ingredient) -> listOf(ingredient.name) + aliases[id].orEmpty() }
     }
 
-    fun setStaple(id: Long, staple: Boolean) = requireIngredient(id).also { pantry.setStaple(if (staple) 1 else 0, userId, id) }
+    fun setStaple(id: Long, staple: Boolean) = db.writing { requireIngredient(id).also { pantry.setStaple(if (staple) 1 else 0, userId, id) } }
 
     /** Whether ingredients keep until next week, where the account set it by hand, by id. */
     fun keepsByHand(): Map<Long, Boolean> = q.selectKeepsByHand(userId).executeAsList().associate { it.id to (it.keeps != 0L) }
 
     /** Sets by hand whether an ingredient keeps until next week; null goes back to its shop section's answer. */
-    fun setKeeps(id: Long, keeps: Boolean?) {
+    fun setKeeps(id: Long, keeps: Boolean?): Unit = db.writing {
         requireIngredient(id)
         q.setKeeps(keeps?.let { if (it) 1L else 0L }, userId, id)
     }
@@ -92,7 +92,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         .mapNotNull { row -> ShopSection.fromKey(row.section)?.let { row.id to it } }.toMap()
 
     /** Sets an ingredient's shop section by hand; null goes back to the automatic one. */
-    fun setSection(id: Long, section: ShopSection?) {
+    fun setSection(id: Long, section: ShopSection?): Unit = db.writing {
         requireIngredient(id)
         q.setSection(section?.name, userId, id)
     }
@@ -216,7 +216,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         completed
     }
 
-    fun unmap(text: String) = q.deleteAlias(userId, normalise(text))
+    fun unmap(text: String) = db.writing { q.deleteAlias(userId, normalise(text)) }
 
     /**
      * Line texts of my recipes that need attention, most-used first: texts with an

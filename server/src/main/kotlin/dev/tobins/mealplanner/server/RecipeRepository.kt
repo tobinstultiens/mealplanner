@@ -232,7 +232,7 @@ class RecipeRepository(
     }
 
     /** Creates a recipe of the user's own, or one generated for them ([source] GENERATED): one of mine, in the rotation. */
-    fun create(input: RecipeInput, source: RecipeSource = RecipeSource.MANUAL): RecipeDetail = db.transactionWithResult {
+    fun create(input: RecipeInput, source: RecipeSource = RecipeSource.MANUAL): RecipeDetail = db.writing {
         require(source != RecipeSource.COOKING_SITE) { "cooking site recipes come from the sync" }
         val parsed = parse(input)
         q.insertRecipe(
@@ -268,7 +268,7 @@ class RecipeRepository(
         find(id)!!
     }
 
-    fun delete(id: Long) {
+    fun delete(id: Long): Unit = db.writing {
         val row = q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
         if (row.source == RecipeSource.COOKING_SITE.name) throw ConflictException("Recipes from the cooking site are removed there")
         val days = plannedDays(id)
@@ -294,8 +294,10 @@ class RecipeRepository(
 
     fun setRating(id: Long, rating: Int?): RecipeDetail {
         require(rating == null || rating in 1..5) { "rating must be 1 to 5, or null" }
-        q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
-        q.setRating(rating?.toLong(), userId, id)
+        db.writing {
+            q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+            q.setRating(rating?.toLong(), userId, id)
+        }
         return find(id)!!
     }
 
@@ -424,14 +426,18 @@ class RecipeRepository(
         for (days in listOfNotNull(keeps.days, keeps.vacuumDays)) {
             require(days in 1..RecipeKeeps.MAX_DAYS) { "keeps must be 1 to ${RecipeKeeps.MAX_DAYS} days, or null" }
         }
-        q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
-        q.setKeeps(keeps.days?.toLong(), keeps.vacuumDays?.toLong(), userId, id)
+        db.writing {
+            q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+            q.setKeeps(keeps.days?.toLong(), keeps.vacuumDays?.toLong(), userId, id)
+        }
         return find(id)!!
     }
 
     fun updateSettings(id: Long, settings: RecipeSettings): RecipeDetail {
-        q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
-        q.updateSettings(settings.kind.name, Json.encodeToString(settings.mealSlots), userId, id)
+        db.writing {
+            q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+            q.updateSettings(settings.kind.name, Json.encodeToString(settings.mealSlots), userId, id)
+        }
         return find(id)!!
     }
 

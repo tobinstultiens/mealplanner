@@ -204,7 +204,7 @@ class PriceRepository(
                     notFound += ingredient.name
                 } else {
                     val (product, perKg) = price
-                    db.transaction {
+                    db.writing {
                         q.upsertPrice(
                             ingredient.name, source.store.name, product.title, product.packSize, product.regularPrice, perKg, now.toString(),
                             product.category, product.subCategory, StoreImages.accept(product.imageUrl),
@@ -225,9 +225,12 @@ class PriceRepository(
                 log.warn("Found no ${source.store.label} price for ${notFound.size} names and kept every stored price: only $stillFound of the $hadPrice names priced before still found one. The next round tries again")
                 return
             }
-            notFound.forEach(q::deletePrice)
-            history.pruneRegularPrices(now)
-            db.foodQueries.upsertMeta(FETCHED_KEY, now.toString())
+            // Together: the names no longer found lose their price as the lookup counts as done.
+            db.writing {
+                notFound.forEach(q::deletePrice)
+                history.pruneRegularPrices(now)
+                db.foodQueries.upsertMeta(FETCHED_KEY, now.toString())
+            }
             log.info("Found ${source.store.label} prices for $found ingredients")
         } finally {
             refreshing.set(false)

@@ -714,19 +714,19 @@ class PlanRepository(
     fun isPlanned(start: LocalDate): Boolean = forShopping(start).isNotEmpty()
 
     /** Saves [meal] in a batch: locked and eaten from batch [prepId]. Not a leftover in the table: that follows from the batch ([meals]). */
-    internal fun saveInBatch(start: LocalDate, meal: PlannedMeal, prepId: Long) {
+    internal fun saveInBatch(start: LocalDate, meal: PlannedMeal, prepId: Long): Unit = db.writing {
         save(start, meal.copy(leftover = false, locked = true, prep = null))
         q.insertPrepPortion(userId, start.toString(), meal.day.toLong(), meal.slot.name, prepId)
     }
 
-    internal fun deleteMeal(start: LocalDate, day: Int, slot: MealSlot) = q.deleteMeal(userId, start.toString(), day.toLong(), slot.name)
+    internal fun deleteMeal(start: LocalDate, day: Int, slot: MealSlot): Unit = db.writing { q.deleteMeal(userId, start.toString(), day.toLong(), slot.name) }
 
     /**
      * Stores [meal] in its slot, in place of the meal there. What belonged to that meal goes with it (its share of a
      * batch, what it took from the stock, what was in it); its side stays, next to the new main, with what the stock
      * gave for it: the side was added to the slot by hand, and its batch is not made smaller by a new main.
      */
-    internal fun save(start: LocalDate, meal: PlannedMeal) {
+    internal fun save(start: LocalDate, meal: PlannedMeal): Unit = db.writing {
         val side = q.selectSidePortion(userId, start.toString(), meal.day.toLong(), meal.slot.name).executeAsOneOrNull()
         val sideRef = MealRef(start, meal.day, meal.slot, side = true)
         val taken = if (side == null) emptyList() else stock.taken(sideRef)

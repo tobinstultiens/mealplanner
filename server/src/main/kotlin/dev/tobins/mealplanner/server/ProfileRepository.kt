@@ -34,7 +34,7 @@ class ProfileRepository(private val db: Database, private val userId: Long) {
     fun save(profile: Profile): ProfileState {
         val problems = TargetCalculator.problems(profile) + PortionRange.of(profile).problems()
         require(problems.isEmpty()) { problems.joinToString("; ") }
-        db.userQueries.upsertUserMeta(userId, KEY, json.encodeToString(profile))
+        db.writing { db.userQueries.upsertUserMeta(userId, KEY, json.encodeToString(profile)) }
         return state()
     }
 
