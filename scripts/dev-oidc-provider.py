@@ -21,10 +21,20 @@ Authelia reads the directory, so taking someone out of a group in it shows at th
 Without users anyone can, in the --default-groups (`mealplanner` unless set; `--default-groups ""`
 for none). As with Authelia's `groups` scope and a claims policy that puts the claim in the access
 token, the token has a `groups` claim only when the client asked for the `groups` scope.
+
+It can also play the registration helper (scripts/registration-helper.py) on its own directory, so the server's
+registration (issue 314) runs without LLDAP: with `--helper-secret S` it answers the helper's POST /register, /approve
+and /reject (`Authorization: Bearer S`). A registered user may log in at once, in no group; approving puts them in
+--registration-group (`mealplanner`), rejecting removes them. The password is not kept (the login page asks none).
+
+    python3 scripts/dev-oidc-provider.py --user anna=mealplanner --helper-secret dev-registration-secret-0123456789
+    MEALPLANNER_REGISTRATION=on MEALPLANNER_OIDC_GROUP=mealplanner MEALPLANNER_REGISTRATION_HELPER_URL=http://localhost:8090 \
+      MEALPLANNER_REGISTRATION_HELPER_SECRET=dev-registration-secret-0123456789 java -jar server/build/libs/server-all.jar
 """
 import argparse
 import base64
 import hashlib
+import hmac
 import html
 import json
 import secrets
@@ -38,6 +48,8 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 CODES = {}     # code -> (client_id, redirect_uri, challenge, username, scope)
 REFRESH = {}   # refresh token -> (client_id, username, scope)
+REGISTERED = {}  # user name -> groups, of the users registered through the helper's routes
+WAITING = set()  # those of them still waiting for approve or reject, as the helper's own list
 
 
 def b64(data: bytes) -> str:
@@ -69,6 +81,8 @@ class Provider(BaseHTTPRequestHandler):
     users = None          # {name: [groups]} from --user; None: anyone may log in
     users_file = None     # --users, read again for every token
     default_groups = ["mealplanner"]
+    helper_secret = None  # --helper-secret; None: no helper routes
+    registration_group = "mealplanner"
 
     @classmethod
     def directory(cls):
@@ -82,6 +96,8 @@ class Provider(BaseHTTPRequestHandler):
     @classmethod
     def groups_of(cls, username):
         """The user's groups now; None for a user who may not log in (any more)."""
+        if username in REGISTERED:
+            return list(REGISTERED[username])
         directory = cls.directory()
         if directory is None:
             return list(cls.default_groups)
@@ -147,8 +163,11 @@ class Provider(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
-        form = dict(urllib.parse.parse_qsl(self.rfile.read(length).decode()))
+        body = self.rfile.read(length).decode()
         path = urllib.parse.urlparse(self.path).path
+        if path in ("/register", "/approve", "/reject"):
+            return self.helper(path, body)
+        form = dict(urllib.parse.parse_qsl(body))
         if path == "/authorize":
             username = form.get("username") or "tester"
             if self.groups_of(username) is None:
@@ -190,6 +209,27 @@ class Provider(BaseHTTPRequestHandler):
         else:
             self.send(404, "not found", "text/plain")
 
+    def helper(self, path, body):
+        """The registration helper's three operations, answered as it answers them, on this stand-in's directory."""
+        secret = self.helper_secret
+        if not secret or not hmac.compare_digest(self.headers.get("Authorization", "").encode(), f"Bearer {secret}".encode()):
+            return self.send(401, json.dumps({"error": "unauthorised"}))
+        name = json.loads(body or "{}").get("username", "")
+        if path == "/register":
+            if name in REGISTERED or name in (self.directory() or {}):
+                return self.send(409, json.dumps({"error": "taken"}))
+            REGISTERED[name] = []
+            WAITING.add(name)
+        elif name not in WAITING:
+            return self.send(404, json.dumps({"error": "unknown"}))
+        elif path == "/approve":
+            REGISTERED[name] = [self.registration_group]
+            WAITING.discard(name)
+        else:
+            del REGISTERED[name]
+            WAITING.discard(name)
+        self.send(200, "{}")
+
     def bearer_claims(self):
         auth = self.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
@@ -211,11 +251,15 @@ if __name__ == "__main__":
     parser.add_argument("--users", metavar="FILE", help='users and groups as JSON, {"anna": ["mealplanner"]}; read for every token')
     parser.add_argument("--default-groups", default="mealplanner", metavar="GROUP,GROUP",
                         help="the groups of anyone logging in when no users are given (default: mealplanner)")
+    parser.add_argument("--helper-secret", help="answer the registration helper's routes for callers with this secret")
+    parser.add_argument("--registration-group", default="mealplanner", help="the group approving puts a registered user in")
     args = parser.parse_args()
     Provider.issuer = args.issuer or f"http://localhost:{args.port}"
     Provider.lifetime = args.lifetime
     Provider.users = dict(args.user) if args.user else None
     Provider.users_file = args.users
     Provider.default_groups = [group for group in args.default_groups.split(",") if group]
+    Provider.helper_secret = args.helper_secret
+    Provider.registration_group = args.registration_group
     print(f"Dev OIDC provider at {Provider.issuer}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", args.port), Provider).serve_forever()

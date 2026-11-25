@@ -39,6 +39,11 @@ data class NotificationFacts(
      * Not a batch eaten completely, nor one never made. Each batch is here on that one day only.
      */
     val prepsPastLastDay: List<PrepPastLastDay> = emptyList(),
+    /**
+     * The user names of the requests for an account that wait for the owner (issue 314), oldest first; for the owner's
+     * account only ([Me.approvesRequests]), empty for every other. A name not seen before is a new request.
+     */
+    val accountRequests: List<String> = emptyList(),
 )
 
 /**

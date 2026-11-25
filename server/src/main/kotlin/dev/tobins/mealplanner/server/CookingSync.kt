@@ -79,7 +79,7 @@ class CookingSync(
         else -> Site.None
     }
 
-    private fun offersServerSite(accountId: Long) = serverSite != null && (shareServerSite || accountId == OWNER_ID)
+    private fun offersServerSite(accountId: Long) = serverSite != null && (shareServerSite || accountId == UserRepository.OWNER_ID)
 
     private fun repoOf(accountId: Long, site: Site): CookingRepo? = when (site) {
         is Site.Own -> CookingRepo(cloneDir(accountId), site.url)
@@ -304,7 +304,7 @@ class CookingSync(
         val site = siteOf(accountId)
         val repo = repoOf(accountId, site)
         // The server's address may hold a password or token that its owner put there; nobody else sees it.
-        fun shown(text: String?) = if (site == Site.Server && accountId != OWNER_ID) text?.let(::withoutCredentials) else text
+        fun shown(text: String?) = if (site == Site.Server && accountId != UserRepository.OWNER_ID) text?.let(::withoutCredentials) else text
         return CookingSyncStatus(
             syncedAt = users.meta(accountId, SYNCED_AT_KEY),
             commit = users.meta(accountId, SYNCED_COMMIT_KEY),
@@ -321,9 +321,6 @@ class CookingSync(
 
     companion object {
         private val log = LoggerFactory.getLogger(CookingSync::class.java)
-
-        /** The account that holds the data from before accounts existed. */
-        const val OWNER_ID = 1L
 
         /** The cooking site changes rarely; four times a day picks up edits the same day. */
         const val EVERY_HOURS = 6

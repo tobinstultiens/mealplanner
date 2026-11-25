@@ -46,6 +46,13 @@ read again for every token so a change shows at the next renewal) and the server
 `MEALPLANNER_OIDC_GROUP=mealplanner`. Without users anyone can log in, in the group `mealplanner`
 (`--default-groups`). `python3 scripts/test_dev_oidc_provider.py` is the stand-in's own test.
 
+To try registration (issue 314) without LLDAP, the stand-in plays the registration helper on its own directory: start it
+with `--helper-secret <any 32 characters>`, and the server with `MEALPLANNER_REGISTRATION=on`,
+`MEALPLANNER_OIDC_GROUP=mealplanner`, `MEALPLANNER_REGISTRATION_HELPER_URL=http://localhost:8090` and
+`MEALPLANNER_REGISTRATION_HELPER_SECRET` set to the same secret. A registered user logs in on the stand-in's page (it asks
+no password) in no group until approved. The real helper, `scripts/registration-helper.py`, is tested against a fake
+LLDAP by `python3 -I scripts/test_registration_helper.py` (CI runs it).
+
 ## Accounts and login
 
 Users log in with an OpenID Connect provider (Authelia in the homelab); every account it knows may
@@ -126,6 +133,32 @@ offers, regular prices, their history and the NEVO data are shared.
   the server's sentence where a screen fails to load, until the user logs out and in again.
 - Data from before accounts existed belongs to account 1, which `MEALPLANNER_OWNER` (a username)
   claims on first login, or else the first account to log in.
+- **Registration** (issue 314; `docs/deploy.md`, "Registration"): with `MEALPLANNER_REGISTRATION` on, the registration
+  helper set up (`MEALPLANNER_REGISTRATION_HELPER_URL`, `..._SECRET`) and `MEALPLANNER_OIDC_GROUP` set, a person can ask
+  for an account without logging in. `GET /api/registration` answers `{"open": true}` then (else `false`), and
+  `POST /api/registration` with `{"username", "displayName", "email", "password"}` makes the account in the directory
+  (LLDAP) through the helper at once, in no group, with that password, and answers 201 `{"username": "<in lower case>"}`.
+  The server keeps the user name, name, address and time, never the password. Refusals are
+  `{"error": "<a sentence>", "reason": "..."}` (`RegistrationRefusal`): 404 `registration_off`; 400 `invalid`, with
+  `"field"` naming the field that breaks a rule of `RegistrationRules` (shared, so the form checks the same; an e-mail
+  address is printable ASCII), or without one should the helper's own check refuse what the server let through (both
+  sides' tests read `scripts/registration-rules-cases.json`, so that they agree); 409
+  `unavailable` for a user name or e-mail address in use in the directory, a user name waiting already, and the user name
+  of a meal planner account (Authelia would give the new person that account's subject), one answer for all, so the form
+  tells nobody which; 429 `too_many` with `Retry-After` (5 requests an hour per address, the last one of
+  `X-Forwarded-For`; 30 a day from everyone; counted before the body is read); 503 `full` (20 waiting) and
+  `directory_down`. Until approved, every route answers that person's tokens 403 with
+  `"error": "Your request is waiting for approval."`, `"reason": "not_in_group"` (which installed apps act on) and
+  `"detail": "waiting_for_approval"`; when the access token has no user name the provider's userinfo is asked, and only
+  while a request waits.
+- The owner's account (account 1, and with `MEALPLANNER_OWNER` set only under that name) decides: `GET /api/me` says
+  `"approvesRequests": true`, `GET /api/notifications` lists the user names waiting in `accountRequests`, oldest first,
+  `GET /api/registrations` lists the requests (`AccountRequest`, with `requestedAt` and `expiresAt`), and
+  `POST /api/registrations/{username}/approve` (the helper puts the account in the group) and `.../reject` (it deletes the
+  account) answer the requests still waiting. Every other account gets 403 `not_owner`; a request not waiting is 404, one
+  decided in LLDAP by hand meanwhile 409 (and gone from the list), the helper down 503 (the request stays). A request
+  waiting 14 days is rejected by the server's hourly round. Requests, decisions and the expiry run one at a time, so none
+  acts on an account another is still making or removing.
 - The server's cooking site (`COOKING_REPO_URL`, or the checkout at `COOKING_REPO_PATH`) is the bank of every
   account that has not chosen otherwise (issue 208); with `COOKING_REPO_SHARED=0` it is the owner's alone, as
   before. On the recipe bank screen an account chooses where its bank comes from (`PUT /api/sync/cooking/repo`):
@@ -1022,7 +1055,10 @@ installed side by side: they share the application id but not the signing key.
 | `MEALPLANNER_OIDC_ISSUER` | unset | OpenID Connect issuer whose access tokens are accepted, e.g. `https://authelia.example.nl`; without it nobody can log in |
 | `MEALPLANNER_OIDC_CLIENT_ID` | `mealplanner` | The app's client id at the issuer |
 | `MEALPLANNER_OIDC_GROUP` | unset | Only accounts whose access token lists this group (`groups` claim) may use the server; unset: every account of the issuer. Switch it on only as `docs/deploy.md`, "Who may use it", says, or people are locked out |
-| `MEALPLANNER_OWNER` | unset | Username that claims the data from before accounts; unset: the first login |
+| `MEALPLANNER_REGISTRATION` | off | `on` lets people ask for an account (issue 314; `POST /api/registration`, the login screen's form from part 3's app release on), when the two settings below and `MEALPLANNER_OIDC_GROUP` are set too; otherwise it stays off and the server logs what is missing. See `docs/deploy.md`, "Registration" |
+| `MEALPLANNER_REGISTRATION_HELPER_URL` | unset | The registration helper next to LLDAP (`scripts/registration-helper.py`), e.g. `http://mealplanner-registration:8091`; with the secret, the owner can decide on requests (also with registration off) |
+| `MEALPLANNER_REGISTRATION_HELPER_SECRET` | unset | The secret the server and the helper share (the helper's `HELPER_SECRET`) |
+| `MEALPLANNER_OWNER` | unset | Username that claims the data from before accounts, and with registration the only account that decides on requests; unset: the first login |
 | `MEALPLANNER_ANDROID_CERTS` | unset | SHA-256 fingerprints of the app's signing certificates, for `assetlinks.json` |
 | `MEALPLANNER_DATA_DIR` | the database's directory | Where per-account cooking repo clones go (and the server's, without `COOKING_REPO_PATH`) |
 | `MEALPLANNER_IMAGE_DIR` | `recipe-images` in the database's directory | Where web-sized copies of the cooking sites' recipe pictures go, one folder per account. Keep it on the same persistent volume as the database: the database says which copies exist |
@@ -1043,7 +1079,8 @@ which is ignored by git.
 `shared`'s `CookingRepoParseTest` parses every page of the cooking repo. It looks in
 `../cooking`, or wherever `-PcookingRepo=<path>` points, and is skipped when that is missing.
 
-API overview: `/api/recipes` (my recipes; `GET /api/recipes/bank` the bank, `PUT /api/recipes/{id}/added` with
+API overview: `/api/registration` and `/api/registrations` (asking for an account and the owner's decisions, see
+"Accounts and login"), `/api/recipes` (my recipes; `GET /api/recipes/bank` the bank, `PUT /api/recipes/{id}/added` with
 `{"added": true, "inRotation": true}` and `PUT /api/recipes/{id}/rotation` with `{"inRotation": false}` answering the
 recipe, `PUT /api/recipes/added` and `PUT /api/recipes/rotation` with `{"ids": [1, 2, 3], ...}` for many at once
 answering my recipes; see "Recipes: the bank, my recipes and the rotation"), `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue),

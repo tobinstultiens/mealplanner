@@ -1,11 +1,13 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.server.generation.GenerationException
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.log
 import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.statuspages.StatusPagesConfig
+import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -38,7 +40,14 @@ fun StatusPagesConfig.errorMapping() {
     }
     // Thrown while the login is checked, before any route runs (see requireMember).
     exception<LoginRefusedException> { call, cause ->
-        call.respond(HttpStatusCode.Forbidden, mapOf("error" to (cause.message ?: "forbidden"), "reason" to cause.reason))
+        val body = mapOf("error" to (cause.message ?: "forbidden"), "reason" to cause.reason, "detail" to cause.detail)
+        call.respond(HttpStatusCode.Forbidden, body.filterValues { it != null })
+    }
+    // Requests for an account (issue 314). Only the server's own sentence: nothing of the request, which holds a password.
+    exception<RegistrationRefusedException> { call, cause ->
+        cause.retryAfter?.let { call.response.header(HttpHeaders.RetryAfter, maxOf(1, it.toSeconds()).toString()) }
+        val body = mapOf("error" to cause.message, "reason" to cause.reason, "field" to cause.field)
+        call.respond(cause.status, body.filterValues { it != null })
     }
     exception<ConflictException> { call, cause ->
         call.respond(HttpStatusCode.Conflict, mapOf("error" to (cause.message ?: "conflict")))

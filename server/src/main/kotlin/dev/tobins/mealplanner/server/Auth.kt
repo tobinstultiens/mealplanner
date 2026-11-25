@@ -68,23 +68,28 @@ const val GROUPS = "groups"
  */
 fun loginScopes(group: String?): List<String> = if (group == null) LOGIN_SCOPES else LOGIN_SCOPES + GROUPS
 
-/** Thrown when a valid login may not use this server; answered 403 with the sentence and [reason] ([LoginRefusal]). */
-class LoginRefusedException(val reason: String, message: String) : RuntimeException(message)
+/**
+ * Thrown when a valid login may not use this server; answered 403 with the sentence, [reason] ([LoginRefusal]) and, when
+ * there is one, [detail] ([LoginRefusal.WAITING_FOR_APPROVAL]).
+ */
+class LoginRefusedException(val reason: String, message: String, val detail: String? = null) : RuntimeException(message)
 
 /**
  * Lets [identity] through only when [group] is null (any account the provider knows, as before the setting) or the
  * token lists [group] among its groups. Checked on every call, before the account is looked up or made: a refused
  * login gets no account, and a person taken out of the group is refused from the first token renewed after it.
+ * One outside the group whose request for an account [waiting] (issue 314) is told so; the reason stays
+ * [LoginRefusal.NOT_IN_GROUP], so that installed apps end the session as for anyone outside it.
  */
-fun requireMember(identity: Identity, group: String?) {
+suspend fun requireMember(identity: Identity, group: String?, waiting: suspend () -> Boolean = { false }) {
     if (group == null) return
     val groups = identity.groups ?: throw LoginRefusedException(
         LoginRefusal.NO_GROUPS,
         "This login does not say which groups the account is in. Log out and log in again; if this stays, ask the person who runs this server.",
     )
-    if (group !in groups) {
-        throw LoginRefusedException(LoginRefusal.NOT_IN_GROUP, "This account may not use the meal planner yet. Ask the person who runs this server.")
-    }
+    if (group in groups) return
+    if (waiting()) throw LoginRefusedException(LoginRefusal.NOT_IN_GROUP, "Your request is waiting for approval.", LoginRefusal.WAITING_FOR_APPROVAL)
+    throw LoginRefusedException(LoginRefusal.NOT_IN_GROUP, "This account may not use the meal planner yet. Ask the person who runs this server.")
 }
 
 /**

@@ -1,6 +1,8 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.AccountRequest
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.RegistrationRequest
 import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.ManyAddedInput
@@ -112,15 +114,44 @@ class AccountsTest {
      */
     private var today: java.time.LocalDate = java.time.LocalDate.parse("2026-11-16")
 
-    /** [group]: only its members may log in (`MEALPLANNER_OIDC_GROUP`); null, as by default, any account. */
-    private fun ApplicationTestBuilder.start(group: String? = null) {
-        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null, oidcGroup = group)
+    /**
+     * [group]: only its members may log in (`MEALPLANNER_OIDC_GROUP`); null, as by default, any account. [directory]: the
+     * registration helper, with registration switched on (issue 314); null, as by default, none.
+     */
+    private fun ApplicationTestBuilder.start(group: String? = null, directory: DirectoryHelper? = null) {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null, oidcGroup = group, registration = directory != null)
         application {
-            module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens, today = { today })
+            module(
+                config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null,
+                verifier = TestTokens, today = { today }, directory = directory,
+            )
         }
     }
 
     private val recipe = RecipeInput(title = "Alice's stew", servings = 2, ingredients = "400 | g | beef\n1 | onion | large", instructions = "Stew.")
+
+    /** The requests for an account (issue 314) are the owner's alone: account 1, the first to log in here. */
+    @Test
+    fun onlyTheOwnerSeesAndDecidesOnRequestsForAnAccount() = testApplication {
+        val directory = FakeDirectory()
+        start(group = "mealplanner", directory = directory)
+        val owner = clientFor("alice~mealplanner")
+        val bob = clientFor("bob~mealplanner")
+        assertTrue(owner.get("/api/me").body<Me>().approvesRequests)
+        assertEquals(HttpStatusCode.Created, owner.post("/api/registration") { setBody(RegistrationRequest("zoe", "Zoe", "zoe@example.org", "a good long password")) }.status)
+        assertEquals(HttpStatusCode.Created, bob.post("/api/registration") { setBody(RegistrationRequest("max", "Max", "max@example.org", "a good long password")) }.status)
+
+        assertFalse(bob.get("/api/me").body<Me>().approvesRequests)
+        for (response in listOf(bob.get("/api/registrations"), bob.post("/api/registrations/zoe/approve"), bob.post("/api/registrations/max/reject"))) {
+            assertEquals(HttpStatusCode.Forbidden, response.status)
+            val text = response.bodyAsText()
+            assertTrue("not_owner" in text && "zoe" !in text && "max" !in text, text)
+        }
+        assertEquals(emptyList(), bob.get("/api/notifications").body<NotificationFacts>().accountRequests)
+        assertEquals(listOf("register zoe", "register max"), directory.calls, "nothing decided")
+        assertEquals(listOf("zoe", "max"), owner.get("/api/registrations").body<List<AccountRequest>>().map { it.username })
+        assertEquals(listOf("zoe", "max"), owner.get("/api/notifications").body<NotificationFacts>().accountRequests)
+    }
 
     @Test
     fun accountsCannotSeeOrChangeEachOthersData() = testApplication {

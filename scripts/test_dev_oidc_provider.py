@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Self-test of scripts/dev-oidc-provider.py, the stand-in for Authelia: the login as the app makes it (authorization
-code with PKCE, then renewals), the token's signature against the published key, and the users and groups it is
-started with.
+code with PKCE, then renewals), the token's signature against the published key, the users and groups it is
+started with, and the registration helper it plays.
 
     python3 scripts/test_dev_oidc_provider.py
 
@@ -125,6 +125,37 @@ class DevProviderTest(unittest.TestCase):
             self.assertEqual(400, self.renew(tokens))
         finally:
             os.unlink(f.name)
+
+    def helper(self, path, username, secret="dev-secret"):
+        request = urllib.request.Request(dev.Provider.issuer + path, json.dumps({"username": username, "password": "not kept"}).encode(),
+                                         {"Content-Type": "application/json", "Authorization": f"Bearer {secret}"}, method="POST")
+        try:
+            with self.opener.open(request, timeout=10) as response:
+                return response.status, json.loads(response.read())
+        except urllib.error.HTTPError as e:
+            with e:
+                return e.code, json.loads(e.read())
+
+    def test_it_plays_the_registration_helper(self):
+        dev.Provider.users, dev.Provider.helper_secret = {"anna": ["mealplanner"]}, "dev-secret"
+        self.addCleanup(lambda: (dev.REGISTERED.clear(), dev.WAITING.clear(), setattr(dev.Provider, "helper_secret", None)))
+        self.assertEqual(401, self.helper("/register", "zoe", secret="wrong")[0])
+        self.assertEqual((409, {"error": "taken"}), self.helper("/register", "anna"))
+        self.assertEqual((200, {}), self.helper("/register", "zoe"))
+        # Registered: she may log in at once, in no group, and her renewal says when she is approved.
+        tokens = self.log_in("zoe")
+        self.assertEqual([], self.claims(tokens["access_token"])["groups"])
+        self.assertEqual((200, {}), self.helper("/approve", "zoe"))
+        self.assertEqual(["mealplanner"], self.claims(self.renew(tokens)["access_token"])["groups"])
+        self.assertEqual((404, {"error": "unknown"}), self.helper("/reject", "zoe"), "approved, so no longer the helper's")
+        self.assertEqual((404, {"error": "unknown"}), self.helper("/approve", "anna"), "not one it made")
+        # Rejected: gone from the directory.
+        self.helper("/register", "max")
+        self.assertEqual((200, {}), self.helper("/reject", "max"))
+        self.assertEqual(403, self.log_in("max"))
+
+    def test_without_a_secret_there_is_no_helper(self):
+        self.assertEqual(401, self.helper("/register", "zoe", secret="")[0])
 
     def test_users_from_flags(self):
         self.assertEqual(("anna", ["mealplanner", "family"]), dev.parse_user("anna=mealplanner,family"))

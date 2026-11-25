@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.AuthConfig
 import dev.tobins.mealplanner.api.LoginRefusal
 import dev.tobins.mealplanner.api.Me
+import dev.tobins.mealplanner.api.RegistrationRequest
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -43,11 +44,11 @@ class GroupCheckTest {
     private lateinit var app: Application
     private lateinit var db: Database
 
-    private fun ApplicationTestBuilder.start(group: String?) {
-        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null, oidcGroup = group)
+    private fun ApplicationTestBuilder.start(group: String?, directory: DirectoryHelper? = null) {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null, oidcGroup = group, registration = directory != null)
         db = openDatabase(config.databaseUrl).second
         application {
-            module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens)
+            module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens, directory = directory)
             app = this
         }
     }
@@ -95,6 +96,28 @@ class GroupCheckTest {
         assertEquals(Me("ann", "Ann"), http.get("/api/me") { bearerAuth("ann~family~mealplanner") }.body<Me>())
         assertEquals(HttpStatusCode.Unauthorized, http.get("/api/me").status)
         assertEquals(HttpStatusCode.Unauthorized, http.get("/api/me") { bearerAuth("nope") }.status)
+    }
+
+    /** Issue 314: someone who asked for an account and waits is told so on every route, and installed apps end the session as for anyone outside. */
+    @Test
+    fun aRequestWaitingForApprovalIsRefusedOnEveryRoute() = testApplication {
+        start(group = "mealplanner", directory = FakeDirectory())
+        val http = json()
+        val asked = http.request("/api/registration") {
+            method = HttpMethod.Post
+            contentType(ContentType.Application.Json)
+            setBody(Json.encodeToString(RegistrationRequest("zoe", "Zoe", "zoe@example.org", "a good long password")))
+        }
+        assertEquals(HttpStatusCode.Created, asked.status)
+        for ((method, path) in protectedCalls()) {
+            val response = http.call(method, path, "zoe~")
+            assertEquals(HttpStatusCode.Forbidden, response.status, "$method $path")
+            val body = Json.parseToJsonElement(response.bodyAsText()) as JsonObject
+            assertEquals(LoginRefusal.NOT_IN_GROUP, body["reason"]?.jsonPrimitive?.content, "$method $path")
+            assertEquals(LoginRefusal.WAITING_FOR_APPROVAL, body["detail"]?.jsonPrimitive?.content, "$method $path")
+            assertEquals("Your request is waiting for approval.", body["error"]?.jsonPrimitive?.content, "$method $path")
+        }
+        assertNull(db.userQueries.selectBySubject("sub-zoe").executeAsOneOrNull())
     }
 
     @Test
