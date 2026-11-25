@@ -240,7 +240,8 @@ listing the other days with the dinner it would swap with; a day that has passed
 says why ("Lentil soup stays on its day: it was eaten"). The "Plan next week" notification opens the
 planning screen of next week. A server from before the screen answers 404, and the screen then plans the week in one
 go, as before; "Another recipe" says the same sentence there (the planner's own choice stays). A week wholly in the
-past says that it is over and offers nothing to plan: the app decides it from the week's dates. Everything is under `/api/plans/{weekStart}/planning` and per account:
+past says that it is over and offers nothing to plan: the app decides it from the week's dates. Everything is under
+`/api/plans/{weekStart}/planning` and per account:
 
 - `GET planning` (`WeekPlanning`): the days whose dinner is still to choose (`openDays`: today and the days after it
   without a dinner the week keeps when it is planned, which is one locked, prepped, eaten, skipped, with a prepped side

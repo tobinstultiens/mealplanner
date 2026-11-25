@@ -207,7 +207,8 @@ class PlanningScreenTest {
         showPlanning()
         scrollTo("Something else")
         compose.onNodeWithText("Something else").performClick()
-        waitFor("Search my recipes")
+        // The header is the last thing the short test window holds, so the field under it is composed once scrolled to.
+        scrollTo("Search my recipes")
         compose.onNodeWithText("Search my recipes").performTextInput("tuna")
 
         // Out of the rotation and hidden this week, it is still found, as the only one with "tuna" in its title.
