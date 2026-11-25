@@ -38,7 +38,8 @@ import kotlinx.coroutines.launch
 /**
  * Asking for an account (issue 314), opened from the login screen while the server takes requests: name, user name,
  * e-mail address and the password twice, checked as they are typed with the server's own rules ([registrationProblems]),
- * then sent with [send]. A field's problem shows once something typed in it is left, and every field's after Send; the
+ * then sent with [send]. A field's problem shows once something typed in it is left, and every field's after Send (the
+ * passwords' after Send on this screen, as they are empty again on a re-created one); the
  * server's refusals are said in plain words ([registrationOutcome]). Once taken, the screen says that the request waits
  * for the owner's approval.
  *
@@ -57,6 +58,9 @@ fun RegistrationScreen(send: suspend (RegistrationRequest) -> RegistrationReceip
     var passwordAgain by remember { mutableStateOf("") }
     // Send was tried: every field says what is wrong with it from now on.
     var tried by rememberSaveable { mutableStateOf(false) }
+    // Send was tried since this screen was created. The passwords are not saved with it, so a re-created screen has them
+    // empty without the person having done anything wrong: only Send, or typing in them, marks them again.
+    var triedHere by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf<FormField?>(null) }
     var refusal by rememberSaveable { mutableStateOf<String?>(null) }
     // The field the server named in its refusal, marked until it is changed.
@@ -69,7 +73,7 @@ fun RegistrationScreen(send: suspend (RegistrationRequest) -> RegistrationReceip
     val draft = RegistrationDraft(displayName, username, email, password, passwordAgain)
     val problems = registrationProblems(draft, t)
     val shown = problems.filterKeys { field ->
-        tried || field == refusedField || (field != focused && draft.value(field).isNotEmpty())
+        (if (field.secret) triedHere else tried) || field == refusedField || (field != focused && draft.value(field).isNotEmpty())
     } + listOfNotNull(refusedField?.takeIf { it !in problems }?.let { it to problemOf(it, t) })
 
     RegistrationForm(
@@ -89,6 +93,7 @@ fun RegistrationScreen(send: suspend (RegistrationRequest) -> RegistrationReceip
         onFocus = { field, has -> if (has) focused = field else if (focused == field) focused = null },
         onSend = {
             tried = true
+            triedHere = true
             // Said under Send too: at a large font the marked field may be off the screen.
             refusal = t(Msg.REGISTER_FIX_FIELDS).takeIf { problems.isNotEmpty() }
             if (problems.isNotEmpty()) return@RegistrationForm

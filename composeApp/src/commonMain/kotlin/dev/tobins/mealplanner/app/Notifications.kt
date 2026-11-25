@@ -96,6 +96,31 @@ fun SettingsStorage.notificationOn(kind: NotificationKind): Boolean = get("notif
 
 fun SettingsStorage.saveNotificationOn(kind: NotificationKind, on: Boolean) = set("notify.${kind.key}", on.toString())
 
+private const val APPROVES_REQUESTS_KEY = "approvesRequests"
+
+/**
+ * Whether the account logged in on this device decides on requests for an account, as the server said last
+ * ([dev.tobins.mealplanner.api.Me.approvesRequests]); false until it did. Per account, so [logOut] forgets it.
+ */
+fun SettingsStorage.approvesRequests(): Boolean = get(APPROVES_REQUESTS_KEY) == "true"
+
+fun SettingsStorage.saveApprovesRequests(approves: Boolean) = set(APPROVES_REQUESTS_KEY, approves.toString())
+
+/** Forgets the account's flag of [approvesRequests]; part of [logOut]. */
+internal fun SettingsStorage.clearApprovesRequests() = remove(APPROVES_REQUESTS_KEY)
+
+/**
+ * Forgets the requests for an account told of that are not among the user names [waiting] (decided, or expired), so that
+ * a user name that asks again after a rejection is told of again. Called with every list the server gave, by the
+ * background check and by the owner's Requests card: a rejection made there is seen at once, not only by a check that
+ * happens to run before the person asks again. The server's facts name the requests by user name only.
+ */
+fun SettingsStorage.forgetRequestsNotWaiting(waiting: List<String>) {
+    val before = toldRequests(told(NotificationKind.ACCOUNT_REQUESTS))
+    val still = before.filter { it in waiting }
+    if (still.size != before.size) set("notified.${NotificationKind.ACCOUNT_REQUESTS.key}", still.joinToString(","))
+}
+
 /** What was last told of [kind]: the version, the day or the week, as [DueNotification.toldAs] says; null when nothing was. */
 private fun SettingsStorage.told(kind: NotificationKind): String? = get("notified.${kind.key}")?.takeIf { it.isNotBlank() }
 
@@ -129,9 +154,14 @@ class NotificationPlanner(
     private val clock: Clock = Clock.System,
     private val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) {
-    /** Whether a run now could post [kind]: its switch is on and the hour is in its window. */
+    /**
+     * Whether a run now could post [kind]: its switch is on and the hour is in its window. Requests for an account only
+     * count for the account that decides on them ([approvesRequests]): another account cannot see that switch, so it
+     * could never switch it off, and the app would ask the server every run for nothing.
+     */
     fun wanted(kind: NotificationKind): Boolean {
         val hour = clock.now().toLocalDateTime(zone).hour
+        if (kind == NotificationKind.ACCOUNT_REQUESTS && !storage.approvesRequests()) return false
         return storage.notificationOn(kind) && hour >= kind.fromHour && hour < NotificationKind.QUIET_FROM
     }
 
@@ -154,11 +184,7 @@ class NotificationPlanner(
      * that asks again after a rejection is told of again. Not only when something is posted: such a request may come back
      * before any other new one does.
      */
-    private fun forgetDecidedRequests(waiting: List<String>) {
-        val told = toldRequests(storage.told(NotificationKind.ACCOUNT_REQUESTS))
-        val still = told.filter { it in waiting }
-        if (still.size != told.size) storage.set("notified.${NotificationKind.ACCOUNT_REQUESTS.key}", still.joinToString(","))
-    }
+    private fun forgetDecidedRequests(waiting: List<String>) = storage.forgetRequestsNotWaiting(waiting)
 
     /** Remembers that [posted] was posted, so that [due] does not offer it again. */
     fun told(posted: DueNotification) = storage.set("notified.${posted.kind.key}", posted.toldAs)
@@ -307,6 +333,15 @@ private fun toldBatches(told: String?, date: String): Set<Long> {
     if (told == null || told.substringBefore(':') != date) return emptySet()
     return told.substringAfter(':').split(',').mapNotNullTo(HashSet()) { it.toLongOrNull() }
 }
+
+/** [askWhatIsDue], but only when [planner] says a run now could post something from the answer: otherwise nothing is sent. */
+suspend fun askWhatIsDueIfWanted(
+    planner: NotificationPlanner,
+    storage: SettingsStorage,
+    logins: LoginExchange,
+    settings: ServerSettings,
+    engine: HttpClientEngine? = null,
+): NotificationFacts? = if (planner.wantsFacts()) askWhatIsDue(storage, logins, settings, engine) else null
 
 /**
  * What the server says is due today, asked in the background with the stored login; null when logged out,

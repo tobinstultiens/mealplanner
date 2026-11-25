@@ -748,6 +748,33 @@ class LoginTest {
         assertFalse(asked)
     }
 
+    /** A planner whose device clock shows 09:00, inside the windows of the kinds that are on by default. */
+    private fun morning(storage: SettingsStorage) = NotificationPlanner(
+        storage,
+        object : Clock {
+            override fun now() = Instant.parse("2026-11-21T09:00:00Z")
+        },
+        kotlinx.datetime.TimeZone.UTC,
+    )
+
+    @Test
+    fun anAccountThatDecidesOnNoRequestsAndSwitchedOffEveryVisibleKindAsksNothingInTheBackground() = runTest {
+        val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", Long.MAX_VALUE)) }
+        NotificationKind.shown(approvesRequests = false).forEach { storage.saveNotificationOn(it, false) }
+        var asked = 0
+        val logins = exchange(storage, fakeProvider(mutableListOf()))
+        assertEquals(null, askWhatIsDueIfWanted(morning(storage), storage, logins, server, api({ asked++; "old" })))
+        assertEquals(0, asked, "the hidden switch of account requests is on, but this account never gets them")
+
+        // The owner's account, with the same switches off but that one on, is asked.
+        storage.saveApprovesRequests(true)
+        assertNotNull(askWhatIsDueIfWanted(morning(storage), storage, logins, server, api({ asked++; "old" })))
+        assertEquals(1, asked)
+        // And a log-out forgets that the account was the owner's.
+        storage.logOut()
+        assertFalse(storage.approvesRequests())
+    }
+
     @Test
     fun theBackgroundRenewsAnExpiredTokenAndKeepsTheNewOne() = runTest {
         val storage = MemorySettingsStorage().apply { saveSession(Session("old", "good", 0)) }

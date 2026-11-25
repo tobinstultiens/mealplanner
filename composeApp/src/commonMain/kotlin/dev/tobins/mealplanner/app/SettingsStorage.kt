@@ -131,6 +131,7 @@ fun SettingsStorage.clearShops() = set(SHOPS_KEY, "")
 fun SettingsStorage.logOut() {
     saveSession(null)
     clearShops()
+    clearApprovesRequests()
     ShoppingCache(this).clear()
 }
 

@@ -24,7 +24,8 @@ import kotlin.time.Instant
 /** What the background check posts (issue 225): by switch, window and what was told already; the server's conditions are its own tests. */
 @OptIn(ExperimentalTime::class)
 class NotificationsTest {
-    private val storage = MemorySettingsStorage()
+    // The owner's account unless a test says otherwise: only that one gets requests for an account.
+    private val storage = MemorySettingsStorage().apply { saveApprovesRequests(true) }
     private val en = Strings.English
 
     /** A planner whose device clock shows [time] (`HH:MM`) on [day]; in UTC, the zone every platform knows. */
@@ -223,6 +224,26 @@ class NotificationsTest {
         assertEquals("New: zoe. Approve or reject in Settings.", requestsPostedAt("2026-11-23", "max", "zoe")?.text)
         // Another account, or a server from before registration, lists none: nothing is told.
         assertEquals(null, requestsPostedAt("2026-11-24"))
+    }
+
+    @Test
+    fun anAccountThatDecidesOnNoRequestsIsNeverToldOfThemWhateverTheHiddenSwitchSays() {
+        storage.saveApprovesRequests(false)
+        assertTrue(storage.notificationOn(NotificationKind.ACCOUNT_REQUESTS), "on by default, and the account cannot see it")
+        assertEquals(null, requestsPostedAt("2026-11-21", "zoe"))
+        NotificationKind.shown(approvesRequests = false).forEach { storage.saveNotificationOn(it, false) }
+        assertFalse(at("09:00").wantsFacts())
+    }
+
+    @Test
+    fun aRequestRejectedInTheAppAndMadeAgainBeforeTheNextCheckIsToldAgain() {
+        requestsPostedAt("2026-11-21", "zoe")
+        // The owner rejects zoe in Settings: the card is given the list without her. She asks again before any check ran.
+        storage.forgetRequestsNotWaiting(emptyList())
+        assertEquals("New: zoe. Approve or reject in Settings.", requestsPostedAt("2026-11-21", "zoe")?.text)
+        // A list that still has her leaves her told of.
+        storage.forgetRequestsNotWaiting(listOf("zoe"))
+        assertEquals(null, requestsPostedAt("2026-11-21", "zoe"))
     }
 
     @Test

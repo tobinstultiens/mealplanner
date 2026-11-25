@@ -2,6 +2,9 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -149,6 +152,24 @@ class ScreensKeepPlaceTest {
         waitFor("Mon 16 Nov")
         compose.onNodeWithText("Mon 16 Nov").assertIsDisplayed()
         compose.onAllNodesWithText("Week of 23 Nov").assertCountEquals(0)
+    }
+
+    @Test
+    fun anotherLoginOpensOnTheFirstTabNotWhereTheLastAccountLeftOff() {
+        startApp()
+        waitFor("Today")
+        openTab("Progress")
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithContentDescription("Settings").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Settings").performClick()
+        waitFor("Log out")
+        compose.onNodeWithText("Log out").performScrollTo().performClick()
+        waitFor("You are logged out.")
+        storage.saveSession(Session("bert-token", expiresAt = Long.MAX_VALUE))
+        compose.runOnIdle { storage.onChange() }
+
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText("Plan").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(isSelected() and hasAnyDescendant(hasText("Today")), useUnmergedTree = true).assertExists()
+        compose.onNode(isSelected() and hasAnyDescendant(hasText("Progress")), useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test

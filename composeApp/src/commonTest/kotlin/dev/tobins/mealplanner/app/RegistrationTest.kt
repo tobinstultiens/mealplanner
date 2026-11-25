@@ -145,7 +145,7 @@ class RegistrationTest {
         val sent = mutableListOf<String>()
         val waiting = """[{"username":"zoe","displayName":"Zoe","email":"zoe@example.org","requestedAt":"2026-11-20T10:00:00Z","expiresAt":"2026-12-04T10:00:00Z"}]"""
         val api = answering(HttpStatusCode.OK, waiting, sent)
-        val decisions = AccountDecisions(api)
+        val decisions = AccountDecisions(api, MemorySettingsStorage())
         assertEquals(listOf("zoe"), decisions.waiting().map(AccountRequest::username))
         decisions.approve("zoe")
         decisions.reject("max")

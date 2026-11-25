@@ -37,8 +37,18 @@ class AccountDecisions(
     val reject: suspend (username: String) -> List<AccountRequest>,
 )
 
-/** The decisions of [api]'s account. */
-fun AccountDecisions(api: ApiClient) = AccountDecisions(api::accountRequests, api::approveRequest, api::rejectRequest)
+/**
+ * The decisions of [api]'s account. Each list the server answers also tells [storage] which requests no longer wait, so
+ * that the notification, which remembers the user names it told of, tells of one that asks again after a rejection.
+ */
+fun AccountDecisions(api: ApiClient, storage: SettingsStorage): AccountDecisions {
+    fun List<AccountRequest>.noted() = also { storage.forgetRequestsNotWaiting(map { it.username }) }
+    return AccountDecisions(
+        { api.accountRequests().noted() },
+        { api.approveRequest(it).noted() },
+        { api.rejectRequest(it).noted() },
+    )
+}
 
 /**
  * Why a decision on a request failed, in [t]'s words, and whether the list is to be asked for again because the request
@@ -67,7 +77,9 @@ internal fun AccountRequestsCard(decisions: AccountDecisions, snackbar: Snackbar
     var deciding by remember { mutableStateOf<String?>(null) }
     var rejecting by remember { mutableStateOf<AccountRequest?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(decisions) { requests = load { decisions.waiting() } }
+    // Asked again whenever the app comes back to the front with Settings open (from the background, or by a notification).
+    val returns = rememberAppFront().returns
+    LaunchedEffect(decisions, returns) { requests = load { decisions.waiting() } }
 
     fun decide(request: AccountRequest, change: suspend (String) -> List<AccountRequest>, done: Msg) {
         deciding = request.username
