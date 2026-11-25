@@ -186,11 +186,21 @@ class FakeBackend(
     @Volatile
     var standardMealsAnswer: java.util.concurrent.CountDownLatch? = null
 
+    /**
+     * While set, the call that puts a standard meal in a slot is answered once it opens, so that a
+     * test can act while the tap is still being sent.
+     */
+    @Volatile
+    var standardChoiceAnswer: java.util.concurrent.CountDownLatch? = null
+
     private val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
         createContext("/") { exchange ->
             val held = standardMealsAnswer
+            val choice = standardChoiceAnswer
             if (held != null && exchange.requestURI.path.endsWith("/standard-meals")) {
                 thread { held.await(10, java.util.concurrent.TimeUnit.SECONDS); exchange.respond() }
+            } else if (choice != null && exchange.requestMethod == "PUT" && exchange.requestURI.path.endsWith("/standard")) {
+                thread { choice.await(10, java.util.concurrent.TimeUnit.SECONDS); exchange.respond() }
             } else {
                 exchange.respond()
             }

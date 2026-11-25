@@ -112,6 +112,8 @@ fun PlanScreen(
     // The dialogs stay open across a re-created activity, as the screen keeps its place (issue 263).
     var prepping by rememberSaveable(stateSaver = jsonSaver(PrepChoice.serializer().nullable)) { mutableStateOf(null) }
     LaunchedEffect(prepping != null) { if (prepping != null) prepsStarted++ }
+    // The meal the user asked to take out of the plan, until they confirm: it may be a standard meal the planner put there.
+    var removingStandard by remember { mutableStateOf<PlannedMeal?>(null) }
     var removingPrep by rememberSaveable(stateSaver = jsonSaver(PairSerializer(String.serializer(), MealPrep.serializer()).nullable)) { mutableStateOf(null) }
     // The meal a side is being added to from a batch still to make (issue 269), with those batches and the new prep instead.
     var addingSide by rememberSaveable(stateSaver = jsonSaver(AddingSide.serializer().nullable)) { mutableStateOf(null) }
@@ -305,6 +307,21 @@ fun PlanScreen(
         }
     }
 
+    removingStandard?.let { meal ->
+        AlertDialog(
+            onDismissRequest = { removingStandard = null },
+            title = { Text(t(Msg.REMOVE_STANDARD_TITLE, meal.title)) },
+            text = { Text(t(Msg.REMOVE_STANDARD_TEXT)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    removingStandard = null
+                    change { api.removeMeal(weekStart, meal.day, meal.slot) }
+                }) { Text(t(Msg.REMOVE)) }
+            },
+            dismissButton = { TextButton(onClick = { removingStandard = null }) { Text(t(Msg.CANCEL)) } },
+        )
+    }
+
     removingPrep?.let { (title, prep) ->
         RemovePrepDialog(title, prep, onDismiss = { removingPrep = null }) {
             removingPrep = null
@@ -450,7 +467,7 @@ fun PlanScreen(
                                 onToggleLock = { meal -> change { api.setMealLocked(weekStart, meal.day, meal.slot, !meal.locked) } },
                                 // A standard meal placed by hand goes again; one placed over a skipped prepped meal brings it back.
                                 standardRecipes = standard?.meals?.mapTo(HashSet()) { it.recipeId }.orEmpty(),
-                                onRemove = { meal -> change { api.removeMeal(weekStart, meal.day, meal.slot) } },
+                                onRemove = { meal -> removingStandard = meal },
                                 onAdjust = { meal -> onAdjust(MealPlace(weekStart, meal.day, meal.slot)) },
                                 onPrep = { meal ->
                                     val date = plusDays(weekStart, meal.day)

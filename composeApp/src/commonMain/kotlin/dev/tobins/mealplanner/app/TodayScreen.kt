@@ -80,6 +80,8 @@ fun TodayScreen(
     // The week's standard meals (issue 265), offered under a skipped meal; none from a server before them.
     val week = mondayOf(date)
     var standard by remember(week) { mutableStateOf<StandardMeals?>(null) }
+    // Set while a chosen standard meal is being sent: a second tap would be a second request, which the server refuses (409).
+    var placing by remember { mutableStateOf(false) }
 
     LaunchedEffect(now) {
         if (now != today) {
@@ -153,11 +155,17 @@ fun TodayScreen(
                             onAdjust = { onAdjust(MealPlace(day.weekStart, day.dayIndex, meal.slot)) },
                             // Only a skipped meal's place is offered: a chip there takes it at once.
                             standardChoices = if (meal.status == MealStatus.SKIPPED) standardChoices(standard, day.dayIndex, meal.slot, skipped = meal.recipeId) else emptyList(),
+                            placing = placing,
                             onPickStandard = { choice ->
-                                change {
-                                    // Today's and a past day's meal was eaten: that is why it is picked here.
-                                    val chosen = api.chooseStandard(day.weekStart, day.dayIndex, meal.slot, choice.recipeId, eaten = day.date <= today)
-                                    if (chosen.addedStaples.isNotEmpty()) scope.launch { snackbar.showSnackbar(t(Msg.STANDARD_RESTOCK, chosen.addedStaples.joinToString(", "))) }
+                                if (!placing) change {
+                                    placing = true
+                                    try {
+                                        // Today's and a past day's meal was eaten: that is why it is picked here.
+                                        val chosen = api.chooseStandard(day.weekStart, day.dayIndex, meal.slot, choice.recipeId, eaten = day.date <= today)
+                                        if (chosen.addedStaples.isNotEmpty()) scope.launch { snackbar.showSnackbar(t(Msg.STANDARD_RESTOCK, chosen.addedStaples.joinToString(", "))) }
+                                    } finally {
+                                        placing = false
+                                    }
                                 }
                             },
                         )
@@ -260,6 +268,8 @@ private fun MealCard(
     onAdjust: () -> Unit,
     /** The standard meals that can take the skipped meal's place (issue 265); empty for any other meal. */
     standardChoices: List<StandardMeal> = emptyList(),
+    /** True while a standard meal is being put in a slot: the chips wait, as a second tap would be refused. */
+    placing: Boolean = false,
     onPickStandard: (StandardMeal) -> Unit = {},
 ) {
     val t = LocalStrings.current
@@ -306,7 +316,7 @@ private fun MealCard(
             }
             if (standardChoices.isNotEmpty()) {
                 Text(t(Msg.STANDARD_INSTEAD), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                StandardChips(standardChoices, enabled = true, onPick = onPickStandard)
+                StandardChips(standardChoices, enabled = !placing, onPick = onPickStandard)
             }
         }
     }
