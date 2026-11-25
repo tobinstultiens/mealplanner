@@ -108,6 +108,29 @@ class OfferParsersTest {
     }
 
     @Test
+    fun jumboShowsNoMarkupInASubtitleAndKeepsItsLinesApart() {
+        val rolls = JumboParser.page(fixture("jumbo-page.html")).single { it.title.startsWith("Page Compleet") }
+        assertEquals(
+            "Compleet Schoon à 24 rollen, Kussenzacht à 18 rollen of Sensitive à 16 rollen, per verpakking · M.u.v. Gekoeld",
+            rolls.packSize,
+        )
+    }
+
+    @Test
+    fun lidlAndAhShowNoMarkupInATitleOrPack() {
+        fun tile(title: String, packaging: String) = """data-grid-data="{&quot;fullTitle&quot;: &quot;$title&quot;, &quot;category&quot;: &quot;Food&quot;, &quot;storeStartDate&quot;: 1794178800, &quot;storeEndDate&quot;: 1794783599, &quot;canonicalUrl&quot;: &quot;/p/x/p1&quot;, &quot;price&quot;: {&quot;price&quot;: 1.5, &quot;packaging&quot;: {&quot;text&quot;: &quot;$packaging&quot;}}}""""
+        val lidl = LidlParser.page(tile("Chips &amp;amp; dip", "300 g&lt;br /&gt;per zak")).single()
+        // The tile's attribute is unescaped once for the JSON, the text in it once more.
+        assertEquals("Chips & dip", lidl.title)
+        assertEquals("300 g · per zak", lidl.packSize)
+
+        val ah = AhParser.section("""{"bonusGroupOrProducts":[{"product":{"title":"Ben &amp; Jerry's<br>ijs","bonusMechanism":"2 voor 5,00",
+            "salesUnitSize":"465 ml<br />","bonusStartDate":"2026-11-09","bonusEndDate":"2026-11-15"}}]}""").single()
+        assertEquals("Ben & Jerry's · ijs", ah.title)
+        assertEquals("465 ml", ah.packSize, "a trailing line break leaves no separator")
+    }
+
+    @Test
     fun jumboReadsEachPromotionsPicture() {
         val offers = JumboParser.page(fixture("jumbo-page.html")).associateBy({ it.title }, { it.imageUrl })
         val week46 = "https://www.jumbo.com/INTERSHOP/static/WFS/Jumbo-Grocery-Site/-/Jumbo-Grocery/nl_NL/Images_Aanbiedingen/2026/Weekaanbiedingen/Week%2046"
@@ -167,5 +190,7 @@ class OfferParsersTest {
         assertNull(singlePrice("25% korting"))
         assertEquals("""a "b" & <c> 'd' é""", htmlUnescape("a &quot;b&quot; &amp; &lt;c&gt; &#39;d&#x27; &#233;"))
         assertEquals("&unknown;", htmlUnescape("&unknown;"))
+        assertEquals("a · b", storeText(storeText("a<br />b<br /><br />")), "cleaning twice is cleaning once")
+        assertEquals("Ben & Jerry's", storeText(" Ben  &amp;\n Jerry's <b></b>"))
     }
 }

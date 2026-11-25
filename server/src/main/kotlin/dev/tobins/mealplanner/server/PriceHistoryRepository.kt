@@ -138,7 +138,7 @@ class PriceHistoryRepository(private val db: Database) {
         url?.takeIf { runCatching { URI(it) }.getOrNull()?.let { uri -> uri.scheme == "https" && !uri.host.isNullOrEmpty() } == true }
 
     private fun OfferHistory.identity() =
-        OfferIdentity(ProductKey(Store.valueOf(store), productKey, packKey), price, originalPrice, normalised(deal))
+        OfferIdentity(ProductKey.recorded(Store.valueOf(store), productKey, packKey), price, originalPrice, normalised(deal))
 
     /**
      * Records the regular price a lookup at [now] found, in the transaction that stores it. [lastFound] is

@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.server.history
 
+import dev.tobins.mealplanner.server.offers.STORE_TEXT_SEPARATOR
+import dev.tobins.mealplanner.server.offers.storeLines
 import java.util.Locale
 
 // The packs of a product as the verdicts compare them and as the app names them (issue 118, step c). Each pack is
@@ -8,22 +10,19 @@ import java.util.Locale
 // is read, never when it is written, so the recorded rows keep the store's text as it was.
 
 /**
- * A pack text ([ProductKey.pack], normalised) without what is not the pack: markup, and the footnotes Jumbo adds
+ * A pack text ([ProductKey.pack], normalised) without what is not the pack: markup (offers are cleaned when read
+ * from the store, but rows recorded before that still hold it; see [storeLines]), and the footnotes Jumbo adds
  * to a subtitle on lines of their own ("Alle flesjes à 500 ml, per flesje<br />M.u.v. Gekoeld", sometimes with
  * empty lines after it). A footnote says what the deal leaves out ("M.u.v."), that the price already has the
  * discount, or how many one order may have; never what the pack is. Other lines stay: "Land van herkomst" tells
  * two wines under one title apart, and a list of flavours may come before the size.
  */
-fun packText(pack: String): String =
-    lines(pack).filterNot { footnote.containsMatchIn(it) }.joinToString(" ").replace(spaces, " ").trim()
+fun packText(pack: String): String = packLines(pack).joinToString(" ")
 
-/** The lines of a pack text, split at its line breaks, with any other markup taken out. */
-private fun lines(text: String): List<String> =
-    text.split(lineBreak).map { it.replace(markup, " ").replace(spaces, " ").trim() }.filter { it.isNotEmpty() }
+/** The lines of a pack text that say what the pack is: those of [storeLines] (and of a cleaned offer's separator) but the footnotes. */
+private fun packLines(pack: String): List<String> =
+    storeLines(pack.replace(STORE_TEXT_SEPARATOR, "<br>")).filterNot { footnote.containsMatchIn(it) }
 
-private val lineBreak = Regex("""<br\s*/?>""", RegexOption.IGNORE_CASE)
-private val markup = Regex("""<[^>]*>""")
-private val spaces = Regex("""\s+""")
 private val footnote = Regex("""^(m\.u\.v\.|de korting is al verwerkt|maximaal \d+ .* per bestelling)""", RegexOption.IGNORE_CASE)
 
 /**
@@ -81,7 +80,7 @@ class SamePacks(packs: Collection<String>) {
  * Footnotes and markup are left out first ([packText]); a price basis ("per 100 gram") is no pack.
  */
 fun packName(packSize: String?): String? {
-    val text = lines(packSize.orEmpty()).filterNot { footnote.containsMatchIn(it) }
+    val text = packLines(packSize.orEmpty())
     // "Naturel of knoflook, verpakking 190 of 350 gram": a number after "of" is another size to choose from.
     if (text.isEmpty() || text.any { several.containsMatchIn(it) }) return null
     val all = text.joinToString(" ")

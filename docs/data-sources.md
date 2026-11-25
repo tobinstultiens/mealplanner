@@ -444,6 +444,13 @@ the next). Telling products apart by it would make every week of a Jumbo product
 apart by the pack (the owner's decision, issue 197); two products under one title and one pack would still share a
 history.
 
+**Markup in store texts** (`offers/StoreText.kt`, issue 320). The parsers take the markup out of an offer's title and pack
+text where they read it from the store: a `<br>` line break becomes " · ", other tags go, character references such as
+`&amp;` are decoded. Every screen and the shopping list get the clean text. Rows of the price history recorded before
+keep the store's text; their keys are read through the same cleaning (`ProductKey.recorded`), so their periods continue.
+The exception is the SQL lookup of a recorded title that held a character reference: it is not found by its cleaned title,
+so that product's old history is not read (an offer title with one is rare; the pack is not affected).
+
 **Which texts are one pack** (`history/Packs.kt`, issue 118). A pack written another way one week would start a history
 of its own and stay "not enough history" for longer, so when the history is read (never when it is written: the rows
 keep the store's text) the pack texts of one product are compared without:

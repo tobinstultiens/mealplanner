@@ -32,6 +32,7 @@ import dev.tobins.mealplanner.server.history.judge
 import dev.tobins.mealplanner.server.history.normalised
 import dev.tobins.mealplanner.server.history.packName
 import dev.tobins.mealplanner.server.history.summary
+import dev.tobins.mealplanner.server.offers.storeText
 import dev.tobins.mealplanner.server.offers.OfferMatcher
 import kotlinx.serialization.Serializable
 import org.slf4j.Logger
@@ -142,7 +143,7 @@ class DealVerdictRepository(
         name.equals(offer.ingredientName, ignoreCase = true) && store == offer.store.name && isSameProduct(product, packSize, offer.title, offer.packSize)
 
     private fun OfferHistory.period(packs: SamePacks) = OfferPeriod(
-        identity = OfferIdentity(ProductKey(Store.valueOf(store), productKey, packs[packKey]), price, originalPrice, normalised(deal)),
+        identity = OfferIdentity(ProductKey(Store.valueOf(store), storeText(productKey), packs[packKey]), price, originalPrice, normalised(deal)),
         deal = deal,
         measures = Measures.of(Offer(Store.valueOf(store), title, deal, price, originalPrice, packSize, category, validFrom, validUntil)),
         firstSeen = Instant.parse(firstSeen),

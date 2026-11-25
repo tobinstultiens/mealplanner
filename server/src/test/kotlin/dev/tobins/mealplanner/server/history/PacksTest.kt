@@ -19,6 +19,8 @@ class PacksTest {
         assertEquals(bottle, packText(key("Alle flesjes à 500 ml, per flesje<br />M.u.v. Gekoeld<br /><br />")))
         assertEquals(key("6 x 1,5 L"), packText(key("6 x 1,5 L<br />De korting is al verwerkt in de verkoopprijs van dit artikel")))
         assertEquals(key("Per verpakking"), packText(key("Per verpakking<br />M.u.v. Voordeelverpakkingen<br /><br />")))
+        assertEquals(bottle, packText(key("Alle flesjes à 500 ml, per flesje · M.u.v. Gekoeld")), "as the offers are cleaned today")
+        assertEquals(key("Chips & dip"), packText(key("Chips &amp; dip")))
         // A subtitle that is only a footnote says nothing of the pack, as no subtitle does.
         assertEquals("", packText(key("M.u.v. Wegwerpmesjes")))
         // Made up: a limit per order is a footnote too.

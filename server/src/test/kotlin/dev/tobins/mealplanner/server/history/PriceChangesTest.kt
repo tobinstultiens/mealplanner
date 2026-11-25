@@ -83,4 +83,13 @@ class PriceChangesTest {
         val changes = changes(listOf(4L to identity, 9L to identity), saw(offer("Kaas"))) { it.identity }
         assertEquals(listOf(9L), changes.continued.map { it.first })
     }
+
+    @Test
+    fun aPeriodRecordedWithStoreMarkupContinuesWhenTheStoreTextIsCleaned() {
+        // issue 320: rows recorded before the offers were cleaned hold the store's markup in their keys.
+        val recorded = OfferIdentity(ProductKey.recorded(Store.JUMBO, "ben &amp; jerry's", "alle flesjes à 500 ml<br />m.u.v. gekoeld<br /><br />"), null, null, "1+1 gratis")
+        val today = saw(offer("Ben & Jerry's", packSize = "Alle flesjes à 500 ml · M.u.v. Gekoeld")).single().identity
+        assertEquals(today, recorded)
+        assertEquals(listOf(1L), changes(listOf(1L to recorded), listOf(OfferSighting(offer("Ben & Jerry's", packSize = "Alle flesjes à 500 ml · M.u.v. Gekoeld")))) { it.identity }.continued.map { it.first })
+    }
 }
