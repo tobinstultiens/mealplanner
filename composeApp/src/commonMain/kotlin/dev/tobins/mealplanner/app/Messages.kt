@@ -1081,6 +1081,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     ),
     PLANNING_ALL_CHOSEN("A dinner is chosen for every day that is open.", "Voor elke open dag is een avondeten gekozen."),
     PLANNING_NO_OPEN_DAYS("Every day from today on has a dinner that stays.", "Elke dag vanaf vandaag heeft al een avondeten dat blijft."),
+    PLANNING_WEEK_OVER("This week is over: there is nothing left to plan in it.", "Deze week is voorbij: er valt niets meer in te plannen."),
     PLANNING_STRIP_TITLE("The week so far", "De week tot nu toe"),
     PLANNING_STRIP_NOTE(
         "The meals that stay and the dinners chosen, with their leftovers, against what those meals should give.",
@@ -1092,7 +1093,9 @@ enum class Msg(private val english: String, private val dutch: String) {
         "{0} of {1} kcal · {2} of {3} g protein · {4} of {5} g fibre",
         "{0} van {1} kcal · {2} van {3} g eiwit · {4} van {5} g vezels",
     ),
-    PLANNING_CHOSEN("Chosen dinners", "Gekozen avondeten"),
+    PLANNING_CHOSEN_COUNT("Chosen dinners ({0})", "Gekozen avondeten ({0})"),
+    PLANNING_CHOSEN_SHOW("Show", "Tonen"),
+    PLANNING_CHOSEN_HIDE("Hide", "Verbergen"),
     PLANNING_TAKE_OUT("Take {0} out", "{0} weghalen"),
     PLANNING_NOT_PLANNABLE("Has no amounts any more, so it can't be planned: take it out", "Heeft geen hoeveelheden meer, dus kan niet worden gepland: haal het weg"),
     PLANNING_SUGGESTIONS("Suggestions", "Suggesties"),

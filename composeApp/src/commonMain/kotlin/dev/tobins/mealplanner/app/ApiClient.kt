@@ -557,14 +557,16 @@ class ApiClient(
 
     /**
      * The next [count] suggestions for the week's dinners, leaving out the recipes [seen] already ("Show others"); with a
-     * [query], every meal of mine whose title has each of its words ("Something else").
+     * [query], every meal of mine whose title has each of its words ("Something else"). Null from a server before the
+     * planning screen, which has no such route.
      */
-    suspend fun dinnerSuggestions(weekStart: String, seen: Collection<Long>, count: Int, query: String? = null): DinnerSuggestions =
+    suspend fun dinnerSuggestions(weekStart: String, seen: Collection<Long>, count: Int, query: String? = null): DinnerSuggestions? = unlessUnknown {
         http.get("api/plans/$weekStart/planning/suggestions") {
             parameter("count", count)
             if (seen.isNotEmpty()) parameter("seen", seen.joinToString(","))
             query?.let { parameter("q", it) }
-        }.body()
+        }.body<DinnerSuggestions>()
+    }
 
     /** Chooses recipe [recipeId] for the week's dinners, or with [chosen] false takes it out again. */
     suspend fun chooseDinner(weekStart: String, recipeId: Long, chosen: Boolean): WeekPlanning =

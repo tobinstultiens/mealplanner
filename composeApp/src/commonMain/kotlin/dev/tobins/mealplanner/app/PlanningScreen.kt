@@ -68,6 +68,27 @@ fun PlanningScreen(
     /** Opens the Recipes tab, where recipes are added and put in the rotation: offered when there is nothing to suggest. */
     onOpenRecipes: (() -> Unit)? = null,
 ) {
+    // A week wholly in the past is decided here, from its dates: planning it would replan meals that are over.
+    if (plusDays(weekStart, 6) < todayIso()) WeekOver(onBack) else PlanningWeek(api, weekStart, onBack, onPlanned, onOpenRecipes)
+}
+
+/** The planning screen of a week that is over: it says so and offers nothing to plan. */
+@Composable
+private fun WeekOver(onBack: () -> Unit) {
+    val t = LocalStrings.current
+    SubScreen(title = t(Msg.PLAN_THE_WEEK), onBack = onBack) { padding ->
+        EmptyState(Spot.NothingPlanned, t(Msg.PLANNING_WEEK_OVER), Modifier.padding(padding))
+    }
+}
+
+@Composable
+private fun PlanningWeek(
+    api: ApiClient,
+    weekStart: String,
+    onBack: () -> Unit,
+    onPlanned: (WeekPlan) -> Unit,
+    onOpenRecipes: (() -> Unit)?,
+) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -86,7 +107,8 @@ fun PlanningScreen(
     LaunchedEffect(weekStart, reload) { planning = load { api.planning(weekStart) } }
     LaunchedEffect(weekStart, seen, query, rescored, reload) {
         if (query != null) delay(SEARCH_PAUSE_MS)
-        page = load { api.dinnerSuggestions(weekStart, seen, SUGGESTIONS_SHOWN, query) }
+        // The screen is only shown by a server that has the suggestions: none from one that has not is nothing to suggest.
+        page = load { api.dinnerSuggestions(weekStart, seen, SUGGESTIONS_SHOWN, query) ?: DinnerSuggestions(emptyList(), more = false) }
     }
 
     /** Runs a change of the week's choices and shows the planning it returns; a refusal is said in the snackbar. */
@@ -162,9 +184,8 @@ fun PlanningScreen(
                         }
                         item(key = "strip") { PlanningStrip(week) }
                         if (week.picks.isNotEmpty()) {
-                            item(key = "chosen") { SectionHeader(t(Msg.PLANNING_CHOSEN)) }
-                            items(week.picks, key = { "pick:${it.recipeId}" }) { pick ->
-                                ChosenDinner(pick, enabled = !busy) { change { api.chooseDinner(weekStart, pick.recipeId, chosen = false) } }
+                            item(key = "chosen") {
+                                ChosenDinners(week.picks, enabled = !busy) { pick -> change { api.chooseDinner(weekStart, pick.recipeId, chosen = false) } }
                             }
                         }
                         suggestionItems(
@@ -186,6 +207,12 @@ fun PlanningScreen(
                         }
                         if (week.notThisWeek.isNotEmpty()) {
                             item(key = "hidden") { HiddenRecipes(week, enabled = !busy) { id -> change { api.hideForWeek(weekStart, id, hidden = false) } } }
+                        }
+                        // Under the suggestions, not in the strip: on a phone the strip would push them off the screen.
+                        if (week.totals.meals > 0) {
+                            item(key = "stripNote") {
+                                Text(t(Msg.PLANNING_STRIP_NOTE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
@@ -210,6 +237,8 @@ fun AnotherDinnerScreen(api: ApiClient, weekStart: String, meal: PlannedMeal, on
     var query by rememberSaveable(meal.day) { mutableStateOf<String?>(null) }
     var rescored by remember { mutableIntStateOf(0) }
     var page by remember(meal.day) { mutableStateOf<Load<DinnerSuggestions>>(Load.Loading) }
+    // A server from before the suggestions has no route for them: the screen says so, as the planning screen does.
+    var oldServer by remember(meal.day) { mutableStateOf(false) }
     val myRecipes by rememberMyRecipes(api)
     val pictures = myRecipes?.let(::pictureUrls).orEmpty()
 
@@ -217,7 +246,13 @@ fun AnotherDinnerScreen(api: ApiClient, weekStart: String, meal: PlannedMeal, on
         if (query != null) delay(SEARCH_PAUSE_MS)
         // The meal's own recipe is no other dinner; a search finds every meal, that one too.
         val shown = if (query == null) seen + meal.recipeId else seen
-        page = load { api.dinnerSuggestions(weekStart, shown, SUGGESTIONS_SHOWN, query) }
+        val loaded = load { api.dinnerSuggestions(weekStart, shown, SUGGESTIONS_SHOWN, query) }
+        oldServer = loaded is Load.Ready && loaded.value == null
+        page = when (loaded) {
+            is Load.Ready -> Load.Ready(loaded.value ?: DinnerSuggestions(emptyList(), more = false))
+            is Load.Failed -> loaded
+            Load.Loading -> Load.Loading
+        }
     }
 
     /** Changes the meal on the server and leaves with the plan; a refusal (an eaten meal, an old server) is said in the snackbar. */
@@ -244,6 +279,10 @@ fun AnotherDinnerScreen(api: ApiClient, weekStart: String, meal: PlannedMeal, on
                 item(key = "planner") {
                     TextButton(enabled = !busy, onClick = { change { api.rerollMeal(weekStart, meal.day, meal.slot) } }) { Text(t(Msg.PLANNERS_CHOICE)) }
                 }
+            }
+            if (oldServer) {
+                item(key = "oldServer") { Text(t(Msg.PLANNING_OLD_SERVER), style = MaterialTheme.typography.bodyLarge) }
+                return@LazyColumn
             }
             suggestionItems(
                 page, query,
@@ -338,9 +377,34 @@ private fun PlanningStrip(week: WeekPlanning) {
                 Text(t(Msg.PLANNING_STRIP_EMPTY), style = MaterialTheme.typography.bodyMedium)
             } else {
                 for (line in lines) Text(line, style = MaterialTheme.typography.bodyMedium.numeric())
-                Text(t(Msg.PLANNING_STRIP_NOTE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+}
+
+/**
+ * The dinners chosen, as one line of their titles under a count, so that the suggestions keep the screen on a phone; a
+ * tap opens the list, where each has its numbers and the button that takes it out. Open from the start when one can't
+ * be planned, as that one must be taken out.
+ */
+@Composable
+private fun ChosenDinners(picks: List<DinnerPick>, enabled: Boolean, onTakeOut: (DinnerPick) -> Unit) {
+    val t = LocalStrings.current
+    var open by rememberSaveable { mutableStateOf(false) }
+    val mustOpen = picks.any { !it.plannable }
+    val shown = open || mustOpen
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
+        Row(
+            Modifier.fillMaxWidth().clickable(enabled = !mustOpen) { open = !open },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                SectionHeader(t(Msg.PLANNING_CHOSEN_COUNT, picks.size))
+                if (!shown) Text(picks.joinToString(", ") { it.title }, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (!mustOpen) TextButton(onClick = { open = !open }) { Text(if (shown) t(Msg.PLANNING_CHOSEN_HIDE) else t(Msg.PLANNING_CHOSEN_SHOW)) }
+        }
+        if (shown) for (pick in picks) ChosenDinner(pick, enabled) { onTakeOut(pick) }
     }
 }
 
