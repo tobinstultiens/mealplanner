@@ -198,13 +198,13 @@ object LidlParser {
         (epochSeconds as? JsonPrimitive)?.longOrNull?.let { Instant.ofEpochSecond(it).atZone(SERVER_ZONE).toLocalDate().toString() }
 }
 
-/** Decodes the HTML character references used in attribute values. */
+/** Decodes the HTML character references used in attribute values; one that names no character is left as it is. */
 internal fun htmlUnescape(text: String): String =
     Regex("&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);").replace(text) { match ->
         val name = match.groupValues[1]
         when {
-            name.startsWith("#x") || name.startsWith("#X") -> name.drop(2).toInt(16).let { String(Character.toChars(it)) }
-            name.startsWith("#") -> name.drop(1).toInt().let { String(Character.toChars(it)) }
+            name.startsWith("#x") || name.startsWith("#X") -> character(name.drop(2), 16) ?: match.value
+            name.startsWith("#") -> character(name.drop(1), 10) ?: match.value
             else -> when (name) {
                 "quot" -> "\""
                 "amp" -> "&"
@@ -216,3 +216,7 @@ internal fun htmlUnescape(text: String): String =
             }
         }
     }
+
+/** The character with the code [digits] in [radix], or null where the number is too large or a code point that is no character (a lone surrogate). */
+private fun character(digits: String, radix: Int): String? =
+    digits.toIntOrNull(radix)?.takeIf { Character.isValidCodePoint(it) && it !in 0xD800..0xDFFF }?.let { String(Character.toChars(it)) }

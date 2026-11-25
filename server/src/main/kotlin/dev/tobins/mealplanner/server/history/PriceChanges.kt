@@ -42,7 +42,7 @@ private val whitespace = Regex("""\s+""")
 /** One product at one store over time: the store, its title and its pack size, [normalised]. */
 data class ProductKey(val store: Store, val title: String, val pack: String) {
     companion object {
-        fun of(offer: Offer) = ProductKey(offer.store, normalised(offer.title), normalised(offer.packSize))
+        fun of(offer: Offer) = ProductKey(offer.store, normalised(storeText(offer.title)), normalised(storeText(offer.packSize.orEmpty())))
 
         /**
          * The key of a recorded row, from the title and pack it was recorded with. Rows recorded before offers were
