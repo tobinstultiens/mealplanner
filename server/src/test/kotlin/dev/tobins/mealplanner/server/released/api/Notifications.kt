@@ -1,4 +1,4 @@
-// Frozen from v0.1.10 (de4360a169911ad09794223687f4df8e42a3ebe4) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.11 (d67c66841795e71e94257aa85aa1af579c688842) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.Serializable
@@ -40,6 +40,11 @@ data class NotificationFacts(
      * Not a batch eaten completely, nor one never made. Each batch is here on that one day only.
      */
     val prepsPastLastDay: List<PrepPastLastDay> = emptyList(),
+    /**
+     * The user names of the requests for an account that wait for the owner (issue 314), oldest first; for the owner's
+     * account only ([Me.approvesRequests]), empty for every other. A name not seen before is a new request.
+     */
+    val accountRequests: List<String> = emptyList(),
 )
 
 /**
