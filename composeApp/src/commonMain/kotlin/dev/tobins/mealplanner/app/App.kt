@@ -96,7 +96,7 @@ fun App(
     // When renewing ended the session (see Login.refresh for when it does), the app asks to log in again.
     // A login the server refuses (not in its group, issue 314) ends the session the same way, saying why.
     val api = remember(settings, session) {
-        ApiClient(settings, session, loginRefused = { refused, reason -> if (logins.loginRefused(refused, reason)) session = null }) { refused ->
+        ApiClient(settings, session, loginRefused = { refused, reason, detail -> if (logins.loginRefused(refused, reason, detail)) session = null }) { refused ->
             logins.renew(settings.url, refused) ?: run {
                 // Whoever logs in next may be someone else: what was the account's goes, as on logging out.
                 // The shopping session of this client is closed when the client is replaced; until then
@@ -135,6 +135,9 @@ fun App(
         session = null
     }
     val accountShops = remember(api, storage) { AccountShops(storage, api::shops, api::saveShops) }
+    // The calls made without a login: whether the server takes requests for an account, and the request (issue 314).
+    val publicApi = remember(settings) { ApiClient(settings) }
+    DisposableEffect(publicApi) { onDispose { publicApi.close() } }
     // On start, so a device's choice of stores from before they were an account setting reaches
     // the planner even before the shopping list is opened.
     LaunchedEffect(accountShops) { if (session != null) load { accountShops.sync() } }
@@ -165,6 +168,8 @@ fun App(
     var pricesOpen by rememberSaveable { mutableStateOf(start.prices) }
     // Without a login the login screen is in front instead; a link on it opens the settings.
     var serverOpen by rememberSaveable { mutableStateOf(start.settings && session != null) }
+    // The form that asks for an account, opened from the login screen (issue 314).
+    var registering by rememberSaveable { mutableStateOf(false) }
     // What each screen keeps in its remembered state (scroll, search, the week or day looked at) outlives the
     // screen being drawn: a screen covered by another (a tab by a recipe, a recipe by its editor) is saved
     // under its key and restored when it is drawn again, also after Android re-created the activity.
@@ -193,6 +198,8 @@ fun App(
     // on logging out, not on a start without a login, which may be a notification's opening that the login comes before.
     var wasLoggedIn by remember { mutableStateOf(loggedIn) }
     LaunchedEffect(loggedIn) {
+        // A login made meanwhile (in another tab of the browser) closes the form that asks for an account.
+        if (loggedIn) registering = false
         if (wasLoggedIn && !loggedIn) {
             (Tab.entries.map { "tab:${it.slug}" } + openKeys).forEach(screenStates::removeState)
             planWeek = null
@@ -284,6 +291,14 @@ fun App(
     }
     val shownLoginError = loginError ?: (progress as? LoginProgress.Failed)?.message
     LaunchedEffect(api) { account = if (session == null) null else runCatching { api.me() }.getOrNull() }
+    // Whether the login screen offers "Register a new account": asked of a known server while nobody is logged in. A server
+    // from before registration, or one that cannot be reached, offers nothing (registrationOpen).
+    var takesRequests by remember(settings) { mutableStateOf(false) }
+    LaunchedEffect(publicApi, serverKnown, session == null) {
+        if (session == null && serverKnown) takesRequests = registrationOpen(publicApi)
+    }
+    // Only the owner's account decides on requests for an account; every other gets no card for them.
+    val accountRequests = remember(api, account) { if (account?.approvesRequests == true) AccountDecisions(api) else null }
 
     // NEVO must be credited wherever its values are shown.
     var nutritionSource by remember { mutableStateOf<String?>(null) }
@@ -373,7 +388,14 @@ fun App(
                     onBack = { serverOpen = false },
                     notifications = notificationAccess?.let { NotificationSettings(storage, it) },
                     exclusions = shopping.exclusions,
+                    accountRequests = accountRequests,
                 )
+                return@CompositionLocalProvider
+            }
+            if (session == null && registering) {
+                // Not kept under a key of its own: closed, it forgets what was typed, and the passwords were never saved.
+                BackHandler(enabled = true) { registering = false }
+                RegistrationScreen(send = publicApi::register, onBack = { registering = false })
                 return@CompositionLocalProvider
             }
             if (session == null) {
@@ -388,6 +410,7 @@ fun App(
                         // A known server is not saved: that would pin a built-in address a later release may change.
                         onLogin = { if (serverKnown) startLogin(it) else logInAt(it) },
                         onOpenSettings = { serverOpen = true },
+                        onRegister = if (serverKnown && takesRequests) ({ registering = true }) else null,
                     )
                 }
                 return@CompositionLocalProvider

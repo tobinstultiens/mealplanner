@@ -65,6 +65,10 @@ import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.LoginRefusal
 import dev.tobins.mealplanner.api.Me
+import dev.tobins.mealplanner.api.AccountRequest
+import dev.tobins.mealplanner.api.RegistrationReceipt
+import dev.tobins.mealplanner.api.RegistrationRequest
+import dev.tobins.mealplanner.api.RegistrationStatus
 import dev.tobins.mealplanner.api.NotificationFacts
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
@@ -90,18 +94,23 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLPathPart
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
+/** A 403 the server answered to the login itself, not to what was asked: the access token it was sent with, and why. */
+private class LoginRefused(val token: String?, val reason: String, val detail: String?)
+
 /**
- * The access token and [LoginRefusal] reason of a 403 the server answered to the login itself, not to what was asked;
- * null for any other failure. The reason is in the body, as `{"error": "...", "reason": "not_in_group"}`.
+ * The [LoginRefused] of [cause]; null for any other failure. The reason is in the body, as
+ * `{"error": "...", "reason": "not_in_group"}`, with an optional `detail` ([LoginRefusal.WAITING_FOR_APPROVAL]).
  */
-private suspend fun loginRefusal(cause: Throwable): Pair<String?, String>? {
+private suspend fun loginRefusal(cause: Throwable): LoginRefused? {
     if (cause !is ClientRequestException || cause.response.status != HttpStatusCode.Forbidden) return null
-    val reason = failedFrom(cause).reason?.takeIf { it == LoginRefusal.NOT_IN_GROUP || it == LoginRefusal.NO_GROUPS } ?: return null
-    return cause.response.call.request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ") to reason
+    val failed = failedFrom(cause)
+    val reason = failed.reason?.takeIf { it == LoginRefusal.NOT_IN_GROUP || it == LoginRefusal.NO_GROUPS } ?: return null
+    return LoginRefused(cause.response.call.request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer "), reason, failed.detail)
 }
 
 /** Where the server is. */
@@ -132,13 +141,13 @@ private val lenientJson = Json {
  * IOException on every platform) and non-2xx responses. An expired access token is renewed with
  * [refresh], which is told the access token the server refused, and the call retried. A login the
  * server refuses as such ([LoginRefusal], a 403) is told to [loginRefused], with the access token it
- * was refused for and the reason; the call fails all the same.
+ * was refused for, the reason and its detail, if any; the call fails all the same.
  */
 class ApiClient(
     settings: ServerSettings,
     session: Session? = null,
     engine: HttpClientEngine? = null,
-    loginRefused: suspend (refused: String?, reason: String) -> Unit = { _, _ -> },
+    loginRefused: suspend (refused: String?, reason: String, detail: String?) -> Unit = { _, _, _ -> },
     refresh: suspend (refused: String?) -> Session? = { null },
 ) {
     private val setUp: HttpClientConfig<*>.() -> Unit = {
@@ -149,7 +158,7 @@ class ApiClient(
                 // lost connection the screens catch; the login's renewal fails through here too (connectionFailure).
                 connectionFailure(cause)?.let { throw it }
                 // Told with the token the request was sent with, which a renewal meanwhile may have replaced.
-                loginRefusal(cause)?.let { (token, reason) -> loginRefused(token, reason) }
+                loginRefusal(cause)?.let { loginRefused(it.token, it.reason, it.detail) }
             }
         }
         install(ContentNegotiation) { json(lenientJson) }
@@ -169,6 +178,27 @@ class ApiClient(
     private val http = if (engine == null) HttpClient(setUp) else HttpClient(engine, setUp)
 
     suspend fun me(): Me = http.get("api/me").body()
+
+    /** Whether the server takes requests for an account (issue 314); asked without a login. A server from before it answers 404. */
+    suspend fun registrationStatus(): RegistrationStatus = http.get("api/registration").body()
+
+    /**
+     * Asks for an account (issue 314), without a login. A refusal is thrown as any failed call is; [registrationOutcome]
+     * says what it means.
+     */
+    suspend fun register(request: RegistrationRequest): RegistrationReceipt = http.post("api/registration") {
+        contentType(ContentType.Application.Json)
+        setBody(request)
+    }.body()
+
+    /** The requests for an account that wait, oldest first: the owner's account only ([Me.approvesRequests]). */
+    suspend fun accountRequests(): List<AccountRequest> = http.get("api/registrations").body()
+
+    /** Approves [username]'s request, answering the requests still waiting. */
+    suspend fun approveRequest(username: String): List<AccountRequest> = http.post("api/registrations/${username.encodeURLPathPart()}/approve").body()
+
+    /** Rejects [username]'s request, which deletes the account made for it; answers the requests still waiting. */
+    suspend fun rejectRequest(username: String): List<AccountRequest> = http.post("api/registrations/${username.encodeURLPathPart()}/reject").body()
 
     /** What the account's data says is due today, for the notifications (Android's background check). */
     suspend fun notifications(): NotificationFacts = http.get("api/notifications").body()

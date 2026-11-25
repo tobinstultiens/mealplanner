@@ -133,8 +133,8 @@ the lines to read.
 > fake LLDAP. Check each step as it says.
 
 What it does (issue 314): a person asks for an account (user name, name, e-mail address, password). The form on the
-app's login screen and the owner's Requests list in Settings come with part 3 of the issue, which is not built yet: until
-that app is released, a request is made and decided on only through the API (`POST /api/registration`, and the owner's
+app's login screen and the owner's Requests list in Settings come with part 3 of the issue: in the web client from the deploy that has it (the server serves it), in the
+Android app from the first release after v0.1.11. Before that, a request is made and decided on only through the API (`POST /api/registration`, and the owner's
 `/api/registrations` routes, README "Accounts and login"). The server asks the **registration helper** to make the
 account in LLDAP at once, in no group, with that password; the server keeps who asked, never the password. The person
 can log in to Authelia but not use the meal planner: the server answers "Your request is waiting for approval." The
@@ -166,7 +166,7 @@ every network but the two it needs.
 2. "Other services behind Authelia", above, checked: a waiting account must open nothing anywhere.
 3. A new person has to set up Authelia's second factor at the first login (the client is `two_factor`), which Authelia
    confirms by e-mail: check that `notifier` in `local/authelia/configuration.yml` sends e-mail *(not run)*.
-4. Best after the app release that has the form and the Requests list (issue 314, part 3, not built yet). Before it,
+4. Best after the app release that has the form and the Requests list (issue 314, part 3: the first after v0.1.11; the web client has them once deployed). Before it,
    nobody can ask from the app, and the owner can decide only with `curl` and an access token.
 
 **Steps, in this order:**

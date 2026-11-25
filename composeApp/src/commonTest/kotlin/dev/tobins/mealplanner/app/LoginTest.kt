@@ -910,11 +910,11 @@ class LoginTest {
 
     /**
      * The meal planner's API as a server with `MEALPLANNER_OIDC_GROUP` answers a login outside the group: 403 on
-     * every request, with [reason] next to the sentence (none: a 403 that is not about the login).
+     * every request, with [reason] next to the sentence (none: a 403 that is not about the login), and [detail] when given.
      */
-    private fun refusing(reason: String?, asked: MutableList<String?> = mutableListOf()) = MockEngine { request ->
+    private fun refusing(reason: String?, asked: MutableList<String?> = mutableListOf(), detail: String? = null) = MockEngine { request ->
         asked += request.headers[HttpHeaders.Authorization]
-        val because = reason?.let { ""","reason":"$it"""" } ?: ""
+        val because = (reason?.let { ""","reason":"$it"""" } ?: "") + (detail?.let { ""","detail":"$it"""" } ?: "")
         respond(
             """{"error":"This account may not use the meal planner yet. Ask the person who runs this server."$because}""",
             HttpStatusCode.Forbidden,
@@ -929,7 +929,7 @@ class LoginTest {
             val forms = mutableListOf<Map<String, String>>()
             val logins = exchange(storage, fakeProvider(forms))
             var ended = false
-            val api = ApiClient(server, storage.session(), refusing(reason), loginRefused = { token, r -> ended = logins.loginRefused(token, r) }) {
+            val api = ApiClient(server, storage.session(), refusing(reason), loginRefused = { token, r, detail -> ended = logins.loginRefused(token, r, detail) }) {
                 logins.renew(server.url, it)
             }
 
@@ -942,6 +942,29 @@ class LoginTest {
             assertFalse(logins.claimAutoOpen(serverKnown = true), "$reason: the login screen says why, under no login page")
             api.close()
         }
+    }
+
+    @Test
+    fun aLoginWhoseRequestForAnAccountWaitsEndsTheSessionSayingSo() = runTest {
+        // Issue 314: the server refuses a waiting person as anyone outside the group, and says why in the detail.
+        val storage = MemorySettingsStorage().apply { saveSession(Session("zoe", "good", Long.MAX_VALUE)) }
+        val logins = exchange(storage, fakeProvider(mutableListOf()))
+        val api = ApiClient(
+            server, storage.session(), refusing(LoginRefusal.NOT_IN_GROUP, detail = LoginRefusal.WAITING_FOR_APPROVAL), loginRefused = logins::loginRefused,
+        ) { logins.renew(server.url, it) }
+
+        assertEquals(403, (load { api.me() } as Load.Failed).status)
+        assertEquals(null, storage.session())
+        assertEquals(LoggedOut.WAITING_FOR_APPROVAL, storage.loggedOut())
+        assertFalse(logins.claimAutoOpen(serverKnown = true), "the login screen says it waits, under no login page")
+        api.close()
+
+        // A detail this app does not know is the plain refusal.
+        storage.saveSession(Session("max", "good", Long.MAX_VALUE))
+        val other = ApiClient(server, storage.session(), refusing(LoginRefusal.NOT_IN_GROUP, detail = "something_new"), loginRefused = logins::loginRefused)
+        load { other.me() }
+        assertEquals(LoggedOut.NOT_ALLOWED, storage.loggedOut())
+        other.close()
     }
 
     @Test

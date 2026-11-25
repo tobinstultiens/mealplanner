@@ -159,6 +159,27 @@ offers, regular prices, their history and the NEVO data are shared.
   decided in LLDAP by hand meanwhile 409 (and gone from the list), the helper down 503 (the request stays). A request
   waiting 14 days is rejected by the server's hourly round. Requests, decisions and the expiry run one at a time, so none
   acts on an account another is still making or removing.
+- In the app (from the release after v0.1.11) and the web client, the login screen of a known server asks
+  `GET /api/registration` while nobody is logged in and offers **Register a new account** only on `{"open": true}`; a
+  server from before the route, one that is off, or one out of reach offers nothing. The form (`RegistrationScreen.kt`)
+  asks for a name, a user name, an e-mail address and the password twice, and checks them with the shared
+  `RegistrationRules` as they are typed: a field says what it must hold once something typed in it is left, and every
+  field after Send, which sends nothing while one is wrong. Each refusal is said by its `reason` in the app's language,
+  not in the server's English sentence (`too_many` with the minutes of `Retry-After`, `invalid` marking the field it
+  names); a taken request says that the account `<user name>` waits for the owner's approval. The passwords live only in
+  the form's state while it is open (`remember`, never `rememberSaveable`), so they are in no stored setting and not in
+  Android's saved instance state, which can outlive the process on disk: when Android re-creates the screen (a
+  rotation) the two password fields are empty again while the rest stays. `RegistrationDraft` and `RegistrationRequest`
+  print without them, so no log line or error shows one. A login the server refuses with `waiting_for_approval` ends
+  as one outside the group does, and the login screen says "Your request is waiting for approval." (installed apps up
+  to v0.1.11 say the not-a-member sentence). With Authelia's policy of `docs/deploy.md` in place Authelia itself
+  refuses that login before the app has a token, so the sentence shows only where it lets the login through (issue
+  314, item 3 of its definition of done is open).
+- The owner's account (`approvesRequests`) has a card **Requests for an account** at the top of Settings: how many wait,
+  and per request the name, user name, address, when it was made and the day it is rejected by itself, with Approve and
+  Reject; Reject asks first, as it deletes the person's account. A request gone meanwhile (404) or decided in LLDAP
+  (409) is said so and the list asked for again; the helper down (503) leaves it waiting. No other account has the card,
+  nor asks for the requests. The notification "Account requests" (see "Notifications") tells the owner of a new one.
 - The server's cooking site (`COOKING_REPO_URL`, or the checkout at `COOKING_REPO_PATH`) is the bank of every
   account that has not chosen otherwise (issue 208); with `COOKING_REPO_SHARED=0` it is the owner's alone, as
   before. On the recipe bank screen an account chooses where its bank comes from (`PUT /api/sync/cooking/repo`):
@@ -757,11 +778,13 @@ the device; each kind is an Android notification channel of its own, so the syst
 | Dinner today | Today has a planned dinner that is neither eaten nor skipped and something to cook: its main, or else a side's prepped batch made next to it that evening ("Tonight's side: …"); a dinner that makes a prepped batch says its servings are for tonight and the prep's later meals; once per day | The recipe, from that meal (its servings to cook; on a prep day for the prep's later meals) | Off |
 | Mark what you ate | A meal of today is still planned; once per day | Today | Off |
 | Prepped food to throw away | The morning after a prepped batch's last day (its own: in a box or vacuum sealed), when the batch was made (a meal of it eaten) and a share of it was skipped and not eaten elsewhere ("Throw away 1 portion of Chili con carne" / "It kept until Mon 23 Nov."), or a meal or side of it was never marked ("1 portion of Chili con carne was not marked: eaten, or to throw away?"); sides say "side". Several batches go into one notification; once per batch, and only on the day after its last day; a batch told later the same day is a notification of its own next to the first (an Android tag per batch) | Plan, where there is something to do: on the week of the first meal not marked, where it can be marked, else on that of the first skipped share left in the box, which may be the week after the batch was made (from a server before issue 263: the week the batch was made) | On (only an account that made a prep gets it) |
+| Account requests | Someone asked for an account and waits for the owner (issue 314): once per request ("1 request for an account waits" / "New: zoe. Approve or reject in Settings."); a request decided and made again is told again. Only the owner's account (`approvesRequests`) gets it, and only its Settings show the switch | Settings, with the Requests card at the top | On (only the owner's account gets it) |
 
 The server says what is due, the app decides whether to tell: `GET /api/notifications` answers, for the calling
-account and the server's today, the facts behind kinds 2 to 7 as data (`NotificationFacts`: names, dates, counts,
+account and the server's today, the facts behind kinds 2 to 8 as data (`NotificationFacts`: names, dates, counts,
 the recipe; for kind 7, `prepsPastLastDay`: per batch whose last day was yesterday, the recipe, the shares left and
-the meals not marked), and the app words them in its language (`Messages.kt`). One WorkManager job (`NotificationWorker`)
+the meals not marked; for kind 8, `accountRequests`, the user names waiting, empty for all but the owner's account),
+and the app words them in its language (`Messages.kt`). One WorkManager job (`NotificationWorker`)
 replaces the daily update check: every four hours on any network, as Android allows, it checks the release and,
 when logged in, asks the server. Android decides when the periodic run happens, so it may never fall inside the two
 hours of "Mark what you ate"; therefore every run also schedules a one-off run five minutes after the next window
@@ -769,7 +792,7 @@ opens (08:00, 15:00 or 20:00 by the device's clock), and the app's start does to
 whatever the phase of the periodic one (`NotificationWindows`). The schedule outlives the app being swiped away and a reboot (WorkManager keeps it
 in JobScheduler and sets it again at boot); a force stop (Settings → Apps → Force stop, or a phone maker's battery
 saver that force-stops on a swipe) cancels it until the app is next opened, which schedules it again. What decides (the kind, its switch, what was told already per kind and day, week
-or version, and the windows) is common code (`NotificationPlanner`): kinds 1 to 4 and 7 from 08:00, dinner from 15:00,
+or version, and the windows) is common code (`NotificationPlanner`): kinds 1 to 4, 7 and 8 from 08:00, dinner from 15:00,
 "mark what you ate" from 20:00, and nothing between 22:00 and 08:00, by the device's clock; Android only schedules,
 asks and posts. A logged-out app posts nothing but the update; the check never shows an error, a failure tells
 nothing until the next run, and its renewals never end the session (see "Accounts and login"). Turning a switch on
@@ -822,7 +845,7 @@ the test and in `git log`, not here.
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
 Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch, and with that prep kept vacuum sealed, also in Dutch and at font scale 2), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the Plan with one batch eaten as sides and as a meal (also in Dutch), the Prep dialog with meals picked both ways (also in Dutch and at font scale 2), "Add a prepped side…" with batches still to make (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch; the question also of a prep that was made, of meals and of sides, in both languages, and of a prep of meals and sides, made or not, in both languages), a week holding only a meal of last week's batch on the Plan and Shopping (Shopping also in Dutch), the recipe of a later prepped meal and cook mode on a prep day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe picker (also with standard meals first and the line on a prep still to make, in Dutch and at font scale 2), Today with a skipped lunch and its standard-meal chips (also in Dutch), the Plan's skip sheet and a recipe's standard-meal switch with what it made staples (both also in Dutch and at font scale 2), Offers, the price verdicts on Offers (early with one opened, and later, also in Dutch and at font scale 2 in both languages) and on Shopping (later, also in Dutch, at font scale 2 in both languages down to the advice, per store and in shopping mode in Dutch; the dialog of a tapped deal, early and later, also in Dutch and at font scale 2 in both languages), "Not this ingredient" on Offers and on a deal of Shopping with its snackbar (each also in Dutch and at font scale 2), Prices, Progress, the profile (in English and Dutch),
-Settings and login screens (the login with a known server and with the address asked for), the "Not this ingredient" list of Settings (also in Dutch and at font scale 2), the Notifications card (in English and Dutch, with notifications refused by Android, and at font scale 2 in both languages), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
+Settings and login screens (the login with a known server and with the address asked for, offering "Register a new account", and saying a request waits for approval, also in Dutch), the form that asks for an account (empty, after Send with every field wrong, refused by the server, and sent; each also in Dutch and at font scale 2), the owner's Requests card of Settings (also in Dutch and at font scale 2), the "Not this ingredient" list of Settings (also in Dutch and at font scale 2), the Notifications card (in English and Dutch, with notifications refused by Android, at font scale 2 in both languages, and the owner's with "Account requests"), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
 sample data, with the date, time zone and locale (English, UK) fixed, so a picture only changes when the

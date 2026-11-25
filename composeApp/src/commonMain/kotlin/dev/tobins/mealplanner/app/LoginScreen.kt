@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.dp
  * [LoginExchange.claimAutoOpen]); this screen is what stays when that page is closed or the login
  * fails. Without a known server it asks for the address first. The settings (language, theme) stay one
  * tap away: "Change server" opens them under a known server, "Settings" while the address is asked for.
+ * "Register a new account" shows while the server takes requests for an account (issue 314, [onRegister]).
  */
 @Composable
 fun LoginScreen(
@@ -49,6 +51,8 @@ fun LoginScreen(
     busy: Boolean,
     onLogin: (ServerSettings) -> Unit,
     onOpenSettings: () -> Unit,
+    /** Opens the form that asks for an account; null where the server takes no requests, or is not known yet. */
+    onRegister: (() -> Unit)? = null,
 ) {
     val t = LocalStrings.current
     var url by rememberSaveable(server.url) { mutableStateOf(server.url) }
@@ -86,6 +90,7 @@ fun LoginScreen(
             Button(enabled = urlValid && !busy, onClick = { onLogin(draft) }, modifier = narrow) {
                 Text(if (busy) t(Msg.LOGGING_IN) else t(Msg.LOG_IN))
             }
+            onRegister?.let { OutlinedButton(onClick = it, modifier = narrow) { Text(t(Msg.REGISTER)) } }
             error?.let { ErrorBanner(t(Msg.COULD_NOT_LOG_IN), it, narrow) }
             if (serverKnown) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -113,4 +118,5 @@ private val LoggedOut.message: Msg?
         LoggedOut.NOT_RENEWED -> Msg.LOGGED_OUT_NOT_RENEWED
         LoggedOut.NOT_ALLOWED -> Msg.LOGGED_OUT_NOT_ALLOWED
         LoggedOut.NO_GROUPS -> Msg.LOGGED_OUT_NO_GROUPS
+        LoggedOut.WAITING_FOR_APPROVAL -> Msg.LOGGED_OUT_WAITING
     }

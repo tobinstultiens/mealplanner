@@ -207,9 +207,90 @@ enum class Msg(private val english: String, private val dutch: String) {
         "You were logged out: your login does not say which groups your account is in. Log in again; if this stays, ask the person who runs this server.",
         "Je bent uitgelogd: je inlog zegt niet in welke groepen je account zit. Log opnieuw in; blijft dit zo, vraag het dan aan degene die deze server beheert.",
     ),
+    // Asked for an account on the login screen, and the owner has not decided yet (issue 314).
+    LOGGED_OUT_WAITING("Your request is waiting for approval.", "Je aanvraag wacht op goedkeuring."),
     LOGGING_IN("Logging in…", "Inloggen…"),
     LOGIN_AT("Logs in at {0}", "Logt in bij {0}"),
     CHANGE_SERVER("Change server", "Andere server"),
+
+    // --- Asking for an account (issue 314): the login screen's form
+    REGISTER("Register a new account", "Nieuw account registreren"),
+    REGISTER_INTRO(
+        "Ask for an account on this server. The person who runs it approves each request; until then you cannot use the meal planner.",
+        "Vraag een account aan op deze server. Degene die hem beheert keurt elke aanvraag goed; tot dan kun je de meal planner niet gebruiken.",
+    ),
+    FIELD_DISPLAY_NAME("Your name", "Je naam"),
+    FIELD_USERNAME("User name", "Gebruikersnaam"),
+    FIELD_USERNAME_HINT("What you log in with", "Waarmee je inlogt"),
+    FIELD_EMAIL("E-mail address", "E-mailadres"),
+    FIELD_PASSWORD("Password", "Wachtwoord"),
+    FIELD_PASSWORD_AGAIN("Password again", "Wachtwoord nog een keer"),
+    PROBLEM_DISPLAY_NAME("Fill in your name, at most {0} characters.", "Vul je naam in, hoogstens {0} tekens."),
+    PROBLEM_USERNAME(
+        "{0} to {1} characters: letters a to z and digits, and . - _ after the first.",
+        "{0} tot {1} tekens: letters a tot z en cijfers, en . - _ na de eerste.",
+    ),
+    PROBLEM_EMAIL(
+        "Fill in an e-mail address such as name@example.org, without spaces or accented letters.",
+        "Vul een e-mailadres in zoals naam@voorbeeld.nl, zonder spaties of letters met accenten.",
+    ),
+    PROBLEM_PASSWORD("{0} to {1} characters, and not your user name.", "{0} tot {1} tekens, en niet je gebruikersnaam."),
+    PROBLEM_PASSWORD_AGAIN("The two passwords differ.", "De twee wachtwoorden verschillen."),
+    REGISTER_SEND("Send request", "Aanvraag versturen"),
+    REGISTER_SENDING("Sending…", "Versturen…"),
+    REGISTER_FIX_FIELDS("Some fields are not right yet: see the marked ones.", "Een paar velden kloppen nog niet: zie de gemarkeerde."),
+    REFUSED_OFF("This server takes no requests for an account now.", "Deze server neemt nu geen aanvragen voor een account aan."),
+    REFUSED_INVALID(
+        "The server did not accept these details. Check every field and try again.",
+        "De server nam deze gegevens niet aan. Controleer elk veld en probeer het opnieuw.",
+    ),
+    REFUSED_UNAVAILABLE(
+        "This user name or e-mail address cannot be used. Choose another.",
+        "Deze gebruikersnaam of dit e-mailadres kan niet worden gebruikt. Kies een andere.",
+    ),
+    REFUSED_TOO_MANY_LATER(
+        "Too many requests for an account just now. Try again later.",
+        "Te veel aanvragen voor een account op dit moment. Probeer het later opnieuw.",
+    ),
+    REFUSED_FULL(
+        "Many requests are waiting for approval already. Try again in a few days.",
+        "Er wachten al veel aanvragen op goedkeuring. Probeer het over een paar dagen opnieuw.",
+    ),
+    REFUSED_DIRECTORY_DOWN(
+        "The login server's accounts cannot be reached just now; nothing was made. Try again later.",
+        "De accounts van de inlogserver zijn nu niet bereikbaar; er is niets aangemaakt. Probeer het later opnieuw.",
+    ),
+    REGISTER_SENT_TITLE("Request sent", "Aanvraag verstuurd"),
+    REGISTER_SENT(
+        "Your request for the account {0} is waiting for approval by the person who runs this server. Once it is approved, log in with that user name and your password.",
+        "Je aanvraag voor het account {0} wacht op goedkeuring door degene die deze server beheert. Is hij goedgekeurd, log dan in met die gebruikersnaam en je wachtwoord.",
+    ),
+    BACK_TO_LOGIN("Back to log in", "Terug naar inloggen"),
+
+    // --- The owner's requests for an account (issue 314), in Settings
+    CARD_REQUESTS("Requests for an account", "Aanvragen voor een account"),
+    REQUESTS_NONE("No requests wait.", "Er wachten geen aanvragen."),
+    REQUESTS_LOAD_FAILED("Could not load the requests", "De aanvragen zijn niet geladen"),
+    REQUEST_DATES("Asked {0} · rejected by itself on {1}", "Aangevraagd {0} · vanzelf afgewezen op {1}"),
+    APPROVE("Approve", "Goedkeuren"),
+    REJECT("Reject", "Afwijzen"),
+    REJECT_QUESTION_TITLE("Reject the request of {0}?", "De aanvraag van {0} afwijzen?"),
+    REJECT_QUESTION_TEXT(
+        "This deletes the account {0} at the login server. They can ask again.",
+        "Dit verwijdert het account {0} bij de inlogserver. Diegene kan opnieuw een aanvraag doen.",
+    ),
+    REQUEST_APPROVED("{0} can log in now.", "{0} kan nu inloggen."),
+    REQUEST_REJECTED("The request of {0} is rejected.", "De aanvraag van {0} is afgewezen."),
+    REQUEST_GONE("This request no longer waits; the list is up to date again.", "Deze aanvraag wacht niet meer; de lijst is weer bijgewerkt."),
+    REQUEST_DECIDED_ELSEWHERE(
+        "This request was decided at the login server already, so it is gone from the list.",
+        "Over deze aanvraag is al bij de inlogserver beslist, dus hij staat niet meer in de lijst.",
+    ),
+    REQUEST_DIRECTORY_DOWN(
+        "The login server's accounts cannot be reached just now; the request stays. Try again later.",
+        "De accounts van de inlogserver zijn nu niet bereikbaar; de aanvraag blijft staan. Probeer het later opnieuw.",
+    ),
+    DECIDE_FAILED("Could not decide: {0}", "Beslissen lukte niet: {0}"),
 
     // --- Settings
     SETTINGS("Settings", "Instellingen"),
@@ -1039,6 +1120,10 @@ enum class Msg(private val english: String, private val dutch: String) {
         "The morning after a prep's last day, for portions still in the box or not marked",
         "De ochtend na de laatste dag van een prep, voor porties die nog in het bakje zitten of openstaan",
     ),
+    // The owner's only (issue 314): the switch shows only to the account that decides on requests.
+    NOTIFY_ACCOUNT_REQUESTS("Account requests", "Accountaanvragen"),
+    NOTIFY_ACCOUNT_REQUESTS_HINT("When someone asks for an account on your server", "Als iemand een account aanvraagt op je server"),
+    ACCOUNT_REQUESTS_NOTIFICATION_TEXT("New: {0}. Approve or reject in Settings.", "Nieuw: {0}. Keur goed of wijs af in Instellingen."),
     UPDATE_NOTIFICATION_TITLE("Meal planner {0} is available", "Meal planner {0} is beschikbaar"),
     UPDATE_NOTIFICATION_TEXT("Tap to update.", "Tik om bij te werken."),
     PLAN_NOTIFICATION_TITLE("Next week has no plan yet", "Volgende week heeft nog geen plan"),
@@ -1277,6 +1362,23 @@ enum class Plural(
 
     /** The count is that of the batches; `{1}` is their last day. */
     KEPT_UNTIL("It kept until {1}.", "They kept until {1}.", "Het was goed tot {1}.", "Ze waren goed tot {1}."),
+
+    /** Asking for an account (issue 314): the wait the server's `Retry-After` gives, in whole minutes. */
+    REFUSED_TOO_MANY(
+        "Too many requests for an account just now. Try again in {0} minute.", "Too many requests for an account just now. Try again in {0} minutes.",
+        "Te veel aanvragen voor een account op dit moment. Probeer het over {0} minuut opnieuw.",
+        "Te veel aanvragen voor een account op dit moment. Probeer het over {0} minuten opnieuw.",
+    ),
+
+    /** The owner's requests for an account (issue 314): in Settings, and the notification's title. */
+    REQUESTS_WAITING(
+        "{0} request waits for your decision.", "{0} requests wait for your decision.",
+        "{0} aanvraag wacht op je besluit.", "{0} aanvragen wachten op je besluit.",
+    ),
+    ACCOUNT_REQUESTS_TITLE(
+        "{0} request for an account waits", "{0} requests for an account wait",
+        "{0} aanvraag voor een account wacht", "{0} aanvragen voor een account wachten",
+    ),
     // --- end of plurals
     ;
 

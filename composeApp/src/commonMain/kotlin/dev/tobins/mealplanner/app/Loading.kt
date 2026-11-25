@@ -37,7 +37,8 @@ internal sealed interface Load<out T> {
      * the user. [unreadable]: the server answered, but the app could not read the answer.
      * [lostConnection]: the request could not connect, timed out or was cut off. [reason] is the
      * server's optional machine-readable `reason` next to its `error` sentence, for a screen that must
-     * tell two answers with the same status apart (503: generation is off, or a write is busy).
+     * tell two answers with the same status apart (503: generation is off, or a write is busy), and [detail] the optional
+     * `detail` that says more about it (a refused login whose request for an account waits, issue 314).
      */
     data class Failed(
         val message: String,
@@ -46,6 +47,7 @@ internal sealed interface Load<out T> {
         val unreadable: Boolean = false,
         val lostConnection: Boolean = false,
         val reason: String? = null,
+        val detail: String? = null,
     ) : Load<Nothing>
     data class Ready<T>(val value: T) : Load<T>
 }
@@ -62,11 +64,11 @@ internal suspend fun <T> load(block: suspend () -> T): Load<T> = try {
 internal suspend fun failedFrom(e: Throwable): Load.Failed {
     if (e is AppError) return Load.Failed(e.message)
     if (e is ResponseException) {
-        // The server explains errors as {"error": "...", "reason": "..."} (the reason is optional); fall back to the status line when there is no sentence or it is empty.
+        // The server explains errors as {"error": "...", "reason": "...", "detail": "..."} (reason and detail are optional); fall back to the status line when there is no sentence or it is empty.
         val body = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(e.response.bodyAsText()) as? kotlinx.serialization.json.JsonObject }.getOrNull()
         fun field(name: String) = (body?.get(name) as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
         val status = e.response.status
-        return Load.Failed(field("error") ?: Strings.current(Msg.SERVER_ANSWERED, status.value, status.description), status.value, reason = field("reason"))
+        return Load.Failed(field("error") ?: Strings.current(Msg.SERVER_ANSWERED, status.value, status.description), status.value, reason = field("reason"), detail = field("detail"))
     }
     return Load.Failed(
         e.message ?: Strings.current(Msg.UNKNOWN_ERROR),

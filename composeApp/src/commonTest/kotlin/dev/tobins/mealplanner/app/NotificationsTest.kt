@@ -45,6 +45,7 @@ class NotificationsTest {
         dinner = DinnerToday(12, "Chicken tikka", 1.5, 2.25, "2026-11-16", 5),
         mealsToMark = 2,
         prepsPastLastDay = listOf(PrepPastLastDay(7, 14, "Chili con carne", "2026-11-17", "2026-11-20", left = 1)),
+        accountRequests = listOf("zoe"),
     )
     private val update = AppUpdate("0.1.9", "", "", "")
 
@@ -53,14 +54,16 @@ class NotificationsTest {
     private fun NotificationPlanner.kinds(facts: NotificationFacts? = all, newer: AppUpdate? = update) = due(facts, newer, en).map { it.kind }
 
     @Test
-    fun theFirstThreeKindsAndPreppedFoodToThrowAwayAreOnUntilSwitched() {
-        val on = listOf(NotificationKind.UPDATE, NotificationKind.OFFERS_ENDING, NotificationKind.PLAN_NEXT_WEEK, NotificationKind.THROW_AWAY)
+    fun theFirstThreeKindsPreppedFoodToThrowAwayAndAccountRequestsAreOnUntilSwitched() {
+        val on = listOf(
+            NotificationKind.UPDATE, NotificationKind.OFFERS_ENDING, NotificationKind.PLAN_NEXT_WEEK, NotificationKind.THROW_AWAY, NotificationKind.ACCOUNT_REQUESTS,
+        )
         assertEquals(on, NotificationKind.entries.filter(storage::notificationOn))
         assertEquals(on, at("21:00").kinds())
         storage.saveNotificationOn(NotificationKind.OFFERS_ENDING, false)
         storage.saveNotificationOn(NotificationKind.MEALS_TO_MARK, true)
         assertEquals(
-            listOf(NotificationKind.UPDATE, NotificationKind.PLAN_NEXT_WEEK, NotificationKind.MEALS_TO_MARK, NotificationKind.THROW_AWAY),
+            listOf(NotificationKind.UPDATE, NotificationKind.PLAN_NEXT_WEEK, NotificationKind.MEALS_TO_MARK, NotificationKind.THROW_AWAY, NotificationKind.ACCOUNT_REQUESTS),
             at("21:00").kinds(),
         )
     }
@@ -70,9 +73,10 @@ class NotificationsTest {
         allOn()
         assertEquals(emptyList(), at("07:59").kinds())
         val morning = listOf(NotificationKind.UPDATE, NotificationKind.OFFERS_ENDING, NotificationKind.PLAN_NEXT_WEEK, NotificationKind.WEIGH_IN)
-        assertEquals(morning + NotificationKind.THROW_AWAY, at("08:00").kinds())
-        assertEquals(morning + NotificationKind.THROW_AWAY, at("14:59").kinds())
-        assertEquals(morning + NotificationKind.DINNER_TODAY + NotificationKind.THROW_AWAY, at("15:00").kinds())
+        val mornings = listOf(NotificationKind.THROW_AWAY, NotificationKind.ACCOUNT_REQUESTS)
+        assertEquals(morning + mornings, at("08:00").kinds())
+        assertEquals(morning + mornings, at("14:59").kinds())
+        assertEquals(morning + NotificationKind.DINNER_TODAY + mornings, at("15:00").kinds())
         assertEquals(NotificationKind.entries, at("20:00").kinds())
         assertEquals(NotificationKind.entries, at("21:59").kinds())
         assertEquals(emptyList(), at("22:00").kinds())
@@ -87,6 +91,8 @@ class NotificationsTest {
         storage.saveNotificationOn(NotificationKind.PLAN_NEXT_WEEK, false)
         assertTrue(at("09:00").wantsFacts(), "prepped food to throw away is on")
         storage.saveNotificationOn(NotificationKind.THROW_AWAY, false)
+        assertTrue(at("09:00").wantsFacts(), "account requests are on")
+        storage.saveNotificationOn(NotificationKind.ACCOUNT_REQUESTS, false)
         assertFalse(at("09:00").wantsFacts(), "only the update is on, which GitHub tells")
         storage.saveNotificationOn(NotificationKind.MEALS_TO_MARK, true)
         assertFalse(at("19:59").wantsFacts())
@@ -186,6 +192,44 @@ class NotificationsTest {
         val meal = MealToCook(12, 1.5, 2.25, skipped = false, MealPlace("2026-11-16", 5, MealSlot.DINNER), planned = true)
         assertEquals(Opening(Route.Recipe(12), meal), notice(NotificationKind.DINNER_TODAY).opening)
         assertEquals(Opening(Route.TabRoute(Tab.PLAN), week = "2026-11-16"), notice(NotificationKind.THROW_AWAY).opening, "the Plan, on the week it was made")
+    }
+
+    // --- Requests for an account (issue 314), the owner's account only
+
+    /** Posts the account requests due at 09:00 on [day] for the user names [waiting]; null when none is. */
+    private fun requestsPostedAt(day: String, vararg waiting: String): DueNotification? {
+        val planner = at("09:00", day)
+        return planner.due(NotificationFacts(day, accountRequests = waiting.toList()), null, en).singleOrNull()?.also(planner::told)
+    }
+
+    @Test
+    fun eachRequestForAnAccountIsToldOnceAndOpensSettings() {
+        val first = requestsPostedAt("2026-11-21", "zoe")!!
+        assertEquals("1 request for an account waits" to "New: zoe. Approve or reject in Settings.", first.title to first.text)
+        assertEquals(Opening(Route.Settings), first.opening, "where the owner decides")
+        assertNull(first.tag, "a newer one replaces it in the tray")
+        assertEquals(null, requestsPostedAt("2026-11-21", "zoe"), "told already")
+        assertEquals(null, requestsPostedAt("2026-11-22", "zoe"), "nor told again the next day")
+        val second = requestsPostedAt("2026-11-22", "zoe", "max")!!
+        assertEquals("2 requests for an account wait" to "New: max. Approve or reject in Settings.", second.title to second.text)
+        assertEquals("3 aanvragen voor een account wachten", at("09:00").due(NotificationFacts("2026-11-22", accountRequests = listOf("zoe", "max", "eva")), null, Strings.Dutch).single().title)
+    }
+
+    @Test
+    fun aRequestDecidedAndMadeAgainIsToldAgain() {
+        requestsPostedAt("2026-11-21", "zoe", "max")
+        // Zoe was rejected and asks again; nobody else asked meanwhile.
+        assertEquals(null, requestsPostedAt("2026-11-22", "max"))
+        assertEquals("New: zoe. Approve or reject in Settings.", requestsPostedAt("2026-11-23", "max", "zoe")?.text)
+        // Another account, or a server from before registration, lists none: nothing is told.
+        assertEquals(null, requestsPostedAt("2026-11-24"))
+    }
+
+    @Test
+    fun onlyTheOwnersSettingsHaveTheSwitchForAccountRequests() {
+        assertFalse(NotificationKind.ACCOUNT_REQUESTS in NotificationKind.shown(approvesRequests = false))
+        assertEquals(NotificationKind.entries - NotificationKind.ACCOUNT_REQUESTS, NotificationKind.shown(approvesRequests = false))
+        assertEquals(NotificationKind.entries, NotificationKind.shown(approvesRequests = true))
     }
 
     // --- Prepped food to throw away (issue 264)

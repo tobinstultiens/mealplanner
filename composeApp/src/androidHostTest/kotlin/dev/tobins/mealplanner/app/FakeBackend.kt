@@ -2,7 +2,12 @@ package dev.tobins.mealplanner.app
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import dev.tobins.mealplanner.api.AccountRequest
 import dev.tobins.mealplanner.api.BatchToMake
+import dev.tobins.mealplanner.api.LoginRefusal
+import dev.tobins.mealplanner.api.RegistrationReceipt
+import dev.tobins.mealplanner.api.RegistrationRequest
+import dev.tobins.mealplanner.api.RegistrationStatus
 import dev.tobins.mealplanner.api.CheaperPack
 import dev.tobins.mealplanner.api.PastOffer
 import dev.tobins.mealplanner.api.PriceRaise
@@ -175,6 +180,26 @@ class FakeBackend(
         rows.replaceAll { if (it.id == id) it.copy(keepsDays = keeps.days, keepsVacuumDays = keeps.vacuumDays) else it }
     }
 
+    /**
+     * Asking for an account (issue 314): null is a server from before registration, which has no such routes; else whether
+     * it takes requests now. A request is answered as taken, or with [registrationRefusal] (the status and the reason);
+     * [registered] has each request's body as sent.
+     */
+    @Volatile
+    var registrationOpen: Boolean? = null
+
+    @Volatile
+    var registrationRefusal: Pair<Int, String>? = null
+
+    val registered: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+
+    /** Whether the account is the owner's, which decides on [accountRequests] (issue 314); every other is refused them. */
+    @Volatile
+    var owner = false
+
+    /** The requests for an account that wait for the owner, oldest first; a decision takes one out. */
+    val accountRequests: MutableList<AccountRequest> = java.util.Collections.synchronizedList(mutableListOf())
+
     /** A sentence that makes every change of recipes answer 409, as the server does for a recipe planned on Friday. */
     @Volatile
     var refusing: String? = null
@@ -220,9 +245,15 @@ class FakeBackend(
             close()
             return
         }
-        // A login the server refuses on every request, as one with MEALPLANNER_OIDC_GROUP answers an account outside it.
-        if (requestHeaders.getFirst("Authorization") == "Bearer $NOT_IN_GROUP_TOKEN") {
-            val bytes = """{"error":"This account may not use the meal planner yet. Ask the person who runs this server.","reason":"not_in_group"}""".toByteArray()
+        // A login the server refuses on every request, as one with MEALPLANNER_OIDC_GROUP answers an account outside it, and
+        // one whose request for an account waits (issue 314).
+        val outside = when (requestHeaders.getFirst("Authorization")) {
+            "Bearer $NOT_IN_GROUP_TOKEN" -> """{"error":"This account may not use the meal planner yet. Ask the person who runs this server.","reason":"not_in_group"}"""
+            "Bearer $WAITING_TOKEN" -> """{"error":"Your request is waiting for approval.","reason":"not_in_group","detail":"${LoginRefusal.WAITING_FOR_APPROVAL}"}"""
+            else -> null
+        }
+        if (outside != null) {
+            val bytes = outside.toByteArray()
             responseHeaders.add("Content-Type", "application/json")
             sendResponseHeaders(403, bytes.size.toLong())
             responseBody.use { it.write(bytes) }
@@ -235,7 +266,8 @@ class FakeBackend(
             route(requestMethod, requestURI.path, sent, queryOf(requestURI.rawQuery))
         } catch (e: Refusal) {
             status = e.status
-            """{"error":${json.encodeToString(e.message)}}"""
+            val reason = e.reason?.let { ""","reason":${json.encodeToString(it)}""" } ?: ""
+            """{"error":${json.encodeToString(e.message)}$reason}"""
         } catch (e: Exception) {
             null
         }
@@ -251,8 +283,8 @@ class FakeBackend(
         answered += "$requestMethod ${requestURI.path}"
     }
 
-    /** What the server answers with an error and its sentence, as `{"error": "..."}`. */
-    private class Refusal(val status: Int, message: String) : Exception(message)
+    /** What the server answers with an error and its sentence, as `{"error": "..."}`, with the [reason] when there is one. */
+    private class Refusal(val status: Int, message: String, val reason: String? = null) : Exception(message)
 
     /** The parameters of a query string, `count=6&seen=1%2C2`, decoded. */
     private fun queryOf(raw: String?): Map<String, String> = raw.orEmpty().split('&').filter { '=' in it }
@@ -262,8 +294,9 @@ class FakeBackend(
         val parts = path.trim('/').split('/')
         if (parts.getOrNull(1) == "plans" && (parts.getOrNull(3) == "planning" || parts.lastOrNull() == "move")) return planningRoute(method, path, sent, query)
         if (parts.getOrNull(1) == "recipes" && method != "GET") return changeRecipes(method, parts, sent)
+        if (parts.getOrNull(1) == "registration" || parts.getOrNull(1) == "registrations") return registrationRoute(method, parts, sent)
         return when {
-            path == "/api/me" -> json.encodeToString(Me("anna", "Anna"))
+            path == "/api/me" -> json.encodeToString(Me("anna", "Anna", approvesRequests = owner))
             path == "/api/foods/dataset" -> json.encodeToString(FoodDataset(2328, "NEVO online version 2025/9.0, RIVM, Bilthoven"))
             path == "/api/recipes" -> recipesJson(if (emptyRecipes) emptyList() else mine())
             // A server from before the bank reads `bank` as a recipe id.
@@ -1096,6 +1129,27 @@ class FakeBackend(
         }
     }
 
+    /**
+     * Asking for an account and the owner's decisions (issue 314), as the server answers them: nothing from a server from
+     * before registration ([registrationOpen] null); the owner's routes refused to any other account.
+     */
+    private fun registrationRoute(method: String, parts: List<String>, sent: String): String? {
+        val open = registrationOpen ?: return null
+        if (parts[1] == "registration") {
+            if (method == "GET") return json.encodeToString(RegistrationStatus(open))
+            registered += sent
+            registrationRefusal?.let { (status, reason) -> throw Refusal(status, "The server's own sentence.", reason) }
+            return json.encodeToString(RegistrationReceipt(json.decodeFromString<RegistrationRequest>(sent).username.lowercase()))
+        }
+        if (!owner) throw Refusal(403, "Only the owner of this server decides on requests for an account.", "not_owner")
+        // POST /api/registrations/{username}/approve or .../reject
+        if (method == "POST" && parts.size == 4) {
+            changes += "POST /${parts.joinToString("/")}"
+            if (!accountRequests.removeIf { it.username == parts[2] }) throw Refusal(404, "No request of ${parts[2]} waits")
+        }
+        return json.encodeToString(accountRequests.toList())
+    }
+
     companion object {
         /** The day all pictures are taken on: a Wednesday. */
         const val TODAY = "2026-11-18"
@@ -1106,6 +1160,9 @@ class FakeBackend(
 
         /** An access token of an account outside the server's group: every call answers 403 `not_in_group` to it. */
         const val NOT_IN_GROUP_TOKEN = "not-in-group-token"
+
+        /** An access token of a person whose request for an account waits (issue 314): refused as [NOT_IN_GROUP_TOKEN], saying so. */
+        const val WAITING_TOKEN = "waiting-token"
 
         /** Two "Not this ingredient" made on another device before the screens open (issue 316), the newest first. */
         private val madeBefore = listOf(

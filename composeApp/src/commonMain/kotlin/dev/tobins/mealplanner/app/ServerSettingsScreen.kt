@@ -79,6 +79,8 @@ internal fun ServerSettingsScreen(
     notifications: NotificationSettings? = null,
     /** The account's "Not this ingredient" list, shown in the Shopping card while logged in. */
     exclusions: OfferExclusionQueue? = null,
+    /** The requests for an account to decide on (issue 314): the owner's account only, null for every other. */
+    accountRequests: AccountDecisions? = null,
 ) {
     val t = LocalStrings.current
     var url by remember { mutableStateOf(current.url) }
@@ -148,6 +150,8 @@ internal fun ServerSettingsScreen(
                 }
                 loginError?.let { ErrorBanner(t(Msg.COULD_NOT_LOG_IN), it) }
             }
+            // Near the top: the "Account requests" notification opens Settings for this card.
+            if (loggedIn && accountRequests != null) AccountRequestsCard(accountRequests, snackbar)
             SettingsCard(t(Msg.CARD_APPEARANCE)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     ThemeMode.entries.forEach { mode ->
@@ -180,7 +184,7 @@ internal fun ServerSettingsScreen(
                     exclusions?.let { ExcludedOffers(it, snackbar) }
                 }
             }
-            notifications?.let { NotificationsCard(it) }
+            notifications?.let { NotificationsCard(it, approvesRequests = accountRequests != null) }
             if (updater != null) AppVersionSection(updater)
             if (loggedIn) server()
         }
@@ -264,11 +268,13 @@ internal fun ExcludedOffers(exclusions: OfferExclusionQueue, snackbar: SnackbarH
  * One switch per kind of notification, kept on this device. Turning one on asks for the system's permission
  * where it needs asking; while a switch is on and the system does not let the app post, the card says so,
  * with the way to the system's settings, until the platform reports otherwise ([NotificationAccess.allowed]).
+ * "Account requests" shows only to the account that [approvesRequests] (issue 314): no other gets them.
  */
 @Composable
-internal fun NotificationsCard(settings: NotificationSettings) {
+internal fun NotificationsCard(settings: NotificationSettings, approvesRequests: Boolean = false) {
     val t = LocalStrings.current
-    var on by remember { mutableStateOf(NotificationKind.entries.associateWith(settings.storage::notificationOn)) }
+    val kinds = NotificationKind.shown(approvesRequests)
+    var on by remember(kinds) { mutableStateOf(kinds.associateWith(settings.storage::notificationOn)) }
     val allowed by settings.access.allowed.collectAsState()
     SettingsCard(t(Msg.CARD_NOTIFICATIONS)) {
         Text(t(Msg.NOTIFICATIONS_INTRO), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -276,7 +282,7 @@ internal fun NotificationsCard(settings: NotificationSettings) {
             Text(t(Msg.NOTIFICATIONS_BLOCKED), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.warning)
             OutlinedButton(onClick = settings.access::openSettings) { Text(t(Msg.NOTIFICATIONS_OPEN_SETTINGS)) }
         }
-        NotificationKind.entries.forEach { kind ->
+        kinds.forEach { kind ->
             SwitchRow(t(kind.title), t(kind.hint), on.getValue(kind)) { checked ->
                 settings.storage.saveNotificationOn(kind, checked)
                 on = on + (kind to checked)
@@ -307,7 +313,7 @@ private fun SwitchRow(title: String, hint: String, checked: Boolean, onChange: (
 
 /** One group of settings: a card with its title. */
 @Composable
-private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
