@@ -62,38 +62,51 @@ class DealVerdictRepository(
         DealVerdicts(judged(now).map { (offer, verdict) -> view(offer, verdict) }.sortedWith(compareBy({ it.store }, { it.verdict }, { it.title })))
 
     /**
-     * [state]'s offers with the verdicts on those of the account's offers valid at [now] ([Offer.verdict]), for the app
-     * (issue 118, step c). The others keep none.
+     * The verdicts on the account's offers valid at [now], judged once: a request that needs them in more than one place
+     * (the shopping list's advice and its answer) keeps this and attaches them as often as it likes. Judging that fails
+     * leaves no verdicts: a verdict is an extra, and a fault in reading the history must never cost the app its offers
+     * or its shopping list.
      */
-    fun on(state: OffersState, now: Instant): OffersState = attached(state, now) { verdictOf -> state.copy(offers = state.offers.map(verdictOf)) }
-
-    /**
-     * [offers] with the verdicts on those of the account's offers valid at [now], as [on] the offers of an answer: for the
-     * stock-up advice, which goes by them before the list is made (issue 118, step d).
-     */
-    fun onOffers(offers: List<Offer>, now: Instant): List<Offer> = attached(offers, now) { verdictOf -> offers.map(verdictOf) }
-
-    /**
-     * [list]'s offers with their verdicts, as [on] the offers: on every row's offers, the advice's and those of what is no
-     * longer needed, so that the list the app keeps offline has them too.
-     */
-    fun on(list: ShoppingList, now: Instant): ShoppingList = attached(list, now) { verdictOf ->
-        fun List<ShoppingItem>.judged() = map { item -> item.copy(offers = item.offers.map(verdictOf)) }
-        list.copy(items = list.items.judged(), buyAhead = list.buyAhead.judged(), stockUp = list.stockUp.judged(), noLongerNeeded = list.noLongerNeeded.judged())
-    }
-
-    /**
-     * [answer] with [attach] given each offer's verdict, or as it is when judging fails: a verdict is an extra, and a
-     * fault in reading the history must never cost the app its offers or its shopping list.
-     */
-    private fun <T> attached(answer: T, now: Instant, attach: ((Offer) -> Offer) -> T): T {
+    fun judgement(now: Instant): Judgement {
         val verdicts = try {
             judged(now).associate { (offer, verdict) -> OfferKey(offer) to priceVerdict(verdict) }
         } catch (e: Exception) {
             log.warn("Could not judge the offers; answering without verdicts", e)
-            return answer
+            emptyMap()
         }
-        return attach { offer -> verdicts[OfferKey(offer)]?.let { offer.copy(verdict = it) } ?: offer }
+        return Judgement(verdicts)
+    }
+
+    /**
+     * [state]'s offers with the verdicts on those of the account's offers valid at [now] ([Offer.verdict]), for the app
+     * (issue 118, step c). The others keep none.
+     */
+    fun on(state: OffersState, now: Instant): OffersState = judgement(now).on(state)
+
+    /** [offers] with their verdicts as [on] the offers of an answer, for a caller that needs them alone. */
+    fun onOffers(offers: List<Offer>, now: Instant): List<Offer> = judgement(now).onOffers(offers)
+
+    /** [list]'s offers with their verdicts, as [on] the offers. */
+    fun on(list: ShoppingList, now: Instant): ShoppingList = judgement(now).on(list)
+
+    /** The verdicts of one [judgement], by offer, to attach to what an answer carries. */
+    class Judgement internal constructor(private val verdicts: Map<OfferKey, PriceVerdict>) {
+        private fun attach(offer: Offer): Offer = verdicts[OfferKey(offer)]?.let { offer.copy(verdict = it) } ?: offer
+
+        /** [state]'s offers with their verdicts. */
+        fun on(state: OffersState): OffersState = state.copy(offers = state.offers.map(::attach))
+
+        /** [offers] with their verdicts: for the stock-up advice, which goes by them before the list is made (issue 118, step d). */
+        fun onOffers(offers: List<Offer>): List<Offer> = offers.map(::attach)
+
+        /**
+         * [list]'s offers with their verdicts: on every row's offers, the advice's and those of what is no longer needed, so
+         * that the list the app keeps offline has them too.
+         */
+        fun on(list: ShoppingList): ShoppingList {
+            fun List<ShoppingItem>.judged() = map { item -> item.copy(offers = item.offers.map(::attach)) }
+            return list.copy(items = list.items.judged(), buyAhead = list.buyAhead.judged(), stockUp = list.stockUp.judged(), noLongerNeeded = list.noLongerNeeded.judged())
+        }
     }
 
     /**
@@ -228,7 +241,7 @@ class DealVerdictRepository(
     }
 
     /** An offer as the verdicts and the answers that carry them both have it: what the store published, without what the server adds. */
-    private data class OfferKey(
+    internal data class OfferKey(
         val store: Store,
         val title: String,
         val packSize: String?,
