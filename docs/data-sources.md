@@ -169,6 +169,19 @@ takes one back by any title of the same key. Both writes are idempotent (an excl
 title and time; taking back one that is gone changes nothing), so a phone may send them twice or late. An
 ingredient that is not the account's is a 404; a title without words or over 300 characters a 400.
 
+In the app, "Not this ingredient" is under an offer of one of the account's ingredients on the Offers screen (a tap
+opens the offer) and under each offer of a shopping row's deals (a tap on the chip). It asks nothing; a snackbar
+says what it did ("“Hela curry” at Jumbo no longer counts as Curry powder") with Undo. Settings lists the
+exclusions in the Shopping card, the newest first, each with "Take back" (and Undo in the snackbar). The app works
+on them as on ticks (`OfferExclusionQueue`): a change is written to the device first and sent in the shopping list's
+turn, before the list is fetched, so one made without a connection waits, survives closing the app and goes out
+when the server answers again; a refused one (an ingredient gone since) is dropped and said in the shopping list's
+snackbar. The account's list as the server last answered it and the changes still waiting are laid over every
+shopping list and the offers the app shows, so the deal leaves the row, its saving, the advice and the Offers
+screen's "My ingredients" at once, also offline, and a list fetched before the server had it does not bring it
+back. The plan's cost and the planning suggestions come from the server, so they follow once it has the change
+(those screens fetch when they show). Logging out forgets both, as it does the ticks.
+
 ## Regular prices (AH)
 
 Offers only say how much is taken off; to know what a meal costs, and so which offers make it
@@ -660,9 +673,10 @@ offers alongside, and the latest earlier offers ("19–25 Oct · "1+1 gratis" ·
 is named by the days it ran ("as low as before (19–25 Oct)"), and "last on" names the last of them. A line that holds
 today's offer against an earlier price gives today's in the same terms ("now €2.75"), as the deal chip beside it shows a
 pack's price, which a price per kg cannot be compared with by eye. A tap on a
-shopping row's deal chip shows the same line and notes under the deal in the snackbar; when an offer of the row has
-earlier offers, the snackbar has "Price history", which opens the same detail as the Offers screen in a dialog (a
-snackbar has no room for a list). Early on, with no earlier offers yet, the snackbar is as it was.
+shopping row's deal chip opens its deals in a dialog: per offer at the account's stores its deal, the product and
+the same detail as the Offers screen, with "Not this ingredient" under each (see "Which ingredient an offer is
+for"). Until issue 316 it was a snackbar, which has room for one action only, where a row can have a right offer at
+one store and a wrong one at another.
 
 Every answer that carries the shopping list, ticks included, judges the account's offers again. On a made-up year of
 history (26,281 rows, 1,113 recordings, a file database, `DealVerdictRealDataTest`) that took 41 to 60 ms for an account

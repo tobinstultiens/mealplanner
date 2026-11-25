@@ -202,7 +202,7 @@ class ShoppingStoresTest {
         assertNull(last.savingOffer(all, monday))
         assertNull(savingOf(listOf(last), all, monday))
         assertEquals(listOf("pea"), keys(storeOverview(listOf(last), all, monday).anyStore))
-        assertEquals("", last.dealText(all, monday, Strings.English))
+        assertEquals(emptyList(), last.dealOffers(all, monday))
 
         // It does not decide the store either: the valid AH offer is the one used.
         val both = item("pea", "Tins", dated(Store.JUMBO, 1.0, 0.2, "2026-11-04", "2026-11-10"), dated(Store.AH, 1.5, 0.75, "2026-11-16", "2026-11-22"))
@@ -236,11 +236,12 @@ class ShoppingStoresTest {
         assertEquals(listOf(Store.AH), storeOverview(listOf(milk), all, monday).stores.map { it.store })
         assertEquals(0.5, savingOf(listOf(milk), all, monday)!!, 1e-9)
         // The Lidl deal is still there to read, with its day.
-        assertEquals("AH: €2.00 (Product)\nLidl: €1.00 from Thu until 25 Nov (Product)", milk.dealText(all, monday, Strings.English))
+        fun ShoppingItem.headings(strings: Strings) = dealOffers(all, monday).map { it.dealHeading(monday, strings) }
+        assertEquals(listOf("AH: €2.00", "Lidl: €1.00 from Thu until 25 Nov"), milk.headings(Strings.English))
         // Within the week the end is a day name too, in either language.
         val short = milk.copy(offers = listOf(dated(Store.LIDL, 1.0, 0.4, "2026-11-19", "2026-11-22")))
-        assertEquals("Lidl: €1.00 from Thu until Sun (Product)", short.dealText(all, monday, Strings.English))
-        assertEquals("Lidl: €1,00 vanaf do t/m zo (Product)", short.dealText(all, monday, Strings.Dutch))
+        assertEquals(listOf("Lidl: €1.00 from Thu until Sun"), short.headings(Strings.English))
+        assertEquals(listOf("Lidl: €1,00 vanaf do t/m zo"), short.headings(Strings.Dutch))
     }
 
     private fun packItem(grams: Double?, pieces: Double?, offer: Offer, otherAmounts: List<String> = emptyList()) =
@@ -500,11 +501,11 @@ class ShoppingStoresTest {
     }
 
     @Test
-    fun theSnackbarAddsThePackSizeUnlessTheTitleHasIt() {
+    fun theDealsDetailAddsThePackSizeUnlessTheTitleHasIt() {
         val plain = packItem(450.0, null, packOffer("500 g", "1+1 gratis"))
-        assertTrue(plain.dealText(all, today, Strings.English).endsWith("(Chicken, 500 g)"))
+        assertEquals(listOf("Chicken, 500 g"), plain.dealOffers(all, today).map { it.productText() })
         val named = packItem(450.0, null, packOffer("500 g", "1+1 gratis").copy(title = "Kip 500 g"))
-        assertTrue(named.dealText(all, today, Strings.English).endsWith("(Kip 500 g)"))
+        assertEquals(listOf("Kip 500 g"), named.dealOffers(all, today).map { it.productText() })
     }
 
     /** A quarter off a kilo pack at Jumbo, until 7 January. */

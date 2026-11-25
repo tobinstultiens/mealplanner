@@ -2,6 +2,8 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OfferExclusion
+import dev.tobins.mealplanner.api.OfferExclusions
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.Store
@@ -140,6 +142,27 @@ class ShoppingSessionTest {
             delay(latency)
             lists[weekStart] = listFor(weekStart).let { list -> list.copy(items = list.items.filter { it.key != "x:$id" }) }
             return Load.Ready(listFor(weekStart))
+        }
+
+        /** The account's "Not this ingredient" list, the newest first; [exclusionAnswer] replaces the answer to a change, as a refusal. */
+        val excluded = mutableListOf<OfferExclusion>()
+        var exclusionAnswer: Load<OfferExclusions>? = null
+
+        override suspend fun setExcluded(change: ExclusionChange): Load<OfferExclusions> {
+            asked += "${if (change.excluded) "exclude" else "take back"} ${change.title}"
+            if (unreachable) return Load.Failed("Unable to resolve host")
+            delay(latency)
+            exclusionAnswer?.let { return it }
+            excluded.removeAll { it.key == change.key }
+            if (change.excluded) excluded.add(0, change.asExclusion())
+            return Load.Ready(OfferExclusions(excluded.toList()))
+        }
+
+        override suspend fun exclusions(): Load<OfferExclusions> {
+            asked += "exclusions"
+            if (unreachable) return Load.Failed("Unable to resolve host")
+            delay(latency)
+            return Load.Ready(OfferExclusions(excluded.toList()))
         }
     }
 
@@ -1203,6 +1226,148 @@ class ShoppingSessionTest {
         settle()
         assertEquals(0, session.stuckTicks)
         assertNotNull(session.offlineSince)
+    }
+
+    /** Jumbo's curry sauce, which the server matched to the curry powder (issue 316). */
+    private val helaCurry = Offer(Store.JUMBO, "Hela curry", "25% korting", validFrom = "2026-11-16", validUntil = "2026-11-22", paidShare = 0.75)
+
+    /** This week's list with the curry powder's row, on offer with [helaCurry], and a row to tick. */
+    private fun curryList() = listWith(
+        ShoppingItem("i3", "Curry powder", 50.0, null, "Spices", emptyList(), onHand = false, checked = false, offers = listOf(helaCurry), regularPrice = 2.0),
+        ShoppingItem("a", "a", 100.0, null, "Vegetables", emptyList(), onHand = false, checked = false),
+    )
+
+    private fun ShoppingSession.curryOffers() = shown().items.first().offers
+
+    private fun ShoppingSession.excludeCurry(excluded: Boolean = true) = exclusions.choose(Store.JUMBO, "Hela curry", 3, "Curry powder", excluded)
+
+    @Test
+    fun notThisIngredientTakesTheDealOffAtOnceAndGoesOutInTurnBeforeTheListIsFetched() = runTest {
+        server.lists[monday] = curryList()
+        val session = session()
+        session.resume()
+        settle()
+        assertEquals(listOf(helaCurry), session.curryOffers())
+        server.asked.clear()
+
+        session.excludeCurry()
+
+        assertEquals(emptyList(), session.curryOffers(), "gone at once, before the server answers")
+        settle()
+        assertEquals(listOf("exclude Hela curry", "list $monday"), server.asked)
+        assertEquals(listOf("Hela curry"), session.exclusions.known.map { it.title })
+        assertEquals(emptyList(), session.exclusions.waiting)
+        // The server's list of before still has the deal; what the server answered keeps it off.
+        assertEquals(emptyList(), session.curryOffers())
+    }
+
+    @Test
+    fun anExclusionMadeOfflineSurvivesClosingTheAppAndGoesOutBeforeTheTicksWhenTheConnectionIsBack() = runTest {
+        server.lists[monday] = curryList()
+        val first = session()
+        first.resume()
+        settle()
+        server.unreachable = true
+        first.excludeCurry()
+        first.tick("a", true)
+        settle()
+        assertNotNull(first.offlineSince)
+        assertEquals(emptyList(), first.curryOffers())
+        assertEquals(1, ShoppingCache(storage).waitingExclusions().size)
+        first.close()
+
+        // The app was closed; opened again without a connection, the deal stays off.
+        val second = session()
+        second.resume()
+        settle()
+        assertEquals(emptyList(), second.curryOffers())
+
+        server.unreachable = false
+        server.asked.clear()
+        second.retry()
+        settle()
+        assertEquals(listOf("exclude Hela curry", "check $monday a", "list $monday"), server.asked)
+        assertEquals(emptyList(), ShoppingCache(storage).waitingExclusions())
+        assertEquals(listOf("Hela curry"), server.excluded.map { it.title })
+        assertEquals(emptyList(), second.curryOffers())
+    }
+
+    @Test
+    fun undoneBeforeItWasSentTheDealIsBackAtOnceAndOnlyTheTakeBackGoesOut() = runTest {
+        server.lists[monday] = curryList()
+        val session = session()
+        session.resume()
+        settle()
+        server.unreachable = true
+        session.excludeCurry()
+        session.excludeCurry(excluded = false)
+
+        assertEquals(listOf(helaCurry), session.curryOffers())
+        assertEquals(listOf(false), ShoppingCache(storage).waitingExclusions().map { it.excluded })
+        settle()
+
+        server.unreachable = false
+        server.asked.clear()
+        session.retry()
+        settle()
+        // Sent anyway: an exclusion whose answer was lost may have reached the server.
+        assertEquals(listOf("take back Hela curry", "list $monday"), server.asked)
+        assertEquals(listOf(helaCurry), session.curryOffers())
+    }
+
+    @Test
+    fun anExclusionTheServerRefusesIsDroppedAndReportedAndTheDealComesBack() = runTest {
+        server.lists[monday] = curryList()
+        val session = session()
+        session.resume()
+        settle()
+        // The ingredient was deleted on another device in the meantime.
+        server.exclusionAnswer = Load.Failed("No ingredient with id 3", 404)
+
+        session.excludeCurry()
+        settle()
+
+        assertEquals(listOf(Msg.EXCLUSION_FAILED to "No ingredient with id 3"), session.notices.map { it.msg to it.detail })
+        assertEquals(emptyList(), ShoppingCache(storage).waitingExclusions())
+        assertEquals(listOf(helaCurry), session.curryOffers())
+    }
+
+    @Test
+    fun anExclusionTheServerFailsOnStaysForLaterAndTheListStillLoads() = runTest {
+        server.lists[monday] = curryList()
+        val session = session()
+        session.resume()
+        settle()
+        server.exclusionAnswer = Load.Failed("Internal server error", 500)
+
+        session.excludeCurry()
+        settle()
+
+        assertNull(session.offlineSince)
+        assertEquals(1, ShoppingCache(storage).waitingExclusions().size)
+        assertEquals(emptyList(), session.curryOffers())
+        assertEquals(emptyList(), session.notices.toList())
+    }
+
+    @Test
+    fun theListInSettingsComesFromTheServerAfterWhatWaitsHere() = runTest {
+        server.lists[monday] = curryList()
+        // Another device on the account said the venison is not beef.
+        server.excluded += OfferExclusion(Store.AH, "Excellent hertenbiefstuk", "excellent hertenbiefstuk", 4, "Beef steak", "2026-11-17T10:00:00Z")
+        val session = session()
+        server.unreachable = true
+        session.excludeCurry()
+        settle()
+        assertEquals(listOf("Hela curry"), session.exclusions.inEffect.map { it.title })
+        assertTrue(session.exclusions.isWaiting(session.exclusions.inEffect.single()))
+
+        server.unreachable = false
+        session.exclusions.refresh()
+        settle()
+
+        assertEquals(listOf("Hela curry", "Excellent hertenbiefstuk"), session.exclusions.inEffect.map { it.title })
+        assertFalse(session.exclusions.inEffect.any { session.exclusions.isWaiting(it) })
+        assertEquals(session.exclusions.known, ShoppingCache(storage).knownExclusions())
     }
 }
 

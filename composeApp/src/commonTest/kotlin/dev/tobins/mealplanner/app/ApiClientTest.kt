@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.OfferExclusionRequest
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
@@ -28,6 +29,32 @@ class ApiClientTest {
             respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         },
     )
+
+    @Test
+    fun notThisIngredientIsAPutAndTakingItBackADeleteNamingTheSameThree() = runTest {
+        val sent = mutableListOf<String>()
+        val api = ApiClient(
+            ServerSettings("http://localhost"),
+            engine = MockEngine { request ->
+                val body = (request.body as? TextContent)?.text.orEmpty()
+                sent += "${request.method.value} ${request.url.encodedPath} ${request.url.parameters.entries().associate { it.key to it.value.single() }} $body".trim()
+                respond("""{"exclusions":[]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            },
+        )
+        // A title with what a query string must escape.
+        val request = OfferExclusionRequest(Store.JUMBO, "Chocomel, Fristi & 50% slagroom", 3)
+
+        api.setOfferExcluded(request, excluded = true)
+        api.setOfferExcluded(request, excluded = false)
+
+        assertEquals(
+            listOf(
+                """PUT /api/offers/exclusions {} {"store":"JUMBO","title":"Chocomel, Fristi & 50% slagroom","ingredientId":3}""",
+                """DELETE /api/offers/exclusions {store=JUMBO, title=Chocomel, Fristi & 50% slagroom, ingredientId=3}""",
+            ),
+            sent,
+        )
+    }
 
     @Test
     fun anUnknownTopLevelFieldIsIgnored() = runTest {

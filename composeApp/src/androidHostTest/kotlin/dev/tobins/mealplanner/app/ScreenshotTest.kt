@@ -67,6 +67,7 @@ import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.ShoppingAdvice
+import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShopsSetting
 import dev.tobins.mealplanner.api.StandardMeal
 import dev.tobins.mealplanner.api.StandardSwitch
@@ -96,12 +97,34 @@ data class Look(val dark: Boolean, val widthDp: Int, val fontScale: Float) {
     val name get() = "${if (dark) "dark" else "light"}-${widthDp}dp-x$fontScale"
 }
 
-/** The body of the "Price history" dialog of the chicken's row ([VerdictHistoryDialog]), as a dialog is a window of its own. */
+/** The title and body of the deals of the shopping row [key] ([DealDialog]), as a dialog is a window of its own. */
 @Composable
-private fun priceHistory(api: ApiClient) {
-    var offers by remember { mutableStateOf<List<Offer>>(emptyList()) }
-    LaunchedEffect(Unit) { offers = api.shoppingList(FakeBackend.WEEK_START).items.single { it.key == "chicken" }.historyOffers(Store.entries.toSet(), FakeBackend.TODAY) }
-    Box(Modifier.padding(24.dp)) { VerdictHistory(offers) }
+private fun dealDetail(api: ApiClient, key: String) {
+    var item by remember { mutableStateOf<ShoppingItem?>(null) }
+    LaunchedEffect(Unit) { item = api.shoppingList(FakeBackend.WEEK_START).items.single { it.key == key } }
+    val row = item ?: return
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(row.name, style = MaterialTheme.typography.headlineSmall)
+        DealDetail(row.dealOffers(Store.entries.toSet(), FakeBackend.TODAY), FakeBackend.TODAY, onExclude = {})
+    }
+}
+
+/** A shopping session over [api] on a device of its own, for the screens that use its "Not this ingredient". */
+@Composable
+private fun rememberSession(api: ApiClient): ShoppingSession {
+    val scope = rememberCoroutineScope()
+    return remember { ShoppingSession(scope, api.shoppingServer(), ShoppingCache(MemorySettingsStorage())) }
+}
+
+@Composable
+private fun offers(api: ApiClient, initiallyOpen: Set<String> = emptySet()) =
+    OffersScreen(api, rememberSession(api).exclusions, {}, {}, initiallyOpen)
+
+/** The "Not this ingredient" list of Settings' Shopping card ([ExcludedOffers]), with what the server lists. */
+@Composable
+private fun excludedOffers(api: ApiClient) {
+    val exclusions = rememberSession(api).exclusions
+    Column(Modifier.padding(16.dp)) { ExcludedOffers(exclusions, remember { SnackbarHostState() }) }
 }
 
 @Composable
@@ -381,8 +404,8 @@ enum class Shot(
     val fontScale: Float? = null,
     /** The fake backend's offers judged by weeks of price history (issue 118); without it, every one is too new to judge. */
     val laterVerdicts: Boolean = false,
-    /** A text to tap once it is shown, and a text to wait for after it, such as a snackbar's. */
-    val tap: Pair<String, String>? = null,
+    /** Texts to tap in turn once each is shown, each with a text to wait for after it, such as a dialog's or a snackbar's. */
+    val taps: List<Pair<String, String>> = emptyList(),
     /** A text the picture must show, waited for before it is taken: one that comes from the last answer the screen needs. */
     val shows: String? = null,
     val content: @Composable (ApiClient, ServerSettings) -> Unit,
@@ -491,16 +514,33 @@ enum class Shot(
     SHOPPING_VERDICTS_X2(laterVerdicts = true, shows = "No real discount", fontScale = 2.0f, heightDp = 6400, content = { api, _ -> shopping(api, shoppingMode = false) }),
     // In Dutch, whose words are longest ("aanbieding", "goedkoper"), down to the buy-ahead and stock-up rows.
     SHOPPING_VERDICTS_X2_NL(laterVerdicts = true, dutch = true, shows = "Geen echte korting", fontScale = 2.0f, heightDp = 7000, content = { api, _ -> shopping(api, shoppingMode = false) }),
-    // "Price history" from a deal's snackbar: the dialog's body with the chicken's offer, its verdict and its earlier offers.
-    SHOPPING_PRICE_HISTORY(laterVerdicts = true, shows = "Earlier offers", heightDp = 500, content = { api, _ -> priceHistory(api) }),
-    SHOPPING_PRICE_HISTORY_NL(laterVerdicts = true, dutch = true, shows = "Eerdere aanbiedingen", heightDp = 500, content = { api, _ -> priceHistory(api) }),
-    SHOPPING_PRICE_HISTORY_X2(laterVerdicts = true, fontScale = 2.0f, shows = "Earlier offers", heightDp = 1100, content = { api, _ -> priceHistory(api) }),
+    // A tap on a deal (issues 118 and 316): the dialog's title and body with the chicken's offer, its verdict, the cheaper pack, its
+    // earlier offers and "Not this ingredient". Early on, the pepper's: too new to judge.
+    DEAL_DETAIL(laterVerdicts = true, shows = "Earlier offers", heightDp = 640, content = { api, _ -> dealDetail(api, "i1") }),
+    DEAL_DETAIL_NL(laterVerdicts = true, dutch = true, shows = "Eerdere aanbiedingen", heightDp = 700, content = { api, _ -> dealDetail(api, "i1") }),
+    DEAL_DETAIL_X2(laterVerdicts = true, fontScale = 2.0f, shows = "Earlier offers", heightDp = 1400, content = { api, _ -> dealDetail(api, "i1") }),
+    DEAL_DETAIL_X2_NL(laterVerdicts = true, dutch = true, fontScale = 2.0f, shows = "Eerdere aanbiedingen", heightDp = 1500, content = { api, _ -> dealDetail(api, "i1") }),
+    DEAL_DETAIL_EARLY(shows = "Too new to judge", heightDp = 360, content = { api, _ -> dealDetail(api, "i9") }),
     SHOPPING_VERDICTS_STORES(laterVerdicts = true, shows = "Real deal", heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = false, view = ShoppingView.STORE) }),
     SHOPPING_VERDICTS_MODE_NL(laterVerdicts = true, shows = "Echte aanbieding", dutch = true, heightDp = 2200, content = { api, _ -> shopping(api, shoppingMode = true) }),
-    // A tap on the chicken's deal: the deal, its verdict and the cheaper pack, in the snackbar. Early on, the pepper's: too new to judge.
-    SHOPPING_VERDICT_DETAIL(laterVerdicts = true, heightDp = 900, tap = "Jumbo €4.50" to "Usually cheaper:", content = { api, _ -> shopping(api, shoppingMode = false) }),
-    SHOPPING_VERDICT_DETAIL_NL(laterVerdicts = true, dutch = true, heightDp = 900, tap = "Jumbo €4,50" to "Meestal goedkoper:", content = { api, _ -> shopping(api, shoppingMode = false) }),
-    SHOPPING_VERDICT_EARLY(heightDp = 900, tap = "AH €2.24" to "Too new to judge", content = { api, _ -> shopping(api, shoppingMode = false) }),
+    // "Not this ingredient" on the pepper's deal (issue 316): the row without its chip, and the snackbar with Undo.
+    SHOPPING_NOT_THIS_INGREDIENT(
+        heightDp = 900,
+        taps = listOf("AH €2.24" to "Not this ingredient", "Not this ingredient" to "no longer counts as"),
+        content = { api, _ -> shopping(api, shoppingMode = false) },
+    ),
+    SHOPPING_NOT_THIS_INGREDIENT_NL(
+        dutch = true,
+        heightDp = 900,
+        taps = listOf("AH €2,24" to "Niet dit ingrediënt", "Niet dit ingrediënt" to "telt niet meer als"),
+        content = { api, _ -> shopping(api, shoppingMode = false) },
+    ),
+    SHOPPING_NOT_THIS_INGREDIENT_X2(
+        fontScale = 2.0f,
+        heightDp = 1500,
+        taps = listOf("AH €2.24" to "Not this ingredient", "Not this ingredient" to "no longer counts as"),
+        content = { api, _ -> shopping(api, shoppingMode = false) },
+    ),
     RECIPES(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}) }),
     RECIPES_ROTATION(heightDp = 1100, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}, initialChoice = RotationChoice.IN_ROTATION) }),
     RECIPES_NOT_IN_ROTATION(heightDp = 800, content = { api, _ -> RecipeListScreen(api, {}, {}, {}, {}, initialChoice = RotationChoice.OUT_OF_ROTATION) }),
@@ -556,15 +596,33 @@ enum class Shot(
     COOK_MODE_TICKED(heightDp = 1400, content = { api, _ -> cookModeTicked(api, setOf(0, 1), setOf(0), eatable = false) }),
     // Every step done on a planned meal: the button that marks it eaten.
     COOK_MODE_DONE(heightDp = 1400, content = { api, _ -> cookModeTicked(api, setOf(0, 1, 2, 3, 4), setOf(0, 1, 2), eatable = true) }),
-    OFFERS(heightDp = 800, content = { api, _ -> OffersScreen(api, {}, {}) }),
-    OFFERS_EMPTY(emptyOffers = true, content = { api, _ -> OffersScreen(api, {}, {}) }),
+    OFFERS(heightDp = 800, content = { api, _ -> offers(api) }),
+    OFFERS_EMPTY(emptyOffers = true, content = { api, _ -> offers(api) }),
     // The price verdicts (issue 118). Early, two days into the history: no offer says anything until it is opened.
-    OFFERS_VERDICTS_EARLY(shows = "Too new to judge", heightDp = 800, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Rode paprika 500 g")) }),
-    // Weeks later: a real deal, one usually cheaper (opened: its line, the cheaper pack and its history), one better than usual.
-    OFFERS_VERDICTS(laterVerdicts = true, shows = "Usually cheaper:", heightDp = 900, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
-    OFFERS_VERDICTS_NL(laterVerdicts = true, shows = "Meestal goedkoper:", dutch = true, heightDp = 900, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
-    OFFERS_VERDICTS_X2(laterVerdicts = true, shows = "Usually cheaper:", fontScale = 2.0f, heightDp = 1700, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
-    OFFERS_VERDICTS_X2_NL(laterVerdicts = true, shows = "Meestal goedkoper:", dutch = true, fontScale = 2.0f, heightDp = 1800, content = { api, _ -> OffersScreen(api, {}, {}, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
+    OFFERS_VERDICTS_EARLY(shows = "Too new to judge", heightDp = 800, content = { api, _ -> offers(api, initiallyOpen = setOf("Rode paprika 500 g")) }),
+    // Weeks later: a real deal, one usually cheaper (opened: its line, the cheaper pack, its history and "Not this ingredient"), one better than usual.
+    OFFERS_VERDICTS(laterVerdicts = true, shows = "Usually cheaper:", heightDp = 900, content = { api, _ -> offers(api, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
+    OFFERS_VERDICTS_NL(laterVerdicts = true, shows = "Meestal goedkoper:", dutch = true, heightDp = 900, content = { api, _ -> offers(api, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
+    OFFERS_VERDICTS_X2(laterVerdicts = true, shows = "Usually cheaper:", fontScale = 2.0f, heightDp = 1800, content = { api, _ -> offers(api, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
+    OFFERS_VERDICTS_X2_NL(laterVerdicts = true, shows = "Meestal goedkoper:", dutch = true, fontScale = 2.0f, heightDp = 1900, content = { api, _ -> offers(api, initiallyOpen = setOf("Kipdijfilet 600 g")) }),
+    // "Not this ingredient" on the opened chicken (issue 316): gone from "My ingredients", and the snackbar with Undo.
+    OFFERS_NOT_THIS_INGREDIENT(
+        heightDp = 800,
+        taps = listOf("Not this ingredient" to "no longer counts as"),
+        content = { api, _ -> offers(api, initiallyOpen = setOf("Kipdijfilet 600 g")) },
+    ),
+    OFFERS_NOT_THIS_INGREDIENT_NL(
+        dutch = true,
+        heightDp = 800,
+        taps = listOf("Niet dit ingrediënt" to "telt niet meer als"),
+        content = { api, _ -> offers(api, initiallyOpen = setOf("Kipdijfilet 600 g")) },
+    ),
+    OFFERS_NOT_THIS_INGREDIENT_X2(
+        fontScale = 2.0f,
+        heightDp = 1500,
+        taps = listOf("Not this ingredient" to "no longer counts as"),
+        content = { api, _ -> offers(api, initiallyOpen = setOf("Kipdijfilet 600 g")) },
+    ),
     PRICES(heightDp = 800, content = { api, _ -> PricesScreen(api, {}) }),
     PRICES_EMPTY(emptyPrices = true, content = { api, _ -> PricesScreen(api, {}) }),
     PROGRESS(heightDp = 1800, content = { api, _ -> ProgressScreen(api, {}, {}) }),
@@ -666,6 +724,11 @@ enum class Shot(
     }),
     // The Notifications card (Android only): the defaults with weigh-in turned on, in both languages, with notifications refused
     // by Android, and at font scale 2 in both languages, where the hints are longest (prepped food to throw away, issue 264).
+    // The "Not this ingredient" list of the Shopping card (issue 316): two offers set apart, each with "Take back"; in Dutch
+    // and at font scale 2.
+    SETTINGS_EXCLUSIONS(shows = "Hela curry", heightDp = 360, content = { api, _ -> excludedOffers(api) }),
+    SETTINGS_EXCLUSIONS_NL(dutch = true, shows = "Hela curry", heightDp = 400, content = { api, _ -> excludedOffers(api) }),
+    SETTINGS_EXCLUSIONS_X2(fontScale = 2.0f, shows = "Hela curry", heightDp = 800, content = { api, _ -> excludedOffers(api) }),
     NOTIFICATIONS(heightDp = 860, content = { _, _ -> notificationsCard(allowed = true) }),
     NOTIFICATIONS_NL(dutch = true, heightDp = 920, content = { _, _ -> notificationsCard(allowed = true) }),
     NOTIFICATIONS_REFUSED(heightDp = 960, content = { _, _ -> notificationsCard(allowed = false) }),
@@ -751,7 +814,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
             }
             // Each comes from more than one answer (the list, the account's stores): wait for the node itself.
             shot.shows?.let { waitForText(it) }
-            shot.tap?.let { (target, shown) ->
+            shot.taps.forEach { (target, shown) ->
                 waitForText(target)
                 compose.onNodeWithText(target).performClick()
                 waitForText(shown)

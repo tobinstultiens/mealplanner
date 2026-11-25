@@ -163,9 +163,25 @@ enum class Msg(private val english: String, private val dutch: String) {
     VERDICT_RAISED("Price went up first: {0} → {1}", "Prijs eerst verhoogd: {0} → {1}"),
     VERDICT_ENDED_EARLY("Ended early", "Eerder gestopt"),
     VERDICT_EARLIER("Earlier offers", "Eerdere aanbiedingen"),
-    VERDICT_HISTORY("Price history", "Prijsgeschiedenis"),
-    VERDICT_SHOW("Show the price history", "Toon de prijsgeschiedenis"),
-    VERDICT_HIDE("Hide the price history", "Verberg de prijsgeschiedenis"),
+    OFFER_SHOW("Show more of this offer", "Toon meer van deze aanbieding"),
+    OFFER_HIDE("Show less of this offer", "Toon minder van deze aanbieding"),
+
+    // --- "Not this ingredient" (issue 316)
+    NOT_THIS_INGREDIENT("Not this ingredient", "Niet dit ingrediënt"),
+    EXCLUDED("“{0}” at {1} no longer counts as {2}", "“{0}” van {1} telt niet meer als {2}"),
+    TAKEN_BACK("“{0}” at {1} counts as {2} again", "“{0}” van {1} telt weer als {2}"),
+    EXCLUSION_FAILED("Could not save “Not this ingredient”: {0}", "“Niet dit ingrediënt” opslaan is niet gelukt: {0}"),
+    EXCLUSIONS_HINT(
+        "Offers you said are not the ingredient they were matched to. They stay apart in later weeks and in other packs.",
+        "Aanbiedingen waarvan je zei dat ze niet het ingrediënt zijn waar ze bij stonden. Ze blijven apart, ook in latere weken en andere verpakkingen.",
+    ),
+    EXCLUSIONS_NONE(
+        "None yet. An offer on the Offers screen, and a deal on the shopping list, has “Not this ingredient”.",
+        "Nog geen. Een aanbieding in Aanbiedingen, en op de boodschappenlijst, heeft “Niet dit ingrediënt”.",
+    ),
+    EXCLUDED_FROM("{0} · not counted as {1}", "{0} · telt niet als {1}"),
+    EXCLUSION_WAITING("not sent yet", "nog niet verstuurd"),
+    TAKE_BACK("Take back", "Intrekken"),
 
     // --- App shell and login
     YOUR_ACCOUNT("your account", "je account"),

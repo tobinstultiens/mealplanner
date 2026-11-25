@@ -41,12 +41,19 @@ import kotlinx.coroutines.launch
 /**
  * This week's store offers. By default only those for ingredients in the catalogue,
  * which are the ones that can end up in a plan. An offer the server judged by its price history says
- * so under its deal, and a tap opens the verdict at length ([VerdictDetail]); [initiallyOpen] are the
- * titles of offers open from the start, for the screenshots.
+ * so under its deal; a tap on an offer of one of the account's ingredients opens the verdict at length
+ * ([VerdictDetail]) and "Not this ingredient" ([exclusions]), whose exclusions are laid over the offers
+ * shown. [initiallyOpen] are the titles of offers open from the start, for the screenshots.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit, initiallyOpen: Set<String> = emptySet()) {
+internal fun OffersScreen(
+    api: ApiClient,
+    exclusions: OfferExclusionQueue,
+    onBack: () -> Unit,
+    onOpenPrices: () -> Unit,
+    initiallyOpen: Set<String> = emptySet(),
+) {
     val t = LocalStrings.current
     val today = rememberToday()
     val loaded = rememberLoad<OffersState>("offers")
@@ -60,7 +67,8 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit, i
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(loaded, reload, frontReturns, today) { loaded.refresh { api.offers(today) } }
+    // Fetched again once the server has an exclusion made here: it may match the offer to another ingredient.
+    LaunchedEffect(loaded, reload, frontReturns, today, exclusions.known) { loaded.refresh { api.offers(today) } }
 
     SubScreen(t(Msg.OFFERS), onBack, snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
         BarAction(AppIcons.Refresh, if (refreshing) t(Msg.FETCHING_OFFERS) else t(Msg.REFRESH_OFFERS), busy = refreshing, onClick = {
@@ -79,7 +87,7 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit, i
                 ErrorMessage(t(Msg.OFFERS_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
-                val all = current.value.offers
+                val all = current.value.withoutExcluded(exclusions.inEffect).offers
                 val shown = all
                     .filter { !onlyMatched || it.ingredientName != null }
                     .filter { store == null || it.store == store }
@@ -111,7 +119,9 @@ fun OffersScreen(api: ApiClient, onBack: () -> Unit, onOpenPrices: () -> Unit, i
                         }
                     }
                     items(shown, key = { "${it.store}|${it.url ?: it.title}|${it.validFrom}" }) { offer ->
-                        OfferRow(offer, initiallyOpen = offer.title in initiallyOpen)
+                        OfferRow(offer, initiallyOpen = offer.title in initiallyOpen) { id, name ->
+                            exclusions.chooseWithUndo(scope, snackbar, t, offer.store, offer.title, id, name, excluded = true)
+                        }
                         HorizontalDivider()
                     }
                 }
@@ -146,17 +156,28 @@ private fun SourceLine(status: OfferSourceStatus) {
     }
 }
 
-/** One offer; with a verdict, a tap opens and closes it at length under the row. */
+/**
+ * One offer. One of the account's ingredients opens and closes on a tap: under it its verdict at length, and "Not this
+ * ingredient" ([onExclude], given the ingredient's id and name).
+ */
 @Composable
-private fun OfferRow(offer: Offer, initiallyOpen: Boolean) {
+private fun OfferRow(offer: Offer, initiallyOpen: Boolean, onExclude: (Long, String) -> Unit) {
     val t = LocalStrings.current
     val verdict = offer.verdict
+    val ingredientId = offer.ingredientId
+    val ingredientName = offer.ingredientName
+    val canOpen = verdict != null || ingredientId != null
     var open by rememberSaveable { mutableStateOf(initiallyOpen) }
-    val opens = if (verdict == null) Modifier else Modifier.clickable(onClickLabel = t(if (open) Msg.VERDICT_HIDE else Msg.VERDICT_SHOW)) { open = !open }
+    val opens = if (!canOpen) Modifier else Modifier.clickable(onClickLabel = t(if (open) Msg.OFFER_HIDE else Msg.OFFER_SHOW)) { open = !open }
     Column(opens.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp)) {
         OfferLine(offer)
-        // Under the text, past the picture.
-        if (open && verdict != null) VerdictDetail(verdict, Modifier.padding(start = 48.dp + 12.dp, top = 6.dp))
+        if (open && canOpen) {
+            // Under the text, past the picture.
+            Column(Modifier.padding(start = 48.dp + 12.dp, top = 6.dp)) {
+                verdict?.let { VerdictDetail(it) }
+                if (ingredientId != null && ingredientName != null) NotThisIngredientButton { onExclude(ingredientId, ingredientName) }
+            }
+        }
     }
 }
 

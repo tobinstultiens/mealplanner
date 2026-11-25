@@ -103,9 +103,23 @@ internal fun ShoppingScreen(
         session.shown(notice)
     }
     technicalDetails?.let { DetailsDialog(t(Msg.DETAILS), it) { technicalDetails = null } }
-    // A row's price history, opened from its deal's snackbar: the row's name and its offers.
-    var priceHistory by remember { mutableStateOf<Pair<String, List<Offer>>?>(null) }
-    priceHistory?.let { (name, offers) -> VerdictHistoryDialog(name, offers) { priceHistory = null } }
+    // The row whose deals are open, from a tap on its chip. "Not this ingredient" closes them: the snackbar says what it did.
+    var dealsOf by remember { mutableStateOf<ShoppingItem?>(null) }
+    dealsOf?.let { item ->
+        val ingredientId = item.ingredientId
+        DealDialog(
+            item.name,
+            item.dealOffers(shops, today),
+            today,
+            onExclude = ingredientId?.let { id ->
+                { offer ->
+                    dealsOf = null
+                    session.exclusions.chooseWithUndo(scope, snackbar, t, offer.store, offer.title, id, item.name, excluded = true)
+                }
+            },
+            onClose = { dealsOf = null },
+        )
+    }
 
     /** Sets one item's tick: shown at once, the server hears of it in the background. */
     fun tick(key: String, checked: Boolean) = session.tick(key, checked)
@@ -255,19 +269,7 @@ internal fun ShoppingScreen(
                         else if (shoppingMode) tickWithUndo(item) else tick(item.key, !item.checked)
                     },
                     onRemove = item.extraId?.let { id -> { session.remove(id) } },
-                    onOfferClick = {
-                        scope.launch {
-                            snackbar.currentSnackbarData?.dismiss()
-                            // With earlier offers to list, the snackbar opens them, as it has no room for a list.
-                            val history = item.historyOffers(shops, today)
-                            val answer = snackbar.showSnackbar(
-                                item.dealText(shops, today, t),
-                                actionLabel = if (history.isEmpty()) null else t(Msg.VERDICT_HISTORY),
-                                duration = if (history.isEmpty()) SnackbarDuration.Short else SnackbarDuration.Long,
-                            )
-                            if (answer == SnackbarResult.ActionPerformed) priceHistory = item.name to history
-                        }
-                    },
+                    onOfferClick = { dealsOf = item },
                 )
                 if (list.items.isEmpty()) {
                     Column(Modifier.padding(padding)) {

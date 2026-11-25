@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import dev.tobins.mealplanner.api.OfferExclusions
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
@@ -27,6 +28,12 @@ internal interface ShoppingServer {
 
     /** Puts the ingredient on hand in the pantry, as set by hand: how the app used up a bought item before [useUp]. */
     suspend fun putOnHand(ingredientId: Long): Load<Unit>
+
+    /** Makes or takes back one "Not this ingredient" ([ExclusionChange]); the answer is the account's list of them. */
+    suspend fun setExcluded(change: ExclusionChange): Load<OfferExclusions>
+
+    /** The account's "Not this ingredient" list. */
+    suspend fun exclusions(): Load<OfferExclusions>
 }
 
 internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServer {
@@ -47,6 +54,10 @@ internal fun ApiClient.shoppingServer(): ShoppingServer = object : ShoppingServe
     override suspend fun useUp(weekStart: String, key: String) = loadUnlessOld { useUpShopping(weekStart, key) }
 
     override suspend fun putOnHand(ingredientId: Long) = load { setOnHand(ingredientId, true); Unit }
+
+    override suspend fun setExcluded(change: ExclusionChange) = load { setOfferExcluded(change.request, change.excluded) }
+
+    override suspend fun exclusions() = load { offerExclusions() }
 }
 
 /** [load] of a call that answers null from a server from before its route; then null as well. */

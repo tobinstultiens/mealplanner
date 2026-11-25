@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.OfferExclusions
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
@@ -66,6 +67,8 @@ class PageVisibilityTest {
         override suspend fun tickAgain(weekStart: String, key: String) = noItems(weekStart)
         override suspend fun useUp(weekStart: String, key: String) = noItems(weekStart)
         override suspend fun putOnHand(ingredientId: Long): Load<Unit> = Load.Ready(Unit)
+        override suspend fun setExcluded(change: ExclusionChange): Load<OfferExclusions> = Load.Ready(OfferExclusions(emptyList()))
+        override suspend fun exclusions(): Load<OfferExclusions> = Load.Ready(OfferExclusions(emptyList()))
     }
 
     @Test

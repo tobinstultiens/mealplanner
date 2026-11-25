@@ -37,32 +37,41 @@ internal fun VerdictLabel(verdict: PriceVerdict?, modifier: Modifier = Modifier,
 }
 
 /**
- * The price history of a shopping row's [offers] (issue 118), as the Offers screen opens it: each offer's deal and its
- * verdict at length ([VerdictDetail]) with the earlier offers. Opened from the deal's snackbar ("Price history"), as a
- * snackbar has no room for a list.
+ * A shopping row's deals, as a tap on its chip opens them, under the row's [title]: per offer ([dealOffers]) the deal,
+ * the product, its verdict at length with the earlier offers (issue 118) and, on a row of one of the account's
+ * ingredients, "Not this ingredient" (issue 316). A dialog rather than a snackbar, as each offer needs a button of its
+ * own: a row can have a right offer at one store and a wrong one at another.
  */
 @Composable
-internal fun VerdictHistoryDialog(title: String, offers: List<Offer>, onClose: () -> Unit) {
+internal fun DealDialog(title: String, offers: List<Offer>, today: String, onExclude: ((Offer) -> Unit)?, onClose: () -> Unit) {
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(title) },
-        text = { VerdictHistory(offers, Modifier.verticalScroll(rememberScrollState())) },
+        text = { DealDetail(offers, today, onExclude, Modifier.verticalScroll(rememberScrollState())) },
         confirmButton = { TextButton(onClick = onClose) { Text(LocalStrings.current(Msg.CLOSE)) } },
     )
 }
 
-/** The body of [VerdictHistoryDialog]: per offer its deal in a few words, then its verdict at length. */
+/** The body of [DealDialog]: per offer its deal ([dealHeading]), the product ([productText]), its verdict at length and [onExclude]'s button. */
 @Composable
-internal fun VerdictHistory(offers: List<Offer>, modifier: Modifier = Modifier) {
+internal fun DealDetail(offers: List<Offer>, today: String, onExclude: ((Offer) -> Unit)?, modifier: Modifier = Modifier) {
     val t = LocalStrings.current
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         offers.forEach { offer ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(offer.shortText(t), style = MaterialTheme.typography.titleSmall)
-                offer.verdict?.let { VerdictDetail(it) }
+                Text(offer.dealHeading(today, t), style = MaterialTheme.typography.titleSmall)
+                Text(offer.productText(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                offer.verdict?.let { VerdictDetail(it, Modifier.padding(top = 4.dp)) }
+                onExclude?.let { exclude -> NotThisIngredientButton { exclude(offer) } }
             }
         }
     }
+}
+
+/** "Not this ingredient" under an offer (issue 316): one tap and no question, as the snackbar that follows has Undo. */
+@Composable
+internal fun NotThisIngredientButton(onClick: () -> Unit) {
+    TextButton(onClick = onClick) { Text(LocalStrings.current(Msg.NOT_THIS_INGREDIENT)) }
 }
 
 /**

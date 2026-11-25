@@ -20,8 +20,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -45,7 +47,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ServerSettingsScreen(
+internal fun ServerSettingsScreen(
     current: ServerSettings,
     /** Who is logged in, when known. */
     account: String?,
@@ -75,16 +77,19 @@ fun ServerSettingsScreen(
     onBack: () -> Unit,
     /** The notifications' switches and the system's permission; null where the app posts none (the web). */
     notifications: NotificationSettings? = null,
+    /** The account's "Not this ingredient" list, shown in the Shopping card while logged in. */
+    exclusions: OfferExclusionQueue? = null,
 ) {
     val t = LocalStrings.current
     var url by remember { mutableStateOf(current.url) }
     var result by remember { mutableStateOf<ConnectionResult?>(null) }
     var testing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
     val draft = ServerSettings(url.trim().trimEnd('/'))
     val urlValid = draft.url.startsWith("http://") || draft.url.startsWith("https://")
 
-    SubScreen(t(Msg.SETTINGS), onBack) { padding ->
+    SubScreen(t(Msg.SETTINGS), onBack, snackbar) { padding ->
         // Without an account the server comes first: nothing else works until it is set.
         val server: @Composable () -> Unit = {
             SettingsCard(t(Msg.CARD_SERVER)) {
@@ -172,6 +177,7 @@ fun ServerSettingsScreen(
                     )
                     shopsError?.let { ErrorBanner(t(Msg.SHOPS_SAVE_FAILED_TITLE), it) }
                     ShoppingAdviceSwitches(loadShoppingAdvice, saveShoppingAdvice)
+                    exclusions?.let { ExcludedOffers(it, snackbar) }
                 }
             }
             notifications?.let { NotificationsCard(it) }
@@ -215,6 +221,43 @@ private fun ShoppingAdviceSwitches(read: suspend () -> ShoppingAdvice, save: sus
     SwitchRow(t(Msg.BUY_AHEAD_SETTING), t(Msg.BUY_AHEAD_SETTING_HINT), current.buyAhead) { change(current.copy(buyAhead = it)) }
     SwitchRow(t(Msg.STOCK_UP_SETTING), t(Msg.STOCK_UP_SETTING_HINT), current.stockUp) { change(current.copy(stockUp = it)) }
     error?.let { ErrorBanner(t(Msg.ADVICE_SAVE_FAILED_TITLE), it) }
+}
+
+/**
+ * The account's "Not this ingredient" list (issue 316), the newest first, each with "Take back", which asks nothing: the
+ * snackbar that follows has Undo. Read from the device, so it shows without a connection too, and asked for again when
+ * shown, as another device on the account may have changed it. One made here that the server does not have yet says so.
+ */
+@Composable
+internal fun ExcludedOffers(exclusions: OfferExclusionQueue, snackbar: SnackbarHostState) {
+    val t = LocalStrings.current
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(exclusions) { exclusions.refresh() }
+    val shown = exclusions.inEffect
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
+        Text(t(Msg.NOT_THIS_INGREDIENT), style = MaterialTheme.typography.labelLarge)
+        Text(
+            t(if (shown.isEmpty()) Msg.EXCLUSIONS_NONE else Msg.EXCLUSIONS_HINT),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        shown.forEach { exclusion ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(exclusion.title, style = MaterialTheme.typography.bodyMedium)
+                    val counted = t(Msg.EXCLUDED_FROM, exclusion.store.shortName(), exclusion.ingredientName)
+                    Text(
+                        if (exclusions.isWaiting(exclusion)) "$counted · ${t(Msg.EXCLUSION_WAITING)}" else counted,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = {
+                    exclusions.chooseWithUndo(scope, snackbar, t, exclusion.store, exclusion.title, exclusion.ingredientId, exclusion.ingredientName, excluded = false)
+                }) { Text(t(Msg.TAKE_BACK)) }
+            }
+        }
+    }
 }
 
 /**
