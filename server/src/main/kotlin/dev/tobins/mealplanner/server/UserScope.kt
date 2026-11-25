@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.generation.RecipeGenerator
 import java.io.File
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -54,6 +55,7 @@ class UserScope(
             regularPerKg = { prices.perKg(ingredients) },
             sections = sections::byIngredient,
             keeps = sections::keepsByIngredient,
+            withVerdicts = { dealVerdicts.onOffers(it, Instant.now()) },
             advice = shoppingAdvice::setting,
             productImages = { prices.productImages(ingredients) },
             offered = PriceHistoryRepository(db)::offered,

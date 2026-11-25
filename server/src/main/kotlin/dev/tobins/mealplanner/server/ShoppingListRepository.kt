@@ -46,6 +46,8 @@ class ShoppingListRepository(
     private val sections: () -> Map<Long, ShopSection> = { emptyMap() },
     /** Whether each ingredient keeps until next week, by id, given the [sections]. */
     private val keeps: (Map<Long, ShopSection>) -> Map<Long, Boolean> = { emptyMap() },
+    /** [offers] with the price verdicts on them, for the stock-up advice; as they are when the verdicts are not to hand. */
+    private val withVerdicts: (List<Offer>) -> List<Offer> = { it },
     /** Which advice the account's shopping list gives. */
     private val advice: () -> ShoppingAdvice = { ShoppingAdvice() },
     /** The picture of the product each of the account's ingredients is priced with, by id. */
@@ -109,8 +111,10 @@ class ShoppingListRepository(
         val stockUpDismissed = ShoppingKey.Dismissed(ShoppingAdviceGroup.STOCK_UP) in checked
         // Advice goes by the offers of the stores the account shops at only: it is about saving money there.
         val inUse = shops()
+        // Stocking up goes by the price verdict too (issue 118), so the offers are judged only when it is advised.
+        val inUseOffers = offers.mapValues { (_, all) -> all.filter { it.store in inUse } }.filterValues { it.isNotEmpty() }
         val advisor = ShoppingAdvisor(
-            offers = offers.mapValues { (_, all) -> all.filter { it.store in inUse } }.filterValues { it.isNotEmpty() },
+            offers = if (wanted.stockUp && !stockUpDismissed) judged(inUseOffers) else inUseOffers,
             perKg = perKg,
             sectionOf = sectionOf,
             keeps = keeps(sectionOf),
@@ -141,6 +145,13 @@ class ShoppingListRepository(
             noLongerNeeded = noLongerNeeded(ticks, rows.mapTo(HashSet()) { it.key }, stock, sectionOf, staples = catalogue.filter { it.isStaple }.mapTo(HashSet()) { it.id }),
             preppedBoughtIn = preppedBoughtIn(start),
         )
+    }
+
+    /** [offers] by ingredient, each with its verdict. */
+    private fun judged(offers: Map<Long, List<Offer>>): Map<Long, List<Offer>> {
+        val all = offers.flatMap { (id, list) -> list.map { id to it } }
+        val withVerdict = withVerdicts(all.map { it.second })
+        return all.indices.groupBy({ all[it].first }, { withVerdict[it] })
     }
 
     /** The earliest week before the one starting [start] whose list bought a batch eaten in it ([ShoppingList.preppedBoughtIn]). */

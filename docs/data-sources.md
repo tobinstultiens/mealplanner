@@ -716,6 +716,15 @@ regular price are those of all the packs, its saving is counted and its tick sto
 (`PackSize.stockUpPacks`). A deal for more than 6 packs, more than 10 kg in all, or several packs of
 a size that cannot be weighed is not advised. Advice only: it never changes the plan.
 
+Stock-up goes by the price verdict on the offer ("Is it a good deal?"), since staples keep and waiting is
+a real option (issue 118, step d). An offer whose verdict is "no real discount" (`NOT_A_DEAL`,
+`ALWAYS_ON_OFFER`), "usually cheaper" (`WORSE_THAN_USUAL`) or "can be cheaper" (`CHEAPER_ANOTHER_WAY`)
+is not advised: the ingredient is advised by its next best offer without such a verdict, or not at all.
+Of the rest, a real deal (`REAL_DEAL`) comes before the others when more than six qualify; the six are then
+chosen by saving as before. A usual deal, too little history ("not enough history yet": most offers, for the
+first eight weeks) and nothing to compare by leave the advice as it was. The row's offer carries its
+verdict (`Offer.verdict`), so the app says "Real deal" on it as on any deal.
+
 **Ticked items go to the pantry.** Ticking a buy-ahead item puts its ingredient on hand from next
 week (`stock.fromWeek`), so this week's meals, list and recipe ideas still get their own amount and
 next week's plan prefers the meals that use it (the planner's on-hand bonus); ticking a stock-up item

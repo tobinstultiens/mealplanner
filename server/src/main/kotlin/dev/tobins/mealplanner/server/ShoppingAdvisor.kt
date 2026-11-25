@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
+import dev.tobins.mealplanner.api.VerdictKind
 import dev.tobins.mealplanner.planner.AheadOption
 import dev.tobins.mealplanner.planner.BuyAhead
 import dev.tobins.mealplanner.pricing.PackSize
@@ -75,7 +76,10 @@ class ShoppingAdvisor(
      * What to stock up on: [ingredients] that keep and are a staple, or that a recipe uses ([used])
      * and keep for months; on offer now, not on hand ([onHand]) unless this list's own tick put them
      * there, and not on the list already ([listed]). The packs the best offer's deal wants, one when it wants no more; the
-     * [MAX_STOCK_UP] that save most, in walking order.
+     * [MAX_STOCK_UP] that save most, in walking order. Staples keep, so waiting is an option and the price verdict on an offer
+     * ([Offer.verdict], issue 118) counts: an offer whose verdict is [discouragesStockingUp][VerdictKind.discouragesStockingUp]
+     * is passed over for the ingredient's next best, and the offers with a real deal come first when more than
+     * [MAX_STOCK_UP] qualify, saving most first among alike. Without a verdict an offer is advised as it always was.
      */
     fun stockUp(ingredients: List<Ingredient>, used: Set<Long>, onHand: Set<Long>, listed: Set<Long>): List<ShoppingItem> =
         ingredients.asSequence()
@@ -84,7 +88,7 @@ class ShoppingAdvisor(
             .filter { it.id !in onHand || ShoppingKey.Stock(it.id) in checked }
             .mapNotNull(::pack)
             .filter { it.saving >= MIN_STOCK_UP_SAVING }
-            .sortedByDescending { it.saving }
+            .sortedWith(compareByDescending<Pack> { it.offer.verdict?.verdict == VerdictKind.REAL_DEAL }.thenByDescending { it.saving })
             .take(MAX_STOCK_UP)
             .sortedWith(compareBy({ it.section.ordinal }, { it.ingredient.name.lowercase() }))
             .map { it.toItem() }
@@ -95,7 +99,7 @@ class ShoppingAdvisor(
      * null when what that saves is unknown or the deal asks for an unreasonable amount.
      */
     private fun pack(ingredient: Ingredient): Pack? {
-        val offer = offers[ingredient.id]?.let(::bestOffer)?.takeIf { it.paidShare != null } ?: return null
+        val offer = offers[ingredient.id]?.filter { it.verdict?.verdict?.discouragesStockingUp != true }?.let(::bestOffer)?.takeIf { it.paidShare != null } ?: return null
         val packGrams = PackSize.grams(offer.packSize ?: offer.title, ingredient.gramsPerPiece, ingredient.gramsPerMl)
         val packs = PackSize.stockUpPacks(offer, packGrams) ?: return null
         val regularPack = packGrams?.let { g -> perKg[ingredient.id]?.let { g / 1000 * it } }

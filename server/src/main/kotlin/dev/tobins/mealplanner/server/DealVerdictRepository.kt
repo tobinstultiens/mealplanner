@@ -68,6 +68,12 @@ class DealVerdictRepository(
     fun on(state: OffersState, now: Instant): OffersState = attached(state, now) { verdictOf -> state.copy(offers = state.offers.map(verdictOf)) }
 
     /**
+     * [offers] with the verdicts on those of the account's offers valid at [now], as [on] the offers of an answer: for the
+     * stock-up advice, which goes by them before the list is made (issue 118, step d).
+     */
+    fun onOffers(offers: List<Offer>, now: Instant): List<Offer> = attached(offers, now) { verdictOf -> offers.map(verdictOf) }
+
+    /**
      * [list]'s offers with their verdicts, as [on] the offers: on every row's offers, the advice's and those of what is no
      * longer needed, so that the list the app keeps offline has them too.
      */
