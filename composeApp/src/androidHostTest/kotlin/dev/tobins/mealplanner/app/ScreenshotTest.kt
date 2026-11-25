@@ -419,6 +419,11 @@ enum class Shot(
     PLANNING_X2(planning = true, heightDp = 5600, fontScale = 2.0f, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
     PLANNING_X2_NL(planning = true, dutch = true, heightDp = 6000, fontScale = 2.0f, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
     // Nothing to suggest: why, and the way to the recipes, in both languages.
+    // What a phone shows before any scrolling: the chosen dinners are one line, so that several suggestions fit above "Fill the rest".
+    PLANNING_PHONE(planning = true, heightDp = 800, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}) }),
+    // A week wholly in the past: it says so and offers nothing to plan.
+    PLANNING_WEEK_OVER(planning = true, heightDp = 640, content = { api, _ -> PlanningScreen(api, plusDays(FakeBackend.WEEK_START, -7), {}, {}) }),
+    PLANNING_WEEK_OVER_NL(planning = true, dutch = true, heightDp = 640, content = { api, _ -> PlanningScreen(api, plusDays(FakeBackend.WEEK_START, -7), {}, {}) }),
     PLANNING_NOTHING(planning = true, nothingToSuggest = true, heightDp = 1200, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}, onOpenRecipes = {}) }),
     PLANNING_NOTHING_NL(planning = true, nothingToSuggest = true, dutch = true, heightDp = 1300, content = { api, _ -> PlanningScreen(api, FakeBackend.WEEK_START, {}, {}, onOpenRecipes = {}) }),
     // "Another recipe" for Monday's dinner: the same suggestions to choose from, and the planner's own choice.

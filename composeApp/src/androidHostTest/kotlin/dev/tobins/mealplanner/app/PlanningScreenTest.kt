@@ -20,6 +20,8 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.WeekPlan
 import org.junit.After
 import org.junit.Before
@@ -166,6 +168,10 @@ class PlanningScreenTest {
         scrollTo("≈ €28.20 for 9 meals, €3.60 saved by offers")
         waitFor("Done")
         val takeOut = hasContentDescription("Take Gochujang chicken thighs with rice and quick-pickled cucumber out")
+        // The chosen dinners are one line until opened.
+        assertEquals(0, compose.onAllNodes(takeOut).fetchSemanticsNodes().size, "collapsed: no take-out button yet")
+        compose.onNode(list).performScrollToNode(hasText("Chosen dinners (3)"))
+        compose.onNodeWithText("Show").performClick()
         compose.onNode(list).performScrollToNode(takeOut)
         compose.onNode(takeOut).performClick()
         waitForAnswer("DELETE /api/plans/$week/planning/picks/21")
@@ -329,5 +335,51 @@ class PlanningScreenTest {
         waitForAnswer("PUT /api/plans/$week/meals/0/DINNER")
         assertTrue("PUT /api/plans/$week/meals/0/DINNER {\"recipeId\":21}" in backend.changes, "${backend.changes}")
         compose.waitForPlan()
+    }
+
+    @Test
+    fun theChosenDinnersAreOneLineWithTheirCountUntilOpened() {
+        showPlanning()
+        waitFor("Chosen dinners (2)")
+        waitFor("Lentil soup, Shakshuka")
+        assertEquals(0, count("Take Lentil soup out"), "no row of its own while collapsed")
+        compose.onNodeWithText("Show").performClick()
+        assertEquals(1, compose.onAllNodes(hasContentDescription("Take Lentil soup out")).fetchSemanticsNodes().size)
+        compose.onNodeWithText("Hide").performClick()
+        waitFor("Lentil soup, Shakshuka")
+    }
+
+    @Test
+    fun aWeekWhollyInThePastSaysSoAndOffersNoPlanningOrDone() {
+        val pastWeek = plusDays(week, -7)
+        compose.setContent {
+            CompositionLocalProvider(LocalStrings provides Strings.English) { PlanningScreen(api, pastWeek, onBack = {}, onPlanned = { planned = it }) }
+        }
+        waitFor("This week is over")
+        assertEquals(0, count("Done") + count("Fill the rest") + count("Suggestions"))
+        assertTrue(backend.requests.none { "/planning" in it }, "decided from the dates, not asked of the server: ${backend.requests}")
+    }
+
+    @Test
+    fun theCurrentWeekIsNotOverEvenOnItsLastDay() {
+        appClock = object : Clock {
+            override fun now(): Instant = Instant.parse("${plusDays(week, 6)}T10:30:00Z")
+        }
+        showPlanning()
+        waitFor("Week of 16 Nov")
+        assertEquals(0, count("This week is over"))
+    }
+
+    @Test
+    fun anotherRecipeAgainstAnOlderServerSaysSoAndKeepsThePlannersChoice() {
+        use(FakeBackend(planning = false))
+        compose.setContent {
+            CompositionLocalProvider(LocalStrings provides Strings.English) {
+                AnotherDinnerScreen(api, week, PlannedMeal(0, MealSlot.DINNER, 4, "Chicken", 1.0, 810.0, 55.0), onBack = {}, onChanged = {})
+            }
+        }
+        waitFor("This server plans the week in one go")
+        waitFor("Let the planner choose")
+        assertEquals(0, count("Could not load"), "no load error")
     }
 }

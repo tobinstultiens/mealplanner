@@ -222,8 +222,10 @@ no one-tap Generate any more, and "Fill the rest" with nothing chosen is what Ge
 week" (short enough for the largest font), names the week and how many dinners are still to choose, shows the strip
 (the week's cost and saving "for 9 meals", as each chosen dinner counts with its leftover lunch, which is why one
 dinner of ≈ €3.07 is ≈ €6.14 for 2 meals there and on the Plan; and its calories, protein and fibre against what
-those meals should give: only shown, never a warning), the dinners chosen (each with a button to take it out; one
-whose recipe lost its amounts says so, as Done refuses until it is out), about six suggestion cards with a line per
+those meals should give: only shown, never a warning; its explanation is the last line of the list), the dinners
+chosen (one line of titles with their count, "Show" opens each with a button to take it out, so that the suggestions
+keep the screen on a phone; one whose recipe lost its amounts says so and is open from the start, as Done refuses until
+it is out), about six suggestion cards with a line per
 reason ("On offer: chicken thigh fillet at AH (25% korting)", "Uses what is there: feta", "Favourite: rated 5 of 5 ·
 not eaten for 4 weeks", "Not tried yet"), the price of a serving with the saving, and what the planner's portion gives.
 Tapping a card adds it; "Not this week" hides it, and the hidden recipes are listed with "Show again"; "Show others" asks
@@ -237,7 +239,8 @@ dinner's menu has "Move to another day…" where the server lets it move (`canMo
 listing the other days with the dinner it would swap with; a day that has passed, or whose dinner stays, is greyed and
 says why ("Lentil soup stays on its day: it was eaten"). The "Plan next week" notification opens the
 planning screen of next week. A server from before the screen answers 404, and the screen then plans the week in one
-go, as before. Everything is under `/api/plans/{weekStart}/planning` and per account:
+go, as before; "Another recipe" says the same sentence there (the planner's own choice stays). A week wholly in the
+past says that it is over and offers nothing to plan: the app decides it from the week's dates. Everything is under `/api/plans/{weekStart}/planning` and per account:
 
 - `GET planning` (`WeekPlanning`): the days whose dinner is still to choose (`openDays`: today and the days after it
   without a dinner the week keeps when it is planned, which is one locked, prepped, eaten, skipped, with a prepped side
