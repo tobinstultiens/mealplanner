@@ -707,6 +707,13 @@ enum class Shot(
     LOGIN_WAITING_NL(dutch = true, heightDp = 820, content = { _, _ ->
         LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.WAITING_FOR_APPROVAL, error = null, busy = false, {}, {}, onRegister = {})
     }),
+    // The same at the largest font (issue 337).
+    LOGIN_REGISTER_X2(heightDp = 1500, fontScale = 2.0f, content = { _, _ ->
+        LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.LOGIN_OPENED, error = null, busy = false, {}, {}, onRegister = {})
+    }),
+    LOGIN_WAITING_X2(heightDp = 1700, fontScale = 2.0f, content = { _, _ ->
+        LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.WAITING_FOR_APPROVAL, error = null, busy = false, {}, {}, onRegister = {})
+    }),
     // The form that asks for an account (issue 314): empty; after Send with every field wrong; refused by the server; sent.
     // Each in Dutch and at font scale 2 too.
     REGISTER(heightDp = 900, content = { _, _ -> RegistrationScreen(send = { RegistrationReceipt(it.username) }, onBack = {}) }),

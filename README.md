@@ -179,7 +179,9 @@ offers, regular prices, their history and the NEVO data are shared.
   and per request the name, user name, address, when it was made and the day it is rejected by itself, with Approve and
   Reject; Reject asks first, as it deletes the person's account. A request gone meanwhile (404) or decided in LLDAP
   (409) is said so and the list asked for again; the helper down (503) leaves it waiting. No other account has the card,
-  nor asks for the requests. The notification "Account requests" (see "Notifications") tells the owner of a new one.
+  nor asks for the requests. The card asks again whenever the app comes back to the front with Settings open, and each list it
+  gets makes the notification forget the user names no longer waiting. The notification "Account requests" (see
+  "Notifications") tells the owner of a new one.
 - The server's cooking site (`COOKING_REPO_URL`, or the checkout at `COOKING_REPO_PATH`) is the bank of every
   account that has not chosen otherwise (issue 208); with `COOKING_REPO_SHARED=0` it is the owner's alone, as
   before. On the recipe bank screen an account chooses where its bank comes from (`PUT /api/sync/cooking/repo`):
@@ -778,7 +780,7 @@ the device; each kind is an Android notification channel of its own, so the syst
 | Dinner today | Today has a planned dinner that is neither eaten nor skipped and something to cook: its main, or else a side's prepped batch made next to it that evening ("Tonight's side: …"); a dinner that makes a prepped batch says its servings are for tonight and the prep's later meals; once per day | The recipe, from that meal (its servings to cook; on a prep day for the prep's later meals) | Off |
 | Mark what you ate | A meal of today is still planned; once per day | Today | Off |
 | Prepped food to throw away | The morning after a prepped batch's last day (its own: in a box or vacuum sealed), when the batch was made (a meal of it eaten) and a share of it was skipped and not eaten elsewhere ("Throw away 1 portion of Chili con carne" / "It kept until Mon 23 Nov."), or a meal or side of it was never marked ("1 portion of Chili con carne was not marked: eaten, or to throw away?"); sides say "side". Several batches go into one notification; once per batch, and only on the day after its last day; a batch told later the same day is a notification of its own next to the first (an Android tag per batch) | Plan, where there is something to do: on the week of the first meal not marked, where it can be marked, else on that of the first skipped share left in the box, which may be the week after the batch was made (from a server before issue 263: the week the batch was made) | On (only an account that made a prep gets it) |
-| Account requests | Someone asked for an account and waits for the owner (issue 314): once per request ("1 request for an account waits" / "New: zoe. Approve or reject in Settings."); a request decided and made again is told again. Only the owner's account (`approvesRequests`) gets it, and only its Settings show the switch | Settings, with the Requests card at the top | On (only the owner's account gets it) |
+| Account requests | Someone asked for an account and waits for the owner (issue 314): once per request ("1 request for an account waits" / "New: zoe. Approve or reject in Settings."); a request decided and made again is told again (the check forgets a name once it sees a list without it, and the Requests card does so at once on a decision). Only the owner's account (`approvesRequests`, kept on the device from `/api/me` until a log-out) gets it, asks the server for it and shows the switch | Settings, with the Requests card at the top | On (only the owner's account gets it) |
 
 The server says what is due, the app decides whether to tell: `GET /api/notifications` answers, for the calling
 account and the server's today, the facts behind kinds 2 to 8 as data (`NotificationFacts`: names, dates, counts,

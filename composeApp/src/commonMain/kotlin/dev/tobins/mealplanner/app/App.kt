@@ -204,6 +204,8 @@ fun App(
             (Tab.entries.map { "tab:${it.slug}" } + openKeys).forEach(screenStates::removeState)
             planWeek = null
             planPlanning = false
+            // The next account starts on the first tab, not on the one the last left (it may be a newly approved person).
+            tab = Tab.entries.first()
         }
         wasLoggedIn = loggedIn
     }
@@ -290,7 +292,11 @@ fun App(
         if (session == null && logins.claimAutoOpen(serverKnown)) startLogin(settings)
     }
     val shownLoginError = loginError ?: (progress as? LoginProgress.Failed)?.message
-    LaunchedEffect(api) { account = if (session == null) null else runCatching { api.me() }.getOrNull() }
+    LaunchedEffect(api) {
+        account = if (session == null) null else runCatching { api.me() }.getOrNull()
+        // The background check cannot ask the server who this is: whether it may stop asking for requests is kept here.
+        account?.let { storage.saveApprovesRequests(it.approvesRequests) }
+    }
     // Whether the login screen offers "Register a new account": asked of a known server while nobody is logged in. A server
     // from before registration, or one that cannot be reached, offers nothing (registrationOpen).
     var takesRequests by remember(settings) { mutableStateOf(false) }
@@ -298,7 +304,7 @@ fun App(
         if (session == null && serverKnown) takesRequests = registrationOpen(publicApi)
     }
     // Only the owner's account decides on requests for an account; every other gets no card for them.
-    val accountRequests = remember(api, account) { if (account?.approvesRequests == true) AccountDecisions(api) else null }
+    val accountRequests = remember(api, account) { if (account?.approvesRequests == true) AccountDecisions(api, storage) else null }
 
     // NEVO must be credited wherever its values are shown.
     var nutritionSource by remember { mutableStateOf<String?>(null) }

@@ -1,6 +1,10 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -129,8 +133,23 @@ class RegistrationScreensTest {
         appClock = Clock.System
     }
 
+    /** What the app's lifecycle is, as the system reports it: a test sends the app behind and brings it forward again. */
+    private val lifecycleOwner = object : LifecycleOwner {
+        val registry = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+        override val lifecycle: Lifecycle get() = registry
+    }
+
     private fun startApp() {
-        restoration.setContent { App(backend.settings, storage, launcher, logins, notificationAccess = notificationAccess) }
+        restoration.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycleOwner) {
+                App(backend.settings, storage, launcher, logins, notificationAccess = notificationAccess)
+            }
+        }
+    }
+
+    private fun moveTo(state: Lifecycle.State) {
+        compose.runOnUiThread { lifecycleOwner.registry.currentState = state }
+        compose.waitForIdle()
     }
 
     private fun waitUntil(condition: () -> Boolean) = compose.waitUntil(timeoutMillis = 10_000) {
@@ -249,6 +268,28 @@ class RegistrationScreensTest {
     }
 
     @Test
+    fun aReCreatedScreenMarksNoEmptiedPasswordUntilOneIsEditedOrSendIsPressed() {
+        backend.registrationOpen = true
+        openForm()
+        // Send pressed with a wrong form: from now on every field says what is wrong, also in the saved state.
+        compose.onNodeWithText("Send request").performScrollTo().performClick()
+        waitFor("Fill in your name")
+        fillIn()
+
+        restoration.emulateSavedInstanceStateRestore()
+        waitFor("Send request")
+        compose.onNodeWithText("Zoe Example").assertExists()
+        compose.waitForIdle()
+        assertFalse(shows("10 to 128 characters"), "the passwords are empty because the screen was re-created, not because of the person")
+        assertFalse(shows("The two passwords differ."))
+
+        // Edited and left for the next field: a password too short is marked.
+        field("Password").performTextInput("short")
+        field("Password again").performTextInput("short")
+        waitFor("10 to 128 characters, and not your user name.")
+    }
+
+    @Test
     fun thePasswordsAreNeverInTheSavedState() {
         // Android writes what the registry saves into the activity's bundle: the form registers in one the test reads.
         val registry = SaveableStateRegistry(restoredValues = null) { true }
@@ -337,6 +378,57 @@ class RegistrationScreensTest {
         compose.onNodeWithText("Approve").performClick()
         waitFor("This request no longer waits; the list is up to date again.")
         waitFor("No requests wait.")
+    }
+
+    @Test
+    fun aRequestRejectedInSettingsIsToldAgainWhenTheSameUserNameAsksAgainBeforeTheNextCheck() {
+        backend.registrationOpen = true
+        backend.owner = true
+        backend.accountRequests += zoe
+        // The background check told of zoe already.
+        storage.set("notified.accountRequests", "zoe")
+        openSettings()
+        waitFor("1 request waits for your decision.")
+        compose.onNodeWithText("Reject").performClick()
+        waitFor("Reject the request of Zoe Example?")
+        compose.onNode(hasText("Reject") and hasAnyAncestor(isDialog())).performClick()
+        waitFor("No requests wait.")
+
+        // She asks again; the check that follows has her waiting, and tells of her.
+        val check = NotificationPlanner(
+            storage,
+            object : Clock {
+                override fun now(): Instant = Instant.parse("${FakeBackend.TODAY}T09:00:00Z")
+            },
+            kotlinx.datetime.TimeZone.UTC,
+        )
+        val facts = dev.tobins.mealplanner.api.NotificationFacts(FakeBackend.TODAY, accountRequests = listOf("zoe"))
+        assertEquals(listOf("New: zoe. Approve or reject in Settings."), check.due(facts, null, Strings.English).map { it.text })
+    }
+
+    @Test
+    fun theDeviceRemembersWhetherTheAccountDecidesOnRequestsAndForgetsItOnLogOut() {
+        backend.registrationOpen = true
+        backend.owner = true
+        openSettings()
+        waitUntil { storage.approvesRequests() }
+        compose.onNodeWithText("Log out").performScrollTo().performClick()
+        waitFor("You are logged out.")
+        assertFalse(storage.approvesRequests())
+    }
+
+    @Test
+    fun theRequestsCardAsksAgainWhenTheAppComesBackToTheFrontWithSettingsOpen() {
+        backend.registrationOpen = true
+        backend.owner = true
+        openSettings()
+        waitFor("No requests wait.")
+
+        // Two ask meanwhile; the app is behind, and a notification (or the launcher) brings it forward.
+        backend.accountRequests += listOf(zoe, max)
+        moveTo(Lifecycle.State.CREATED)
+        moveTo(Lifecycle.State.RESUMED)
+        waitFor("2 requests wait for your decision.")
     }
 
     @Test

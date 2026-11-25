@@ -23,7 +23,7 @@ import dev.tobins.mealplanner.app.NotificationWindows
 import dev.tobins.mealplanner.app.ServerSettings
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.appLanguage
-import dev.tobins.mealplanner.app.askWhatIsDue
+import dev.tobins.mealplanner.app.askWhatIsDueIfWanted
 import dev.tobins.mealplanner.app.deviceLocaleTag
 import dev.tobins.mealplanner.app.notificationsAllowed
 import dev.tobins.mealplanner.app.putOpening
@@ -55,12 +55,8 @@ class NotificationWorker(context: Context, params: WorkerParameters) : Coroutine
             null
         }
         // On the main thread, where the login lives: a renewal the screen is making is waited for, not repeated.
-        val facts = if (planner.wantsFacts()) {
-            withContext(Dispatchers.Main) {
-                askWhatIsDue(storage, AppProcess.logins(app), storage.serverSettings(ServerSettings(BuildConfig.SERVER_URL)))
-            }
-        } else {
-            null
+        val facts = withContext(Dispatchers.Main) {
+            askWhatIsDueIfWanted(planner, storage, AppProcess.logins(app), storage.serverSettings(ServerSettings(BuildConfig.SERVER_URL)))
         }
         val strings = Strings.of(storage.appLanguage(), deviceLocaleTag())
         for (due in planner.due(facts, update, strings)) {
