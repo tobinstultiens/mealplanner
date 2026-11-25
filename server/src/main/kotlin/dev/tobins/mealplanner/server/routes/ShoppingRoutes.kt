@@ -17,14 +17,13 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
-import java.time.Instant
 
 /**
  * Answers with [list] and the verdicts on its offers (issue 118): every answer that carries the week's list has them,
  * as the app shows the list each answer brings, and keeps it for the store, where it may have no network.
  */
 private suspend fun RoutingCall.respondList(list: ShoppingList, status: HttpStatusCode = HttpStatusCode.OK) =
-    respond(status, user.dealVerdicts.on(list, Instant.now()))
+    respond(status, user.judgement.on(list))
 
 /** The shopping list of a week: ticking rows, using items up, own items, and hiding the advice groups. */
 fun Route.shoppingRoutes() {

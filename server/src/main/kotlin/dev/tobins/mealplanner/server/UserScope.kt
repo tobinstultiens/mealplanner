@@ -33,6 +33,8 @@ class UserScope(
     val sections = ShopSections(ingredients, prices)
     val shoppingAdvice = ShoppingAdviceRepository(db, accountId)
     val dealVerdicts = DealVerdictRepository(db, offers, ingredients, shops::inUse)
+    /** The verdicts on today's offers, judged once for the request: the shopping list's advice and its answer share them. */
+    val judgement by lazy { dealVerdicts.judgement(Instant.now()) }
     val offerExclusions = OfferExclusionRepository(db, accountId, ingredients)
     val plans by lazy {
         PlanRepository(
@@ -55,7 +57,7 @@ class UserScope(
             regularPerKg = { prices.perKg(ingredients) },
             sections = sections::byIngredient,
             keeps = sections::keepsByIngredient,
-            withVerdicts = { dealVerdicts.onOffers(it, Instant.now()) },
+            withVerdicts = { judgement.onOffers(it) },
             advice = shoppingAdvice::setting,
             productImages = { prices.productImages(ingredients) },
             offered = PriceHistoryRepository(db)::offered,
