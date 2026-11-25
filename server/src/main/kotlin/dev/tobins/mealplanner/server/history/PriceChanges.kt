@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server.history
 
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.server.offers.storeText
 import java.time.LocalDate
 
 /**
@@ -42,6 +43,13 @@ private val whitespace = Regex("""\s+""")
 data class ProductKey(val store: Store, val title: String, val pack: String) {
     companion object {
         fun of(offer: Offer) = ProductKey(offer.store, normalised(offer.title), normalised(offer.packSize))
+
+        /**
+         * The key of a recorded row, from the title and pack it was recorded with. Rows recorded before offers were
+         * cleaned of markup (issue 320) hold "<br />" and "&amp;"; read through [storeText] they get the key the same
+         * offer gets today, so its period goes on instead of one ending and another starting.
+         */
+        fun recorded(store: Store, title: String, pack: String) = ProductKey(store, storeText(title), storeText(pack))
     }
 }
 

@@ -78,7 +78,7 @@ object AhParser {
             validUntil = p.str("bonusEndDate") ?: return null,
             url = (p["webshopId"] as? JsonPrimitive)?.longOrNull?.let { "https://www.ah.nl/producten/product/wi$it" },
             imageUrl = image(p),
-        )
+        ).cleaned()
     }
 
     private fun group(g: JsonObject): Offer? = Offer(
@@ -90,7 +90,7 @@ object AhParser {
         validUntil = g.str("bonusEndDate") ?: return null,
         url = g.str("id")?.let { "https://www.ah.nl/bonus/groep/$it" },
         imageUrl = image(g),
-    )
+    ).cleaned()
 
     private fun firstLabel(o: JsonObject): String? =
         o["discountLabels"]?.jsonArray?.firstOrNull()?.obj?.str("defaultDescription")
@@ -158,7 +158,7 @@ object JumboParser {
             url = p.str("url")?.let { "https://www.jumbo.com$it" },
             // One 300 by 300 picture per promotion, no other sizes.
             imageUrl = p.str("image"),
-        )
+        ).cleaned()
     }
 }
 
@@ -191,7 +191,7 @@ object LidlParser {
             url = t.str("canonicalUrl")?.let { "https://www.lidl.nl$it" },
             // The tile's own picture: the small 4:3 rendition, 380 by 285 (the medium one is 772 wide).
             imageUrl = t.str("image"),
-        )
+        ).cleaned()
     }
 
     private fun date(epochSeconds: JsonElement?): String? =
