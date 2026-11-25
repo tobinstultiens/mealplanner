@@ -503,9 +503,10 @@ to eat; "Leave it empty" keeps the skip. No chips where the server says the slot
 standard meal is set for the slot, so the skip is then as before. "Choose a recipe…" and an empty slot's picker list
 the standard meals for the slot first, under "My standard meals", put in by the same route; on a later meal of a prep
 still to make, still planned, the picker says that another recipe there makes the batch smaller. A standard meal's
-menu on the Plan has "Remove from the plan" (unless it keeps its recipe, such as one eaten): the slot is empty again,
+menu on the Plan has "Remove from the plan" (unless it keeps its recipe, such as one eaten), which asks first by naming the meal, as the plan does
+not say whether the planner or the user put it there: the slot is empty again,
 or holds again the skipped prepped meal whose place it took. Choosing one whose ingredient was out says that it is
-back among the staples, to restock; the shopping list names it among the staples it uses, without marking it as one
+back among the staples, to restock; on Today the chips are off while one is being put in, so a double tap sends one request; the shopping list names it among the staples it uses, without marking it as one
 to restock, as the server keeps no record of which staples a standard meal made again. Against a server from before standard meals
 the app shows none of this, and the switch's change fails with the server's answer.
 

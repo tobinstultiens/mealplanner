@@ -948,6 +948,11 @@ enum class Msg(private val english: String, private val dutch: String) {
     SKIP_SHEET_LEAVE("Leave it empty", "Leeg laten"),
     PICKER_STANDARD("My standard meals", "Mijn standaardmaaltijden"),
     REMOVE_STANDARD_MEAL("Remove from the plan", "Uit het plan halen"),
+    REMOVE_STANDARD_TITLE("Remove {0} from the plan?", "{0} uit het plan halen?"),
+    REMOVE_STANDARD_TEXT(
+        "The meal is taken out and its place stays empty, whether you put it there or the planner did.",
+        "De maaltijd gaat eruit en de plek blijft leeg, of je hem er zelf zette of de planner.",
+    ),
     PICKER_SHRINKS_PREP(
         "This meal is from a prepped batch still to make: another recipe here makes the batch smaller.",
         "Deze maaltijd komt uit een prep die nog gemaakt wordt: een ander recept hier maakt de prep kleiner.",

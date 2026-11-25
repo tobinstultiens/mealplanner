@@ -3,7 +3,9 @@ package dev.tobins.mealplanner.app
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isNotEnabled
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -92,6 +94,23 @@ class StandardMealScreensTest {
     }
 
     @Test
+    fun theChipsWaitWhileOneIsBeingPlacedSoADoubleTapSendsOneRequest() {
+        val answer = CountDownLatch(1)
+        backend.standardChoiceAnswer = answer
+        show { TodayScreen(api, { _, _ -> }, {}) }
+        waitFor("Instead, one of my standard meals:")
+        compose.onNodeWithText("Shakshuka · 700", substring = true).performScrollTo().performClick()
+        // The first tap is still being sent (the fake holds its answer): both chips are off, and a second tap goes nowhere.
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(hasText("Shakshuka · 700", substring = true) and isNotEnabled()).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Shakshuka · 700", substring = true).assertIsNotEnabled()
+        compose.onNodeWithText("Tuna pasta salad · 610", substring = true).assertIsNotEnabled()
+        compose.onNodeWithText("Shakshuka · 700", substring = true).performClick()
+        answer.countDown()
+        waitFor("Back among the staples, to restock: Eggs")
+        assertEquals(1, chosen().size, "one request, so no 409 and no failure snackbar")
+    }
+
+    @Test
     fun aSkippedMealOfADayToComeIsPutThereStillToEat() {
         show { TodayScreen(api, { _, _ -> }, {}) }
         waitFor("Instead, one of my standard meals:")
@@ -136,13 +155,29 @@ class StandardMealScreensTest {
     }
 
     @Test
-    fun aStandardMealCanBeTakenOutOfThePlan() {
-        // Tuesday's lunch is the tuna pasta salad, a standard meal: removing it is what gives a skipped prepped meal its slot back.
+    fun aStandardMealIsTakenOutOfThePlanOnceTheUserConfirms() {
+        // Tuesday's lunch is the tuna pasta salad, a standard meal the planner put there as far as the app can tell (the plan
+        // does not say who did): removing it asks first. It is what gives a skipped prepped meal its slot back.
         openMenuOnPlan("Tue 17 Nov", "lunch")
         // The entry is there once the week's standard meals are, which the menu does not wait for.
         waitFor("Remove from the plan")
         compose.onNodeWithText("Remove from the plan").performClick()
+        waitFor("Remove Tuna pasta salad from the plan?")
+        assertTrue(backend.changes.none { it.startsWith("DELETE") }, "nothing is removed before the user confirms")
+        compose.onNodeWithText("Remove").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it == "DELETE /api/plans/${FakeBackend.WEEK_START}/meals/1/LUNCH" } }
+    }
+
+    @Test
+    fun cancellingTheQuestionKeepsTheMealInThePlan() {
+        openMenuOnPlan("Tue 17 Nov", "lunch")
+        waitFor("Remove from the plan")
+        compose.onNodeWithText("Remove from the plan").performClick()
+        waitFor("Remove Tuna pasta salad from the plan?")
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { count("Remove Tuna pasta salad from the plan?") == 0 }
+        compose.waitUntilPlanIsIdle()
+        assertTrue(backend.changes.none { it.startsWith("DELETE") })
     }
 
     @Test
