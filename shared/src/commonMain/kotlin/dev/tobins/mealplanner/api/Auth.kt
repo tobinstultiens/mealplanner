@@ -30,6 +30,13 @@ object LoginRefusal {
      * the provider does not put them in its access tokens (only its owner can fix that).
      */
     const val NO_GROUPS = "no_groups"
+
+    /**
+     * Not a `reason` but the optional `detail` next to [NOT_IN_GROUP]: the account asked for access itself (issue 314) and
+     * the owner has not decided yet. The reason stays [NOT_IN_GROUP], which installed apps act on (they end the session);
+     * an app that knows the detail says "Your request is waiting for approval" instead of "may not use".
+     */
+    const val WAITING_FOR_APPROVAL = "waiting_for_approval"
 }
 
 /** The logged-in account, from `GET /api/me`. */
@@ -37,6 +44,8 @@ object LoginRefusal {
 data class Me(
     val username: String?,
     val displayName: String?,
+    /** Whether this account approves the requests for an account (issue 314): the owner's, on a server with registration set up. */
+    val approvesRequests: Boolean = false,
 )
 
 /**

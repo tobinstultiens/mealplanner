@@ -262,6 +262,9 @@ jobs:
           python3 -I scripts/emulator/screen.py --self-test
           python3 -I scripts/emulator/seed-recipes.py --self-test
           scripts/emulator/with-clock.sh --self-test
+      # The registration helper that runs next to LLDAP (issue 314), against a fake LLDAP on the loopback: plain Python.
+      - name: Self-test of the registration helper
+        run: python3 -I scripts/test_registration_helper.py
 
   # The server image: built and started on every run, so what only shows at start is found before the
   # merge and not the morning after; pushed only on main. Same registry and secrets as the cooking

@@ -1,0 +1,34 @@
+-- A request for an account that waits for the owner (issue 314): the account is in the directory already, in no group.
+-- Who asked, never the password: that went to the directory and is not kept here. A request leaves this table when it
+-- is approved, rejected or expires; it belongs to no account, and only the owner's routes read it.
+CREATE TABLE accountRequest (
+    username TEXT NOT NULL PRIMARY KEY,   -- in lower case, as the directory keeps it
+    displayName TEXT NOT NULL,
+    email TEXT NOT NULL,
+    requestedAt TEXT NOT NULL             -- instant, to the second (UTC, fixed width), so that text order is time order
+);
+
+-- Oldest first; two of one second in the order they came.
+selectRequests:
+SELECT * FROM accountRequest ORDER BY requestedAt, rowid;
+
+selectRequest:
+SELECT * FROM accountRequest WHERE username = ?;
+
+countRequests:
+SELECT count(*) FROM accountRequest;
+
+selectRequestedBefore:
+SELECT username FROM accountRequest WHERE requestedAt < ? ORDER BY requestedAt, rowid;
+
+insertRequest:
+INSERT INTO accountRequest (username, displayName, email, requestedAt) VALUES (?, ?, ?, ?);
+
+deleteRequest:
+DELETE FROM accountRequest WHERE username = ?;
+
+-- Whether an account of the meal planner has this user name, in any case. Accounts are never deleted, so one that had
+-- it still has it (unless the provider renamed it since). Authelia keeps one subject per user name, so a new person
+-- with it would log in to that account's data.
+countAccountsNamed:
+SELECT count(*) FROM appUser WHERE lower(username) = lower(?);

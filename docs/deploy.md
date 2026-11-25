@@ -100,7 +100,7 @@ Authelia may use the server again, with or without the claim, and no session nee
 to everyone at Authelia too, remove `authorization_policy: 'mealplanner'` from the client (or put back the one it had)
 and deploy Authelia. The scope and the claims policy can stay; they change nothing without the server setting.
 
-**Adding and removing a person** (until the registration of issue 314 does it): add them to `mealplanner` in LLDAP;
+**Adding and removing a person** by hand (registration, below, adds people on request): add them to `mealplanner` in LLDAP;
 they can log in at once. Taking them out of the group stops them at their next renewal, at most an access token's life
 later (Authelia's `lifespans.access_token`, an hour by default); they then see "This account may not use the meal
 planner yet." Their data stays, and is theirs again if they are put back. Deleting the LLDAP account ends their
@@ -108,7 +108,7 @@ renewals as well. Do not give a deleted person's user name to someone else: Auth
 table of opaque identifiers), and the meal planner knows an account by its `sub`, so the new person would log in to
 the old one's data, which stays (not checked against the running Authelia).
 
-**Other services behind Authelia.** Once people can ask for an account themselves (the next part of issue 314), an
+**Other services behind Authelia.** Once people can ask for an account themselves ("Registration", below), an
 account exists in LLDAP before anyone approved it. That account must open nothing. Check in
 `local/authelia/configuration.yml` before registration is switched on:
 
@@ -122,6 +122,140 @@ account exists in LLDAP before anyone approved it. That account must open nothin
 
 `grep -n -E "default_policy|subject|authorization_policy|client_id|domain" local/authelia/configuration.yml` lists
 the lines to read.
+
+## Registration: people ask for an account
+
+> **Not run on the real server.** No command in this section was run against the homelab's LLDAP, Authelia, Docker or
+> Ansible; each is marked *(not run)*. The helper was tested against a fake LLDAP
+> (`python3 -I scripts/test_registration_helper.py`): LLDAP's GraphQL API and its LDAP password change as LLDAP's
+> documentation and source describe them (v0.6.3 and the default branch, read on 2026-11-20), not a running LLDAP. The
+> server was tested against an in-memory helper (`:server:test`), and both together on a development machine with the
+> fake LLDAP. Check each step as it says.
+
+What it does (issue 314): a person fills in the form on the login screen (user name, name, e-mail address, password).
+The server asks the **registration helper** to make the account in LLDAP at once, in no group, with that password; the
+server keeps who asked, never the password. The person can log in to Authelia but not use the meal planner: the server
+answers "Your request is waiting for approval." The owner's account sees the request (Settings in the app, from the
+release after this change; until then only through the API), approves it (the helper puts the account in `mealplanner`:
+the person can log in and gets an empty account of their own) or rejects it (the helper deletes the account). A request
+not decided on in 14 days is rejected by itself, its LLDAP account deleted.
+
+**The owner's account** is account 1 (the one with the data from before accounts), and with `MEALPLANNER_OWNER` set only
+under that user name. No other account can see or decide on requests.
+
+**The limits**, fixed in the server: 5 requests an hour from one address, 30 a day from everyone, 20 waiting at once, 14
+days to decide. The address is the last one in `X-Forwarded-For`, which Traefik writes for the connection it took. With
+another proxy in front of Traefik (Cloudflare, say) every request comes from that proxy's address, and the limit per
+address becomes one for everyone; nothing else breaks. The answer to "user name taken", "e-mail address in use" and "the
+user name of a meal planner account" is one and the same, so the form tells nobody which.
+
+**Why a helper.** Making users, deleting them and adding them to a group all need LLDAP's `lldap_admin`, and LLDAP cannot
+narrow that right. `scripts/registration-helper.py` (plain Python 3, no packages) holds that credential so the meal
+planner does not. It answers three calls (register, approve, reject), only with the shared secret, only for user names it
+made itself that are still in no group (it keeps that list in its state file), and only into the group of its own
+configuration. It never logs a request body; a user whose password cannot be set is deleted at once. Someone who has the
+secret can still make accounts and approve them into `mealplanner`, so keep it in the vault and the helper's port off
+every network but the two it needs.
+
+**Before switching on:**
+
+1. "Who may use it", above, done up to step 4: the server refuses to take requests without `MEALPLANNER_OIDC_GROUP`,
+   since a waiting account in no group would otherwise get in.
+2. "Other services behind Authelia", above, checked: a waiting account must open nothing anywhere.
+3. A new person has to set up Authelia's second factor at the first login (the client is `two_factor`), which Authelia
+   confirms by e-mail: check that `notifier` in `local/authelia/configuration.yml` sends e-mail *(not run)*.
+4. Best with the app release that has the form and the Requests list (issue 314, part 3). Before it, nobody can ask
+   from the app, and the owner can decide only with `curl` and an access token.
+
+**Steps, in this order:**
+
+1. **The helper's LLDAP user** *(not run)*. In LLDAP's web page: a new user `mealplanner-registration` (any e-mail
+   address of yours), a long random password, member of `lldap_admin`. Check: logging in to LLDAP's web page as it works.
+2. **Vault keys** in the Ansible repo's `vars/vault.yml` *(not run)*:
+   - `mealplanner_registration_secret`: from `openssl rand -hex 32`. The helper and the server share it.
+   - `lldap_registration_password`: the password of step 1.
+3. **The helper container**, in `docker/mealplanner.yml` of the Ansible repo *(not run)*. Copy
+   `scripts/registration-helper.py` of this repository to `files/mealplanner/registration-helper.py` there, and again when
+   it changes here. A network of its own joins the helper and the meal planner; the helper also joins the network LLDAP is
+   on. No `ports`, no Traefik labels: nothing outside those networks reaches it. Fill in the three `<...>`:
+
+   ```yaml
+   - name: The registration helper's network
+     community.docker.docker_network:
+       name: mealplanner-registration
+       internal: true
+
+   - name: The registration helper's folder
+     ansible.builtin.file:
+       path: "{{ docker_config_dir }}/mealplanner-registration/state"
+       state: directory
+       owner: "10002"
+       mode: "0700"
+
+   - name: The registration helper's script
+     ansible.builtin.copy:
+       src: files/mealplanner/registration-helper.py
+       dest: "{{ docker_config_dir }}/mealplanner-registration/registration-helper.py"
+       mode: "0444"
+
+   - name: The registration helper
+     community.docker.docker_container:
+       name: mealplanner-registration
+       image: python:3.13-alpine
+       user: "10002:10002"
+       read_only: true
+       command: ["python3", "-I", "/app/registration-helper.py"]
+       restart_policy: unless-stopped
+       volumes:
+         - "{{ docker_config_dir }}/mealplanner-registration/registration-helper.py:/app/registration-helper.py:ro"
+         - "{{ docker_config_dir }}/mealplanner-registration/state:/state"
+       networks:
+         - name: mealplanner-registration
+         - name: <the network LLDAP is on>
+       env:
+         HELPER_SECRET: "{{ mealplanner_registration_secret }}"
+         HELPER_GROUP: mealplanner
+         HELPER_STATE: /state/waiting.json
+         LLDAP_URL: http://<LLDAP's container>:17170
+         LLDAP_LDAP_HOST: <LLDAP's container>
+         LLDAP_LDAP_PORT: "3890"
+         LLDAP_BASE_DN: <LLDAP's base DN, its LLDAP_LDAP_BASE_DN>
+         LLDAP_ADMIN_USER: mealplanner-registration
+         LLDAP_ADMIN_PASSWORD: "{{ lldap_registration_password }}"
+   ```
+
+   Add `mealplanner-registration` to the `networks` of the `mealplanner` container. Deploy with
+   `ansible-playbook -Kk docker/mealplanner.yml`. Check: `docker logs mealplanner-registration` says "Registration helper
+   on port 8091, approving into mealplanner"; it stops at once, saying what, when a setting is missing, the secret is
+   shorter than 32 characters or the group is one of LLDAP's own. A call without the secret is refused:
+   `docker run --rm --network mealplanner-registration curlimages/curl -s -X POST http://mealplanner-registration:8091/register`
+   prints `{"error": "unauthorised"}`.
+4. **The server.** Add to the `mealplanner` container's `env` *(not run)*:
+
+   ```yaml
+   MEALPLANNER_REGISTRATION_HELPER_URL: http://mealplanner-registration:8091
+   MEALPLANNER_REGISTRATION_HELPER_SECRET: "{{ mealplanner_registration_secret }}"
+   MEALPLANNER_REGISTRATION: "on"
+   ```
+
+   Deploy. Check: `curl -s https://mealplanner.<DOMAIN>/api/registration` prints `{"open":true}`. If it says `false`,
+   `docker logs mealplanner 2>&1 | grep MEALPLANNER_REGISTRATION` says what is missing.
+5. **One request to try it** *(not run)*: ask for `test-request` from the app's login screen (or
+   `curl -s -X POST https://mealplanner.<DOMAIN>/api/registration -H 'Content-Type: application/json' -d '{"username":
+   "test-request", "displayName": "Test", "email": "<an address of yours>", "password": "<ten characters or more>"}'`,
+   which answers `{"username":"test-request"}`). Check: LLDAP's web page has `test-request` in no group; logging in to the
+   meal planner as it says the request waits; the owner's Requests list has it. Reject it there: LLDAP no longer has it.
+   `docker logs mealplanner-registration` shows each step with the user name, and neither log shows the password.
+
+**Going back.** Remove `MEALPLANNER_REGISTRATION` and deploy: the login screen no longer offers the form, and new requests
+are refused; those waiting can still be decided on and still expire. To remove the helper too, first decide on every
+waiting request, then remove the two `MEALPLANNER_REGISTRATION_HELPER_*` settings, the helper's container and network,
+and the LLDAP user `mealplanner-registration`.
+
+**Errors.** With the helper or LLDAP down, a request is answered "The account directory cannot be reached; try again
+later" and nothing is kept; approving or rejecting answers the same and the request stays. A request whose outcome is
+not known (the helper took too long) is rejected again at once, which deletes the account if it was made; if even that
+fails, it stays in the owner's list until decided on or expired. Neither the server nor the helper logs a password.
 
 ## The cooking site
 

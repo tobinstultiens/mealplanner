@@ -76,4 +76,17 @@ class UserRepository(private val db: Database) {
 
     /** Every account with a value for [key], with that value. */
     fun withMeta(key: String): Map<Long, String> = q.selectMetaForAll(key).executeAsList().associate { it.userId to it.value_ }
+
+    companion object {
+        /** The account that holds the data from before accounts existed: the owner's, claimed by [resolve]'s `owner` or the first login. */
+        const val OWNER_ID = 1L
+
+        /**
+         * Whether [account] is the owner's, which approves the requests for an account (issue 314): account [OWNER_ID], and
+         * with `MEALPLANNER_OWNER` set ([owner]) only under that user name. On a database made new, account 1 is whoever
+         * logged in first, and the setting must still decide.
+         */
+        fun isOwner(account: Account, owner: String?): Boolean =
+            account.id == OWNER_ID && (owner == null || owner.equals(account.username, ignoreCase = true))
+    }
 }

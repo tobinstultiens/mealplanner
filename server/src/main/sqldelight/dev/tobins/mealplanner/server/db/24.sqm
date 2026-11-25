@@ -1,0 +1,9 @@
+-- Version 24 -> 25: requests for an account (issue 314). A table of its own; no table is rebuilt and no row is touched:
+-- nobody has asked yet.
+
+CREATE TABLE accountRequest (
+    username TEXT NOT NULL PRIMARY KEY,
+    displayName TEXT NOT NULL,
+    email TEXT NOT NULL,
+    requestedAt TEXT NOT NULL
+);

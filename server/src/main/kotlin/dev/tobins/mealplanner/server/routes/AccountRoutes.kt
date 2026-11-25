@@ -21,13 +21,16 @@ import io.ktor.server.routing.put
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 
-/** The calling account: who it is, its profile, shops and shopping advice, and the sync of its cooking-site repository. */
-fun Route.accountRoutes(cooking: CookingSync) {
+/**
+ * The calling account: who it is (and whether it [approves] the requests for an account), its profile, shops and shopping
+ * advice, and the sync of its cooking-site repository.
+ */
+fun Route.accountRoutes(cooking: CookingSync, approves: (Account) -> Boolean) {
     get("/api/ping") { call.respond(mapOf("pong" to true)) }
 
     get("/api/me") {
         val account = call.principal<Account>()!!
-        call.respond(Me(account.username, account.displayName))
+        call.respond(Me(account.username, account.displayName, approvesRequests = approves(account)))
     }
 
     get("/api/profile") { call.respond(call.user.profiles.state()) }

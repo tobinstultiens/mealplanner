@@ -14,6 +14,7 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
+import dev.tobins.mealplanner.server.routes.accountRequestRoutes
 import dev.tobins.mealplanner.server.routes.accountRoutes
 import dev.tobins.mealplanner.server.routes.ingredientRoutes
 import dev.tobins.mealplanner.server.routes.notificationRoutes
@@ -21,6 +22,7 @@ import dev.tobins.mealplanner.server.routes.offerRoutes
 import dev.tobins.mealplanner.server.routes.planRoutes
 import dev.tobins.mealplanner.server.routes.publicRoutes
 import dev.tobins.mealplanner.server.routes.recipeRoutes
+import dev.tobins.mealplanner.server.routes.registrationRoutes
 import dev.tobins.mealplanner.server.routes.shoppingRoutes
 import dev.tobins.mealplanner.server.routes.trackingRoutes
 import io.ktor.server.plugins.compression.Compression
@@ -72,6 +74,12 @@ data class ServerConfig(
      * every account the issuer knows, as before the setting. See [requireMember].
      */
     val oidcGroup: String? = null,
+    /**
+     * Whether people may ask for an account on the login screen (`MEALPLANNER_REGISTRATION`, issue 314). Off unless set,
+     * and then only with the registration helper set up ([HttpDirectoryHelper.fromEnv]) and [oidcGroup] set: without the
+     * group check, an account in no group, waiting for approval, could use the meal planner at once.
+     */
+    val registration: Boolean = false,
     /** Username that takes over the data from before accounts; unset: the first account to log in. */
     val owner: String? = null,
     /** Where per-account files (cooking repo clones) go. */
@@ -107,6 +115,7 @@ data class ServerConfig(
                 oidcIssuer = env["MEALPLANNER_OIDC_ISSUER"]?.takeIf { it.isNotBlank() },
                 oidcClientId = env["MEALPLANNER_OIDC_CLIENT_ID"]?.takeIf { it.isNotBlank() } ?: "mealplanner",
                 oidcGroup = env["MEALPLANNER_OIDC_GROUP"]?.trim()?.takeIf { it.isNotEmpty() },
+                registration = env["MEALPLANNER_REGISTRATION"]?.trim()?.lowercase() in setOf("on", "true", "1"),
                 owner = env["MEALPLANNER_OWNER"]?.takeIf { it.isNotBlank() },
                 androidCertificates = env["MEALPLANNER_ANDROID_CERTS"].orEmpty().split(',', ' ').map { it.trim() }.filter { it.isNotEmpty() },
                 dataDir = dataDir,
@@ -138,8 +147,20 @@ fun Application.module(
     verifier: TokenVerifier = config.oidcIssuer?.let { OidcVerifier(it, config.oidcClientId) } ?: NoLogin,
     /** Today as the household sees it, for every account ([UserScope]); a test sets the day, so it does not depend on when it runs. */
     today: () -> LocalDate = ::serverToday,
+    /** The registration helper next to the directory (issue 314); null when none is set up, and then nobody can ask for an account. */
+    directory: DirectoryHelper? = HttpDirectoryHelper.fromEnv(),
 ) {
     if (config.oidcIssuer == null && verifier === NoLogin) log.error("MEALPLANNER_OIDC_ISSUER is not set: nobody can log in")
+    val registrations = directory?.let { Registrations(database, it) }
+    val registrationOpen = config.registration && registrations != null && config.oidcGroup != null
+    if (config.registration && !registrationOpen) {
+        log.error(
+            "MEALPLANNER_REGISTRATION is on, but nobody can ask for an account: it needs MEALPLANNER_REGISTRATION_HELPER_URL, " +
+                "MEALPLANNER_REGISTRATION_HELPER_SECRET and MEALPLANNER_OIDC_GROUP",
+        )
+    }
+    // The owner's account decides on the requests for an account, on a server with the helper set up; no other does.
+    fun approves(account: Account) = registrations != null && UserRepository.isOwner(account, config.owner)
     // Shared by every account: nutrition data, store offers and regular prices.
     val foods = FoodRepository(database)
     val offers = OfferRepository(database, offerSources)
@@ -152,6 +173,8 @@ fun Application.module(
 
     // Cooking sites the server fetches itself: synced a few times a day.
     launch { repeatEvery(CookingSync.EVERY_HOURS.hours, "Cooking site sync") { cooking.syncScheduled() } }
+    // Requests for an account nobody decided on in time are rejected; also after registration was switched off.
+    registrations?.let { launch { repeatEvery(1.hours, "Expiry of account requests") { it.expire() } } }
     if (config.fetchOffers) {
         // Stores publish their offers weekly; checking every six hours and fetching
         // what is older than a day keeps up without hammering them. Each job is logged
@@ -191,7 +214,10 @@ fun Application.module(
         bearer("api") {
             authenticate { credential ->
                 val identity = verifier.verify(credential.token) ?: return@authenticate null
-                requireMember(identity, config.oidcGroup)
+                // Authelia's access tokens may not name the account; then the provider is asked, only when a request waits.
+                requireMember(identity, config.oidcGroup) {
+                    registrations?.isWaiting { identity.username ?: verifier.userinfo(credential.token)?.username } == true
+                }
                 // Access tokens may not carry names; ask once, when the account is new.
                 val known = database.userQueries.selectBySubject(identity.subject).executeAsOneOrNull() != null
                 val named = if (identity.username == null && !known) verifier.userinfo(credential.token) ?: identity else identity
@@ -204,14 +230,16 @@ fun Application.module(
 
     routing {
         publicRoutes(config, verifier, offers, prices)
+        registrationRoutes(registrationOpen, registrations)
         authenticate("api") {
-            accountRoutes(cooking)
+            accountRequestRoutes(registrations, ::approves)
+            accountRoutes(cooking, ::approves)
             recipeRoutes(cooking)
             ingredientRoutes(config, foods, users, ::scope)
             planRoutes()
             shoppingRoutes()
             trackingRoutes()
-            notificationRoutes()
+            notificationRoutes { account -> registrations?.takeIf { approves(account) }?.waiting().orEmpty().map { it.username } }
             offerRoutes(offers, prices)
         }
     }

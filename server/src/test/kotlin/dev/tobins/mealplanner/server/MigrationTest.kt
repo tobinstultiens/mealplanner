@@ -199,7 +199,13 @@ class MigrationTest {
 
     /** Version 24 added the offers an account said are not one of its ingredients (23.sqm): a table, with its index. */
     private fun dropOfferExclusions(statement: Statement) {
+        dropAccountRequests(statement)
         statement.execute("DROP TABLE offerExclusion")
+    }
+
+    /** Version 25 added the requests for an account (24.sqm): a table. */
+    private fun dropAccountRequests(statement: Statement) {
+        statement.execute("DROP TABLE accountRequest")
     }
 
     @Test
@@ -1277,7 +1283,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        assertEquals(before, Triple(counts(), recipes(), everythingBut(url, "recipe", "planPick", "offerExclusion")), "every row as it was, in every table")
+        assertEquals(before, Triple(counts(), recipes(), everythingBut(url, "recipe", "planPick", "offerExclusion", "accountRequest")), "every row as it was, in every table")
         assertEquals("0", single(url, "SELECT group_concat(DISTINCT standardMeal) FROM recipe"), "no recipe is a standard meal")
 
         // Alice marks her toast and eats it in place of the skipped lunch: the share stays in the box with its beef, Bob's as it was.
@@ -1334,7 +1340,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        assertEquals(before, counts() to everythingBut(url, "planPick", "offerExclusion"), "every row as it was, in every table")
+        assertEquals(before, counts() to everythingBut(url, "planPick", "offerExclusion", "accountRequest"), "every row as it was, in every table")
         assertEquals("0", single(url, "SELECT count(*) FROM planPick"), "no dinner chosen, no recipe hidden")
 
         // Alice chooses her soup and hides her stew; deleting the soup takes its pick along, and Bob has none.
@@ -1380,7 +1386,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        assertEquals(before, counts() to everythingBut(url, "offerExclusion"), "every row as it was, in every table")
+        assertEquals(before, counts() to everythingBut(url, "offerExclusion", "accountRequest"), "every row as it was, in every table")
         assertEquals("0", single(url, "SELECT count(*) FROM offerExclusion"), "no exclusion yet")
 
         // Alice says Jumbo's Hela curry is no curry powder; Bob's match stays.
@@ -1391,6 +1397,38 @@ class MigrationTest {
         fun matched(id: Long) = scope(id).ingredients.matchTerms().let { offers.state(LocalDate.parse("2026-11-18"), it).offers.single().ingredientId }
         assertEquals(null to 2L, matched(1) to matched(2))
         assertEquals("1:JUMBO:hela curry:1", single(url, "SELECT userId || ':' || store || ':' || titleKey || ':' || ingredientId FROM offerExclusion"))
+        driver.close()
+    }
+
+    @Test
+    fun aVersionTwentyFourDatabaseKeepsEveryRowAndStartsWithNoAccountRequest() {
+        val file = createTempFile("v24", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropAccountRequests(statement)
+                statement.execute("INSERT INTO appUser (id, subject, username, createdAt) VALUES (1, 'alice', 'alice', '2026-11-01T00:00:00Z'), (2, 'bob', 'Bob', '2026-11-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name, isStaple) VALUES (1, 1, 'Curry powder', 0), (2, 2, 'Curry powder', 0)")
+                statement.execute("INSERT INTO userMeta (userId, key, value) VALUES (1, 'profile', '{}')")
+                statement.execute("PRAGMA user_version = 24")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        val before = counts() to everythingBut(url, "accountRequest")
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, counts() to everythingBut(url, "accountRequest"), "every row as it was, in every table")
+        assertEquals("0", single(url, "SELECT count(*) FROM accountRequest"), "nobody asked yet")
+        // The user names of the accounts there are, in any case, are not to be had.
+        assertEquals(listOf(1L, 1L, 0L), listOf("ALICE", "bob", "carl").map { db.registrationQueries.countAccountsNamed(it).executeAsOne() })
         driver.close()
     }
 
