@@ -138,6 +138,12 @@ enum class LoggedOut {
 
     /** The server refused the login as it does not say which groups the account is in ([LoginRefusal.NO_GROUPS]). */
     NO_GROUPS,
+
+    /**
+     * The server refused the account as [NOT_ALLOWED], saying its request for an account waits for the owner
+     * ([LoginRefusal.WAITING_FOR_APPROVAL], issue 314).
+     */
+    WAITING_FOR_APPROVAL,
 }
 
 fun SettingsStorage.loggedOut(): LoggedOut? = get(LOGGED_OUT_KEY)?.let { stored -> LoggedOut.entries.firstOrNull { it.name == stored } }
@@ -457,14 +463,15 @@ class LoginExchange(
      * The server refused the login behind the access token [refused] for [reason], one of [LoginRefusal]: the account
      * may not use the server, or the login does not say which groups it is in. That holds for every request and
      * every renewal until someone changes the account at the provider, so the session ends at once, with the reason
-     * for the login screen to say, and the app opens no login page by itself after it. Only when [refused] is still
+     * for the login screen to say, and the app opens no login page by itself after it. An account outside the group
+     * whose request for an account waits ([detail]) is told that instead. Only when [refused] is still
      * the stored session's token: an answer for a session already ended or replaced (another login, perhaps of
      * someone else) ends nothing. Any other reason is not about the login, and ends nothing either. Answers whether
      * the session ended.
      */
-    fun loginRefused(refused: String?, reason: String): Boolean {
+    fun loginRefused(refused: String?, reason: String, detail: String? = null): Boolean {
         val loggedOut = when (reason) {
-            LoginRefusal.NOT_IN_GROUP -> LoggedOut.NOT_ALLOWED
+            LoginRefusal.NOT_IN_GROUP -> if (detail == LoginRefusal.WAITING_FOR_APPROVAL) LoggedOut.WAITING_FOR_APPROVAL else LoggedOut.NOT_ALLOWED
             LoginRefusal.NO_GROUPS -> LoggedOut.NO_GROUPS
             else -> return false
         }

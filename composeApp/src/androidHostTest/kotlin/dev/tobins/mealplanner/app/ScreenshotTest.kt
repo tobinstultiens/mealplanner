@@ -49,7 +49,9 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
+import dev.tobins.mealplanner.api.AccountRequest
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.RegistrationReceipt
 import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.MealPrep
@@ -695,6 +697,30 @@ enum class Shot(
     LOGIN_NOT_ALLOWED_NL(dutch = true, heightDp = 760, content = { _, _ ->
         LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.NOT_ALLOWED, error = null, busy = false, {}, {})
     }),
+    // Issue 314: a server that takes requests for an account offers the form; a login whose request waits says so.
+    LOGIN_REGISTER(heightDp = 820, content = { _, _ ->
+        LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.LOGIN_OPENED, error = null, busy = false, {}, {}, onRegister = {})
+    }),
+    LOGIN_WAITING(heightDp = 820, content = { _, _ ->
+        LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.WAITING_FOR_APPROVAL, error = null, busy = false, {}, {}, onRegister = {})
+    }),
+    LOGIN_WAITING_NL(dutch = true, heightDp = 820, content = { _, _ ->
+        LoginScreen(ServerSettings("https://mealplanner.example.nl"), serverKnown = true, LoggedOut.WAITING_FOR_APPROVAL, error = null, busy = false, {}, {}, onRegister = {})
+    }),
+    // The form that asks for an account (issue 314): empty; after Send with every field wrong; refused by the server; sent.
+    // Each in Dutch and at font scale 2 too.
+    REGISTER(heightDp = 900, content = { _, _ -> RegistrationScreen(send = { RegistrationReceipt(it.username) }, onBack = {}) }),
+    REGISTER_NL(dutch = true, heightDp = 900, content = { _, _ -> RegistrationScreen(send = { RegistrationReceipt(it.username) }, onBack = {}) }),
+    REGISTER_X2(heightDp = 1500, fontScale = 2.0f, content = { _, _ -> RegistrationScreen(send = { RegistrationReceipt(it.username) }, onBack = {}) }),
+    REGISTER_PROBLEMS(heightDp = 1200, content = { _, _ -> registrationForm(wrongDraft, Msg.REGISTER_FIX_FIELDS) }),
+    REGISTER_PROBLEMS_NL(dutch = true, heightDp = 1250, content = { _, _ -> registrationForm(wrongDraft, Msg.REGISTER_FIX_FIELDS) }),
+    REGISTER_PROBLEMS_X2(heightDp = 2300, fontScale = 2.0f, content = { _, _ -> registrationForm(wrongDraft, Msg.REGISTER_FIX_FIELDS) }),
+    REGISTER_REFUSED(heightDp = 960, content = { _, _ -> registrationForm(goodDraft, Msg.REFUSED_UNAVAILABLE) }),
+    REGISTER_REFUSED_NL(dutch = true, heightDp = 960, content = { _, _ -> registrationForm(goodDraft, Msg.REFUSED_UNAVAILABLE) }),
+    REGISTER_REFUSED_X2(heightDp = 1700, fontScale = 2.0f, content = { _, _ -> registrationForm(goodDraft, Msg.REFUSED_UNAVAILABLE) }),
+    REGISTER_SENT(heightDp = 500, content = { _, _ -> RegistrationSent("zoe", onBack = {}) }),
+    REGISTER_SENT_NL(dutch = true, heightDp = 500, content = { _, _ -> RegistrationSent("zoe", onBack = {}) }),
+    REGISTER_SENT_X2(heightDp = 800, fontScale = 2.0f, content = { _, _ -> RegistrationSent("zoe", onBack = {}) }),
     // No server known yet (a debug build): the address is asked for; the last attempt could not reach it.
     LOGIN_ASKS_SERVER(heightDp = 860, content = { _, _ ->
         LoginScreen(
@@ -734,6 +760,12 @@ enum class Shot(
     SETTINGS_EXCLUSIONS(shows = "Hela curry", heightDp = 360, content = { api, _ -> excludedOffers(api) }),
     SETTINGS_EXCLUSIONS_NL(dutch = true, shows = "Hela curry", heightDp = 400, content = { api, _ -> excludedOffers(api) }),
     SETTINGS_EXCLUSIONS_X2(fontScale = 2.0f, shows = "Hela curry", heightDp = 800, content = { api, _ -> excludedOffers(api) }),
+    // The owner's requests for an account in Settings (issue 314), in Dutch and at font scale 2 too; and the owner's
+    // Notifications card, which has the switch for them.
+    SETTINGS_REQUESTS(shows = "Max Muster", heightDp = 560, content = { _, _ -> accountRequests() }),
+    SETTINGS_REQUESTS_NL(dutch = true, shows = "Max Muster", heightDp = 600, content = { _, _ -> accountRequests() }),
+    SETTINGS_REQUESTS_X2(fontScale = 2.0f, shows = "Max Muster", heightDp = 1100, content = { _, _ -> accountRequests() }),
+    NOTIFICATIONS_OWNER(heightDp = 960, content = { _, _ -> notificationsCard(allowed = true, owner = true) }),
     NOTIFICATIONS(heightDp = 860, content = { _, _ -> notificationsCard(allowed = true) }),
     NOTIFICATIONS_NL(dutch = true, heightDp = 920, content = { _, _ -> notificationsCard(allowed = true) }),
     NOTIFICATIONS_REFUSED(heightDp = 960, content = { _, _ -> notificationsCard(allowed = false) }),
@@ -741,9 +773,36 @@ enum class Shot(
     NOTIFICATIONS_X2_NL(dutch = true, heightDp = 1800, fontScale = 2.0f, content = { _, _ -> notificationsCard(allowed = true) }),
 }
 
-/** The Notifications card with the default switches and the weigh-in on; [allowed] is whether Android lets the app post. */
+/** A form for an account filled in wrongly in every field. */
+private val wrongDraft = RegistrationDraft("", "Zoe Example", "zoe@example", "zoe", "zoë")
+
+/** A form for an account filled in rightly. */
+private val goodDraft = RegistrationDraft("Zoe Example", "zoe", "zoe@example.org", "correct horse battery", "correct horse battery")
+
+/** The form that asks for an account with [draft], every problem of it shown, and [refusal] under Send. */
 @Composable
-private fun notificationsCard(allowed: Boolean) {
+private fun registrationForm(draft: RegistrationDraft, refusal: Msg) {
+    val t = LocalStrings.current
+    RegistrationForm(draft, registrationProblems(draft, t), t(refusal), sending = false, onChange = {}, onFocus = { _, _ -> }, onSend = {}, onBack = {})
+}
+
+/** The owner's Requests card in Settings, with two requests waiting. */
+@Composable
+private fun accountRequests() {
+    val waiting = listOf(
+        AccountRequest("zoe", "Zoe Example", "zoe@example.org", "2026-11-17T09:12:00Z", "2026-12-01T09:12:00Z"),
+        AccountRequest("max.muster", "Max Muster", "max.muster@example.org", "2026-11-18T08:00:00Z", "2026-12-02T08:00:00Z"),
+    )
+    val decisions = remember { AccountDecisions({ waiting }, { waiting }, { waiting }) }
+    Column(Modifier.padding(16.dp)) { AccountRequestsCard(decisions, remember { SnackbarHostState() }) }
+}
+
+/**
+ * The Notifications card with the default switches and the weigh-in on; [allowed] is whether Android lets the app post,
+ * [owner] whether the account decides on requests for an account (issue 314), which only then has their switch.
+ */
+@Composable
+private fun notificationsCard(allowed: Boolean, owner: Boolean = false) {
     val storage = remember { MemorySettingsStorage().also { it.saveNotificationOn(NotificationKind.WEIGH_IN, true) } }
     val access = object : NotificationAccess {
         override val allowed = MutableStateFlow(allowed)
@@ -752,7 +811,7 @@ private fun notificationsCard(allowed: Boolean) {
 
         override fun openSettings() = Unit
     }
-    Column(Modifier.padding(16.dp)) { NotificationsCard(NotificationSettings(storage, access)) }
+    Column(Modifier.padding(16.dp)) { NotificationsCard(NotificationSettings(storage, access), approvesRequests = owner) }
 }
 
 /**

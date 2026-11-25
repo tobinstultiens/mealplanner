@@ -42,6 +42,9 @@ enum class NotificationKind(val key: String, val channel: String, val defaultOn:
 
     // On: an account that never made a prep has no batch to tell of, so in effect it is on for those that have (issue 264).
     THROW_AWAY("throwAway", "throwAway", true, 8, Msg.NOTIFY_THROW_AWAY, Msg.NOTIFY_THROW_AWAY_HINT),
+
+    // On: only the owner's account is told of requests for an account (issue 314), and its switch shows to no other.
+    ACCOUNT_REQUESTS("accountRequests", "accountRequests", true, 8, Msg.NOTIFY_ACCOUNT_REQUESTS, Msg.NOTIFY_ACCOUNT_REQUESTS_HINT),
     ;
 
     companion object {
@@ -50,6 +53,9 @@ enum class NotificationKind(val key: String, val channel: String, val defaultOn:
 
         /** The kinds the server's facts are about: all but the update, which GitHub tells. */
         val fromServer = entries - UPDATE
+
+        /** The kinds Settings has a switch for: "Account requests" only for the account that [approvesRequests]. */
+        fun shown(approvesRequests: Boolean): List<NotificationKind> = if (approvesRequests) entries else entries - ACCOUNT_REQUESTS
     }
 }
 
@@ -134,9 +140,24 @@ class NotificationPlanner(
 
     /** The notifications to post now, for the newer release [update] and the server's [facts] (each null when unknown), in [strings]. */
     fun due(facts: NotificationFacts?, update: AppUpdate?, strings: Strings): List<DueNotification> {
+        facts?.let { forgetDecidedRequests(it.accountRequests) }
         val candidates = listOfNotNull(update?.let { updateNotification(it, strings) }) +
-            facts?.let { dueNotifications(it, toldBatches(storage.told(NotificationKind.THROW_AWAY), it.date), strings) }.orEmpty()
+            facts?.let {
+                val told = toldBatches(storage.told(NotificationKind.THROW_AWAY), it.date)
+                dueNotifications(it, told, toldRequests(storage.told(NotificationKind.ACCOUNT_REQUESTS)), strings)
+            }.orEmpty()
         return candidates.filter { wanted(it.kind) && !alreadyTold(it) }
+    }
+
+    /**
+     * Forgets the requests for an account told of that no longer wait ([waiting]: decided, or expired), so that a user name
+     * that asks again after a rejection is told of again. Not only when something is posted: such a request may come back
+     * before any other new one does.
+     */
+    private fun forgetDecidedRequests(waiting: List<String>) {
+        val told = toldRequests(storage.told(NotificationKind.ACCOUNT_REQUESTS))
+        val still = told.filter { it in waiting }
+        if (still.size != told.size) storage.set("notified.${NotificationKind.ACCOUNT_REQUESTS.key}", still.joinToString(","))
     }
 
     /** Remembers that [posted] was posted, so that [due] does not offer it again. */
@@ -168,9 +189,10 @@ private fun updateNotification(update: AppUpdate, t: Strings) =
 
 /**
  * The server's [facts] as notifications, one for each kind that is due, leaving out the batches past their last day
- * told of already ([told]); whether to post them is [NotificationPlanner.due]'s.
+ * told of already ([told]) and the requests for an account told of already ([toldRequests]); whether to post them is
+ * [NotificationPlanner.due]'s.
  */
-private fun dueNotifications(facts: NotificationFacts, told: Set<Long>, t: Strings): List<DueNotification> = listOfNotNull(
+private fun dueNotifications(facts: NotificationFacts, told: Set<Long>, toldRequests: Set<String>, t: Strings): List<DueNotification> = listOfNotNull(
     facts.offersEnding.takeIf { it.isNotEmpty() }?.let { offers ->
         val ending = when {
             offers.all { it.endsOn == facts.date } -> Plural.OFFERS_END_TODAY
@@ -190,7 +212,27 @@ private fun dueNotifications(facts: NotificationFacts, told: Set<Long>, t: Strin
         DueNotification(NotificationKind.MEALS_TO_MARK, t.plural(Plural.MEALS_TO_MARK, count), t(Msg.MEALS_TO_MARK_NOTIFICATION_TEXT), Opening(Route.TabRoute(Tab.TODAY)), facts.date)
     },
     throwAwayNotification(facts, told, t),
+    accountRequestsNotification(facts.accountRequests, toldRequests, t),
 )
+
+/**
+ * The owner's requests for an account (issue 314) when one of them was not told of yet ([told]): the title counts all that
+ * wait, the text names the new ones, and a tap opens Settings, where they are decided on. It remembers the user names
+ * waiting now, so each request is told of once; a newer one replaces it in the tray.
+ */
+private fun accountRequestsNotification(waiting: List<String>, told: Set<String>, t: Strings): DueNotification? {
+    val new = waiting.filter { it !in told }.takeIf { it.isNotEmpty() } ?: return null
+    return DueNotification(
+        NotificationKind.ACCOUNT_REQUESTS,
+        t.plural(Plural.ACCOUNT_REQUESTS_TITLE, waiting.size),
+        t(Msg.ACCOUNT_REQUESTS_NOTIFICATION_TEXT, new.joinToString(", ")),
+        Opening(Route.Settings),
+        waiting.joinToString(","),
+    )
+}
+
+/** The user names of the requests for an account told of, from what was remembered of the kind ([DueNotification.toldAs]: `ann,bob`). */
+private fun toldRequests(told: String?): Set<String> = told?.split(',')?.filterTo(HashSet()) { it.isNotBlank() }.orEmpty()
 
 /**
  * Tonight's [dinner] on the server's day [date]: what to cook, and a tap opens its recipe as the Plan does. A batch made
