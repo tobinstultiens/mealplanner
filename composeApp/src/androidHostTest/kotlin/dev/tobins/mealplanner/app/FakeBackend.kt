@@ -37,6 +37,9 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Nutrition
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.OfferExclusion
+import dev.tobins.mealplanner.api.OfferExclusionRequest
+import dev.tobins.mealplanner.api.OfferExclusions
 import dev.tobins.mealplanner.api.OfferSourceStatus
 import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Pantry
@@ -301,6 +304,7 @@ class FakeBackend(
                 json.encodeToString(plan(parts[2]))
             }
             parts.size == 4 && parts[1] == "plans" && parts[3] == "shopping" -> json.encodeToString(judged(shopping(parts[2])))
+            path == "/api/offers/exclusions" -> changeExclusions(method, sent, query)
             path == "/api/offers" -> json.encodeToString(if (emptyOffers) OffersState(emptyList(), emptyList()) else offers)
             path == "/api/prices" -> json.encodeToString(if (emptyPrices) PricesState(emptyList(), emptyList(), null) else prices)
             (method == "PUT" || method == "DELETE") && path.startsWith("/api/weights/") -> changeWeights(method, path.substringAfterLast('/'), sent)
@@ -580,28 +584,29 @@ class FakeBackend(
         val chickpea = "Chickpea salad with feta and roasted peppers"
         return ShoppingList(
             weekStart = weekStart,
+            // Keyed as the server keys them, by the ingredient's id ([ingredients]; the pepper's is 9), which "Not this ingredient" reads.
             items = listOf(
-                item("pepper", "Red bell pepper", null, 4.0, ShopSection.FRUIT_VEG, chickpea, offers = listOf(offerList[0].copy(paidShare = 0.75)), imageUrl = offerList[0].imageUrl),
+                item("i9", "Red bell pepper", null, 4.0, ShopSection.FRUIT_VEG, chickpea, offers = listOf(offerList[0].copy(paidShare = 0.75)), imageUrl = offerList[0].imageUrl),
                 // Weighed in one recipe and counted in bags in another: the weight is known only in part.
                 // Two whole plants are counted in a third, next to the bag.
-                item("spinach", "Spinach", null, 3.0, ShopSection.FRUIT_VEG, chicken, knownGrams = 600.0, otherAmounts = listOf("1 bag"))
+                item("i8", "Spinach", null, 3.0, ShopSection.FRUIT_VEG, chicken, knownGrams = 600.0, otherAmounts = listOf("1 bag"))
                     .copy(ownPieces = 2.0),
                 item(
                     // Bought for the 800 g a reroll needed; the meals need 1.4 kg now: 600 g more. 300 g
                     // bought ahead last week is in the freezer: counted in when the row said 800 g, so the
                     // ticked row doesn't name it again.
-                    "chicken", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true,
+                    "i1", "Chicken thigh fillet", 1400.0, null, ShopSection.MEAT, chicken, checked = true,
                     offers = listOf(offerList[1].copy(paidShare = 0.75)), imageUrl = offerList[1].imageUrl, regularPrice = 13.97, boughtGrams = 800.0,
                     onHand = true, onHandGrams = 300.0, toComeGrams = 1400.0,
                 ),
                 // On hand by hand, so how much is not known.
                 item(
-                    "feta", "Feta", 400.0, null, ShopSection.DAIRY, chickpea, offers = listOf(offerList[2].copy(paidShare = 0.5)), imageUrl = offerList[2].imageUrl,
+                    "i2", "Feta", 400.0, null, ShopSection.DAIRY, chickpea, offers = listOf(offerList[2].copy(paidShare = 0.5)), imageUrl = offerList[2].imageUrl,
                     regularPrice = 4.60, onHand = true, toComeGrams = 400.0,
                 ),
                 // Lidl's second week starts on Thursday, two days after the fixed "today": a badge with its day, nothing in the saving.
                 item(
-                    "yoghurt", "Greek yoghurt", 500.0, null, ShopSection.DAIRY, chickpea,
+                    "i3", "Greek yoghurt", 500.0, null, ShopSection.DAIRY, chickpea,
                     offers = listOf(Offer(Store.LIDL, "Griekse yoghurt 500 g", "voor 1,19", 1.19, 1.79, "500 g", null, "2026-11-19", "2026-11-25", paidShare = 0.66)), regularPrice = 1.79,
                     // Stocked up on earlier: more than the meals need, so nothing to buy: in a group of its own per store.
                     onHand = true, onHandGrams = 650.0, toComeGrams = 500.0,
@@ -610,7 +615,7 @@ class FakeBackend(
                 // (50 g): the six still to come need 300 g, the amount shown, so 100 g is still to buy.
                 // The eaten breakfast is no longer named as its source: only the meals still to cook are.
                 item(
-                    "oats", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries",
+                    "i6", "Rolled oats", 350.0, null, ShopSection.BREAKFAST, "Overnight oats with blueberries",
                     offers = listOf(offerList[3].copy(paidShare = 0.79, ingredientName = "Rolled oats")), regularPrice = 0.76, onHand = true, onHandGrams = 200.0, toComeGrams = 300.0,
                 ).let { it.copy(recipes = listOf("Porridge with banana") + it.recipes, toComeRecipes = listOf("Overnight oats with blueberries")) },
                 // Own items, typed by hand: one the server filed under a section, one it could not place.
@@ -843,10 +848,40 @@ class FakeBackend(
         grams = amount.takeIf { dimension != Dimension.COUNT },
     )
 
+    /**
+     * The account's "Not this ingredient" list (issue 316), the newest first: at first the two [madeBefore], for the list in
+     * Settings. Like the server it answers each change with the list; unlike it, the offers and the shopping list stay as they
+     * are, so what a screen shows of a change is the app's own doing.
+     */
+    val exclusions: MutableList<OfferExclusion> = java.util.Collections.synchronizedList(madeBefore.toMutableList())
+
+    /** The names of the ingredients an exclusion can be of: those of the offers and of the two made before. */
+    private val excludable by lazy {
+        (offerList.mapNotNull { offer -> offer.ingredientId?.let { it to offer.ingredientName.orEmpty() } } + madeBefore.map { it.ingredientId to it.ingredientName }).toMap()
+    }
+
+    private fun changeExclusions(method: String, sent: String, query: Map<String, String>): String {
+        val request = when (method) {
+            "PUT" -> json.decodeFromString<OfferExclusionRequest>(sent)
+            "DELETE" -> OfferExclusionRequest(Store.valueOf(query.getValue("store")), query.getValue("title"), query.getValue("ingredientId").toLong())
+            else -> null
+        }
+        if (request != null) {
+            changes += "$method /api/offers/exclusions ${request.store} ${request.title} ${request.ingredientId}"
+            val key = OfferExclusion.titleKey(request.title)
+            exclusions.removeAll { it.store == request.store && it.titleKey == key && it.ingredientId == request.ingredientId }
+            if (method == "PUT") {
+                val name = excludable[request.ingredientId] ?: throw Refusal(404, "No ingredient with id ${request.ingredientId}")
+                exclusions.add(0, OfferExclusion(request.store, request.title, key, request.ingredientId, name, "${TODAY}T10:30:00Z"))
+            }
+        }
+        return json.encodeToString(OfferExclusions(exclusions.toList()))
+    }
+
     private val offerList = listOf(
-        Offer(Store.AH, "Rode paprika 500 g", "25% korting", 2.24, 2.99, "500 g", "Groente", "2026-11-16", "2026-11-22", ingredientName = "Red bell pepper", imageUrl = "https://static.ah.nl/dam/product/paprika.webp"),
-        Offer(Store.JUMBO, "Kipdijfilet 600 g", "2 voor 9,00", 4.50, 5.99, "600 g", "Vlees", "2026-11-16", "2026-11-22", ingredientName = "Chicken thigh fillet", imageUrl = "https://www.jumbo.com/INTERSHOP/static/kip.png"),
-        Offer(Store.LIDL, "Griekse feta 200 g", "1+1 gratis", 1.79, null, "200 g", "Zuivel", "2026-11-16", "2026-11-22", ingredientName = "Feta", imageUrl = "https://www.lidl.nl/assets/feta.png"),
+        Offer(Store.AH, "Rode paprika 500 g", "25% korting", 2.24, 2.99, "500 g", "Groente", "2026-11-16", "2026-11-22", ingredientId = 9, ingredientName = "Red bell pepper", imageUrl = "https://static.ah.nl/dam/product/paprika.webp"),
+        Offer(Store.JUMBO, "Kipdijfilet 600 g", "2 voor 9,00", 4.50, 5.99, "600 g", "Vlees", "2026-11-16", "2026-11-22", ingredientId = 1, ingredientName = "Chicken thigh fillet", imageUrl = "https://www.jumbo.com/INTERSHOP/static/kip.png"),
+        Offer(Store.LIDL, "Griekse feta 200 g", "1+1 gratis", 1.79, null, "200 g", "Zuivel", "2026-11-16", "2026-11-22", ingredientId = 2, ingredientName = "Feta", imageUrl = "https://www.lidl.nl/assets/feta.png"),
         Offer(Store.AH, "Bio havermout met een heel lange productnaam voor de test", "voor 1,49", 1.49, 1.89, "500 g", null, "2026-11-16", "2026-11-22"),
     )
 
@@ -1061,5 +1096,11 @@ class FakeBackend(
 
         /** An access token of an account outside the server's group: every call answers 403 `not_in_group` to it. */
         const val NOT_IN_GROUP_TOKEN = "not-in-group-token"
+
+        /** Two "Not this ingredient" made on another device before the screens open (issue 316), the newest first. */
+        private val madeBefore = listOf(
+            OfferExclusion(Store.JUMBO, "Hela curry", "hela curry", 10, "Curry powder", "2026-11-17T18:02:11Z"),
+            OfferExclusion(Store.AH, "AH Excellent hertenbiefstuk", "ah excellent hertenbiefstuk", 11, "Beef steak", "2026-11-16T09:40:00Z"),
+        )
     }
 }

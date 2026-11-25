@@ -157,31 +157,31 @@ class DealVerdictsTest {
     }
 
     @Test
-    fun theSnackbarOpensThePriceHistoryOnlyOfOffersWithEarlierOnes() {
+    fun theDealsDetailListsEveryOfferAtTheAccountsStoresWithOrWithoutHistory() {
         val today = "2026-11-18"
         fun offer(store: Store, verdict: PriceVerdict?) = Offer(store, "Kipfilet", "25% korting", validFrom = "2026-11-16", validUntil = "2026-11-22", verdict = verdict)
         val young = offer(Store.AH, PriceVerdict(daysRead = 2, daysNeeded = 56))
         val known = offer(Store.JUMBO, verdict(VerdictKind.USUAL_DEAL, value = 6.0, typical = 6.0).copy(earlier = listOf(past("2026-10-19", 6.0))))
         val elsewhere = offer(Store.LIDL, known.verdict)
         val row = ShoppingItem("i1", "Chicken", 500.0, null, "Meat", emptyList(), false, false, listOf(young, known, elsewhere))
-        // Early on there is nothing to list, and the snackbar offers nothing more; a store not shopped at is left out.
-        assertEquals(listOf(known), row.historyOffers(setOf(Store.AH, Store.JUMBO), today))
-        assertEquals(emptyList(), row.copy(offers = listOf(young)).historyOffers(Store.entries.toSet(), today))
+        // Each has its own "Not this ingredient", so the one too new to judge is there too; a store not shopped at is left out.
+        assertEquals(listOf(young, known), row.dealOffers(setOf(Store.AH, Store.JUMBO), today))
     }
 
     @Test
     fun theRowsDetailSaysTheVerdictUnderTheDeal() {
+        val today = "2026-11-18"
         val offer = Offer(Store.AH, "AH Mager rundergehakt 300 gram", "VOOR 3.99", 3.99, null, validFrom = "2026-11-16", validUntil = "2026-11-22")
         fun row(verdict: PriceVerdict?) = ShoppingItem("i1", "Minced beef", 300.0, null, "Meat", emptyList(), false, false, listOf(offer.copy(verdict = verdict)))
-        assertEquals("AH: €3.99 (AH Mager rundergehakt 300 gram)", row(null).dealText(Store.entries.toSet(), "2026-11-18", en))
+        // What the dialog shows of each offer, line by line ([DealDetail], [VerdictDetail]).
+        fun ShoppingItem.detail(strings: Strings) = dealOffers(Store.entries.toSet(), today).single().let {
+            listOf(it.dealHeading(today, strings), it.productText()) + it.verdict?.let { v -> listOf(v.line(strings)) + v.notes(strings) }.orEmpty()
+        }
+        assertEquals(listOf("AH: €3.99", "AH Mager rundergehakt 300 gram"), row(null).detail(en))
+        assertEquals(listOf("AH: €3.99", "AH Mager rundergehakt 300 gram", "Too new to judge (3 of 56 days)"), row(PriceVerdict(daysRead = 3, daysNeeded = 56)).detail(en))
         assertEquals(
-            "AH: €3.99 (AH Mager rundergehakt 300 gram)\nToo new to judge (3 of 56 days)",
-            row(PriceVerdict(daysRead = 3, daysNeeded = 56)).dealText(Store.entries.toSet(), "2026-11-18", en),
-        )
-        assertEquals(
-            "AH: €3,99 (AH Mager rundergehakt 300 gram)\nEchte aanbieding: laagste tot nu toe, €13,30/kg\nOok in de aanbieding: \"2 voor 7,00\"",
-            row(verdict(VerdictKind.REAL_DEAL, value = 13.30).copy(alongside = listOf(past("2026-11-16", deal = "2 voor 7,00"))))
-                .dealText(Store.entries.toSet(), "2026-11-18", nl),
+            listOf("AH: €3,99", "AH Mager rundergehakt 300 gram", "Echte aanbieding: laagste tot nu toe, €13,30/kg", "Ook in de aanbieding: \"2 voor 7,00\""),
+            row(verdict(VerdictKind.REAL_DEAL, value = 13.30).copy(alongside = listOf(past("2026-11-16", deal = "2 voor 7,00")))).detail(nl),
         )
     }
 }

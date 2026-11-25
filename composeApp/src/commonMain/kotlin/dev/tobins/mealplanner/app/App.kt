@@ -372,6 +372,7 @@ fun App(
                     },
                     onBack = { serverOpen = false },
                     notifications = notificationAccess?.let { NotificationSettings(storage, it) },
+                    exclusions = shopping.exclusions,
                 )
                 return@CompositionLocalProvider
             }
@@ -414,7 +415,7 @@ fun App(
                     }
                     offersOpen -> screenStates.SaveableStateProvider("offers") {
                         BackHandler(enabled = true) { offersOpen = false }
-                        OffersScreen(api, onBack = { offersOpen = false }, onOpenPrices = { pricesOpen = true })
+                        OffersScreen(api, shopping.exclusions, onBack = { offersOpen = false }, onOpenPrices = { pricesOpen = true })
                     }
                     pantryOpen -> screenStates.SaveableStateProvider("pantry") {
                         BackHandler(enabled = true) { pantryOpen = false }

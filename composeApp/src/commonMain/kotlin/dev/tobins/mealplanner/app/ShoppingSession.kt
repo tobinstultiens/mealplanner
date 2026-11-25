@@ -40,7 +40,9 @@ internal val ShoppingItem.extraId: Long? get() = if (key.startsWith("x:")) key.r
  * notice says so. Ticking an own item works offline like any row.
  *
  * Ticks are written to the [cache] before they are sent (see [ShoppingTicks]); the ones left from
- * before, of every week, go out before each list is fetched. [close] ends it all, before logging out.
+ * before, of every week, go out before each list is fetched. So does "Not this ingredient"
+ * ([exclusions]), whose exclusions are laid over every list shown ([state]). [close] ends it all,
+ * before logging out.
  *
  * The list keeps itself current, as another device on the same login may tick too: it is fetched
  * when the app comes back to the front and, while the screen shows in front, every
@@ -85,9 +87,17 @@ internal class ShoppingSession(
     var weekStart: String by mutableStateOf(chosenWeek ?: thisWeek())
         private set
 
-    /** The list of [weekStart], never another week's. */
-    var state: Load<ShoppingList> by mutableStateOf(Load.Loading)
-        private set
+    /** The list of [weekStart] as it came, from the server or the device's copy, with the waiting ticks laid over. */
+    private var loaded: Load<ShoppingList> by mutableStateOf(Load.Loading)
+
+    /**
+     * "Not this ingredient" (issue 316), sent in the same turn as the ticks; a change fetches the list shown, as a
+     * tick's answer would bring it.
+     */
+    val exclusions = OfferExclusionQueue(scope, cache, server, turn, sendSoon = { fetch(weekStart) }, rejected = { waitingNotices += it })
+
+    /** The list of [weekStart], never another week's, without the offers excluded on this device ([withoutExcluded]). */
+    val state: Load<ShoppingList> get() = loaded.withoutExcluded(exclusions.inEffect)
 
     /** When the stored copy shown was saved, while the server cannot be reached; null when online. */
     var offlineSince: String? by mutableStateOf(null)
@@ -362,7 +372,7 @@ internal class ShoppingSession(
             while (true) {
                 delay(RECONNECT)
                 waited += RECONNECT
-                val failed = state as? Load.Failed
+                val failed = loaded as? Load.Failed
                 val due = when {
                     failed != null -> !failed.refused
                     offlineSince != null -> true
@@ -384,7 +394,7 @@ internal class ShoppingSession(
         val sameWeek = week == weekStart
         weekStart = week
         if (!sameWeek) offlineSince = null
-        if (!sameWeek || state !is Load.Ready) state = cache.load(week)?.let { Load.Ready(ticksOf(week).reset(it.first)) } ?: Load.Loading
+        if (!sameWeek || loaded !is Load.Ready) loaded = cache.load(week)?.let { Load.Ready(ticksOf(week).reset(it.first)) } ?: Load.Loading
         fetch(week)
     }
 
@@ -422,24 +432,27 @@ internal class ShoppingSession(
                 display(week, ticksOf(week).reset(stored.first))
                 if (week == weekStart) offlineSince = stored.second
             }
-            week == weekStart && state !is Load.Ready -> {
-                state = result
+            week == weekStart && loaded !is Load.Ready -> {
+                loaded = result
                 offlineSince = null
             }
         }
     }
 
     /**
-     * Sends the ticks of every week that wait in the cache from an earlier visit, a lost
-     * connection or an app that was closed, oldest week first: the list fetched next includes
-     * them, and next week's plan knows what was bought ahead. A tick the server refuses is dropped
-     * and reported. One it fails on (a 5xx) stays stored for the next time and the rest still go:
-     * the server answered, so the list can load, and one tick it keeps failing on must not stop
+     * Sends the "Not this ingredient" changes that wait ([OfferExclusionQueue.sendWaiting]), then
+     * the ticks of every week that wait in the cache from an earlier visit, a lost connection or
+     * an app that was closed, oldest week first: the list fetched next includes them, and next
+     * week's plan knows what was bought ahead. When a change gets no answer, no tick is tried
+     * either: there is no connection. A tick the server refuses is dropped and reported. One it
+     * fails on (a 5xx) stays stored for the next time and the rest still go: the server
+     * answered, so the list can load, and one tick it keeps failing on must not stop
      * every list from loading. When one gets no answer at all the rest wait for the next time, and
      * that failure is returned. An answer the app cannot read is the server's answer too, so it
      * counts as an error and not as no answer. The ticks left stored are counted in [stuckTicks].
      */
     private suspend fun sendWaiting(): Load.Failed? {
+        exclusions.sendWaiting()?.let { return it }
         var stuck = 0
         for (week in cache.weeksWithTicks()) {
             // Ticks of this session that are still to go are sent in their own turn.
@@ -511,7 +524,7 @@ internal class ShoppingSession(
 
     /** Shows [list] if [week] is still the one shown. */
     private fun display(week: String, list: ShoppingList) {
-        if (week == weekStart) state = Load.Ready(list)
+        if (week == weekStart) loaded = Load.Ready(list)
     }
 
     private suspend fun timed(request: suspend () -> Load<ShoppingList>): Load<ShoppingList> =

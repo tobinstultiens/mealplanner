@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.OfferExclusion
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
 import kotlinx.serialization.Serializable
@@ -8,7 +9,8 @@ import kotlinx.serialization.json.Json
 /**
  * The last shopping list seen per week, and the ticks the server has not confirmed yet, so the
  * list works in a shop without reception and no tick is lost when the app is closed before it
- * was sent.
+ * was sent. The same for "Not this ingredient" (issue 316): the account's list as the server last
+ * gave it, and the exclusions made or taken back here that wait to be sent.
  *
  * One cache belongs to one login: it writes nothing once the stored lists were cleared after it
  * was made ([clear], on logging out), so a request of the previous account that is answered just
@@ -109,6 +111,42 @@ class ShoppingCache(private val storage: SettingsStorage) {
     /** The ticks of [weekStart] the server has not confirmed yet, by item key. */
     fun pending(weekStart: String): Map<String, Boolean> = entry(weekStart)?.pending.orEmpty()
 
+    // An earlier version of the app stored none: no key reads as none of either.
+    @Serializable
+    private data class Exclusions(val known: List<OfferExclusion> = emptyList(), val waiting: List<ExclusionChange> = emptyList())
+
+    private fun exclusions(): Exclusions =
+        storage.get(EXCLUSIONS_KEY)?.let { runCatching { json.decodeFromString<Exclusions>(it) }.getOrNull() } ?: Exclusions()
+
+    private fun writeExclusions(exclusions: Exclusions) {
+        if (current()) storage.set(EXCLUSIONS_KEY, json.encodeToString(exclusions))
+    }
+
+    /** The account's exclusions as the server last listed them. */
+    fun knownExclusions(): List<OfferExclusion> = exclusions().known
+
+    /** The exclusions made or taken back on this device that the server has not confirmed yet, oldest first: one per [ExclusionKey]. */
+    internal fun waitingExclusions(): List<ExclusionChange> = exclusions().waiting
+
+    /** Records [change] before it is sent, in place of an earlier change of the same exclusion that has not gone out yet. */
+    internal fun chooseExclusion(change: ExclusionChange) {
+        val stored = exclusions()
+        writeExclusions(stored.copy(waiting = stored.waiting.filter { it.key != change.key } + change))
+    }
+
+    /** Stores the account's list the server answered [change] with; the change no longer waits, unless the user has chosen differently since. */
+    internal fun confirmExclusion(change: ExclusionChange, known: List<OfferExclusion>) =
+        writeExclusions(Exclusions(known, exclusions().waiting - change))
+
+    /** Drops [change], which the server refused, unless the user has chosen differently since. */
+    internal fun forgetExclusion(change: ExclusionChange) {
+        val stored = exclusions()
+        writeExclusions(stored.copy(waiting = stored.waiting - change))
+    }
+
+    /** Stores the account's list as the server gave it, asked for on its own. */
+    fun saveKnownExclusions(known: List<OfferExclusion>) = writeExclusions(exclusions().copy(known = known))
+
     /** The weeks with ticks the server has not confirmed yet, oldest first, so they are sent in the order they were made. */
     fun weeksWithTicks(): List<String> = weeks().sorted().filter { pending(it).isNotEmpty() }
 
@@ -130,7 +168,7 @@ class ShoppingCache(private val storage: SettingsStorage) {
     }
 
     /**
-     * Forgets every stored list and waiting tick, for when another account may log in on this
+     * Forgets every stored list and waiting tick, and the exclusions, for when another account may log in on this
      * device: its ticks must never reach that account's list. Every cache made before this one
      * writes nothing from now on. Lists stored by app versions from before the list of weeks are
      * found by looking at the weeks around [today].
@@ -139,11 +177,13 @@ class ShoppingCache(private val storage: SettingsStorage) {
         storage.set(GENERATION_KEY, ((storage.get(GENERATION_KEY)?.toIntOrNull() ?: 0) + 1).toString())
         (weeks() + legacyWeeks(mondayOf(today))).toSet().forEach { storage.remove(key(it)) }
         storage.remove(WEEKS_KEY)
+        storage.remove(EXCLUSIONS_KEY)
     }
 
     private companion object {
         const val WEEKS_KEY = "shopping.weeks"
         const val GENERATION_KEY = "shopping.generation"
+        const val EXCLUSIONS_KEY = "shopping.exclusions"
         const val LEGACY_WEEKS_BACK = 52
         const val LEGACY_WEEKS_AHEAD = 8
 

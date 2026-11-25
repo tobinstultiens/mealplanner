@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.api.Store
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -191,5 +192,57 @@ class ShoppingCacheTest {
         storage.logOut()
         assertNull(cache.load(list.weekStart))
         assertEquals(emptyMap(), cache.pending(list.weekStart))
+    }
+
+    private fun change(excluded: Boolean, at: String = "2026-11-18T09:00:00Z") =
+        ExclusionChange(Store.JUMBO, "Hela curry", 3, "Curry powder", excluded, at)
+
+    @Test
+    fun aWaitingExclusionSurvivesTheAppAndOneChangeOfAProductWaitsAtATime() {
+        val storage = MemorySettingsStorage()
+        // An app from before "Not this ingredient" stored none.
+        assertEquals(emptyList(), ShoppingCache(storage).waitingExclusions())
+        ShoppingCache(storage).chooseExclusion(change(excluded = true))
+        val undone = change(excluded = false, at = "2026-11-18T09:00:05Z")
+        ShoppingCache(storage).chooseExclusion(undone)
+
+        // The app was closed and opened again: the latest choice for the product waits.
+        assertEquals(listOf(undone), ShoppingCache(storage).waitingExclusions())
+    }
+
+    @Test
+    fun theServersAnswerSettlesAChangeUnlessTheUserChoseAgainSince() {
+        val cache = ShoppingCache(MemorySettingsStorage())
+        val excluded = change(excluded = true)
+        cache.chooseExclusion(excluded)
+        // Undone while the exclusion was on its way.
+        val undone = change(excluded = false, at = "2026-11-18T09:00:05Z")
+        cache.chooseExclusion(undone)
+
+        cache.confirmExclusion(excluded, listOf(excluded.asExclusion()))
+
+        assertEquals(listOf(excluded.asExclusion()), cache.knownExclusions())
+        assertEquals(listOf(undone), cache.waitingExclusions(), "the take-back still goes out")
+        cache.confirmExclusion(undone, emptyList())
+        assertEquals(emptyList(), cache.waitingExclusions())
+        assertEquals(emptyList(), cache.knownExclusions())
+    }
+
+    @Test
+    fun loggingOutForgetsTheExclusionsAndAnAnswerArrivingLaterStoresNone() {
+        val storage = MemorySettingsStorage()
+        val cache = ShoppingCache(storage)
+        val excluded = change(excluded = true)
+        cache.chooseExclusion(excluded)
+        cache.saveKnownExclusions(listOf(excluded.asExclusion()))
+
+        storage.logOut()
+        // The previous account's request answered after logging out.
+        cache.confirmExclusion(excluded, listOf(excluded.asExclusion()))
+        cache.chooseExclusion(change(excluded = true, at = "2026-11-18T09:01:00Z"))
+
+        val next = ShoppingCache(storage)
+        assertEquals(emptyList(), next.knownExclusions())
+        assertEquals(emptyList(), next.waitingExclusions())
     }
 }

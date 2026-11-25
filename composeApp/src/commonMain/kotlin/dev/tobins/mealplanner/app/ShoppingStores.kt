@@ -54,27 +54,23 @@ private fun ShoppingItem.savingCounted(shops: Set<Store>, today: String): Double
 }
 
 /**
- * The full deals of the item's offers in [shops] for the row's snackbar, one per line: those valid
- * today as they are, those that start later with the days they start and end. Ended offers are left out, as they
- * are everywhere on the list. Under an offer the server judged come its verdict's line and notes
- * ([line], [notes]): the row's detail, also where the history is still too short to say more.
+ * The offers a tap on the row's chip shows ([DealDialog]): those at the account's [shops], one per store and deal, those
+ * that start later included. Ended offers are left out, as they are everywhere on the list.
  */
-fun ShoppingItem.dealText(shops: Set<Store>, today: String, strings: Strings): String =
-    offers.filter { it.store in shops && it.validUntil >= today }.distinctBy { it.store to it.deal }.joinToString("\n") {
-        val later = if (it.startsAfter(today)) " ${it.startLabel(today, strings)} ${it.endLabel(today, strings)}" else ""
-        // The pack size is added when the title does not already say it.
-        val pack = it.packSize?.takeIf { size -> size.isNotBlank() && !it.title.contains(size, ignoreCase = true) }
-        val verdict = it.verdict?.let { v -> listOf(v.line(strings)) + v.notes(strings) }.orEmpty()
-        (listOf("${it.shortText(strings)}$later (${listOfNotNull(it.title, pack).joinToString(", ")})") + verdict).joinToString("\n")
-    }
+fun ShoppingItem.dealOffers(shops: Set<Store>, today: String): List<Offer> =
+    offers.filter { it.store in shops && it.validUntil >= today }.distinctBy { it.store to it.deal }
 
-/**
- * The offers of this row whose price history the snackbar's "Price history" opens ([VerdictHistoryDialog]): those
- * [dealText] names that have earlier offers to list. Empty early on, when no verdict has any yet, and the snackbar
- * then offers nothing more.
- */
-fun ShoppingItem.historyOffers(shops: Set<Store>, today: String): List<Offer> =
-    offers.filter { it.store in shops && it.validUntil >= today }.distinctBy { it.store to it.deal }.filter { it.verdict?.earlier?.isNotEmpty() == true }
+/** The deal in a few words ([shortText]), and the days of one that starts later: `Lidl: €1.00 from Thu until 25 Nov`. */
+fun Offer.dealHeading(today: String, strings: Strings): String {
+    val later = if (startsAfter(today)) " ${startLabel(today, strings)} ${endLabel(today, strings)}" else ""
+    return "${shortText(strings)}$later"
+}
+
+/** The product as the store names it, with the pack size when the title does not already say it: `Chicken, 500 g`. */
+fun Offer.productText(): String {
+    val pack = packSize?.takeIf { size -> size.isNotBlank() && !title.contains(size, ignoreCase = true) }
+    return listOfNotNull(title, pack).joinToString(", ")
+}
 
 /**
  * What [items] save together in [shops] on [today] ([savingCounted]): what the bought ones saved when

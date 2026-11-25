@@ -20,6 +20,8 @@ import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.OfferExclusionRequest
+import dev.tobins.mealplanner.api.OfferExclusions
 import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.PricesState
 import dev.tobins.mealplanner.api.Pantry
@@ -267,6 +269,24 @@ class ApiClient(
     suspend fun offers(date: String): OffersState = http.get("api/offers") { parameter("date", date) }.body()
 
     suspend fun refreshOffers(): OffersState = http.post("api/offers/refresh").body()
+
+    /** The offers the account said are not one of its ingredients ("Not this ingredient", issue 316), the latest first. */
+    suspend fun offerExclusions(): OfferExclusions = http.get("api/offers/exclusions").body()
+
+    /** Says that offers like [request]'s are not its ingredient, or with [excluded] false takes that back; answers the account's list. */
+    suspend fun setOfferExcluded(request: OfferExclusionRequest, excluded: Boolean): OfferExclusions =
+        if (excluded) {
+            http.put("api/offers/exclusions") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }.body()
+        } else {
+            http.delete("api/offers/exclusions") {
+                parameter("store", request.store.name)
+                parameter("title", request.title)
+                parameter("ingredientId", request.ingredientId)
+            }.body()
+        }
 
     suspend fun prices(): PricesState = http.get("api/prices").body()
 
