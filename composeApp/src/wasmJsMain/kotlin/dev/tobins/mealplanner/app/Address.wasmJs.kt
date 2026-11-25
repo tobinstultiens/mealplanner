@@ -141,8 +141,9 @@ internal fun steppedToEntry(answered: () -> Boolean) {
 }
 
 /**
- * The open screen lives in the address fragment; changing it adds no history entry, so the back button is untouched.
- * A new fragment typed into the page, or a step to another entry of the history, is reported by [watch].
+ * The open screen lives in the address fragment. Opening another screen replaces the address of the history entry the
+ * page is on and adds none, so Back and Forward step between the entries the back handlers made and each shows the
+ * screen its address names. A new fragment typed into the page, or a step to another entry of the history, is reported by [watch].
  */
 internal object AddressRoutes : RouteStore {
     override fun read(): String = window.location.hash
