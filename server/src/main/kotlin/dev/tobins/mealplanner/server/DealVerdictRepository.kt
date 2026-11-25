@@ -106,7 +106,7 @@ class DealVerdictRepository(
         val read = read(onOffer, stores, now)
         val matcher = OfferMatcher(terms)
         val matched = HashMap<Triple<String, String, String?>, Long?>()
-        val periods = read.periods.groupBy { it.store to it.productKey }
+        val periods = read.periods.groupBy { it.store to storeText(it.productKey) }
         return onOffer.map { offer ->
             val own = periods[offer.store.name to normalised(offer.title)].orEmpty()
                 .filter { row -> matched.getOrPut(Triple(row.store, row.title, row.category)) { matcher.match(row.title, row.category, store = Store.valueOf(row.store)) } == offer.ingredientId }

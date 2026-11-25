@@ -448,8 +448,10 @@ history.
 text where they read it from the store: a `<br>` line break becomes " · ", other tags go, character references such as
 `&amp;` are decoded. Every screen and the shopping list get the clean text. Rows of the price history recorded before
 keep the store's text; their keys are read through the same cleaning (`ProductKey.recorded`), so their periods continue.
-The exception is the SQL lookup of a recorded title that held a character reference: it is not found by its cleaned title,
-so that product's old history is not read (an offer title with one is rare; the pack is not affected).
+A recorded title is found the same way: `selectOfferPeriods` looks rows up by the cleaned title, and
+`selectMarkedOfferPeriods` adds the store's rows whose recorded title holds a `&` or `<` and is the cleaned title once
+cleaned, so a title recorded with a tag, a `<br>` or a character reference still gives its product's earlier periods to
+the verdict. No row is changed.
 
 **Which texts are one pack** (`history/Packs.kt`, issue 118). A pack written another way one week would start a history
 of its own and stay "not enough history" for longer, so when the history is read (never when it is written: the rows

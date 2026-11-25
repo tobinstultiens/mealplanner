@@ -97,6 +97,12 @@ INSERT INTO offerRecording (store, seenAt, offers) VALUES (?, ?, ?);
 selectOfferPeriods:
 SELECT * FROM offerHistory INDEXED BY offerHistory_product WHERE store = :store AND productKey IN :products AND lastSeen >= :from AND firstSeen <= :until;
 
+-- The periods of a store, seen between :from and :until, whose recorded title still holds the store's markup
+-- ("&amp;", "<br />": issue 320), which the cleaned title of today's offer does not equal. Few rows: offers are
+-- cleaned since then. The caller compares them by their cleaned title.
+selectMarkedOfferPeriods:
+SELECT * FROM offerHistory INDEXED BY offerHistory_product WHERE store = :store AND (productKey LIKE '%&%' OR productKey LIKE '%<%') AND lastSeen >= :from AND firstSeen <= :until;
+
 -- The refreshes of a store that recorded anything between :from and :until (inclusive), in order.
 selectOfferRecordings:
 SELECT * FROM offerRecording WHERE store = :store AND seenAt BETWEEN :from AND :until ORDER BY seenAt;

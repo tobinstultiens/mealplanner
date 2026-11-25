@@ -172,6 +172,28 @@ class DealVerdictRepositoryTest {
     }
 
     @Test
+    fun anOfferRecordedWithMarkupInItsTitleIsHistoryOfTheCleanedOffer() {
+        // issue 320: weeks 2, 5 and 8 were recorded before the titles were cleaned; tonight's offer is read clean.
+        val alice = users.resolve(Identity("sub-alice", "alice")).id
+        IngredientRepository(db, foods, alice).create(IngredientInput("Roomijs"))
+        recordTenWeeks(Store.AH) { n ->
+            val monday = serverDay(night(n - n % 7)).toString()
+            val sunday = serverDay(night(n - n % 7 + 6)).toString()
+            val (title, price) = when (n / 7) {
+                1, 4, 7 -> "AH Roomijs &amp;<br />vanille" to 5.99
+                TODAY / 7 -> "AH Roomijs & · vanille" to 4.99
+                else -> null to null
+            }
+            val ice = title?.let { Offer(Store.AH, it, "voor ${price.toString().replace('.', ',')}", price, packSize = "500 ml", validFrom = monday, validUntil = sunday) }
+            listOfNotNull(ice, Offer(Store.AH, "AH Jong belegen kaas", "25% korting", validFrom = monday, validUntil = sunday))
+        }
+
+        val verdict = verdicts(alice).single()
+        assertEquals(Verdict.REAL_DEAL, verdict.verdict, verdict.summary)
+        assertEquals(listOf("2026-09-21", "2026-10-12", "2026-11-02"), verdict.earlier.map { it.from }, "the periods recorded with markup are read")
+    }
+
+    @Test
     fun aPackWrittenAnotherWayEachWeekIsStillOnePack() {
         val alice = users.resolve(Identity("sub-alice", "alice")).id
         IngredientRepository(db, foods, alice).create(IngredientInput("Kipfilet"))

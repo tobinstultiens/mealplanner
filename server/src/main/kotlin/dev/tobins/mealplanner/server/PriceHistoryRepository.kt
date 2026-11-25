@@ -15,6 +15,7 @@ import dev.tobins.mealplanner.server.history.RegularPriceSighting
 import dev.tobins.mealplanner.server.history.changes
 import dev.tobins.mealplanner.server.history.normalised
 import dev.tobins.mealplanner.server.offers.OfferMatcher
+import dev.tobins.mealplanner.server.offers.storeText
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.time.Instant
@@ -161,8 +162,13 @@ class PriceHistoryRepository(private val db: Database) {
      * [until] (both included), in no set order: those that began by [until] and were last seen from [from] on.
      * With [recordings], what judging a deal reads.
      */
-    fun offerPeriods(store: Store, products: Collection<String>, from: Instant, until: Instant): List<OfferHistory> =
-        if (products.isEmpty()) emptyList() else q.selectOfferPeriods(store.name, products.distinct(), seen(from), seen(until)).executeAsList()
+    fun offerPeriods(store: Store, products: Collection<String>, from: Instant, until: Instant): List<OfferHistory> {
+        if (products.isEmpty()) return emptyList()
+        val wanted = products.toSet()
+        // Rows recorded with the store's markup in the title are found by the title they have once cleaned (issue 320).
+        val marked = q.selectMarkedOfferPeriods(store.name, seen(from), seen(until)).executeAsList().filter { it.productKey !in wanted && storeText(it.productKey) in wanted }
+        return q.selectOfferPeriods(store.name, wanted.toList(), seen(from), seen(until)).executeAsList() + marked
+    }
 
     /** When [store]'s offers were recorded from [from] to [until] (both included), oldest first. */
     fun recordings(store: Store, from: Instant, until: Instant): List<OfferRecording> =
