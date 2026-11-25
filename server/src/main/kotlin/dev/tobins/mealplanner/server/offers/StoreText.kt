@@ -15,10 +15,13 @@ fun storeLines(text: String): List<String> =
 
 /**
  * [text] as an offer shows it: its [storeLines] joined by [STORE_TEXT_SEPARATOR]. Cleaning it again changes nothing,
- * so a text read from the history gives the same text as the offer that is read from the store today.
+ * so a text read from the history gives the same text as the offer that is read from the store today. Decoding can
+ * make markup of an escaped tag (`&lt;b&gt;`), which the next pass would strip, so it is cleaned until it stays.
  */
-fun storeText(text: String): String =
-    storeLines(text.replace(STORE_TEXT_SEPARATOR, "<br>")).joinToString(STORE_TEXT_SEPARATOR)
+fun storeText(text: String): String {
+    val cleaned = storeLines(text.replace(STORE_TEXT_SEPARATOR, "<br>")).joinToString(STORE_TEXT_SEPARATOR)
+    return if (cleaned == text) cleaned else storeText(cleaned)
+}
 
 /** The offer with the markup taken out of the texts the app shows for it; the parsers return offers so. */
 internal fun Offer.cleaned(): Offer = copy(title = storeText(title), packSize = packSize?.let(::storeText)?.ifEmpty { null })

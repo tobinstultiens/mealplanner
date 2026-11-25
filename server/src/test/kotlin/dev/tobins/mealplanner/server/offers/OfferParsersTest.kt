@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server.offers
 
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.server.history.ProductKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -131,6 +132,23 @@ class OfferParsersTest {
     }
 
     @Test
+    fun aCharacterReferenceOutOfRangeInATitleLeavesTheOfferParsed() {
+        val tile = """data-grid-data="{&quot;fullTitle&quot;: &quot;Chips &amp;#99999999999; dip&quot;, &quot;category&quot;: &quot;Food&quot;, &quot;storeStartDate&quot;: 1794178800, &quot;storeEndDate&quot;: 1794783599, &quot;price&quot;: {&quot;price&quot;: 1.5}}""""
+        assertEquals("Chips &#99999999999; dip", LidlParser.page(tile).single().title)
+    }
+
+    @Test
+    fun anEscapedTagIsCleanedTheSameHoweverOftenAndGivesOneProductKey() {
+        val once = storeText("&lt;b&gt;")
+        assertEquals(once, storeText(once))
+        assertEquals("", once)
+        assertEquals("a", storeText("&amp;lt;b&amp;gt;a"), "also where it is escaped twice")
+        val offer = Offer(Store.JUMBO, "Kip &lt;b&gt;", "1+1 gratis", null, packSize = "&lt;b&gt;", validFrom = "2026-11-16", validUntil = "2026-11-22")
+        assertEquals(ProductKey.of(offer), ProductKey.recorded(Store.JUMBO, "kip &lt;b&gt;", "&lt;b&gt;"))
+        assertEquals(ProductKey.of(offer), ProductKey.of(offer.cleaned()))
+    }
+
+    @Test
     fun jumboReadsEachPromotionsPicture() {
         val offers = JumboParser.page(fixture("jumbo-page.html")).associateBy({ it.title }, { it.imageUrl })
         val week46 = "https://www.jumbo.com/INTERSHOP/static/WFS/Jumbo-Grocery-Site/-/Jumbo-Grocery/nl_NL/Images_Aanbiedingen/2026/Weekaanbiedingen/Week%2046"
@@ -191,6 +209,7 @@ class OfferParsersTest {
         assertEquals("""a "b" & <c> 'd' é""", htmlUnescape("a &quot;b&quot; &amp; &lt;c&gt; &#39;d&#x27; &#233;"))
         assertEquals("&unknown;", htmlUnescape("&unknown;"))
         assertEquals("a · b", storeText(storeText("a<br />b<br /><br />")), "cleaning twice is cleaning once")
+        assertEquals("a &#99999999999; b &#xD800;", htmlUnescape("a &#99999999999; b &#xD800;"), "a number that is no character stays text")
         assertEquals("Ben & Jerry's", storeText(" Ben  &amp;\n Jerry's <b></b>"))
     }
 }

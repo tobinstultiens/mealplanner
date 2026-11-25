@@ -53,6 +53,13 @@ class DealVerdictTest {
     }
 
     @Test
+    fun aTitleWithACharacterReferenceOutOfRangeStillGetsAVerdict() {
+        fun kip(deal: String) = offer(deal, title = "Kip &#99999999999; filet")
+        val verdict = verdict(today(kip("2+1 gratis")), run(kip("1+1 gratis"), 7, 13), run(kip("1+1 gratis"), 28, 34), run(kip("1+1 gratis"), 49, 55))
+        assertEquals(Verdict.WORSE_THAN_USUAL, verdict.verdict)
+    }
+
+    @Test
     fun nightsTheStoreWasNotReadAreNoHistory() {
         // Ten weeks of calendar, but the store read only every other night: 36 days watched.
         val verdict = verdict(today(twoPlusOne), run(onePlusOne, 8, 12), run(onePlusOne, 30, 34), read = (0..TODAY step 2).toList())
