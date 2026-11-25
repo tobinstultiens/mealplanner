@@ -13,7 +13,8 @@ enum class RegistrationField(val key: String) {
 /**
  * What a request for an account must hold (issue 314): one set of rules for the app's form, as the person types, and for
  * the server, which checks again. The registration helper next to the directory checks the same once more
- * (`scripts/registration-helper.py`): change them there too.
+ * (`scripts/registration-helper.py`): change them there too, and add the case to `scripts/registration-rules-cases.json`,
+ * which both sides' tests read. Lengths count UTF-16 units, as Kotlin's strings do; the helper counts the same way.
  */
 object RegistrationRules {
     const val USERNAME_MIN = 3
@@ -29,8 +30,13 @@ object RegistrationRules {
      */
     private val USERNAME = Regex("[a-z0-9][a-z0-9._-]{${USERNAME_MIN - 1},${USERNAME_MAX - 1}}")
 
-    /** Something, an @, something with a dot: the directory needs an address, and the rest is the person's to get right. */
-    private val EMAIL = Regex("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")
+    /**
+     * Something, an @, something with a dot: the directory needs an address, and the rest is the person's to get right.
+     * Printable ASCII only (`!` to `~`, the @ once): spelled out rather than "not whitespace", as Kotlin's `\s` and
+     * Python's are not the same set, and the helper must refuse exactly what this refuses
+     * (`scripts/registration-rules-cases.json`). An address with other letters is refused; few have them.
+     */
+    private val EMAIL = Regex("[!-?A-~]+@[!-?A-~]+\\.[!-?A-~]+")
 
     /** [request] as it is checked and sent on: the user name trimmed and in lower case, the names trimmed; the password as typed. */
     fun normalised(request: RegistrationRequest): RegistrationRequest = request.copy(

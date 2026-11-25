@@ -1,0 +1,318 @@
+{
+ "about": "Requests for an account that the server (RegistrationRules) and the registration helper must judge alike. Each case changes the fields of `base` named in `set`; the values are as the server sends them on, already normalised. Read by scripts/test_registration_helper.py and the server's RegistrationRulesAgreementTest.",
+ "base": {
+  "username": "anna",
+  "displayName": "Anna",
+  "email": "anna@example.org",
+  "password": "a good long password"
+ },
+ "cases": [
+  {
+   "why": "a good request",
+   "set": {},
+   "valid": true
+  },
+  {
+   "why": "user name: letters, digits, dot, dash, underscore",
+   "set": {
+    "username": "anna.de-vries_2"
+   },
+   "valid": true
+  },
+  {
+   "why": "user name: 32 characters",
+   "set": {
+    "username": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "valid": true
+  },
+  {
+   "why": "user name: 33 characters",
+   "set": {
+    "username": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "valid": false
+  },
+  {
+   "why": "user name: 2 characters",
+   "set": {
+    "username": "an"
+   },
+   "valid": false
+  },
+  {
+   "why": "user name: not starting with a letter or digit",
+   "set": {
+    "username": "-anna"
+   },
+   "valid": false
+  },
+  {
+   "why": "user name: a letter outside ASCII",
+   "set": {
+    "username": "\u00e4nna"
+   },
+   "valid": false
+  },
+  {
+   "why": "user name: a space",
+   "set": {
+    "username": "an na"
+   },
+   "valid": false
+  },
+  {
+   "why": "user name: what a DN would need escaped",
+   "set": {
+    "username": "anna,ou=people"
+   },
+   "valid": false
+  },
+  {
+   "why": "name: letters outside ASCII",
+   "set": {
+    "displayName": "Zo\u00eb de Vries"
+   },
+   "valid": true
+  },
+  {
+   "why": "name: a non-breaking space inside",
+   "set": {
+    "displayName": "Anna\u00a0Smit"
+   },
+   "valid": true
+  },
+  {
+   "why": "name: a zero-width space (a format character, not a control)",
+   "set": {
+    "displayName": "Anna\u200b"
+   },
+   "valid": true
+  },
+  {
+   "why": "name: empty",
+   "set": {
+    "displayName": ""
+   },
+   "valid": false
+  },
+  {
+   "why": "name: 64 characters",
+   "set": {
+    "displayName": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "valid": true
+  },
+  {
+   "why": "name: 65 characters",
+   "set": {
+    "displayName": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "valid": false
+  },
+  {
+   "why": "name: 32 emoji are 64 UTF-16 units",
+   "set": {
+    "displayName": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+   },
+   "valid": true
+  },
+  {
+   "why": "name: 33 emoji are 66 UTF-16 units",
+   "set": {
+    "displayName": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+   },
+   "valid": false
+  },
+  {
+   "why": "name: a line break",
+   "set": {
+    "displayName": "Anna\nAdmin"
+   },
+   "valid": false
+  },
+  {
+   "why": "name: a C1 control (NEL)",
+   "set": {
+    "displayName": "Anna\u0085"
+   },
+   "valid": false
+  },
+  {
+   "why": "name: the last C1 control",
+   "set": {
+    "displayName": "Anna\u009f"
+   },
+   "valid": false
+  },
+  {
+   "why": "name: DEL",
+   "set": {
+    "displayName": "Anna\u007f"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: plus and dots",
+   "set": {
+    "email": "a.b+c@sub.example.org"
+   },
+   "valid": true
+  },
+  {
+   "why": "e-mail: 254 characters",
+   "set": {
+    "email": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.org"
+   },
+   "valid": true
+  },
+  {
+   "why": "e-mail: 255 characters",
+   "set": {
+    "email": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: no dot after the @",
+   "set": {
+    "email": "anna@localhost"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: no @",
+   "set": {
+    "email": "anna.example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: two @",
+   "set": {
+    "email": "a@b@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: a space",
+   "set": {
+    "email": "an na@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: a tab",
+   "set": {
+    "email": "anna\t@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: a non-breaking space",
+   "set": {
+    "email": "anna\u00a0x@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: a figure space",
+   "set": {
+    "email": "anna@example\u2007.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: an ideographic space",
+   "set": {
+    "email": "anna\u3000@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: a zero-width space",
+   "set": {
+    "email": "anna\u200b@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: NEL",
+   "set": {
+    "email": "anna\u0085@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: a file separator control",
+   "set": {
+    "email": "anna\u001c@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "e-mail: a letter outside ASCII",
+   "set": {
+    "email": "j\u00f6rg@example.org"
+   },
+   "valid": false
+  },
+  {
+   "why": "password: 10 characters",
+   "set": {
+    "password": "1234567890"
+   },
+   "valid": true
+  },
+  {
+   "why": "password: 9 characters",
+   "set": {
+    "password": "123456789"
+   },
+   "valid": false
+  },
+  {
+   "why": "password: 128 characters",
+   "set": {
+    "password": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+   },
+   "valid": true
+  },
+  {
+   "why": "password: 129 characters",
+   "set": {
+    "password": "ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+   },
+   "valid": false
+  },
+  {
+   "why": "password: 5 emoji are 10 UTF-16 units",
+   "set": {
+    "password": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+   },
+   "valid": true
+  },
+  {
+   "why": "password: 4 emoji and a letter are 9 UTF-16 units",
+   "set": {
+    "password": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00x"
+   },
+   "valid": false
+  },
+  {
+   "why": "password: spaces count, and odd ones too",
+   "set": {
+    "password": " a\u00a0b\u3000c d efgh "
+   },
+   "valid": true
+  },
+  {
+   "why": "password: the user name in other case",
+   "set": {
+    "username": "annasmith1",
+    "password": "AnnaSmith1"
+   },
+   "valid": false
+  }
+ ]
+}

@@ -132,13 +132,15 @@ the lines to read.
 > server was tested against an in-memory helper (`:server:test`), and both together on a development machine with the
 > fake LLDAP. Check each step as it says.
 
-What it does (issue 314): a person fills in the form on the login screen (user name, name, e-mail address, password).
-The server asks the **registration helper** to make the account in LLDAP at once, in no group, with that password; the
-server keeps who asked, never the password. The person can log in to Authelia but not use the meal planner: the server
-answers "Your request is waiting for approval." The owner's account sees the request (Settings in the app, from the
-release after this change; until then only through the API), approves it (the helper puts the account in `mealplanner`:
-the person can log in and gets an empty account of their own) or rejects it (the helper deletes the account). A request
-not decided on in 14 days is rejected by itself, its LLDAP account deleted.
+What it does (issue 314): a person asks for an account (user name, name, e-mail address, password). The form on the
+app's login screen and the owner's Requests list in Settings come with part 3 of the issue, which is not built yet: until
+that app is released, a request is made and decided on only through the API (`POST /api/registration`, and the owner's
+`/api/registrations` routes, README "Accounts and login"). The server asks the **registration helper** to make the
+account in LLDAP at once, in no group, with that password; the server keeps who asked, never the password. The person
+can log in to Authelia but not use the meal planner: the server answers "Your request is waiting for approval." The
+owner's account approves the request (the helper puts the account in `mealplanner`: the person can log in and gets an
+empty account of their own) or rejects it (the helper deletes the account). A request not decided on in 14 days is
+rejected by itself, its LLDAP account deleted.
 
 **The owner's account** is account 1 (the one with the data from before accounts), and with `MEALPLANNER_OWNER` set only
 under that user name. No other account can see or decide on requests.
@@ -164,8 +166,8 @@ every network but the two it needs.
 2. "Other services behind Authelia", above, checked: a waiting account must open nothing anywhere.
 3. A new person has to set up Authelia's second factor at the first login (the client is `two_factor`), which Authelia
    confirms by e-mail: check that `notifier` in `local/authelia/configuration.yml` sends e-mail *(not run)*.
-4. Best with the app release that has the form and the Requests list (issue 314, part 3). Before it, nobody can ask
-   from the app, and the owner can decide only with `curl` and an access token.
+4. Best after the app release that has the form and the Requests list (issue 314, part 3, not built yet). Before it,
+   nobody can ask from the app, and the owner can decide only with `curl` and an access token.
 
 **Steps, in this order:**
 
@@ -240,15 +242,19 @@ every network but the two it needs.
 
    Deploy. Check: `curl -s https://mealplanner.<DOMAIN>/api/registration` prints `{"open":true}`. If it says `false`,
    `docker logs mealplanner 2>&1 | grep MEALPLANNER_REGISTRATION` says what is missing.
-5. **One request to try it** *(not run)*: ask for `test-request` from the app's login screen (or
+5. **One request to try it** *(not run)*: ask for `test-request` with
    `curl -s -X POST https://mealplanner.<DOMAIN>/api/registration -H 'Content-Type: application/json' -d '{"username":
    "test-request", "displayName": "Test", "email": "<an address of yours>", "password": "<ten characters or more>"}'`,
-   which answers `{"username":"test-request"}`). Check: LLDAP's web page has `test-request` in no group; logging in to the
-   meal planner as it says the request waits; the owner's Requests list has it. Reject it there: LLDAP no longer has it.
+   which answers `{"username":"test-request"}` (from part 3's app release on, the login screen's form does the same).
+   Check: LLDAP's web page has `test-request` in no group; logging in to the meal planner as it says the request waits.
+   Reject it as the owner: with part 3's app, in its Requests list; before it,
+   `curl -s -X POST -H 'Authorization: Bearer <an access token of the owner>' https://mealplanner.<DOMAIN>/api/registrations/test-request/reject`
+   (logged in to the web client as the owner, the access token is in the browser's local storage, key `auth.session`).
+   Check: LLDAP no longer has it.
    `docker logs mealplanner-registration` shows each step with the user name, and neither log shows the password.
 
-**Going back.** Remove `MEALPLANNER_REGISTRATION` and deploy: the login screen no longer offers the form, and new requests
-are refused; those waiting can still be decided on and still expire. To remove the helper too, first decide on every
+**Going back.** Remove `MEALPLANNER_REGISTRATION` and deploy: `GET /api/registration` answers `{"open":false}` (so part 3's
+login screen no longer offers the form), and new requests are refused; those waiting can still be decided on and still expire. To remove the helper too, first decide on every
 waiting request, then remove the two `MEALPLANNER_REGISTRATION_HELPER_*` settings, the helper's container and network,
 and the LLDAP user `mealplanner-registration`.
 

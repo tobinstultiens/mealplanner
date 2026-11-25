@@ -36,6 +36,12 @@ enum class HelperAnswer {
     /** Approve, reject: the user is in a group already, put there in the directory by hand. */
     IN_GROUP,
 
+    /**
+     * The helper's own check of the fields refused them, and did nothing. Its rules are the server's
+     * (`scripts/registration-rules-cases.json` keeps them alike), so this means they have drifted apart.
+     */
+    INVALID,
+
     /** Nothing was done: the helper or the directory could not be reached, or refused the call. */
     FAILED,
 
@@ -98,7 +104,7 @@ class HttpDirectoryHelper(
         }
         val error = runCatching { Json.parseToJsonElement(response.bodyAsText()).let { (it as JsonObject)["error"]?.jsonPrimitive?.content } }.getOrNull()
         return answerOf(response.status, error).also {
-            if (it == HelperAnswer.FAILED || it == HelperAnswer.UNSURE) log.warn("The registration helper answered $operation with ${response.status.value} ${error.orEmpty()}")
+            if (it in setOf(HelperAnswer.FAILED, HelperAnswer.UNSURE, HelperAnswer.INVALID)) log.warn("The registration helper answered $operation with ${response.status.value} ${error.orEmpty()}")
             if (response.status == HttpStatusCode.Unauthorized) log.error("The registration helper refused the server's secret: MEALPLANNER_REGISTRATION_HELPER_SECRET is not its HELPER_SECRET")
         }
     }
@@ -121,6 +127,7 @@ class HttpDirectoryHelper(
         status == HttpStatusCode.Conflict && error == "taken" -> HelperAnswer.TAKEN
         status == HttpStatusCode.Conflict && error == "in_group" -> HelperAnswer.IN_GROUP
         status == HttpStatusCode.NotFound && error == "unknown" -> HelperAnswer.UNKNOWN
+        status == HttpStatusCode.BadRequest && error == "invalid" -> HelperAnswer.INVALID
         status.value in 400..499 || status == HttpStatusCode.BadGateway -> HelperAnswer.FAILED
         else -> HelperAnswer.UNSURE
     }

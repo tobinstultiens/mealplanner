@@ -41,6 +41,7 @@ class Lldap:
         self.passwords = {}
         self.refuse_password = False
         self.binds = []
+        self.fail_once = set()  # GraphQL operations that answer an error other than "not found", once each
 
 
 class FakeWeb(BaseHTTPRequestHandler):
@@ -69,6 +70,9 @@ class FakeWeb(BaseHTTPRequestHandler):
 
     def graphql(self, operation, v):
         users, error = self.lldap.users, {"errors": [{"message": "Entity not found"}], "data": None}
+        if operation in self.lldap.fail_once:
+            self.lldap.fail_once.discard(operation)
+            return {"errors": [{"message": "database is locked"}], "data": None}
         if operation == "FindUser":
             user = users.get(v["id"])
             return error if user is None else {"data": {"user": {"id": v["id"], "groups": [{"displayName": g} for g in user["groups"]]}}}
@@ -214,6 +218,26 @@ class RegistrationHelperTest(unittest.TestCase):
         self.assertNotIn("anna", self.lldap.users)
         self.assertEqual([], self.waiting())
 
+    def test_a_passing_lldap_error_keeps_the_name_until_the_next_try(self):
+        # The owner's reject and the server's expiry are the same call to the helper; approve looks the user up the same way.
+        for path, then in (("/reject", None), ("/approve", ["mealplanner"])):
+            self.register()
+            for operation in ("FindUser", "DeleteUser" if path == "/reject" else "AddUserToGroup"):
+                self.lldap.fail_once.add(operation)
+                self.assertEqual((502, {"error": "directory"}), self.call(path, {"username": "anna"}), f"{path} {operation}")
+                self.assertEqual(["anna"], self.waiting(), "still the helper's, for the server to try again")
+                self.assertEqual([], self.lldap.users["anna"]["groups"])
+            self.assertEqual((200, {}), self.call(path, {"username": "anna"}), "the next try")
+            self.assertEqual(then, (self.lldap.users.get("anna") or {}).get("groups"))
+            self.assertEqual([], self.waiting())
+            self.lldap.users.pop("anna", None)
+
+    def test_a_passing_error_while_registering_leaves_nothing(self):
+        self.lldap.fail_once.add("FindUser")
+        self.assertEqual((502, {"error": "directory"}), self.register())
+        self.assertNotIn("anna", self.lldap.users)
+        self.assertEqual((200, {}), self.register(), "the next try")
+
     def test_users_it_did_not_make_are_not_touched(self):
         self.lldap.users["eve"] = {"email": "eve@example.org", "groups": []}
         for path in ("/approve", "/reject"):
@@ -262,6 +286,13 @@ class RegistrationHelperTest(unittest.TestCase):
                                       ("anna", "a@example.org", "short"), ("anna", "a@example.org", "ANNA")]:
             self.assertEqual((400, {"error": "invalid"}), self.register(name, email, password), (name, email, password))
         self.assertNotIn("anna", self.lldap.users)
+
+    def test_the_rules_are_the_servers(self):
+        """The cases the server's RegistrationRulesAgreementTest reads too: both sides accept and refuse the same strings."""
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "registration-rules-cases.json")) as f:
+            rules = json.load(f)
+        for case in rules["cases"]:
+            self.assertEqual(case["valid"], helper.valid("/register", {**rules["base"], **case["set"]}), case["why"])
 
     def test_lldap_down_leaves_nothing(self):
         with socketserver.TCPServer(("127.0.0.1", 0), socketserver.BaseRequestHandler) as closed:

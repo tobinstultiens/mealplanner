@@ -89,6 +89,13 @@ class Registrations(
                     undo(name)
                     throw directoryDown()
                 }
+                // The helper's rules refused what the server's let through: the request, not the directory, is the trouble.
+                HelperAnswer.INVALID -> {
+                    forget(name)
+                    throw RegistrationRefusedException(
+                        HttpStatusCode.BadRequest, RegistrationRefusal.INVALID, "The account directory does not take this request; check every field.",
+                    )
+                }
                 else -> {
                     forget(name)
                     throw directoryDown()

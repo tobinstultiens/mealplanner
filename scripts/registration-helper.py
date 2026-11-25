@@ -46,8 +46,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 log = logging.getLogger("registration-helper")
 
 # The same rules as the meal planner's form (shared RegistrationRules), checked again here: the helper trusts no caller.
+# Both sides' tests read scripts/registration-rules-cases.json, so that they accept and refuse the same strings; the
+# character sets are spelled out, as Python's \s and Kotlin's are not the same.
 USERNAME = re.compile(r"[a-z0-9][a-z0-9._-]{2,31}")
-EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+EMAIL = re.compile(r"[!-?A-~]+@[!-?A-~]+\.[!-?A-~]+")
 FIELDS = {"/register": {"username", "displayName", "email", "password"}, "/approve": {"username"}, "/reject": {"username"}}
 MAX_BODY = 4096
 PASSWORD_MODIFY = b"1.3.6.1.4.1.4203.1.11.1"  # RFC 3062, the LDAP extended operation LLDAP sets passwords with
@@ -74,7 +76,7 @@ def valid(path: str, form) -> bool:
     if path != "/register":
         return True
     name, email, password = form["displayName"], form["email"], form["password"]
-    return (0 < len(name) <= 64 and name == name.strip() and not any(unicodedata.category(c) == "Cc" for c in name)
+    return (0 < utf16_length(name) <= 64 and not any(unicodedata.category(c) == "Cc" for c in name)
             and len(email) <= 254 and EMAIL.fullmatch(email) is not None
             and 10 <= utf16_length(password) <= 128 and password.lower() != form["username"])
 
@@ -185,13 +187,23 @@ class Helper:
 
     def graphql(self, token, operation, query, **variables):
         """The data of a GraphQL operation; None when LLDAP answered it with errors."""
+        return self.graphql_answer(token, operation, query, **variables).get("data")
+
+    def graphql_answer(self, token, operation, query, **variables) -> dict:
+        """LLDAP's whole answer: `data`, or `errors` instead."""
         answer = self.post("/api/graphql", {"operationName": operation, "query": query, "variables": variables}, token)
-        return None if answer.get("errors") else answer.get("data")
+        return {"errors": answer["errors"]} if answer.get("errors") else answer
 
     def find(self, token, name):
-        """The user's groups, by name; None when LLDAP has no such user."""
-        data = self.graphql(token, "FindUser", "query FindUser($id: String!) { user(userId: $id) { id groups { displayName } } }", id=name)
-        return None if data is None else [g["displayName"] for g in data["user"]["groups"]]
+        """The user's groups, by name; None when LLDAP says it has no such user. Any other error is LLDAP failing, not
+        an answer: taken for "no such user", it would make the helper forget a user it made and never delete it."""
+        answer = self.graphql_answer(token, "FindUser", "query FindUser($id: String!) { user(userId: $id) { id groups { displayName } } }", id=name)
+        errors = answer.get("errors")
+        if errors and all("not found" in str(e.get("message", "")).lower() for e in errors):
+            return None
+        if errors or not answer.get("data"):
+            raise DirectoryError("LLDAP failed to look up the user")
+        return [g["displayName"] for g in answer["data"]["user"]["groups"]]
 
     def group_id(self, token) -> int:
         data = self.graphql(token, "Groups", "query Groups { groups { id displayName } }")

@@ -75,7 +75,7 @@ data class ServerConfig(
      */
     val oidcGroup: String? = null,
     /**
-     * Whether people may ask for an account on the login screen (`MEALPLANNER_REGISTRATION`, issue 314). Off unless set,
+     * Whether people may ask for an account (`MEALPLANNER_REGISTRATION`, issue 314, `POST /api/registration`). Off unless set,
      * and then only with the registration helper set up ([HttpDirectoryHelper.fromEnv]) and [oidcGroup] set: without the
      * group check, an account in no group, waiting for approval, could use the meal planner at once.
      */

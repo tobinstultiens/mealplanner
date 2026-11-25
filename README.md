@@ -140,7 +140,9 @@ offers, regular prices, their history and the NEVO data are shared.
   (LLDAP) through the helper at once, in no group, with that password, and answers 201 `{"username": "<in lower case>"}`.
   The server keeps the user name, name, address and time, never the password. Refusals are
   `{"error": "<a sentence>", "reason": "..."}` (`RegistrationRefusal`): 404 `registration_off`; 400 `invalid`, with
-  `"field"` naming the field that breaks a rule of `RegistrationRules` (shared, so the form checks the same); 409
+  `"field"` naming the field that breaks a rule of `RegistrationRules` (shared, so the form checks the same; an e-mail
+  address is printable ASCII), or without one should the helper's own check refuse what the server let through (both
+  sides' tests read `scripts/registration-rules-cases.json`, so that they agree); 409
   `unavailable` for a user name or e-mail address in use in the directory, a user name waiting already, and the user name
   of a meal planner account (Authelia would give the new person that account's subject), one answer for all, so the form
   tells nobody which; 429 `too_many` with `Retry-After` (5 requests an hour per address, the last one of
@@ -1053,7 +1055,7 @@ installed side by side: they share the application id but not the signing key.
 | `MEALPLANNER_OIDC_ISSUER` | unset | OpenID Connect issuer whose access tokens are accepted, e.g. `https://authelia.example.nl`; without it nobody can log in |
 | `MEALPLANNER_OIDC_CLIENT_ID` | `mealplanner` | The app's client id at the issuer |
 | `MEALPLANNER_OIDC_GROUP` | unset | Only accounts whose access token lists this group (`groups` claim) may use the server; unset: every account of the issuer. Switch it on only as `docs/deploy.md`, "Who may use it", says, or people are locked out |
-| `MEALPLANNER_REGISTRATION` | off | `on` lets people ask for an account on the login screen (issue 314), when the two settings below and `MEALPLANNER_OIDC_GROUP` are set too; otherwise it stays off and the server logs what is missing. See `docs/deploy.md`, "Registration" |
+| `MEALPLANNER_REGISTRATION` | off | `on` lets people ask for an account (issue 314; `POST /api/registration`, the login screen's form from part 3's app release on), when the two settings below and `MEALPLANNER_OIDC_GROUP` are set too; otherwise it stays off and the server logs what is missing. See `docs/deploy.md`, "Registration" |
 | `MEALPLANNER_REGISTRATION_HELPER_URL` | unset | The registration helper next to LLDAP (`scripts/registration-helper.py`), e.g. `http://mealplanner-registration:8091`; with the secret, the owner can decide on requests (also with registration off) |
 | `MEALPLANNER_REGISTRATION_HELPER_SECRET` | unset | The secret the server and the helper share (the helper's `HELPER_SECRET`) |
 | `MEALPLANNER_OWNER` | unset | Username that claims the data from before accounts, and with registration the only account that decides on requests; unset: the first login |

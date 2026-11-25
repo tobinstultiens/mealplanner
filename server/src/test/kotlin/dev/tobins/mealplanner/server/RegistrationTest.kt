@@ -238,6 +238,19 @@ class RegistrationTest {
         assertEquals(HttpStatusCode.Created, http.register("anna").status, "anna may try again")
     }
 
+    /** Should the helper's rules and the server's drift apart (RegistrationRulesAgreementTest keeps them alike), the person hears what is wrong. */
+    @Test
+    fun aRequestTheHelperRefusesAsInvalidIsNotTheDirectoryBeingDown() = testApplication {
+        val http = start()
+        directory.failing = HelperAnswer.INVALID
+        val refused = http.register("anna")
+        assertEquals(HttpStatusCode.BadRequest to RegistrationRefusal.INVALID, refused.status to refused.reason())
+        assertNull(refused.json()["field"], "the helper does not say which field")
+        assertEquals(emptyList(), waitingNames())
+        directory.failing = null
+        assertEquals(HttpStatusCode.Created, http.register("anna").status, "the name is free again")
+    }
+
     @Test
     fun beforeApprovalTheLoginIsRefusedAsWaitingAtEveryRenewal() = testApplication {
         val http = start(verifier = NamelessTokens)
