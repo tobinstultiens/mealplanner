@@ -29,7 +29,16 @@ enum class VerdictKind {
     NOT_COMPARABLE,
 
     /** Too little history to say. */
-    NOT_ENOUGH_HISTORY,
+    NOT_ENOUGH_HISTORY;
+
+    /**
+     * Whether the verdict says buying this offer now is no good bargain, so that it is no reason to stock up: it was
+     * never a discount ([NOT_A_DEAL], [ALWAYS_ON_OFFER]) or the same pack has been or is cheaper ([WORSE_THAN_USUAL],
+     * [CHEAPER_ANOTHER_WAY]). A staple keeps, so waiting costs nothing. Too little history and nothing to compare by
+     * say nothing against it.
+     */
+    val discouragesStockingUp: Boolean
+        get() = this == NOT_A_DEAL || this == ALWAYS_ON_OFFER || this == WORSE_THAN_USUAL || this == CHEAPER_ANOTHER_WAY
 }
 
 /** What a verdict compares by: euros per kg, litre, piece or pack, or the share of the regular price paid. */

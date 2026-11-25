@@ -101,6 +101,21 @@ class DealVerdictRepositoryTest {
         assertEquals(listOf("Zeekraal"), verdicts(alice).map { it.ingredient })
     }
 
+    @Test
+    fun offersCarryTheirVerdictsAndOnesNotOnTheAccountsOffersKeepNone() {
+        val alice = users.resolve(Identity("sub-alice", "alice")).id
+        IngredientRepository(db, foods, alice).create(IngredientInput("Zeekraal"))
+        recordTenWeeks()
+        val repository = DealVerdictRepository(db, OfferRepository(db, emptyList()), IngredientRepository(db, foods, alice), { Store.entries.toSet() })
+        val today = OfferRepository(db, emptyList()).state(serverDay(night(TODAY))).offers
+        val judged = repository.onOffers(today, night(TODAY))
+        assertEquals(today.size, judged.size)
+        assertEquals(
+            listOf("AH Zeekraal 100 gram" to VerdictKind.WORSE_THAN_USUAL),
+            judged.filter { it.verdict != null }.map { it.title to it.verdict!!.verdict },
+        )
+    }
+
     /**
      * "Not this ingredient" (issue 316): an offer the account excluded gets no verdict for that ingredient, in any pack,
      * and its history is read with the same exclusions: an offer that is another of the account's ingredients then is
