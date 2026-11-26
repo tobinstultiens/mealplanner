@@ -44,16 +44,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LogTextInput
 import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.StandardMeal
 import dev.tobins.mealplanner.api.StandardMeals
 import kotlinx.coroutines.launch
+import kotlinx.serialization.builtins.nullable
 import kotlin.math.roundToInt
 
 /** One day: what is planned, what has been eaten, and how that compares with the targets. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TodayScreen(
     api: ApiClient,
@@ -74,6 +76,10 @@ fun TodayScreen(
     val scroll = rememberScrollState()
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf(false) }
+    // An entry being typed over: a typed one, or a food that is no longer in the catalogue (issue 362).
+    var retyping by remember { mutableStateOf<LogEntry?>(null) }
+    // The food screen of the log, open over the day: kept over a re-created activity, as the Plan keeps its food screen.
+    var foodAt by rememberSaveable(stateSaver = jsonSaver(LogFoodPlace.serializer().nullable)) { mutableStateOf(null) }
     val snackbar = remember { SnackbarHostState() }
     val pictures by rememberRecipePictureUrls(api)
     val scope = rememberCoroutineScope()
@@ -105,6 +111,15 @@ fun TodayScreen(
             failureOf(action)?.let { snackbar.showSnackbar(it) }
             reload++
         }
+    }
+
+    foodAt?.let { place ->
+        BackHandler(enabled = true) { foodAt = null }
+        LogFoodScreen(api, place, onBack = { foodAt = null }) { answered ->
+            foodAt = null
+            state = Load.Ready(answered)
+        }
+        return
     }
 
     Scaffold(
@@ -170,21 +185,21 @@ fun TodayScreen(
                             },
                         )
                     }
-                    if (day.extras.isNotEmpty()) SectionHeader(t(Msg.ALSO_EATEN))
+                    // Always there, so that the buttons under it read as what they add: something eaten besides the plan.
+                    SectionHeader(t(Msg.ALSO_EATEN))
                     for (extra in day.extras) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(extra.description, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    t(Msg.KCAL_PROTEIN, extra.kcal.roundToInt(), extra.proteinG.roundToInt()),
-                                    style = MaterialTheme.typography.bodySmall.numeric(),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            TextButton(onClick = { change { api.deleteLog(extra.id) } }) { Text(t(Msg.REMOVE)) }
-                        }
+                        // A food still in the catalogue opens to change its amount; any other entry is typed over.
+                        LogRow(
+                            extra,
+                            onOpen = { if (extra.recountable) foodAt = LogFoodPlace(day.date, extra) else retyping = extra },
+                            onRemove = { change { api.deleteLog(extra.id) } },
+                        )
                     }
-                    OutlinedButton(onClick = { adding = true }) { Text(t(Msg.ADD_EXTRA)) }
+                    // A food of the catalogue is the main way, typing the numbers the lesser one, as Eaten and Skipped are.
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                        Button(onClick = { foodAt = LogFoodPlace(day.date) }) { Text(t(Msg.LOG_ADD_FOOD)) }
+                        OutlinedButton(onClick = { adding = true }) { Text(t(Msg.ADD_EXTRA)) }
+                    }
                 }
             }
         }
@@ -198,6 +213,33 @@ fun TodayScreen(
                 change { api.logFood(LogEntry(date = date, description = description, kcal = kcal, proteinG = protein)) }
             },
         )
+    }
+    retyping?.let { entry ->
+        ExtraDialog(
+            onDismiss = { retyping = null },
+            onConfirm = { description, kcal, protein ->
+                retyping = null
+                change { api.retypeLog(entry.id, LogTextInput(description, kcal, protein)) }
+            },
+            entry = entry,
+        )
+    }
+}
+
+/** An entry of the log: its name and [numbersText], a tap on them opening it ([onOpen]), and Remove. */
+@Composable
+private fun LogRow(entry: LogEntry, onOpen: () -> Unit, onRemove: () -> Unit) {
+    val t = LocalStrings.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).clickable(onClick = onOpen).padding(vertical = 4.dp)) {
+            Text(entry.shownName, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                entry.numbersText(t),
+                style = MaterialTheme.typography.bodySmall.numeric(),
+                color = if (entry.food?.counted == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = onRemove) { Text(t(Msg.REMOVE)) }
     }
 }
 
@@ -328,20 +370,25 @@ private fun MealCard(
     }
 }
 
+/**
+ * Something eaten typed with its numbers: a new entry, or [entry] typed over, which starts as it reads. A food of [entry]
+ * that is gone from the catalogue cannot be recounted, and the dialog says so (issue 362).
+ */
 @Composable
-private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Double) -> Unit) {
+private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Double) -> Unit, entry: LogEntry? = null) {
     val t = LocalStrings.current
-    var description by remember { mutableStateOf("") }
-    var kcal by remember { mutableStateOf("") }
-    var protein by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf(entry?.typedText(t).orEmpty()) }
+    var kcal by remember { mutableStateOf(entry?.let { formatAmount(it.kcal, t.locale) }.orEmpty()) }
+    var protein by remember { mutableStateOf(entry?.let { formatAmount(it.proteinG, t.locale) }.orEmpty()) }
     val kcalValue = kcal.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0 }
     val proteinValue = if (protein.isBlank()) 0.0 else protein.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0 }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.EXTRA_TITLE)) },
+        title = { Text(t(if (entry == null) Msg.EXTRA_TITLE else Msg.LOG_CHANGE_TITLE)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                entry?.food?.let { gone -> Text(t(Msg.LOG_FOOD_GONE, gone.name), style = MaterialTheme.typography.bodyMedium) }
                 OutlinedTextField(description, { description = it }, label = { Text(t(Msg.EXTRA_WHAT)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     kcal, { kcal = it },
@@ -363,7 +410,7 @@ private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Doubl
             TextButton(
                 enabled = description.isNotBlank() && kcalValue != null && proteinValue != null,
                 onClick = { onConfirm(description.trim(), kcalValue!!, proteinValue!!) },
-            ) { Text(t(Msg.ADD)) }
+            ) { Text(t(if (entry == null) Msg.ADD else Msg.SAVE)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )

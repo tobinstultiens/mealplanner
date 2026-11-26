@@ -16,7 +16,8 @@ import kotlin.test.assertTrue
  * rows, every recipe what it had, and that what each account listed before is what it lists after: the
  * recipes on the site or made in the app are added and in the rotation, those that had left the site are
  * not. The same across the recipes taken from the site becoming the account's own (25.sqm, issue 340).
- * And across an ingredient's own values and portions (26.sqm, issue 351), and the foods of a slot (27.sqm, issue 358).
+ * And across an ingredient's own values and portions (26.sqm, issue 351), the foods of a slot (27.sqm, issue 358) and the
+ * foods of the log (28.sqm, issue 362).
  * Prints row counts and integrity checks. Runs only when RECIPES_DB names a database file; that file
  * is copied first and never opened itself:
  * `RECIPES_DB=/path/to/mealplanner.db ./gradlew :server:test --tests '*RecipeBankRealDataTest*' -i`
@@ -219,6 +220,56 @@ class RecipeBankRealDataTest {
         driver.close()
     }
 
+    /**
+     * Across 28.sqm (issue 362): every table keeps its rows and every row what it had, every entry of the log stays a typed
+     * one, and every account reads every day it logged with the entries and numbers the rows had. Run as the tests above;
+     * prints each account's days and entries.
+     */
+    @Test
+    fun aCopyOfARealDatabaseKeepsEveryRowAndEveryLoggedEntryAsItWas() {
+        val original = System.getenv("RECIPES_DB")?.let(::File) ?: return
+        val copy = File(createTempDirectory("recipes").toFile(), "copy.db")
+        original.copyTo(copy)
+        val url = "jdbc:sqlite:${copy.path}"
+        migrate(url, LOGGED_FOODS_VERSION - 1)
+        val tables = query(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        val added = setOf("fibreG", "ingredientId", "foodName", "amount", "unit", "counted", "pickedAt")
+        fun rows() = tables.associateWith { table -> query(url, "SELECT ${columnsOf(url, table).filterNot { table == "foodLog" && it in added }.joined()} FROM \"$table\"") }
+        fun logged(account: Long) = query(
+            url,
+            "SELECT date || ' ' || id || ' ' || description || ' ' || printf('%.3f', kcal) || ' ' || printf('%.3f', proteinG) FROM foodLog WHERE userId = $account ORDER BY date, id",
+        )
+        val before = counts(url)
+        val rows = rows()
+        val accounts = query(url, "SELECT id FROM appUser ORDER BY id").map { it.toLong() }
+        val logs = accounts.associateWith(::logged)
+        println("Before: version ${version(url)}, checks ${checks(url)}, rows $before")
+
+        migrate(url, LOGGED_FOODS_VERSION)
+        println("After: version ${version(url)}, checks ${checks(url)}, rows ${counts(url)}")
+        assertEquals(listOf("ok") to emptyList(), checks(url))
+        assertEquals(before, counts(url), "every table keeps its rows")
+        assertEquals(rows, rows(), "every row as it was")
+        assertEquals(listOf("0"), query(url, "SELECT count(*) FROM foodLog WHERE fibreG IS NOT NULL OR ingredientId IS NOT NULL OR foodName IS NOT NULL OR counted != 1"))
+
+        val (driver, db) = openDatabase(url)
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        for (account in accounts) {
+            val scope = UserScope(account, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+            val dates = query(url, "SELECT DISTINCT date FROM foodLog WHERE userId = $account ORDER BY date")
+            val read = dates.flatMap { date ->
+                scope.tracking.day(date).extras.map { entry ->
+                    assertTrue(entry.food == null && entry.fibreG == null, "account $account, $date: $entry")
+                    "${entry.date} ${entry.id} ${entry.description} ${"%.3f".format(java.util.Locale.ROOT, entry.kcal)} ${"%.3f".format(java.util.Locale.ROOT, entry.proteinG)}"
+                }
+            }
+            println("Account $account: ${dates.size} days logged, ${read.size} entries")
+            assertEquals(logs.getValue(account), read, "account $account: every logged entry as it was")
+        }
+        driver.close()
+    }
+
     private fun columnsOf(url: String, table: String) = query(url, "SELECT name FROM pragma_table_info('$table')")
 
     private fun List<String>.joined() = joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }
@@ -235,5 +286,8 @@ class RecipeBankRealDataTest {
 
         /** The version whose slots of the plan can hold foods (27.sqm). */
         const val SLOT_FOODS_VERSION = 28L
+
+        /** The version whose log of what was eaten can hold foods of the catalogue (28.sqm). */
+        const val LOGGED_FOODS_VERSION = 29L
     }
 }

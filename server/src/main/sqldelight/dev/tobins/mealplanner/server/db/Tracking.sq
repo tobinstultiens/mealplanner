@@ -1,14 +1,25 @@
--- Food eaten outside the plan, with rough numbers.
+-- Food eaten outside the plan: typed, with rough numbers, or a food of the catalogue picked in an amount (issue 362), with
+-- the numbers counted when it was logged or its amount last changed, which the entry keeps whatever the food's values do.
 CREATE TABLE foodLog (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE,
     date TEXT NOT NULL,
-    description TEXT NOT NULL,
+    description TEXT NOT NULL,         -- as typed; for a food the server's line ("2 bar Protein bar"), for apps that do not know foods
     kcal REAL NOT NULL,
-    proteinG REAL NOT NULL
+    proteinG REAL NOT NULL,
+    fibreG REAL,                       -- a food's; NULL: typed, so none
+    -- The food: NULL for a typed entry, and once the food is gone, when the entry keeps its numbers as a typed one would.
+    ingredientId INTEGER REFERENCES ingredient(id) ON DELETE SET NULL,
+    foodName TEXT,                     -- the food's name, amount and unit as picked; NULL: typed
+    amount REAL,
+    unit TEXT,
+    counted INTEGER NOT NULL DEFAULT 1, -- 0: the food counted as nothing (no values, or an amount it could not weigh)
+    pickedAt TEXT                      -- when the food was picked or its amount changed: its unit is the one picked last then
 );
 
 CREATE INDEX foodLog_date ON foodLog(userId, date);
+
+CREATE INDEX foodLog_ingredient ON foodLog(ingredientId);
 
 -- One weighing per day.
 CREATE TABLE weight (
@@ -21,8 +32,27 @@ CREATE TABLE weight (
 selectLogForDate:
 SELECT * FROM foodLog WHERE userId = ? AND date = ? ORDER BY id;
 
+selectLog:
+SELECT * FROM foodLog WHERE userId = ? AND id = ?;
+
 insertLog:
 INSERT INTO foodLog (userId, date, description, kcal, proteinG) VALUES (?, ?, ?, ?, ?);
+
+insertLoggedFood:
+INSERT INTO foodLog (userId, date, description, kcal, proteinG, fibreG, ingredientId, foodName, amount, unit, counted, pickedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- A logged food recounted in another amount, unit or food.
+updateLoggedFood:
+UPDATE foodLog SET description = :description, kcal = :kcal, proteinG = :proteinG, fibreG = :fibreG, ingredientId = :ingredientId,
+    foodName = :foodName, amount = :amount, unit = :unit, counted = :counted, pickedAt = :pickedAt
+WHERE userId = :userId AND id = :id;
+
+-- An entry typed over: a typed entry from then on, without a food.
+updateLogText:
+UPDATE foodLog SET description = :description, kcal = :kcal, proteinG = :proteinG, fibreG = NULL, ingredientId = NULL,
+    foodName = NULL, amount = NULL, unit = NULL, counted = 1, pickedAt = NULL
+WHERE userId = :userId AND id = :id;
 
 lastLogId:
 SELECT last_insert_rowid();

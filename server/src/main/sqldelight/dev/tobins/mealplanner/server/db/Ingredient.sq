@@ -140,12 +140,19 @@ FROM recipeIngredient ri JOIN recipe r ON r.id = ri.recipeId
 WHERE r.userId = ? AND r.addedAt IS NOT NULL;
 
 -- The lines saved with an ingredient of their own (issue 346) in my recipes and in the foods of the plan's slots (issue
--- 358), the one saved last at the end, so that a reader keeping the last unit it sees per ingredient has the latest one.
+-- 358), and the foods logged as eaten (issue 362), the one saved last at the end, so that a reader keeping the last unit
+-- it sees per ingredient has the latest one.
 selectLinkedUnits:
-SELECT ri.ingredientId, ri.unit
-FROM recipeIngredient ri JOIN recipe r ON r.id = ri.recipeId
-WHERE r.userId = ? AND (r.addedAt IS NOT NULL OR r.slotFoods = 1) AND ri.ingredientId IS NOT NULL
-ORDER BY COALESCE(r.editedAt, r.addedAt), r.id, ri.position;
+SELECT ingredientId, unit FROM (
+    SELECT ri.ingredientId, ri.unit, COALESCE(r.editedAt, r.addedAt) AS savedAt, 0 AS logged, r.id AS rowId, ri.position
+    FROM recipeIngredient ri JOIN recipe r ON r.id = ri.recipeId
+    WHERE r.userId = :userId AND (r.addedAt IS NOT NULL OR r.slotFoods = 1) AND ri.ingredientId IS NOT NULL
+    UNION ALL
+    SELECT ingredientId, unit, pickedAt, 1, id, 0
+    FROM foodLog
+    WHERE userId = :userId AND ingredientId IS NOT NULL
+)
+ORDER BY savedAt, logged, rowId, position;
 
 -- All accounts at once, for the shared price lookup.
 selectEveryIngredient:

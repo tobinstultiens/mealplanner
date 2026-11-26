@@ -3,8 +3,13 @@ package dev.tobins.mealplanner.app
 import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.GenerateRequest
+import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LogFoodInput
+import dev.tobins.mealplanner.api.LogTextInput
+import dev.tobins.mealplanner.api.LoggedFood
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.MealFoodInput
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Profile
@@ -44,7 +49,10 @@ class ApiClientWasmTest {
     private val cooking = """{"syncedAt":null,"commit":null,"error":null,"everyHours":null}"""
     private val pantry = """{"staples":[$ingredient],"onHand":[]}"""
     private val weights = """{"entries":[{"date":"2026-11-16","kg":80.0}],"actualKgPerWeek":null,"suggestion":null}"""
-    private val day = """{"date":"2026-11-16","weekStart":"2026-11-16","dayIndex":0,"targets":null,"meals":[],"extras":[],
+    // A typed entry and a logged food (issue 362), whose food is gone.
+    private val day = """{"date":"2026-11-16","weekStart":"2026-11-16","dayIndex":0,"targets":null,"meals":[],"extras":[
+        {"id":1,"date":"2026-11-16","description":"Apple","kcal":80.0,"proteinG":0.5},
+        {"id":2,"date":"2026-11-16","description":"2 bar Bar","kcal":360.0,"proteinG":27.0,"fibreG":4.5,"food":{"ingredientId":null,"name":"Bar","amount":2.0,"unit":"bar"}}],
         "eatenKcal":0.0,"eatenProteinG":0.0,"expectedKcal":0.0,"expectedProteinG":0.0}"""
     private val profile = """{"weightKg":80.0,"heightCm":180.0,"ageYears":30,"sex":"MALE","activity":"LIGHT"}"""
 
@@ -57,7 +65,7 @@ class ApiClientWasmTest {
         path.startsWith("/api/recipes") -> recipe
         path == "/api/sync/cooking" && method == "POST" -> """{"added":0,"updated":0,"unchanged":0,"removed":0,"problems":{}}"""
         path.startsWith("/api/sync/cooking") -> cooking
-        path.startsWith("/api/days/") || path == "/api/log" -> day
+        path.startsWith("/api/days/") || path.startsWith("/api/log") -> day
         path.startsWith("/api/weights") -> weights
         path == "/api/ingredients" -> "[$ingredient]"
         path == "/api/ingredients/sections" -> "[$section]"
@@ -106,6 +114,27 @@ class ApiClientWasmTest {
             listOf("EATEN", "SKIPPED", "PLANNED").map { """PUT /api/plans/2026-11-16/meals/2/DINNER/status "$it"""" },
             requests,
         )
+    }
+
+    /** A food logged as eaten (issue 362), changed and typed over: the bodies the server reads, and the day it answers read. */
+    @Test
+    fun aLoggedFoodIsSentAsTheServerReadsIt() = runTest {
+        val days = mutableListOf<DayView>()
+        val requests = sent { api ->
+            days += api.logPickedFood(LogFoodInput("2026-11-16", 7, 2.0, "bar"))
+            days += api.changeLoggedFood(3, MealFoodInput(7, 1.0, "bar"))
+            days += api.retypeLog(3, LogTextInput("Apple", 80.0, 0.5))
+        }
+        assertEquals(
+            listOf(
+                """POST /api/log/foods {"date":"2026-11-16","ingredientId":7,"amount":2.0,"unit":"bar"}""",
+                """PUT /api/log/3/food {"ingredientId":7,"amount":1.0,"unit":"bar"}""",
+                """PUT /api/log/3 {"description":"Apple","kcal":80.0,"proteinG":0.5}""",
+            ),
+            requests,
+        )
+        assertEquals(LoggedFood(null, "Bar", 2.0, "bar"), days.first().extras.last().food)
+        assertEquals(null to null, days.first().extras.first().let { it.food to it.fibreG }, "a typed entry")
     }
 
     @Test

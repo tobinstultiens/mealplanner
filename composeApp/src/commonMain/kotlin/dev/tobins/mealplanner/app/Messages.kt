@@ -72,7 +72,7 @@ enum class Msg(private val english: String, private val dutch: String) {
     ALSO_EATEN("Also eaten", "Ook gegeten"),
     KCAL_PROTEIN("{0} kcal · {1} g protein", "{0} kcal · {1} g eiwit"),
     KCAL_PROTEIN_FIBRE("{0} kcal · {1} g protein · {2} g fibre", "{0} kcal · {1} g eiwit · {2} g vezels"),
-    ADD_EXTRA("Add something else you ate", "Voeg iets anders toe dat je at"),
+    ADD_EXTRA("Type kcal yourself", "Zelf kcal invullen"),
     EATEN_TOTAL("Eaten: {0} kcal · {1} g protein", "Gegeten: {0} kcal · {1} g eiwit"),
     SET_UP_PROFILE_HINT("Set up your profile under Progress to see targets.", "Stel je profiel in onder Voortgang om je doelen te zien."),
     EATEN_SO_FAR("Eaten so far", "Tot nu toe gegeten"),
@@ -103,6 +103,19 @@ enum class Msg(private val english: String, private val dutch: String) {
     EXTRA_WHAT("What", "Wat"),
     EXTRA_CALORIES("Calories (a rough number is fine)", "Calorieën (ruwe schatting)"),
     EXTRA_PROTEIN("Protein in grams (optional)", "Eiwit in gram (optioneel)"),
+    // --- Foods logged as eaten outside the plan (issue 362)
+    LOG_ADD_FOOD("Add a food", "Voedingsmiddel toevoegen"),
+    LOG_CHANGE_TITLE("Change what you ate", "Wijzig wat je at"),
+    // The food screen's bar has one line, which must fit at the largest font.
+    LOG_CHANGE_FOOD_TITLE("Change food", "Wijzig eten"),
+    LOG_FOOD_VALUES_CHANGED(
+        "The values of {0} have changed since it was logged. It keeps what it counted then; another amount counts by its values of now.",
+        "De waarden van {0} zijn veranderd sinds het is gelogd. Het houdt wat het toen telde; een andere hoeveelheid telt met de waarden van nu.",
+    ),
+    LOG_FOOD_GONE(
+        "{0} is no longer among your foods, so it cannot be counted again. Type its numbers over, or remove it.",
+        "{0} staat niet meer bij je voedingsmiddelen en kan dus niet opnieuw worden berekend. Typ de getallen opnieuw in, of verwijder het.",
+    ),
 
     // --- Settings: language
     LANGUAGE("Language", "Taal"),

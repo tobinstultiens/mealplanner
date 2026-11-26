@@ -4,12 +4,7 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MealFood
 import dev.tobins.mealplanner.api.MealFoodInput
 import dev.tobins.mealplanner.api.PlannedMeal
-import dev.tobins.mealplanner.api.RecipeLineInput
-import dev.tobins.mealplanner.nutrition.NutritionCalculator
-import dev.tobins.mealplanner.nutrition.portionKey
-import dev.tobins.mealplanner.nutrition.units
 import dev.tobins.mealplanner.recipes.IngredientLine
-import dev.tobins.mealplanner.recipes.toIngredientLine
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.RecipeIngredient
 import dev.tobins.mealplanner.units.Dimension
@@ -27,19 +22,10 @@ import java.time.Instant
 class SlotFoods(private val db: Database, private val userId: Long, private val recipes: RecipeRepository) {
     private val q = db.recipeQueries
 
-    /**
-     * [input] as the line of a food: the account's ingredient (another's is not there, 404) in a positive amount of one of
-     * the units it has ([units], a portion's name in any case), weighing at most [MAX_GRAMS]; else a 400.
-     */
+    /** [input] as the line of a food ([foodLine]): the account's ingredient (another's is not there, 404). */
     fun lineOf(input: MealFoodInput): IngredientLine {
         val ingredient = recipes.ingredients.find(input.ingredientId) ?: throw NotFoundException("No ingredient with id ${input.ingredientId}")
-        require(input.amount.isFinite() && input.amount > 0.0) { "amount must be more than 0" }
-        val unit = ingredient.units.firstOrNull { portionKey(it) == portionKey(input.unit) }
-            ?: throw IllegalArgumentException("${ingredient.name} is counted in ${ingredient.units.joinToString()}, not in '${input.unit}'")
-        val line = checkNotNull(RecipeLineInput(input.amount, unit, ingredient.name, ingredient.id).toIngredientLine())
-        val grams = NutritionCalculator.quantityOf(line, ingredient)?.grams
-        require(grams == null || grams <= MAX_GRAMS) { "a food weighs at most ${MAX_GRAMS.toInt()} g" }
-        return line
+        return foodLine(ingredient, input)
     }
 
     /** Makes the recipe of a slot's foods with [line] as its first, and answers its id. In the caller's transaction. */
@@ -125,18 +111,18 @@ class SlotFoods(private val db: Database, private val userId: Long, private val 
     private fun food(row: RecipeIngredient, resolve: (IngredientLine) -> Ingredient?): MealFood {
         val line = lineOf(row)
         val ingredient = resolve(line)
-        val counted = ingredient?.let { NutritionCalculator.perServing(listOf(line to it), servings = 1) }
+        val counted = ingredient?.let { countOf(line, it) }
         return MealFood(
             id = row.id,
             ingredientId = ingredient?.id ?: row.ingredientId ?: 0,
             name = ingredient?.name ?: row.item,
             amount = row.amount ?: 0.0,
             unit = row.unit.orEmpty(),
-            grams = ingredient?.let { NutritionCalculator.quantityOf(line, it)?.grams },
-            kcal = counted?.perServing?.kcal ?: 0.0,
-            proteinG = counted?.perServing?.proteinG ?: 0.0,
-            fibreG = counted?.perServing?.fibreG ?: 0.0,
-            counted = counted != null && counted.complete && counted.perServing.kcal != null,
+            grams = counted?.grams,
+            kcal = counted?.kcal ?: 0.0,
+            proteinG = counted?.proteinG ?: 0.0,
+            fibreG = counted?.fibreG ?: 0.0,
+            counted = counted?.counted == true,
         )
     }
 
@@ -164,9 +150,6 @@ class SlotFoods(private val db: Database, private val userId: Long, private val 
     private fun retitle(foodsId: Long) = q.setSlotFoodsTitle(titleOf(foodsId), Instant.now().toString(), userId, foodsId)
 
     companion object {
-        /** More than one food of a meal weighs: a typing mistake rather than an amount, as for a meal's own lines. */
-        const val MAX_GRAMS = MealAdjustments.MAX_GRAMS
-
         /** More foods than a slot holds: a list made by mistake. */
         const val MAX_FOODS = 30
 

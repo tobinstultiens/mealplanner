@@ -32,6 +32,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LoggedFood
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -340,6 +342,12 @@ private fun cookingSiteChoices(choice: SiteChoice, url: String) {
     }
 }
 
+/** The protein bar of the fake backend's log ([Shot.loggedFoods]): one bar, counted when its label said less than now. */
+private val loggedProteinBar = LogEntry(
+    0, FakeBackend.TODAY, "1 bar Protein bar chocolate", 160.0, 13.0, fibreG = 2.5,
+    food = LoggedFood(40, "Protein bar chocolate", 1.0, "bar"),
+)
+
 /** The snackbar of a recipe added with ingredients to link, shown the way [announceAdded] shows it. */
 @Composable
 private fun addedSnackbar() {
@@ -437,6 +445,8 @@ enum class Shot(
     val writing: Boolean = false,
     /** The fake backend's week with foods in slots (issue 358): Monday's snack two foods alone, its breakfast a food next to the oats. */
     val slotFoods: Boolean = false,
+    /** The fake backend's log with foods (issue 362): after the typed apple, a bar of the protein bar and a muesli bar since gone. */
+    val loggedFoods: Boolean = false,
     /** Texts to type before the [taps], each into the text field labelled with the first of the pair. */
     val types: List<Pair<String, String>> = emptyList(),
     /** Texts to tap in turn once each is shown, each with a text to wait for after it, such as a dialog's or a snackbar's. */
@@ -494,6 +504,42 @@ enum class Shot(
         writing = true, slotFoods = true, fontScale = 2.0f, heightDp = 900,
         types = listOf("Add an ingredient" to "protein"), taps = listOf("Protein bar chocolate" to "Amount"),
         content = { api, _ -> SlotFoodScreen(api, FakeBackend.WEEK_START, FoodPlace(1, MealSlot.SNACK), {}, {}) },
+    ),
+    // Foods logged as eaten outside the plan (issue 362): under the typed apple, a bar of the protein bar in its unit with what
+    // it counted, and a muesli bar since gone from the catalogue, which reads as it did; both ways of adding under them. In
+    // both languages and at the largest font.
+    TODAY_LOGGED(loggedFoods = true, heightDp = 2000, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    TODAY_LOGGED_NL(loggedFoods = true, dutch = true, heightDp = 2100, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    TODAY_LOGGED_X2(loggedFoods = true, fontScale = 2.0f, heightDp = 3200, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    // A food picked for the log: "Also eaten" and the day above the protein bar found among the account's own, starting in
+    // 100 g, its weight and kcal under its name. In both languages and at the largest font.
+    LOG_FOOD_PICKED(
+        writing = true, loggedFoods = true, heightDp = 640,
+        types = listOf("Add an ingredient" to "protein"), taps = listOf("Protein bar chocolate" to "Amount"),
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY), {}, {}) },
+    ),
+    LOG_FOOD_PICKED_NL(
+        writing = true, loggedFoods = true, dutch = true, heightDp = 640,
+        types = listOf("Ingrediënt toevoegen" to "protein"), taps = listOf("Protein bar chocolate" to "Hoeveelheid"),
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY), {}, {}) },
+    ),
+    LOG_FOOD_PICKED_X2(
+        writing = true, loggedFoods = true, fontScale = 2.0f, heightDp = 900,
+        types = listOf("Add an ingredient" to "protein"), taps = listOf("Protein bar chocolate" to "Amount"),
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY), {}, {}) },
+    ),
+    // The protein bar of the log opened to change: what it counted when logged, kept, and that its values have changed since.
+    LOG_FOOD_CHANGED(
+        writing = true, loggedFoods = true, heightDp = 640, shows = "Protein bar chocolate · 45",
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY, loggedProteinBar), {}, {}) },
+    ),
+    LOG_FOOD_CHANGED_NL(
+        writing = true, loggedFoods = true, dutch = true, heightDp = 640, shows = "Protein bar chocolate · 45",
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY, loggedProteinBar), {}, {}) },
+    ),
+    LOG_FOOD_CHANGED_X2(
+        writing = true, loggedFoods = true, fontScale = 2.0f, heightDp = 1000, shows = "Protein bar chocolate · 45",
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY, loggedProteinBar), {}, {}) },
     ),
     // What the search finds for the snack, as the recipe editor's: the account's product first, "New product" last.
     SLOT_FOOD_SEARCH(
@@ -970,6 +1016,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         laterVerdicts = shot.laterVerdicts,
         writing = shot.writing,
         slotFoods = shot.slotFoods,
+        loggedFoods = shot.loggedFoods,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)
