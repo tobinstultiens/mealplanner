@@ -115,7 +115,7 @@ class RecipeLinesTest {
     /** [recipe] as it reads, as the body that saves it again: each line's own fields, its ingredient among them. */
     private fun asInput(recipe: RecipeDetail) = RecipeInput(
         title = recipe.summary.title,
-        servings = recipe.summary.servings!!,
+        servings = recipe.summary.servings ?: 1,
         instructions = recipe.instructions,
         tags = recipe.summary.tags,
         mealSlots = recipe.summary.mealSlots,
@@ -317,6 +317,30 @@ class RecipeLinesTest {
         assertEquals(kept(before), kept(edited))
         assertTrue(http.put("/api/recipes/${stew.id}") { setBody(asInput(edited)) }.body<RecipeDetail>().summary.edited)
         assertEquals(HttpStatusCode.Conflict, http.put("/api/recipes/${stew.id}/added") { setBody(AddedInput(added = false)) }.status)
+    }
+
+    /**
+     * A recipe of the site with no `servings` is shown and saved by the editor with 1 (issue 344): saved as it is, that is
+     * no change, the recipe stays without a number and can go back to the bank; with another change it gets the 1.
+     */
+    @Test
+    fun aTakenRecipeWithoutServingsSavedAsTheEditorSendsItIsNotEdited() = testApplication {
+        val http = start()
+        page("recipes/soup.md", "---\ntitle: Soup\n---\n```ingredients\n300 | g | beef\n```\nSimmer.\n")
+        http.sync()
+        val soup = http.bank().single { it.title == "Soup" }
+        val taken = http.put("/api/recipes/${soup.id}/added") { setBody(AddedInput(added = true)) }.body<RecipeDetail>()
+        assertEquals(null, taken.summary.servings)
+
+        val same = http.put("/api/recipes/${soup.id}") { setBody(asInput(taken).copy(servings = 1)) }.body<RecipeDetail>()
+        assertEquals(taken, same)
+        assertFalse(same.summary.edited)
+        assertEquals(HttpStatusCode.OK, http.put("/api/recipes/${soup.id}/added") { setBody(AddedInput(added = false)) }.status)
+
+        http.put("/api/recipes/${soup.id}/added") { setBody(AddedInput(added = true)) }
+        val more = http.put("/api/recipes/${soup.id}") { setBody(asInput(taken).copy(servings = 2)) }.body<RecipeDetail>()
+        assertTrue(more.summary.edited)
+        assertEquals(2, more.summary.servings)
     }
 
     /** A unit is a word of its own: one with a `|` is refused, as the import format would read it as part of the text. */

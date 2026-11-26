@@ -871,6 +871,11 @@ class FakeBackend(
     private fun detailOf(id: Long): RecipeDetail =
         saved[id]?.copy(summary = row(id)) ?: if (writing && id == 4L) takenStew() else recipeDetail(id)
 
+    /** Makes recipe [id] one with no number of servings, as a cooking-site file without a `servings:` line is. */
+    fun withoutServings(id: Long) {
+        rows.replaceAll { if (it.id == id) it.copy(servings = null) else it }
+    }
+
     /** The recipes saved by the editor while [writing], by id. */
     private val saved = java.util.concurrent.ConcurrentHashMap<Long, RecipeDetail>()
 
@@ -882,6 +887,8 @@ class FakeBackend(
     private fun save(id: Long?, input: RecipeInput): RecipeDetail {
         val before = id?.let(::detailOf)
         val unchanged = before != null && input == asInput(before).copy(ingredients = input.ingredients)
+        // Writes nothing, so a recipe without servings stays without.
+        if (unchanged) return before!!
         val lines = input.lines!!.mapNotNull { it.toIngredientLine() }
         val nutrition = NutritionCalculator.perServing(lines.map { it to resolve(it) }, input.servings).takeIf { lines.any { it.amount != null } }
         val newId = id ?: (rows.maxOf { it.id } + 1)
@@ -909,7 +916,11 @@ class FakeBackend(
     private fun changeRecipes(method: String, parts: List<String>, sent: String): String? {
         // Looking lines up saves nothing.
         if (method == "POST" && parts.getOrNull(2) == "lines") {
-            return json.encodeToString(json.decodeFromString<List<RecipeLineInput>>(sent).mapNotNull { it.toIngredientLine() }.map(::mapped))
+            // As the server: a line with no amount, unit and text refuses the whole request.
+            val asked = json.decodeFromString<List<RecipeLineInput>>(sent).map { it.toIngredientLine() }
+            val empty = asked.indexOf(null)
+            if (empty >= 0) throw Refusal(400, "Line ${empty + 1}: has nothing in it")
+            return json.encodeToString(asked.filterNotNull().map(::mapped))
         }
         changes += "$method /${parts.joinToString("/")} $sent"
         if (method == "DELETE" && parts.size == 3) {

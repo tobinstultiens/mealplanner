@@ -4,7 +4,7 @@ import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.units.UnitTable
 
 /**
- * Pasted ingredient lines as a recipe's rows (issue 342), one row per line that is not empty: plain lines as people
+ * Pasted ingredient lines as a recipe's rows (issue 342), one row per line that says something (not an empty one, nor one of only `|`): plain lines as people
  * write them, in Dutch or English (`200 g kipfilet`, `2 el olijfolie`, `1 ui`, `1½ cups of rice`, `zout`), and lines of
  * the import format (`200 | g | kipfilet`, `# Saus` for the heading of the lines after it). The rows carry no ingredient:
  * the editor looks each up as a save would ([dev.tobins.mealplanner.api.MappedLine]).
@@ -25,7 +25,8 @@ object PlainLines {
             val line = raw.trim().replace(bullet, "")
             when {
                 // What a block of the import format holds besides its lines.
-                line.isEmpty() || line.startsWith("```") || line.startsWith("servings:") -> Unit
+                // A line of only bars and blanks (`| |`) says nothing, as an empty one; the server refuses the whole paste for it.
+                line.all { it == '|' || it.isWhitespace() } || line.startsWith("```") || line.startsWith("servings:") -> Unit
                 line.startsWith("#") -> group = line.trimStart('#').trim().ifEmpty { null }
                 '|' in line -> rows += importLine(line, group)
                 else -> rows += plainLine(line, group, units)

@@ -292,19 +292,21 @@ cooking site carry none.
 `ingredientId`, which is `null`, not absent, when it has none) and the ingredient it means now in
 `MappedLine.ingredientId`. A recipe read this way and sent back with those fields as `lines`, with its `title`,
 `servings`, `instructions`, `tags` and `mealSlots`, is saved unchanged, and such a save writes nothing: it does not
-count as a change in the app (issue 342), so a recipe taken from the cooking site can still go back to the bank.
+count as a change in the app (issue 342), so a recipe taken from the cooking site can still go back to the bank. A recipe
+with no `servings` is read as 1 there, as the editor shows and sends 1 for it: saved untouched it stays without.
 `RecipeSummary.edited` says whether a recipe was saved with a change in the app (false from servers before it).
 
 `POST /api/recipes/lines` with a list of such lines answers them as a recipe saved with them would have them, each a
 `MappedLine` with the ingredient it means for the account and its weight, and saves nothing; lines are refused as a save
-refuses them (400, and 404 for another account's ingredient). The app's editor looks pasted lines up with it.
+refuses them (400, also for one with no amount, unit and text; the answer is one per line sent, so the route does not skip
+any). The app's editor looks pasted lines up with it and leaves such a line out first.
 
 **Writing a recipe in the app** (issue 342). "New recipe" on the Recipes tab, and Edit (the pencil) on any of my
 recipes, also one taken from the cooking site, open the editor (`RecipeEditorScreen.kt`, the same on Android and the
 web). Its ingredients are rows: "Add an ingredient" searches the account's ingredients (by their name and their NEVO
 food's English or Dutch name) and, after a pause in typing, the NEVO foods it has no ingredient for yet; picking one of
 those makes it an ingredient of the account first (`POST /api/ingredients`, named after the food, " (NEVO)" added when
-the name is taken). A picked row starts at one piece when the ingredient has a weight per piece, else 100 ml of a food
+the name is taken); in a row's dialog it is made only when the row is saved, so a cancelled dialog leaves nothing behind. A picked row starts at one piece when the ingredient has a weight per piece, else 100 ml of a food
 NEVO counts per 100 ml or 100 g, with its amount selected for typing (the keyboard's Next goes on to the next row's amount,
 and from the last to the search). While the editor is open the keyboard makes room instead of sliding the screen up
 (Android: the window's soft input mode is "adjust resize" and the column ends above the keyboard, `imePadding`), and
@@ -318,7 +320,7 @@ counted, worked out in the app from the catalogue and each row's ingredient with
 Each row says its ingredient with its weight and kcal, or why it is not counted. "Paste lines" takes plain lines, one
 per ingredient, in Dutch or English (`200 g kipfilet`, `2 el olijfolie`, `1 ui` for one piece, `zout`; `PlainLines.kt`:
 an amount, a unit of the unit table or a word that portions such as `blik`, then the text; a line that does not start
-with an amount is all text), and lines of the import format with their `# Group` headings; each row is looked up as a
+with an amount is all text; a line of only `|` and blanks is left out, as an empty one), and lines of the import format with their `# Group` headings; each row is looked up as a
 save would look it up. A row that means nothing says so ("Not counted: tap to choose the ingredient"); tapping it (or
 any row) searches with its text to pick its ingredient, and changes its text and group (opening a dialog lets go of the
 field being typed in, so the keyboard goes; in the browser the paste field has the focus at once). Left as it is, it is saved as

@@ -623,7 +623,8 @@ private fun per100Text(food: Food, t: Strings): String =
 
 /**
  * A row opened: its ingredient (searched and picked as below the rows; the search starts with the row's text when it has
- * none), the text the recipe shows and the group it is in. [pick] makes a picked NEVO food an ingredient of the account.
+ * none), the text the recipe shows and the group it is in. [pick] makes a picked NEVO food an ingredient of the account,
+ * only when the row is saved: a dialog cancelled leaves the account's ingredients as they were.
  */
 @Composable
 private fun RowDialog(
@@ -637,6 +638,9 @@ private fun RowDialog(
 ) {
     val t = LocalStrings.current
     var chosen by remember { mutableStateOf(ingredient) }
+    // A NEVO food picked and not yet an ingredient: it becomes one when the row is saved.
+    var chosenFood by remember { mutableStateOf<Found.NewFood?>(null) }
+    val chosenName = chosenFood?.let { nameFor(it.food, catalogue) } ?: chosen?.name
     var text by rememberSaveable { mutableStateOf(row.text) }
     var group by rememberSaveable { mutableStateOf(row.group.orEmpty()) }
     var query by rememberSaveable { mutableStateOf(if (ingredient == null) row.label() else "") }
@@ -648,18 +652,17 @@ private fun RowDialog(
         title = { Text(t(Msg.EDITOR_CHOOSE_INGREDIENT)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                Text(chosen?.let { t(Msg.EDITOR_CHOSEN, it.name) } ?: t(Msg.EDITOR_NONE_CHOSEN), style = MaterialTheme.typography.bodyMedium)
-                IngredientSearch(query, { query = it }, found, failed, enabled = !picking) { found ->
-                    picking = true
-                    scope.launch {
-                        pick(found)?.let { picked ->
-                            // A row named after its ingredient is named after the new one; a text of the recipe's own stays.
-                            if (text.isBlank() || text == chosen?.name) text = picked.name
-                            chosen = picked
-                            query = ""
-                        }
-                        picking = false
+                Text(chosenName?.let { t(Msg.EDITOR_CHOSEN, it) } ?: t(Msg.EDITOR_NONE_CHOSEN), style = MaterialTheme.typography.bodyMedium)
+                IngredientSearch(query, { query = it }, found, failed, enabled = !picking) { picked ->
+                    // A row named after its ingredient is named after the new one; a text of the recipe's own stays.
+                    val name = when (picked) {
+                        is Found.Mine -> picked.ingredient.name
+                        is Found.NewFood -> nameFor(picked.food, catalogue)
                     }
+                    if (text.isBlank() || text == chosenName) text = name
+                    chosen = (picked as? Found.Mine)?.ingredient
+                    chosenFood = picked as? Found.NewFood
+                    query = ""
                 }
                 OutlinedTextField(text, { text = it }, label = { Text(t(Msg.EDITOR_ROW_TEXT)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
@@ -673,7 +676,18 @@ private fun RowDialog(
         },
         confirmButton = {
             TextButton(enabled = !picking, onClick = {
-                onDone(row.copy(ingredientId = chosen?.id, text = text, group = group.oneLine().ifEmpty { null }))
+                fun done(ingredientId: Long?) = onDone(row.copy(ingredientId = ingredientId, text = text, group = group.oneLine().ifEmpty { null }))
+                val food = chosenFood
+                if (food == null) {
+                    done(chosen?.id)
+                } else {
+                    picking = true
+                    scope.launch {
+                        // Not made (the editor says so) leaves the dialog open to try again.
+                        pick(food)?.let { done(it.id) }
+                        picking = false
+                    }
+                }
             }) { Text(t(Msg.SAVE)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
