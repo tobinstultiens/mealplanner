@@ -20,7 +20,20 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     private val pantry = db.pantryQueries
     private val shopping = db.shoppingQueries
 
-    fun list(): List<Ingredient> = q.selectAllIngredients(userId).executeAsList().map { it.toIngredient() }
+    /** The account's ingredients, each with the unit it was last saved in ([Ingredient.lastUnit]). */
+    fun list(): List<Ingredient> {
+        val lastUnits = lastUnits()
+        return q.selectAllIngredients(userId).executeAsList().map { it.toIngredient().copy(lastUnit = lastUnits[it.id]) }
+    }
+
+    /**
+     * The unit each ingredient has in the recipe of mine saved last (issue 346), for the editor to start a picked
+     * ingredient in it. Only a line saved with its ingredient counts, not one that means it through its text: that
+     * is the cooking site's wording, not something the account picked. Several lines of one recipe: the last.
+     */
+    private fun lastUnits(): Map<Long, String> = buildMap {
+        q.selectLinkedUnits(userId).executeAsList().forEach { line -> line.unit?.let { put(line.ingredientId!!, it) } }
+    }
 
     fun find(id: Long): Ingredient? = q.selectIngredient(userId, id).executeAsOneOrNull()?.toIngredient()
 

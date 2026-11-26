@@ -152,6 +152,37 @@ class RecipeEditorScreenTest {
     }
 
     @Test
+    fun anIngredientNeverUsedStartsInPiecesWhenItHasAWeightPerPieceAndInGramsWhenNot() {
+        showEditor(null)
+        waitFor("Name")
+        pick("egg", "Egg")
+        pick("yog", "Greek yoghurt")
+        note("Egg · 60 g").assertExists()
+        note("Greek yoghurt · 100 g").assertExists()
+        compose.onAllNodes(hasText(unitLabel(PIECE, Strings.English)) and hasClickAction()).assertCountEquals(1)
+        compose.onAllNodes(hasText("g") and hasClickAction()).assertCountEquals(1)
+    }
+
+    @Test
+    fun anIngredientStartsInTheUnitItWasLastSavedIn() {
+        fun recipe(title: String, amount: Double, unit: String) =
+            RecipeInput(title, 2, instructions = "Cook.", lines = listOf(RecipeLineInput(amount, unit, "Egg", 12, null)))
+        runBlocking {
+            api.createRecipe(recipe("Omelette", 120.0, "g"))
+            assertEquals("g", api.ingredients().single { it.id == 12L }.lastUnit)
+        }
+        showEditor(null)
+        waitFor("Name")
+        pick("egg", "Egg")
+        note("Egg · 100 g").assertExists()
+
+        runBlocking {
+            api.createRecipe(recipe("Boiled", 2.0, PIECE))
+            assertEquals(PIECE, api.ingredients().single { it.id == 12L }.lastUnit)
+        }
+    }
+
+    @Test
     fun theTotalsShownWhileWritingAreTheSavedRecipes() {
         showEditor(null)
         waitFor("Name")

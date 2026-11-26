@@ -83,6 +83,18 @@ class RecipeDraftTest {
     }
 
     @Test
+    fun aPickedIngredientStartsInTheUnitLastSavedForItWhenItStillHasThatUnit() {
+        val row = { ingredient: Ingredient -> RecipeDraft().adding(ingredient).rows.single().input().let { it.amount to it.unit } }
+        assertEquals(100.0 to "g", row(chicken.copy(lastUnit = "g")))
+        assertEquals(1.0 to PIECE, row(chicken.copy(lastUnit = PIECE)))
+        assertEquals(100.0 to "ml", row(oil.copy(lastUnit = "ml")))
+        // A unit the ingredient has lost, or one it never had, is as no history: pieces with a weight per piece, else grams.
+        assertEquals(1.0 to PIECE, row(chicken.copy(lastUnit = "ml")))
+        assertEquals(100.0 to "g", row(oil.copy(lastUnit = PIECE)))
+        assertEquals(100.0 to "g", row(oil.copy(lastUnit = "tbsp")))
+    }
+
+    @Test
     fun anotherUnitKeepsTheQuantityWhereItIsKnown() {
         val oneThigh = RecipeDraft().adding(chicken).rows.single()
         assertEquals("110", oneThigh.inUnit("g", chicken).amount)

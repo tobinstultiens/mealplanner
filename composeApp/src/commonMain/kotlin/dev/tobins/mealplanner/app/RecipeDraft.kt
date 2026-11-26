@@ -184,11 +184,20 @@ fun unitChoices(ingredient: Ingredient?, current: String?): List<String> = build
     if (current != null && current !in this) add(current)
 }
 
-/** What a picked [ingredient]'s row starts with: one piece when a piece's weight is known, else 100 ml of a drink or 100 g. */
-fun startingAmount(ingredient: Ingredient): Pair<Double, String> = when {
-    ingredient.gramsPerPiece != null -> 1.0 to PIECE
-    ingredient.food?.basis == FoodBasis.PER_100_ML -> 100.0 to "ml"
-    else -> 100.0 to "g"
+/**
+ * What a picked [ingredient]'s row starts with (issue 346): one piece, 100 ml or 100 g of the unit the account last saved
+ * it in ([Ingredient.lastUnit]) when the ingredient still has that unit ([unitChoices]); else, as for one never used, one
+ * piece when a piece's weight is known, else 100 ml of a drink or 100 g.
+ */
+fun startingAmount(ingredient: Ingredient): Pair<Double, String> {
+    val last = ingredient.lastUnit?.takeIf { it in unitChoices(ingredient, null) }
+    return when {
+        last == PIECE -> 1.0 to PIECE
+        last != null -> 100.0 to last
+        ingredient.gramsPerPiece != null -> 1.0 to PIECE
+        ingredient.food?.basis == FoodBasis.PER_100_ML -> 100.0 to "ml"
+        else -> 100.0 to "g"
+    }
 }
 
 /**
