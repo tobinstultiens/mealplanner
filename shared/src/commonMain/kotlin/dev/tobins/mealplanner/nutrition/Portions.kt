@@ -37,12 +37,15 @@ fun Ingredient.portionNamed(unit: String?): Portion? {
     return portions.firstOrNull { portionKey(it.name) == key }
 }
 
-/** True when [line] is in one of [ingredient]'s portions, or in one it had and removed: a count, but not of pieces. */
-fun IngredientLine.inPortionOf(ingredient: Ingredient): Boolean {
-    if (dimension != Dimension.COUNT) return false
+/** True when [unit] names a portion [this] had and removed, and has not been given again. */
+fun Ingredient.hadPortion(unit: String?): Boolean {
     val key = unit?.let(::portionKey) ?: return false
-    return ingredient.portionNamed(unit) != null || ingredient.removedPortions.any { portionKey(it) == key }
+    return portionNamed(unit) == null && removedPortions.any { portionKey(it) == key }
 }
+
+/** True when [line] is in one of [ingredient]'s portions, or in one it had and removed: a count, but not of pieces. */
+fun IngredientLine.inPortionOf(ingredient: Ingredient): Boolean =
+    dimension == Dimension.COUNT && (ingredient.portionNamed(unit) != null || ingredient.hadPortion(unit))
 
 /**
  * [line] as what it stands for of [ingredient]: a line in one of its portions as that many grams or millilitres (the

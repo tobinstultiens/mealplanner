@@ -110,8 +110,9 @@ class RecipeDraftTest {
         assertEquals(listOf("g", PIECE, "bar", "half"), unitChoices(bar.copy(gramsPerPiece = 45.0), null))
         val drink = bar.copy(label = bar.label!!.copy(basis = FoodBasis.PER_100_ML))
         assertEquals(listOf("g", "ml", "bar", "half"), unitChoices(drink, null), "a drink's label is counted per volume")
-        // One removed since stays the row's unit, as any unit the row had.
-        assertEquals(listOf("g", "half", "bar"), unitChoices(bar.copy(portions = bar.portions.drop(1), removedPortions = listOf("bar")), "bar"))
+        // One removed since is not offered, not even to the row in it, which says the portion is gone.
+        assertEquals(listOf("g", "half"), unitChoices(bar.copy(portions = bar.portions.drop(1), removedPortions = listOf("bar")), "bar"))
+        assertEquals(listOf("g", "half"), unitChoices(bar.copy(portions = bar.portions.drop(1), removedPortions = listOf("bar")), "BAR"))
     }
 
     @Test

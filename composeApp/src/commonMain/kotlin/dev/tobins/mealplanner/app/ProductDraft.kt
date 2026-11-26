@@ -34,11 +34,32 @@ enum class LabelValue(val unit: String, val msg: Msg) {
 data class PortionRow(val key: Long, val name: String = "", val size: String = "", val ml: Boolean = false) {
     val sizeValue: Double? get() = readAmount(size)
 
+    /** What is wrong with the size, or null: none given, no number, below 0, or 0, which no portion weighs. */
+    val sizeProblem: NumberProblem?
+        get() = when {
+            size.isBlank() -> NumberProblem.NEEDED
+            sizeValue != null -> null
+            else -> numberProblem(size) ?: NumberProblem.ZERO
+        }
+
     fun portion(): Portion = Portion(name.trim(), grams = sizeValue.takeUnless { ml }, ml = sizeValue.takeIf { ml })
 }
 
 /** What is wrong with a portion's name, for the line under its field. */
-enum class PortionNameProblem { TAKEN, IS_UNIT, BAD_CHARACTER }
+enum class PortionNameProblem { NEEDED, TAKEN, IS_UNIT, BAD_CHARACTER }
+
+/** What is wrong with a number of the form, for the line under its field: each keeps Save off until it is put right. */
+enum class NumberProblem { NEEDED, NOT_A_NUMBER, NEGATIVE, ZERO }
+
+/**
+ * Why [text] is no number of 0 or more, or null when it is one (or is empty): a number with a minus sign is one, but may
+ * not be below 0, which is said as such rather than as no number at all.
+ */
+fun numberProblem(text: String): NumberProblem? = when {
+    text.isBlank() || readLabelValue(text) != null -> null
+    text.trim().startsWith("-") && readLabelValue(text.trim().removePrefix("-")) != null -> NumberProblem.NEGATIVE
+    else -> NumberProblem.NOT_A_NUMBER
+}
 
 /**
  * The product form's fields: the [name], whether the [values] (each as typed) are per 100 ml ([perMl]) or per 100 g, and
@@ -62,13 +83,17 @@ data class ProductDraft(
     fun number(of: LabelValue): Double? = readLabelValue(value(of))
 
     /** False while the field of [of] holds something that is no number of 0 or more; empty is unknown. */
-    fun valueValid(of: LabelValue): Boolean = value(of).isBlank() || number(of) != null
+    fun valueValid(of: LabelValue): Boolean = numberProblem(value(of)) == null
+
+    /** What is wrong with the field of [of], or null: no number, below 0, or the energy when it is needed ([needsEnergy]). */
+    fun valueProblem(of: LabelValue): NumberProblem? =
+        numberProblem(value(of)) ?: NumberProblem.NEEDED.takeIf { of == LabelValue.ENERGY && needsEnergy }
 
     /** Whether any value of the label is filled in: then it is a label, and its energy is needed. */
     val hasLabel: Boolean get() = LabelValue.entries.any { value(it).isNotBlank() }
 
     /** The energy is needed for a label, and for a product without a NEVO food to count by. */
-    val needsEnergy: Boolean get() = number(LabelValue.ENERGY) == null && (hasLabel || original?.food == null)
+    val needsEnergy: Boolean get() = value(LabelValue.ENERGY).isBlank() && (hasLabel || original?.food == null)
 
     /** The label as typed, salt as sodium ([Salt]); null when no value is filled in, so it counts by its NEVO food. */
     fun label(): LabelNutrition? {
@@ -88,17 +113,35 @@ data class ProductDraft(
 
     /** What is wrong with the name of portion [row], or null; as the server refuses it ([portionNameProblem]). */
     fun nameProblem(row: PortionRow): PortionNameProblem? = when {
-        row.name.isBlank() -> null
+        row.name.isBlank() -> PortionNameProblem.NEEDED
         portions.any { it.key != row.key && portionKey(it.name) == portionKey(row.name) } -> PortionNameProblem.TAKEN
         portionNameProblem(row.name) == null -> null
         row.name.any { it == '|' || it.isLineBreak() } -> PortionNameProblem.BAD_CHARACTER
         else -> PortionNameProblem.IS_UNIT
     }
 
-    /** Whether the server would take it: a name, values that read, the energy when needed, and portions that each can be. */
+    /**
+     * Whether the server would take it: a name, values that read, the energy when needed, and portions that each can be.
+     * Each thing that keeps it off is said at its own field ([valueProblem], [nameProblem], [PortionRow.sizeProblem]).
+     */
     val canSave: Boolean
-        get() = name.isNotBlank() && LabelValue.entries.all(::valueValid) && !needsEnergy &&
-            portions.all { it.name.isNotBlank() && it.sizeValue != null && nameProblem(it) == null }
+        get() = name.isNotBlank() && LabelValue.entries.all { valueProblem(it) == null } &&
+            portions.all { nameProblem(it) == null && it.sizeProblem == null }
+
+    /**
+     * The portions the ingredient had that this draft no longer has, renamed ones too: a recipe line in one of them is
+     * not counted once it is saved, so the form asks first.
+     */
+    val removedPortions: List<Portion>
+        get() = original?.portions.orEmpty().filter { had -> portions.none { portionKey(it.name) == portionKey(had.name) } }
+
+    /** With the [removedPortions] back as rows, at the end, as they were, their sizes as [locale] writes them: "keep it". */
+    fun keepingRemovedPortions(locale: FormatLocale): ProductDraft {
+        val back = removedPortions.mapIndexed { index, portion ->
+            PortionRow(nextKey + index, portion.name, formatAmount(portion.grams ?: portion.ml ?: 0.0, locale), ml = portion.grams == null)
+        }
+        return copy(portions = portions + back, nextKey = nextKey + back.size)
+    }
 
     /** The body that saves it; only when [canSave]. */
     fun input(): IngredientInput {

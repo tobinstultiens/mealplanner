@@ -438,12 +438,18 @@ class FakeBackend(
         return made
     }
 
-    /** `PUT /api/ingredients/{id}`: the ingredient as sent, its portions as they were when it sends none. */
+    /**
+     * `PUT /api/ingredients/{id}`: the ingredient as sent, its portions as they were when it sends none; one it no longer
+     * has is a removed one, as the server keeps it.
+     */
     private fun changeIngredient(id: Long, sent: String): Ingredient {
         changes += "PUT /api/ingredients/$id $sent"
         val before = catalogue.single { it.id == id }
         val input = json.decodeFromString<IngredientInput>(sent)
-        val changed = ingredientOf(id, input).let { if (input.portions == null) it.copy(portions = before.portions) else it }
+        val portions = input.portions ?: before.portions
+        val names = portions.map { it.name.lowercase() }
+        val removed = (before.removedPortions + before.portions.map { it.name }).filter { it.lowercase() !in names }.distinctBy { it.lowercase() }
+        val changed = ingredientOf(id, input).copy(portions = portions, removedPortions = removed)
         catalogue.replaceAll { if (it.id == id) changed else it }
         return changed
     }

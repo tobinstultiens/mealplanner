@@ -607,6 +607,8 @@ enum class Shot(
     PRODUCT_FORM(heightDp = 1550, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
     PRODUCT_FORM_NL(dutch = true, heightDp = 1550, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
     PRODUCT_FORM_X2(heightDp = 2300, fontScale = 2.0f, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
+    // A new product: what keeps Save off is said in red at its field.
+    PRODUCT_FORM_NEW(heightDp = 1300, content = { api, _ -> ProductScreen(api, null, {}, {}) }),
     // Opened from a planned meal: the amounts of 1.5 of the recipe's 2 servings, and nothing to cook for leftovers.
     RECIPE_FROM_MEAL(heightDp = 1900, content = { api, _ ->
         RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 1.5, skipped = false))

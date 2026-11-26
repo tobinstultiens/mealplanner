@@ -74,6 +74,34 @@ class ProductDraftTest {
     }
 
     @Test
+    fun eachThingThatKeepsSaveOffHasAReasonAtItsField() {
+        val draft = typed(LabelValue.ENERGY to "400", LabelValue.FAT to "-5", LabelValue.SUGARS to "veel").addingPortion()
+        assertEquals(NumberProblem.NEGATIVE, draft.valueProblem(LabelValue.FAT))
+        assertEquals(NumberProblem.NOT_A_NUMBER, draft.valueProblem(LabelValue.SUGARS))
+        assertNull(draft.valueProblem(LabelValue.FIBRE), "empty is unknown, not wrong")
+        assertEquals(NumberProblem.NEEDED, typed(LabelValue.PROTEIN to "30").valueProblem(LabelValue.ENERGY))
+        assertEquals(NumberProblem.NEGATIVE, typed(LabelValue.ENERGY to "-0,5").valueProblem(LabelValue.ENERGY))
+        val row = draft.portions.single()
+        assertEquals(PortionNameProblem.NEEDED to NumberProblem.NEEDED, draft.nameProblem(row) to row.sizeProblem)
+        assertEquals(NumberProblem.ZERO, row.copy(size = "0").sizeProblem)
+        assertEquals(NumberProblem.NEGATIVE, row.copy(size = "-45").sizeProblem)
+        assertEquals(NumberProblem.NOT_A_NUMBER, row.copy(size = "45 g").sizeProblem)
+        assertNull(row.copy(size = "22,5").sizeProblem)
+    }
+
+    @Test
+    fun portionsItHadAndNoLongerHasAreAskedAboutAndCanBePutBack() {
+        val draft = bar.toProductDraft(FormatLocale.Dutch)
+        assertEquals(emptyList(), draft.removedPortions)
+        val without = draft.removingPortion(0).changingPortion(1) { it.copy(name = "fles") }
+        assertEquals(bar.portions, without.removedPortions, "a renamed portion is gone under its old name")
+        val kept = without.removingPortion(1).keepingRemovedPortions(FormatLocale.Dutch)
+        assertEquals(emptyList(), kept.removedPortions)
+        assertEquals(listOf("bar" to "45", "bottle" to "330"), kept.portions.map { it.name to it.size })
+        assertEquals(bar.portions, kept.input().portions)
+    }
+
+    @Test
     fun aNewPortionIsInMillilitresForADrinkAndEachRowKeepsItsOwnUnit() {
         val drink = typed(LabelValue.ENERGY to "60").copy(perMl = true).addingPortion().changingPortion(0) { it.copy(name = "glass", size = "250") }
         assertEquals(listOf(Portion("glass", ml = 250.0)), drink.input().portions)

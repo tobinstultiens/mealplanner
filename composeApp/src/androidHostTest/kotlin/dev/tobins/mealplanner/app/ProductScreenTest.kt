@@ -7,6 +7,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -18,11 +22,15 @@ import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.input.ImeAction
 import dev.tobins.mealplanner.api.FoodBasis
 import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.LabelNutrition
+import dev.tobins.mealplanner.api.Nutrition
 import dev.tobins.mealplanner.api.Portion
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeLineInput
@@ -38,6 +46,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * A product with the values of its label and a named portion (issue 351), made and changed from "Link ingredients" on the
@@ -74,6 +83,8 @@ class ProductScreenTest {
     private fun field(label: String, index: Int = 0): SemanticsNodeInteraction = compose.onAllNodes(hasText(label) and hasSetTextAction())[index]
 
     private fun type(label: String, text: String, index: Int = 0) = field(label, index).performScrollTo().performTextReplacement(text)
+
+    private val barLabel = LabelNutrition(FoodBasis.PER_100_G, Nutrition(400.0, 30.0, null, null, null, null, null, null))
 
     /** The body of the last [method] of [path], as the app sent it. */
     private fun sent(method: String, path: String): IngredientInput =
@@ -125,6 +136,115 @@ class ProductScreenTest {
         val recipe = Json.decodeFromString<RecipeInput>(backend.changes.last { it.startsWith("POST /api/recipes ") }.removePrefix("POST /api/recipes "))
         val bar = runBlocking { api.ingredients() }.single { it.name == "Protein bar" }
         assertEquals(listOf(RecipeLineInput(2.0, "bar", "Protein bar", bar.id)), recipe.lines)
+    }
+
+    /** "Link ingredients" with the form open on a new product. */
+    private fun newProduct() {
+        show()
+        waitFor("New product")
+        compose.onNodeWithText("New product").performScrollTo().performClick()
+        waitFor("Values per")
+    }
+
+    private fun saveButton() = compose.onNode(hasText("Save") and hasClickAction())
+
+    private fun says(text: String) = compose.onNodeWithText(text, useUnmergedTree = true).performScrollTo().assertExists()
+
+    @Test
+    fun whatKeepsSaveOffIsSaidAtTheFieldThatCausesIt() {
+        newProduct()
+        saveButton().assertIsNotEnabled()
+        says("Needed: the product's name")
+        says("Needed: the energy in kcal from the label")
+        type("Name", "Protein bar")
+        type("Energy", "400")
+        saveButton().assertIsEnabled()
+
+        type("Fat", "-5")
+        says("May not be negative")
+        saveButton().assertIsNotEnabled()
+        type("Fat", "lots")
+        says("Not a number")
+        type("Fat", "15")
+        saveButton().assertIsEnabled()
+
+        compose.onNodeWithText("Add a portion").performScrollTo().performClick()
+        says("Needed: a name for the portion")
+        says("Needed: its size in g")
+        saveButton().assertIsNotEnabled()
+        type("Name", "g", index = 1)
+        says("“g” is a unit already: give the portion another name")
+        type("Name", "bar", index = 1)
+        type("Size", "0")
+        says("Must be more than 0")
+        type("Size", "45")
+        saveButton().assertIsEnabled()
+        assertEquals(0, compose.onAllNodes(hasText("Needed", substring = true), useUnmergedTree = true).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun theKeyboardsNextGoesFromTheSaltIntoThePortionsAndThroughThem() {
+        newProduct()
+        // Without a portion the salt is the last field: Done.
+        assertEquals(ImeAction.Done, field("Salt").fetchSemanticsNode().config[SemanticsProperties.ImeAction])
+        compose.onNodeWithText("Add a portion").performScrollTo().performClick()
+        compose.onNodeWithText("Add a portion").performScrollTo().performClick()
+        assertEquals(ImeAction.Next, field("Salt").fetchSemanticsNode().config[SemanticsProperties.ImeAction])
+
+        field("Salt").performScrollTo().performTextReplacement("0,5")
+        field("Salt").performImeAction()
+        field("Name", index = 1).assertIsFocused()
+        field("Name", index = 1).performImeAction()
+        field("Size", index = 0).assertIsFocused()
+        field("Size", index = 0).performImeAction()
+        field("Name", index = 2).assertIsFocused()
+        field("Name", index = 2).performImeAction()
+        field("Size", index = 1).assertIsFocused()
+        assertEquals(ImeAction.Done, field("Size", index = 1).fetchSemanticsNode().config[SemanticsProperties.ImeAction])
+    }
+
+    @Test
+    fun removingAPortionAsksFirstAndKeepingItPutsItBack() {
+        val bar = runBlocking {
+            api.createIngredient(IngredientInput("Protein bar", label = barLabel, portions = listOf(Portion("bar", grams = 45.0), Portion("half", grams = 22.5))))
+        }
+        show()
+        waitFor("Protein bar")
+        compose.onNodeWithText("Protein bar").performScrollTo().performClick()
+        waitFor("Edit product")
+        compose.onNodeWithContentDescription("Remove the portion bar").performScrollTo().performClick()
+        saveButton().performClick()
+        waitFor("Remove “bar”?")
+        compose.onNodeWithText("Recipes with a line in “bar” will no longer count that line, until a portion of that name is added again.").assertExists()
+        compose.onNodeWithText("Keep it").performClick()
+        waitFor("Edit product")
+        assertEquals(listOf("half", "bar"), compose.onAllNodes(hasText("Name") and hasSetTextAction()).fetchSemanticsNodes().drop(1).map { it.config[SemanticsProperties.EditableText].text })
+        assertTrue(backend.changes.none { it.startsWith("PUT /api/ingredients/${bar.id} ") }, "nothing saved")
+
+        compose.onNodeWithContentDescription("Remove the portion bar").performScrollTo().performClick()
+        saveButton().performClick()
+        waitFor("Remove and save")
+        compose.onNodeWithText("Remove and save").performClick()
+        waitFor("Saved Protein bar")
+        assertEquals(listOf(Portion("half", grams = 22.5)), sent("PUT", "/api/ingredients/${bar.id}").portions)
+    }
+
+    @Test
+    fun aRowInAPortionThatIsGoneSaysSoAndItsMenuDoesNotOfferIt() {
+        val recipe = runBlocking {
+            val bar = api.createIngredient(IngredientInput("Protein bar", label = barLabel, portions = listOf(Portion("bar", grams = 45.0), Portion("half", grams = 22.5))))
+            val made = api.createRecipe(RecipeInput("Snack", 1, lines = listOf(RecipeLineInput(2.0, "bar", "Protein bar", bar.id))))
+            api.updateIngredient(bar.id, IngredientInput("Protein bar", label = barLabel, portions = listOf(Portion("half", grams = 22.5))))
+            made.summary.id
+        }
+        compose.setContent {
+            CompositionLocalProvider(LocalStrings provides Strings.English) { RecipeEditorScreen(api, recipe, onDone = {}, onCancel = {}) }
+        }
+        waitFor("Snack")
+        compose.onNodeWithText("Protein bar · the portion bar is gone, not counted", substring = true, useUnmergedTree = true).assertExists()
+        compose.onAllNodes(hasText("bar") and hasClickAction()).onLast().performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(hasText("half") and hasAnyAncestor(isPopup())).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodes(hasText("bar") and hasAnyAncestor(isPopup())).assertCountEquals(0)
     }
 
     @Test

@@ -11,6 +11,7 @@ import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.nutrition.hadPortion
 import dev.tobins.mealplanner.nutrition.inPortionOf
 import dev.tobins.mealplanner.nutrition.portionNamed
 import dev.tobins.mealplanner.nutrition.values
@@ -179,14 +180,16 @@ const val PIECE = "piece"
  * The units a row of [ingredient] can be in (issue 342): grams always, millilitres when a millilitre's weight is known
  * (its density, or values counted per 100 ml), pieces when a piece's weight is, then its named portions (issue 351);
  * and the row's [current] unit, whatever it is, so that a line of the cooking site keeps the unit it had (`tbsp`,
- * `clove`), and one in a portion removed since still says so.
+ * `clove`). A portion the ingredient no longer has is not offered, not even to the row in it: that row shows its unit
+ * on its button and says the portion is gone ([RowCount.PORTION_GONE]).
  */
 fun unitChoices(ingredient: Ingredient?, current: String?): List<String> = buildList {
     add("g")
     if (ingredient == null || ingredient.gramsPerMl != null || ingredient.values?.basis == FoodBasis.PER_100_ML) add("ml")
     if (ingredient == null || ingredient.gramsPerPiece != null) add(PIECE)
     ingredient?.portions?.forEach { add(it.name) }
-    if (current != null && current !in this && ingredient?.portionNamed(current) == null) add(current)
+    val goneOrNamed = ingredient != null && current != null && (ingredient.portionNamed(current) != null || ingredient.hadPortion(current))
+    if (current != null && current !in this && !goneOrNamed) add(current)
 }
 
 /**
