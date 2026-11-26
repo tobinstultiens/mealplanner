@@ -77,6 +77,15 @@ class PlainLinesTest {
     }
 
     @Test
+    fun aLineOfOnlyBarsAndBlanksIsLeftOutLikeAnEmptyOne() {
+        assertEquals(
+            listOf(row(200.0, "g", "kipfilet"), row(1.0, "piece", "ui")),
+            PlainLines.read("200 g kipfilet\n| |\n1 ui"),
+        )
+        assertEquals(emptyList(), PlainLines.read("|\n | | |\n"))
+    }
+
+    @Test
     fun aRowReadsAsTheSameLineOfTheImportFormat() {
         val ui = PlainLines.read("1 ui").single().toIngredientLine()!!
         assertEquals(Dimension.COUNT to "ui", ui.dimension to ui.ingredientText)

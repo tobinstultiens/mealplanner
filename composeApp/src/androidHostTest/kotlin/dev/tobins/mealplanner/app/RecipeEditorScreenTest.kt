@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -42,6 +43,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -184,7 +186,8 @@ class RecipeEditorScreenTest {
         compose.onNode(hasText("Rice white raw", substring = true) and inDialog and hasClickAction()).performScrollTo().performClick()
         waitFor("Ingredient: Rice white raw")
         compose.onNode(hasText("Save") and inDialog).performClick()
-        note("Rice white raw · 150 g · 525 kcal").assertExists()
+        // The ingredient is made as the row is saved.
+        waitFor("Rice white raw · 150 g · 525 kcal", substring = true)
         save()
 
         val lines = sent("POST", "/api/recipes").lines!!
@@ -268,6 +271,58 @@ class RecipeEditorScreenTest {
         compose.onNodeWithContentDescription("More").performClick()
         compose.onNodeWithText("Remove from my recipes").assertExists()
         compose.onAllNodesWithText("Delete").assertCountEquals(0)
+    }
+
+    /** Issue 344: the editor shows 1 for a recipe with no servings, and saving that unchanged is no change, as on the server. */
+    @Test
+    fun aTakenRecipeWithoutServingsOpenedAndSavedAsItWasCanStillGoBackToTheBank() {
+        backend.withoutServings(4)
+        editThenOpen(4)
+        waitForRows(6)
+        save()
+        assertEquals(1, sent("PUT", "/api/recipes/4").servings)
+        assertNull(runBlocking { api.recipe(4) }.summary.servings)
+
+        waitFor("In my rotation")
+        compose.onNodeWithContentDescription("More").performClick()
+        compose.onNodeWithText("Remove from my recipes").assertExists()
+        compose.onAllNodesWithText("Delete").assertCountEquals(0)
+    }
+
+    @Test
+    fun anEmptyPastedLineIsLeftOutAndTheOthersAreLookedUp() {
+        showEditor(null)
+        waitFor("Name")
+        compose.onNodeWithText("Name").performTextInput("Bowl")
+        compose.onNodeWithText("Paste lines").performScrollTo().performClick()
+        typeInDialog("200 g kipdijfilet\n| |\n2 el olijfolie")
+        compose.onNodeWithText("Add as rows").performClick()
+        waitForRows(2)
+        note("Chicken thigh fillet · 200 g · 360 kcal").assertExists()
+        note("Olive oil · 27 g").assertExists()
+        compose.onNodeWithText("Save").assertIsEnabled()
+    }
+
+    @Test
+    fun aFoodPickedInARowsDialogAndThenCancelledIsNoIngredientOfTheAccount() {
+        showEditor(null)
+        waitFor("Name")
+        compose.onNodeWithText("Name").performTextInput("Bowl")
+        paste("150 g rijst")
+        val before = runBlocking { api.ingredients() }
+
+        compose.onNodeWithText("rijst").performScrollTo().performClick()
+        val inDialog = hasAnyAncestor(isDialog())
+        val food = hasText("Rice white raw", substring = true) and inDialog and hasClickAction()
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(food).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(food).performScrollTo().performClick()
+        waitFor("Ingredient: Rice white raw")
+        compose.onNode(hasText("Cancel") and inDialog).performClick()
+
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(inDialog).fetchSemanticsNodes().isEmpty() }
+        note("Not counted: tap to choose the ingredient").assertExists()
+        assertEquals(before, runBlocking { api.ingredients() })
+        assertFalse(backend.changes.any { it.startsWith("POST /api/ingredients") })
     }
 
     @Test

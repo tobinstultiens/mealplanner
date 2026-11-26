@@ -312,10 +312,12 @@ class RecipeRepository(
 
     /**
      * Whether [input], read as [lines], is recipe [row] as it is, with its lines [before]: its title, servings,
-     * instructions (both trimmed, as saved), tags, slots and every line with its group and own ingredient.
+     * instructions (both trimmed, as saved), tags, slots and every line with its group and own ingredient. A recipe
+     * with no number of servings (a cooking-site file without one) is read as 1, which is what the editor shows and sends
+     * for it: saved untouched it stays without, instead of gaining a 1 and counting as edited.
      */
     private fun unchanged(row: Recipe, before: List<IngredientLine>, input: RecipeInput, lines: List<IngredientLine>): Boolean =
-        input.title.trim() == row.title && input.servings.toLong() == row.servings && input.instructions.trim() == row.instructions &&
+        input.title.trim() == row.title && input.servings.toLong() == (row.servings ?: 1L) && input.instructions.trim() == row.instructions &&
             input.tags == Json.decodeFromString<List<String>>(row.tagsJson) && input.mealSlots.toSet() == slotsOf(row) && lines == before
 
     /**
