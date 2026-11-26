@@ -69,11 +69,19 @@ import kotlinx.serialization.builtins.nullable
  * At its top a product is looked up (issue 354): a name is searched at AH and one of what it finds picked, a barcode is
  * looked up at once (at Open Food Facts when AH cannot answer it). That fills the form, with its source shown and its pack
  * as a portion, and says what the source did not give or could not answer; nothing is saved until Save. A new product
- * starts with [name], in its name and in the lookup's field.
+ * starts with [name], in its name and in the lookup's field. A name that another ingredient of [catalogue] has is said at
+ * the name, as the server would refuse it.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) -> Unit, onCancel: () -> Unit, name: String = "") {
+fun ProductScreen(
+    api: ApiClient,
+    ingredient: Ingredient?,
+    onDone: (Ingredient) -> Unit,
+    onCancel: () -> Unit,
+    name: String = "",
+    catalogue: List<Ingredient> = emptyList(),
+) {
     val t = LocalStrings.current
     val start = remember(ingredient) { ingredient?.toProductDraft(t.locale) ?: ProductDraft(name = name) }
     // Kept over a re-created activity, as what was typed.
@@ -115,14 +123,20 @@ fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) 
     /** A barcode is looked up at once; a name is searched, to pick one of what is found. */
     fun lookUp() {
         val text = query.trim()
-        if (text.length < 2) return
+        if (text.length < 2) {
+            notes = null
+            lookup = LookupState.TooShort
+            return
+        }
         val barcode = barcodeIn(text)
         if (barcode != null) looking({ api.productByBarcode(barcode) }, ::fill)
         else looking({ api.searchProducts(text) }) { lookup = LookupState.Found(text, it) }
     }
 
+    val nameTaken = draft.nameTaken(catalogue)
+
     fun save() {
-        if (!draft.canSave || saving) return
+        if (!draft.canSave || nameTaken || saving) return
         saving = true
         val input = draft.input()
         scope.launch {
@@ -145,7 +159,7 @@ fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) 
             TopAppBar(
                 title = { Text(if (ingredient == null) t(Msg.NEW_PRODUCT) else t(Msg.EDIT_PRODUCT)) },
                 navigationIcon = { BarAction(AppIcons.Close, t(Msg.CANCEL), leave) },
-                actions = { TextButton(onClick = ::saveAsked, enabled = draft.canSave && !saving) { Text(t(Msg.SAVE)) } },
+                actions = { TextButton(onClick = ::saveAsked, enabled = draft.canSave && !nameTaken && !saving) { Text(t(Msg.SAVE)) } },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -156,15 +170,26 @@ fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) 
             verticalArrangement = Arrangement.spacedBy(Spacing.Related),
         ) {
             LookupPanel(
-                query, { query = it }, lookup, notes, enabled,
+                query,
+                { text ->
+                    // What the last lookup said is of another text now.
+                    query = text
+                    if (lookup != LookupState.Busy) lookup = LookupState.Idle
+                    notes = null
+                },
+                lookup, notes, enabled,
                 onLookUp = ::lookUp,
                 onPick = { hit -> looking({ api.ahProduct(hit) }, ::fill) },
             )
             OutlinedTextField(
                 draft.name, { draft = draft.copy(name = it) },
                 label = { Text(t(Msg.NAME)) },
-                isError = draft.name.isBlank(),
-                supportingText = if (draft.name.isBlank()) ({ Text(t(Msg.PRODUCT_NAME_NEEDED)) }) else null,
+                isError = draft.name.isBlank() || nameTaken,
+                supportingText = when {
+                    draft.name.isBlank() -> ({ Text(t(Msg.PRODUCT_NAME_NEEDED)) })
+                    nameTaken -> ({ Text(t(Msg.PRODUCT_NAME_TAKEN)) })
+                    else -> null
+                },
                 enabled = enabled,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -223,9 +248,14 @@ fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) 
     }
 }
 
-/** Where the lookup is: nothing asked, waiting for the server, what a search found for [Found.text], or the server not reached. */
+/**
+ * Where the lookup is: nothing asked, a text too short to ask, waiting for the server, what a search found for
+ * [Found.text], or the server not reached.
+ */
 private sealed interface LookupState {
     data object Idle : LookupState
+
+    data object TooShort : LookupState
 
     data object Busy : LookupState
 
@@ -264,12 +294,13 @@ private fun LookupPanel(
         keyboardActions = KeyboardActions(onSearch = { onLookUp() }),
         modifier = Modifier.fillMaxWidth(),
     )
-    TextButton(onClick = onLookUp, enabled = enabled && !busy && query.trim().length >= 2) { Text(t(Msg.LOOKUP)) }
+    TextButton(onClick = onLookUp, enabled = enabled && !busy) { Text(t(Msg.LOOKUP)) }
     when (state) {
         LookupState.Idle -> notes?.let { answer ->
             val color = if (answer.product?.basis == null || answer.problems.isNotEmpty()) error else quiet
             lookupNotes(answer, t).forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = color) }
         }
+        LookupState.TooShort -> Text(t(Msg.LOOKUP_TOO_SHORT), style = MaterialTheme.typography.bodySmall, color = error)
         LookupState.Busy -> Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
             Text(t(Msg.LOOKUP_BUSY), style = MaterialTheme.typography.bodyMedium, color = quiet)

@@ -148,6 +148,13 @@ data class ProductDraft(
         return LabelNutrition(if (perMl) FoodBasis.PER_100_ML else FoodBasis.PER_100_G, per100, source)
     }
 
+    /**
+     * Whether another ingredient of [catalogue] has this name, told apart without regard to case as the server does: it
+     * would refuse it, so the form says so at the name and keeps Save off.
+     */
+    fun nameTaken(catalogue: List<Ingredient>): Boolean =
+        name.isNotBlank() && catalogue.any { it.id != original?.id && it.name.trim().equals(name.trim(), ignoreCase = true) }
+
     /** What is wrong with the name of portion [row], or null; as the server refuses it ([portionNameProblem]). */
     fun nameProblem(row: PortionRow): PortionNameProblem? = when {
         row.name.isBlank() -> PortionNameProblem.NEEDED

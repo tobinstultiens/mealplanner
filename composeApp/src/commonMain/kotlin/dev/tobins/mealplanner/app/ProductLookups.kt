@@ -27,11 +27,14 @@ fun sourceName(source: String?): String? = when (LabelSource.parse(source)?.orig
     null -> null
 }
 
-/** `Values from AH`, or `Values from AH, changed by hand` once a value was changed after the lookup; another source's text as it is. */
-fun sourceLine(source: String, t: Strings): String {
-    val name = sourceName(source) ?: source
-    return t(Msg.PRODUCT_VALUES_FROM, if (LabelSource.parse(source)?.changedByHand == true) t(Msg.PRODUCT_CHANGED_BY_HAND, name) else name)
+/** `AH`, or `AH, changed by hand` once a value was changed after the lookup; null as [sourceName] is. */
+fun sourceLabel(source: String?, t: Strings): String? {
+    val name = sourceName(source) ?: return null
+    return if (LabelSource.parse(source)?.changedByHand == true) t(Msg.PRODUCT_CHANGED_BY_HAND, name) else name
 }
+
+/** `Values from AH`, or `Values from AH, changed by hand` ([sourceLabel]); another source's text as it is. */
+fun sourceLine(source: String, t: Strings): String = t(Msg.PRODUCT_VALUES_FROM, sourceLabel(source, t) ?: source)
 
 /** Whether values from [source] are Open Food Facts', which are shown with its licence. */
 fun fromOpenFoodFacts(source: String?): Boolean = LabelSource.parse(source)?.origin == LabelSource.Origin.OPEN_FOOD_FACTS

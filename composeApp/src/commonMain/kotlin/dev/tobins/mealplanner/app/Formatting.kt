@@ -75,10 +75,13 @@ fun RecipeNutrition.headline(strings: Strings, withFibre: Boolean = false): Stri
 }
 
 /** Whole grams (`28 g`); below 10 g one decimal (`4.6 g`). A missing value shows as `0 g`. */
-fun formatGrams(grams: Double?, locale: FormatLocale): String {
-    val value = grams ?: 0.0
-    return if (value < 10) "${formatAmount((value * 10).roundToLong() / 10.0, locale)} g" else "${value.roundToLong()} g"
-}
+fun formatGrams(grams: Double?, locale: FormatLocale): String = formatMeasure(grams ?: 0.0, "g", locale)
+
+/** Whole millilitres (`250 ml`); below 10 ml one decimal (`2.5 ml`), as [formatGrams]. */
+fun formatMillilitres(ml: Double, locale: FormatLocale): String = formatMeasure(ml, "ml", locale)
+
+private fun formatMeasure(value: Double, unit: String, locale: FormatLocale): String =
+    if (value < 10) "${formatAmount((value * 10).roundToLong() / 10.0, locale)} $unit" else "${value.roundToLong()} $unit"
 
 /** `€3.49` (`€3,49` with a decimal comma); prices are shown with two decimals. */
 fun formatEuro(amount: Double, locale: FormatLocale): String {

@@ -148,6 +148,56 @@ class RecipeDraftTest {
         assertEquals(RecipeLineInput(100.0, "g", "lemon, juiced", lemon.id, "Stew"), juiced.input())
     }
 
+    /** A drink counted per 100 ml without a known density, with its pack of 1 l and a glass as portions (issue 354). */
+    private val drink = Ingredient(
+        7, "Drink yoghurt", null, null, null, null, null, false,
+        label = LabelNutrition(FoodBasis.PER_100_ML, Nutrition(31.0, 3.1, null, null, null, null, null, null)),
+        portions = listOf(Portion("pack", ml = 1000.0), Portion("glass", ml = 250.0)),
+    )
+
+    /** A product whose density and piece weight are known, with a portion in ml and one in g. */
+    private val shake = Ingredient(
+        8, "Protein shake", null, 200.0, 1.05, null, null, false,
+        label = LabelNutrition(FoodBasis.PER_100_G, Nutrition(60.0, 10.0, null, null, null, null, null, null)),
+        portions = listOf(Portion("bottle", ml = 330.0), Portion("scoop", grams = 30.0)),
+    )
+
+    private fun row(amount: String, unit: String) = DraftRow(0, amount, unit, "", 7, null)
+
+    @Test
+    fun aUnitChangeKeepsTheQuantityBetweenEveryKindOfUnitTheRowCounts() {
+        fun DraftRow.to(unit: String, ingredient: Ingredient) = inUnit(unit, ingredient).amount
+        // Volumes: millilitres and portions in ml, also of a drink whose weight is not known.
+        assertEquals("0.5", row("500", "ml").to("pack", drink))
+        assertEquals("1000", row("1", "pack").to("ml", drink))
+        assertEquals("4", row("1", "pack").to("glass", drink))
+        assertEquals("1", row("250", "ml").to("glass", drink))
+        // Weights: grams, portions in g and pieces.
+        assertEquals("2", row("90", "g").to("bar", bar))
+        assertEquals("90", row("2", "bar").to("g", bar))
+        assertEquals("1", row("2", "half").to("bar", bar))
+        assertEquals("1.75", row("350", "g").to(PIECE, shake))
+        // Across the two through the known density.
+        assertEquals("693", row("2", "bottle").to("g", shake))
+        assertEquals("2", row("693", "g").to("bottle", shake))
+        assertEquals("29", row("1", "scoop").to("ml", shake))
+        assertEquals("23", row("2", "bottle").to("scoop", shake))
+        assertEquals("190", row("1", PIECE).to("ml", shake))
+        assertEquals("1.75", row("330", "ml").to(PIECE, shake))
+        // No density: a weight and a volume are not turned into each other, the number stays.
+        assertEquals("100", row("100", "g").to("ml", drink))
+        assertEquals("100", row("100", "g").to("pack", drink))
+        assertEquals("2", row("2", "bar").to("ml", bar))
+    }
+
+    @Test
+    fun aRowOfAVolumeWhoseWeightIsNotKnownSaysItsMillilitres() {
+        val pack = row("1", "pack").copy(text = "Drink yoghurt")
+        assertEquals("Drink yoghurt · 1000 ml · 310 kcal", rowNote(pack, drink, pack.count(drink), Strings.English).replace(Typography.nbsp, ' '))
+        val bottle = row("1", "bottle").copy(text = "Protein shake", ingredientId = shake.id)
+        assertEquals("Protein shake · 347 g · 208 kcal", rowNote(bottle, shake, bottle.count(shake), Strings.English).replace(Typography.nbsp, ' '), "its weight is known")
+    }
+
     @Test
     fun theTotalsAreThoseOfTheLinesSavedAndSayWhatIsNotCounted() {
         val draft = RecipeDraft(servings = "2").adding(chicken).pasting(PlainLines.read("200 ml coconut milk\nras el hanout"), listOf(milk.id, null))

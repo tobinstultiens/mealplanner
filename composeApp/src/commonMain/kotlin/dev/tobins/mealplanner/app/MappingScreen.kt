@@ -78,7 +78,7 @@ internal fun productsOf(catalogue: List<Ingredient>): List<Ingredient> = catalog
  */
 private fun Ingredient.productSummary(t: Strings): String = listOfNotNull(
     values?.let { t(Msg.PRODUCT_SUMMARY, (it.per100.kcal ?: 0.0).roundToLong(), per100(it.basis)) } ?: t(Msg.FOUND_NO_NUTRITION),
-    sourceName(label?.source),
+    sourceLabel(label?.source, t),
     portions.takeIf { it.isNotEmpty() }?.let { list -> t(Msg.PRODUCT_PORTIONS, list.joinToString { it.name }) },
 ).joinToString(" · ")
 
@@ -129,6 +129,7 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
                     scope.launch { snackbar.showSnackbar(t(Msg.PRODUCT_SAVED, saved.name)) }
                 },
                 onCancel = { product = null },
+                catalogue = catalogue.orEmpty(),
             )
             return
         }

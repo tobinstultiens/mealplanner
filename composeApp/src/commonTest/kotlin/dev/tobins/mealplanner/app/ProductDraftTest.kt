@@ -165,6 +165,15 @@ class ProductDraftTest {
     }
 
     @Test
+    fun aNameAnotherIngredientHasIsTakenWhateverItsCaseButNotTheProductsOwn() {
+        val catalogue = listOf(bar, bar.copy(id = 9, name = "Optimel Drinkyoghurt framboos"))
+        assertTrue(ProductDraft(name = " optimel drinkyoghurt framboos ").nameTaken(catalogue))
+        assertFalse(ProductDraft(name = "Optimel Drinkyoghurt aardbei").nameTaken(catalogue))
+        assertFalse(bar.toProductDraft(FormatLocale.English).nameTaken(catalogue), "its own name")
+        assertTrue(bar.toProductDraft(FormatLocale.English).copy(name = "Optimel Drinkyoghurt framboos").nameTaken(catalogue))
+    }
+
+    @Test
     fun aBarcodeIsDigitsAndANameIsSearched() {
         assertEquals("8712800035626", barcodeIn("8712800035626"))
         assertEquals("8712800035626", barcodeIn(" 87 1280 0035626 "))
@@ -187,6 +196,8 @@ class ProductDraftTest {
         )
         assertEquals(listOf("A source answered in a way this app does not know.", "Type the values from the label."), lookupNotes(ProductLookup(problems = listOf("later_code")), t))
         assertEquals("Values from Open Food Facts, changed by hand", sourceLine("off:8712800035626;changed", t))
+        assertEquals("AH, met de hand aangepast", sourceLabel("ah:61758;changed", Strings.Dutch))
+        assertNull(sourceLabel("typed", t))
         assertEquals("Waarden van AH", sourceLine("ah:61758", Strings.Dutch))
     }
 

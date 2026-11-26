@@ -633,6 +633,8 @@ enum class Msg(private val english: String, private val dutch: String) {
     ),
     LOOKUP("Look up", "Opzoeken"),
     LOOKUP_BUSY("Looking up…", "Opzoeken…"),
+    LOOKUP_TOO_SHORT("Type at least 2 characters of a name, or a barcode.", "Typ minstens 2 tekens van een naam, of een streepjescode."),
+    PRODUCT_NAME_TAKEN("There is already an ingredient with this name", "Er is al een ingrediënt met deze naam"),
     LOOKUP_FAILED("Could not look it up: {0}", "Opzoeken is niet gelukt: {0}"),
     LOOKUP_NOTHING("Nothing found at AH for “{0}”.", "Niets gevonden bij AH voor “{0}”."),
     LOOKUP_NOT_FOUND("No product found for it.", "Geen product gevonden."),

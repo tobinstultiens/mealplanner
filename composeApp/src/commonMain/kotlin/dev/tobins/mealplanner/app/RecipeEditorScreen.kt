@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -71,7 +72,9 @@ import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.nutrition.Values
+import dev.tobins.mealplanner.nutrition.measured
 import dev.tobins.mealplanner.nutrition.values
+import dev.tobins.mealplanner.units.Dimension
 import dev.tobins.mealplanner.recipes.PlainLines
 import dev.tobins.mealplanner.recipes.oneLine
 import kotlinx.coroutines.delay
@@ -138,11 +141,6 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
             is Load.Failed -> recipeFailed = result
             Load.Loading -> Unit
         }
-    }
-    // A row just added takes the focus, so its amount is typed at once (and the keyboard moves on from it with Next).
-    LaunchedEffect(focusRow) {
-        focusRow?.let { rowFocus[it]?.requestFocus() }
-        focusRow = null
     }
 
     val ingredients = (catalogue as? Load.Ready)?.value
@@ -242,6 +240,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
             },
             onCancel = { newProduct = null },
             name = name,
+            catalogue = ingredients.orEmpty(),
         )
         return
     }
@@ -327,6 +326,16 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                         onOpen = { opening { openRow = row.key } },
                         onRemove = { draft = draft.removing(row.key) },
                     )
+                    // A row just added takes the focus, so its amount is typed at once (and Next moves on from it). Asked
+                    // from the row, a frame after it is laid out: after the product form's detour the whole editor is new,
+                    // and asked any earlier the window gave the focus to the first field in view instead (issue 354).
+                    if (focusRow == row.key) {
+                        LaunchedEffect(row.key) {
+                            withFrameNanos { }
+                            rowFocus[row.key]?.requestFocus()
+                            focusRow = null
+                        }
+                    }
                 }
             }
             draft.addingTo?.takeIf { it != draft.rows.lastOrNull()?.group }?.let { next ->
@@ -455,7 +464,11 @@ private fun DraftRow.countsAsWritten(ingredient: Ingredient?, count: RowCount): 
     else -> false
 }
 
-/** What a row says under its name: the ingredient with its weight and kcal, or why it is not counted. */
+/**
+ * What a row says under its name: the ingredient with its weight and kcal, or why it is not counted. A volume of an
+ * ingredient whose density is not known (a drink counted per 100 ml, a portion in ml) says its millilitres: its weight
+ * would be a guess.
+ */
 internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t: Strings): String {
     val name = ingredient?.name.orEmpty()
     return when (count) {
@@ -466,9 +479,11 @@ internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t:
         RowCount.PORTION_GONE -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_PORTION_GONE, row.unit.orEmpty()))
         RowCount.WEIGHT_UNKNOWN -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_WEIGHT_UNKNOWN))
         RowCount.COUNTED -> {
-            val grams = NutritionCalculator.quantityOf(row.line()!!, ingredient!!)!!.grams
+            val line = row.line()!!
+            val volume = measured(line, ingredient!!)?.takeIf { it.dimension == Dimension.VOLUME && ingredient.gramsPerMl == null }?.baseAmount
+            val quantity = volume?.let { formatMillilitres(it, t.locale) } ?: formatGrams(NutritionCalculator.quantityOf(line, ingredient)!!.grams, t.locale)
             val kcal = NutritionCalculator.ofLines(listOf(row.input() to ingredient), servings = 1)?.perServing?.kcal ?: 0.0
-            t(Msg.ROW_COUNTED, name, formatGrams(grams, t.locale), kcal.roundToLong())
+            t(Msg.ROW_COUNTED, name, quantity, kcal.roundToLong())
         }
     }
 }

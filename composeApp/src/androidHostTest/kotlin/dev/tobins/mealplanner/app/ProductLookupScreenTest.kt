@@ -4,11 +4,16 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -73,6 +78,8 @@ class ProductLookupScreenTest {
 
     private fun shown(label: String, index: Int = 0): String = field(label, index).fetchSemanticsNode().config[SemanticsProperties.EditableText].text
 
+    private fun amounts() = compose.onAllNodes(hasText("Amount") and hasSetTextAction())
+
     private fun says(text: String) = compose.onNodeWithText(text, useUnmergedTree = true).performScrollTo().assertExists()
 
     private fun tap(text: String) = compose.onNode(hasText(text) and hasClickAction()).performScrollTo().performClick()
@@ -122,7 +129,7 @@ class ProductLookupScreenTest {
         assertEquals(Nutrition(31.0, 3.1, 0.0, 0.0, 3.8, 3.3, null, Salt.sodiumMg(0.08)), label.per100)
         assertEquals(listOf(Portion("pack", ml = 1000.0)), made.portions)
 
-        waitFor("31 kcal per 100 ml · AH · portions: pack")
+        waitFor("31 kcal per 100 ml · AH, changed by hand · portions: pack")
         compose.onNodeWithText("Optimel Drinkyoghurt framboos").performScrollTo().performClick()
         waitFor("Edit product")
         says("Values from AH, changed by hand")
@@ -155,6 +162,66 @@ class ProductLookupScreenTest {
         assertNull(made.label!!.source, "typed from the label")
     }
 
+    private fun gone(text: String) =
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodesWithText(text, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
+
+    @Test
+    fun aTextTooShortToLookUpSaysWhatIsNeededAndAChangedTextClearsWhatTheLastLookupSaid() {
+        backend.productSourceAnswers = false
+        newProduct()
+        lookUp("drinkyoghurt")
+        waitFor("AH did not answer.")
+        field("Name or barcode").performTextReplacement("d")
+        gone("AH did not answer.")
+        tap("Look up")
+        waitFor("Type at least 2 characters of a name, or a barcode.")
+        assertEquals(1, backend.requests.count { it.startsWith("GET /api/products/search") }, "nothing more asked")
+        field("Name or barcode").performTextReplacement("dr")
+        gone("Type at least 2 characters")
+    }
+
+    @Test
+    fun aNameAnotherIngredientHasIsSaidAtTheNameAndTheFilledFormIsKept() {
+        runBlocking { api.createIngredient(IngredientInput("Optimel Drinkyoghurt framboos", label = LabelNutrition(FoodBasis.PER_100_ML, Nutrition(31.0, null, null, null, null, null, null, null)))) }
+        newProduct()
+        lookUp("8712800035626")
+        waitFor("Values from AH")
+        says("There is already an ingredient with this name")
+        compose.onNode(hasText("Save") and hasClickAction()).assertIsNotEnabled()
+
+        type("Name", "Optimel framboos")
+        compose.onNodeWithText("Save").performClick()
+        waitFor("Saved Optimel framboos")
+        val made = sent("POST", "/api/ingredients")
+        assertEquals("ah:61758" to 31.0, made.label!!.source to made.label!!.per100.kcal, "the looked-up values as they were")
+    }
+
+    @Test
+    fun aRowOfADrinkChangedBetweenMillilitresAndItsPackKeepsItsQuantity() {
+        runBlocking {
+            api.createIngredient(
+                IngredientInput("Drink yoghurt", label = LabelNutrition(FoodBasis.PER_100_ML, Nutrition(31.0, 3.1, null, null, null, null, null, null)), portions = listOf(Portion("pack", ml = 1000.0))),
+            )
+        }
+        showEditor()
+        waitFor("Name")
+        compose.onNode(hasText("Add an ingredient") and hasSetTextAction()).performTextReplacement("drink")
+        val found = hasText("Drink yoghurt") and hasText("per 100", substring = true) and hasClickAction()
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(found).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(found).performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { amounts().fetchSemanticsNodes().size == 1 }
+        amounts()[0].performTextReplacement("500")
+
+        compose.onAllNodes(hasText("ml") and hasClickAction()).onLast().performScrollTo().performClick()
+        compose.onNode(hasText("pack") and hasAnyAncestor(isPopup())).performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { shown("Amount") == "0.5" }
+        waitFor("Drink yoghurt · 500 ml · 155 kcal")
+
+        compose.onAllNodes(hasText("pack") and hasClickAction()).onLast().performScrollTo().performClick()
+        compose.onNode(hasText("ml") and hasAnyAncestor(isPopup())).performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { shown("Amount") == "500" }
+    }
+
     @Test
     fun aValueOfThreeDecimalsIsShownAndAProductOpenedAndSavedUnchangedKeepsEveryValueAsItWas() {
         val label = LabelNutrition(FoodBasis.PER_100_G, Nutrition(412.345, 30.0, 0.125, null, null, null, null, Salt.sodiumMg(0.005)), "ah:599562")
@@ -179,6 +246,12 @@ class ProductLookupScreenTest {
         waitFor("Name")
         compose.onNodeWithText("Name").performTextInput("Breakfast")
         val search = compose.onNode(hasText("Add an ingredient") and hasSetTextAction())
+        // A row there already, picked from the catalogue.
+        search.performTextReplacement("chick")
+        val chicken = hasText("Chicken thigh fillet") and hasText("per 100", substring = true) and hasClickAction()
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(chicken).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(chicken).performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { amounts().fetchSemanticsNodes().size == 1 }
         search.performTextReplacement("skyr")
         waitFor("No ingredient or food found.")
 
@@ -196,14 +269,17 @@ class ProductLookupScreenTest {
         type("Energy", "63")
         type("Protein", "11")
         compose.onNodeWithText("Save").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(hasText("Amount") and hasSetTextAction()).fetchSemanticsNodes().size == 1 }
+        compose.waitUntil(timeoutMillis = 10_000) { amounts().fetchSemanticsNodes().size == 2 }
         assertEquals("Breakfast", shown("Name"))
+        // As after picking any ingredient, the new row's amount is the one typed in.
+        compose.waitForIdle()
+        amounts()[1].assertIsFocused()
 
         compose.onNodeWithText("Save").performClick()
         compose.waitUntil(timeoutMillis = 10_000) { saved != null }
         val skyr = runBlocking { api.ingredients() }.single { it.name == "Skyr" }
         val recipe = Json.decodeFromString<RecipeInput>(backend.changes.last { it.startsWith("POST /api/recipes ") }.removePrefix("POST /api/recipes "))
-        assertEquals(listOf(skyr.id), recipe.lines!!.map { it.ingredientId })
+        assertEquals(listOf(1L, skyr.id), recipe.lines!!.map { it.ingredientId })
         assertEquals("Breakfast", recipe.title)
     }
 }
