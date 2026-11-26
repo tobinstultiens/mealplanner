@@ -11,6 +11,7 @@ import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.WeightEntry
 import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.nutrition.PIECE_UNIT
+import dev.tobins.mealplanner.nutrition.portionKey
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.FoodLog
@@ -86,8 +87,10 @@ class TrackingRepository(
     }
 
     /**
-     * Entry [id] as [input]'s food in its amount, recounted from that food's values now. An entry not of the account is not
-     * there (404); a typed one, or one whose food is gone, has nothing to recount from (409): it is typed over instead.
+     * Entry [id] as [input]'s food in its amount, recounted from that food's values now. The same food, amount and unit
+     * change nothing, so that a day keeps its numbers when a food's values changed since it was logged: saved again as it
+     * was, by any client, the entry is not recounted. An entry not of the account is not there (404); a typed one, or one
+     * whose food is gone, has nothing to recount from (409): it is typed over instead.
      */
     fun changeFood(id: Long, input: MealFoodInput): DayView {
         val date = db.writing {
@@ -96,6 +99,7 @@ class TrackingRepository(
                 val gone = entry.foodName?.let { "$it is no longer among your foods: type its numbers over or remove it" }
                 throw ConflictException(gone ?: "A typed entry has no food to recount: type its numbers over")
             }
+            if (entry.isAsPicked(input)) return@writing entry.date
             val food = counted(input)
             q.updateLoggedFood(
                 food.description, food.count.kcal, food.count.proteinG, food.count.fibreG, food.ingredient.id, food.ingredient.name,
@@ -136,6 +140,12 @@ class TrackingRepository(
         val ingredient = ingredients.find(input.ingredientId) ?: throw NotFoundException("No ingredient with id ${input.ingredientId}")
         val line = foodLine(ingredient, input)
         return CountedFood(ingredient, line, countOf(line, ingredient))
+    }
+
+    /** True when [input] is this entry's food in the amount and unit it has (a portion's name in any case). */
+    private fun FoodLog.isAsPicked(input: MealFoodInput): Boolean {
+        val unit = unit ?: return false
+        return ingredientId == input.ingredientId && amount == input.amount && portionKey(unit) == portionKey(input.unit)
     }
 
     private fun FoodLog.toEntry() = LogEntry(

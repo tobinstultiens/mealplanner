@@ -423,7 +423,8 @@ private fun Totals(nutrition: RecipeNutrition?, servingsKnown: Boolean) {
 
 /**
  * One row: what it is and how it counts (a tap chooses its ingredient, its text and group), its amount and unit. Also the
- * food being picked for a slot of the plan (issue 358), as a food is picked as a recipe's row is.
+ * food being picked for a slot of the plan (issue 358) or the log (issue 362), as a food is picked as a recipe's row is;
+ * [keptKcal] is what a logged food counted, shown instead of what its values give now (see [rowNote]).
  */
 @Composable
 internal fun DraftRowItem(
@@ -434,6 +435,7 @@ internal fun DraftRowItem(
     onChange: (DraftRow) -> Unit,
     onOpen: () -> Unit,
     onRemove: () -> Unit,
+    keptKcal: Double? = null,
 ) {
     val t = LocalStrings.current
     val label = row.label(ingredient).ifBlank { ingredient?.name.orEmpty() }
@@ -443,7 +445,7 @@ internal fun DraftRowItem(
             Column(Modifier.weight(1f).clickable(enabled = enabled, onClick = onOpen).padding(vertical = 4.dp)) {
                 Text(label, style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    rowNote(row, ingredient, count, t),
+                    rowNote(row, ingredient, count, t, keptKcal),
                     style = MaterialTheme.typography.bodySmall.numeric(),
                     color = if (row.countsAsWritten(ingredient, count)) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 )
@@ -470,9 +472,10 @@ private fun DraftRow.countsAsWritten(ingredient: Ingredient?, count: RowCount): 
 /**
  * What a row says under its name: the ingredient with its weight and kcal, or why it is not counted. A volume of an
  * ingredient whose density is not known (a drink counted per 100 ml, a portion in ml) says its millilitres: its weight
- * would be a guess.
+ * would be a guess. [keptKcal], when given, are the kcal a logged food counted and keeps (issue 362), said instead of
+ * what the ingredient's values give now.
  */
-internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t: Strings): String {
+internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t: Strings, keptKcal: Double? = null): String {
     val name = ingredient?.name.orEmpty()
     return when (count) {
         RowCount.NO_INGREDIENT -> t.onWeb(Msg.ROW_NO_INGREDIENT, Msg.ROW_NO_INGREDIENT_BROWSER)
@@ -485,7 +488,7 @@ internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t:
             val line = row.line()!!
             val volume = measured(line, ingredient!!)?.takeIf { it.dimension == Dimension.VOLUME && ingredient.gramsPerMl == null }?.baseAmount
             val quantity = volume?.let { formatMillilitres(it, t.locale) } ?: formatGrams(NutritionCalculator.quantityOf(line, ingredient)!!.grams, t.locale)
-            val kcal = NutritionCalculator.ofLines(listOf(row.input() to ingredient), servings = 1)?.perServing?.kcal ?: 0.0
+            val kcal = keptKcal ?: NutritionCalculator.ofLines(listOf(row.input() to ingredient), servings = 1)?.perServing?.kcal ?: 0.0
             t(Msg.ROW_COUNTED, name, quantity, kcal.roundToLong())
         }
     }

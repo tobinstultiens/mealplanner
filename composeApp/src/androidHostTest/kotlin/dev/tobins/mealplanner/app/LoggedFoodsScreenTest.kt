@@ -90,7 +90,7 @@ class LoggedFoodsScreenTest {
     @Test
     fun aFoodIsSearchedAndPickedWithAnAmountAndAUnitAndItsAmountIsChanged() {
         showToday()
-        tap(hasText("Add a food you ate") and hasClickAction())
+        tap(hasText("Add a food") and hasClickAction())
 
         // The food screen of the log: searched as in a slot, the protein bar picked, starting in 100 g; two of its bars instead.
         waitFor("Also eaten")
@@ -130,8 +130,9 @@ class LoggedFoodsScreenTest {
         showToday()
         tap(hasText("Muesli bar") and hasClickAction())
 
-        // The dialog says why, and starts as the entry reads: the amount and the name, its numbers.
+        // The dialog is named as a change, says why, and starts as the entry reads: the amount and the name, its numbers.
         waitFor("Muesli bar is no longer among your foods")
+        compose.onNode(hasText("Change what you ate") and hasAnyAncestor(isDialog())).assertExists()
         val kcal = hasText("Calories", substring = true) and hasSetTextAction() and hasAnyAncestor(isDialog())
         compose.onNode(kcal).assertExists()
         compose.onNode(hasText("1 bar Muesli bar") and hasSetTextAction()).assertExists()
@@ -144,5 +145,36 @@ class LoggedFoodsScreenTest {
         assertEquals(LogTextInput("1 bar Muesli bar", 150.0, 2.5), Json.decodeFromString(put.substringAfter("PUT ").substringAfter(" ")))
         // Back on Today as a typed entry, with the typed numbers.
         waitFor("150 kcal · 3 g protein")
+    }
+
+    /**
+     * A food whose values changed since it was logged: opened, it says what it counted and that its values have changed;
+     * saved as it is, nothing is sent and it keeps its numbers; in another amount it counts by the values of now.
+     */
+    @Test
+    fun aFoodWhoseValuesChangedKeepsItsNumbersUntilItsAmountChanges() {
+        showToday()
+        val kept = unbrokenParts("1 bar · 160 kcal · 13 g protein")
+        tap(hasText(kept, substring = true) and hasClickAction())
+
+        waitFor("The values of Protein bar chocolate have changed since it was logged")
+        compose.onNodeWithText("Change food").assertExists()
+        waitFor("Protein bar chocolate · 45 g · 160 kcal")
+        compose.onNodeWithText("Save").performClick()
+        // Back on Today without a request: the entry as it was.
+        waitFor("Also eaten")
+        waitFor(kept)
+        assertEquals(emptyList(), changes().filter { it.startsWith("PUT /api/log/") })
+
+        // Two bars: what the values of now give, shown before saving, and sent.
+        tap(hasText(kept, substring = true) and hasClickAction())
+        val amount = hasText("Amount") and hasSetTextAction()
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(amount).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(amount).performTextReplacement("2")
+        waitFor("Protein bar chocolate · 90 g · 342 kcal")
+        compose.onNodeWithText("Save").performClick()
+        waitFor(unbrokenParts("2 bar · 342 kcal · 28 g protein"))
+        val put = changes().single { it.startsWith("PUT /api/log/") }
+        assertEquals(MealFoodInput(40, 2.0, "bar"), Json.decodeFromString(put.substringAfter("/food ")))
     }
 }

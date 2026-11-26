@@ -175,15 +175,20 @@ class FoodLogTest {
         // The label read again with other values: the day that is over keeps what was logged.
         ok(http.put("/api/ingredients/${k.bar.id}") { setBody(barInput.copy(label = LabelNutrition(FoodBasis.PER_100_G, Nutrition(200.0, 20.0, null, null, null, null, 2.0, null)))) })
         assertEquals(before, http.day(yesterday))
-        // Its amount changed now counts the values of now: one bar of 45 g is 90 kcal.
-        assertEquals(listOf(90.0, 9.0, 0.9), numbers(ok(http.put("/api/log/${entry.id}/food") { setBody(MealFoodInput(k.bar.id, 1.0, "bar")) }).body<DayView>().extras.first()))
+        // Saved again in the amount and unit it has, by any client and in any case of the portion: not recounted.
+        for (unit in listOf("bar", "Bar")) {
+            assertEquals(before, ok(http.put("/api/log/${entry.id}/food") { setBody(MealFoodInput(k.bar.id, 1.0, unit)) }).body<DayView>())
+        }
+        assertEquals(before, http.day(yesterday))
+        // Its amount changed counts the values of now: two bars of 45 g are 180 kcal.
+        assertEquals(listOf(180.0, 18.0, 1.8), numbers(ok(http.put("/api/log/${entry.id}/food") { setBody(MealFoodInput(k.bar.id, 2.0, "bar")) }).body<DayView>().extras.first()))
         val recounted = http.day(yesterday)
 
         // The product gone from the catalogue: the entry reads and counts as it did, and says its food is gone.
         driver.execute(null, "DELETE FROM ingredient WHERE id = ${k.bar.id}", 0)
         val gone = http.day(yesterday)
         assertEquals(recounted.extras.map { it.copy(food = it.food?.copy(ingredientId = null)) }, gone.extras)
-        assertEquals("1 bar Protein bar", gone.extras.first().description)
+        assertEquals("2 bar Protein bar", gone.extras.first().description)
         assertNull(gone.extras.first().food?.ingredientId)
         assertEquals(listOf(recounted.eatenKcal, recounted.eatenProteinG, recounted.eatenFibreG), listOf(gone.eatenKcal, gone.eatenProteinG, gone.eatenFibreG))
         // It cannot be recounted, and is typed over instead: a typed entry from then on.

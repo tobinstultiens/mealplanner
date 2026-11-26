@@ -187,7 +187,8 @@ class FakeBackend(
     private val slotFoods: Boolean = false,
     /**
      * Foods logged as eaten outside the plan (issue 362): every day's log has, after the typed apple, a bar of the protein bar
-     * (in the catalogue then) and a muesli bar no longer in it. Entries logged, changed and removed are kept, on any day.
+     * (in the catalogue then), counted when its label said less, and a muesli bar no longer in it. Entries logged, changed
+     * and removed are kept, on any day.
      */
     private val loggedFoods: Boolean = false,
 ) : AutoCloseable {
@@ -474,7 +475,8 @@ class FakeBackend(
         if (!loggedFoods) return@getOrPut listOf(apple)
         listOf(
             apple,
-            loggedOf(first + 2, date, MealFoodInput(proteinBar.id, 1.0, "bar")),
+            // Logged when its label said less than now (171 kcal and 14 g protein a bar): it keeps what it counted then.
+            loggedOf(first + 2, date, MealFoodInput(proteinBar.id, 1.0, "bar")).copy(kcal = 160.0, proteinG = 13.0, fibreG = 2.5),
             LogEntry(first + 3, date, "1 bar Muesli bar", 120.0, 2.5, fibreG = 1.5, food = LoggedFood(null, "Muesli bar", 1.0, "bar")),
         )
     }

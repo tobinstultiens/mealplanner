@@ -38,8 +38,8 @@ fun LogEntry.typedText(t: Strings): String = food?.let { "${foodAmount(it.amount
 
 /**
  * A food eaten on [LogFoodPlace.date] outside the plan (issue 362), picked on the [FoodScreen] under "Also eaten" and the
- * day; for a logged food, its amount and unit to change, which the server recounts, and removing the entry. [onDone] gets
- * the day as the server answers the change.
+ * day; for a logged food, under "Change food": what it counted, its amount and unit to change, which the server
+ * recounts, and removing the entry. [onDone] gets the day as the server answers the change.
  */
 @Composable
 fun LogFoodScreen(api: ApiClient, place: LogFoodPlace, onBack: () -> Unit, onDone: (DayView) -> Unit) {
@@ -47,8 +47,8 @@ fun LogFoodScreen(api: ApiClient, place: LogFoodPlace, onBack: () -> Unit, onDon
     val entry = place.entry
     val food = entry?.food
     FoodScreen(
-        api, t(Msg.ALSO_EATEN), dayLabel(place.date, t.locale),
-        food?.ingredientId?.let { ChosenFood(it, food.name, food.amount, food.unit) }, onBack,
+        api, t(if (entry == null) Msg.ALSO_EATEN else Msg.LOG_CHANGE_FOOD_TITLE), dayLabel(place.date, t.locale),
+        food?.ingredientId?.let { ChosenFood(it, food.name, food.amount, food.unit, entry.kcal, entry.proteinG) }, onBack,
         save = { sent ->
             if (entry == null) api.logPickedFood(LogFoodInput(place.date, sent.ingredientId, sent.amount, sent.unit)) else api.changeLoggedFood(entry.id, sent)
         },

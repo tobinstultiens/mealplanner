@@ -55,7 +55,7 @@ import kotlinx.serialization.builtins.nullable
 import kotlin.math.roundToInt
 
 /** One day: what is planned, what has been eaten, and how that compares with the targets. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TodayScreen(
     api: ApiClient,
@@ -185,7 +185,8 @@ fun TodayScreen(
                             },
                         )
                     }
-                    if (day.extras.isNotEmpty()) SectionHeader(t(Msg.ALSO_EATEN))
+                    // Always there, so that the buttons under it read as what they add: something eaten besides the plan.
+                    SectionHeader(t(Msg.ALSO_EATEN))
                     for (extra in day.extras) {
                         // A food still in the catalogue opens to change its amount; any other entry is typed over.
                         LogRow(
@@ -194,8 +195,9 @@ fun TodayScreen(
                             onRemove = { change { api.deleteLog(extra.id) } },
                         )
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                        OutlinedButton(onClick = { foodAt = LogFoodPlace(day.date) }) { Text(t(Msg.LOG_ADD_FOOD)) }
+                    // A food of the catalogue is the main way, typing the numbers the lesser one, as Eaten and Skipped are.
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+                        Button(onClick = { foodAt = LogFoodPlace(day.date) }) { Text(t(Msg.LOG_ADD_FOOD)) }
                         OutlinedButton(onClick = { adding = true }) { Text(t(Msg.ADD_EXTRA)) }
                     }
                 }
@@ -383,7 +385,7 @@ private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Doubl
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.EXTRA_TITLE)) },
+        title = { Text(t(if (entry == null) Msg.EXTRA_TITLE else Msg.LOG_CHANGE_TITLE)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 entry?.food?.let { gone -> Text(t(Msg.LOG_FOOD_GONE, gone.name), style = MaterialTheme.typography.bodyMedium) }

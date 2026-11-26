@@ -32,6 +32,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LoggedFood
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -340,6 +342,12 @@ private fun cookingSiteChoices(choice: SiteChoice, url: String) {
     }
 }
 
+/** The protein bar of the fake backend's log ([Shot.loggedFoods]): one bar, counted when its label said less than now. */
+private val loggedProteinBar = LogEntry(
+    0, FakeBackend.TODAY, "1 bar Protein bar chocolate", 160.0, 13.0, fibreG = 2.5,
+    food = LoggedFood(40, "Protein bar chocolate", 1.0, "bar"),
+)
+
 /** The snackbar of a recipe added with ingredients to link, shown the way [announceAdded] shows it. */
 @Composable
 private fun addedSnackbar() {
@@ -519,6 +527,19 @@ enum class Shot(
         writing = true, loggedFoods = true, fontScale = 2.0f, heightDp = 900,
         types = listOf("Add an ingredient" to "protein"), taps = listOf("Protein bar chocolate" to "Amount"),
         content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY), {}, {}) },
+    ),
+    // The protein bar of the log opened to change: what it counted when logged, kept, and that its values have changed since.
+    LOG_FOOD_CHANGED(
+        writing = true, loggedFoods = true, heightDp = 640, shows = "Protein bar chocolate · 45",
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY, loggedProteinBar), {}, {}) },
+    ),
+    LOG_FOOD_CHANGED_NL(
+        writing = true, loggedFoods = true, dutch = true, heightDp = 640, shows = "Protein bar chocolate · 45",
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY, loggedProteinBar), {}, {}) },
+    ),
+    LOG_FOOD_CHANGED_X2(
+        writing = true, loggedFoods = true, fontScale = 2.0f, heightDp = 1000, shows = "Protein bar chocolate · 45",
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY, loggedProteinBar), {}, {}) },
     ),
     // What the search finds for the snack, as the recipe editor's: the account's product first, "New product" last.
     SLOT_FOOD_SEARCH(

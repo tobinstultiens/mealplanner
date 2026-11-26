@@ -27,11 +27,41 @@ import androidx.compose.ui.focus.FocusRequester
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MealFoodInput
+import dev.tobins.mealplanner.api.RecipeLineInput
+import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.nullable
+import kotlin.math.roundToLong
 
-/** A food a [FoodScreen] opens with, chosen before: the account's ingredient [ingredientId] in [amount] of [unit]. */
-data class ChosenFood(val ingredientId: Long, val name: String, val amount: Double, val unit: String)
+/**
+ * A food a [FoodScreen] opens with, chosen before: the account's ingredient [ingredientId] in [amount] of [unit]. A logged
+ * food (issue 362) keeps the [kcal] and [proteinG] it counted when it was logged; a food of a slot counts by the values of
+ * now, and has none.
+ */
+data class ChosenFood(
+    val ingredientId: Long,
+    val name: String,
+    val amount: Double,
+    val unit: String,
+    val kcal: Double? = null,
+    val proteinG: Double? = null,
+) {
+    /** The row it opens as: as it was chosen, so that the amount is the exact one while its text is as shown. */
+    fun row(): DraftRow = DraftRow(0, amountText(amount), unit, name, ingredientId, null, original = RecipeLineInput(amount, unit, name, ingredientId))
+
+    /** True when [row] is this food in the amount and unit it was chosen in: saving it would change nothing. */
+    fun isAsChosen(row: DraftRow): Boolean = row.ingredientId == ingredientId && row.amountValue == amount && row.unit == unit
+
+    /**
+     * True when the kept numbers are not what [ingredient]'s values give for this amount now: its values changed since it
+     * was logged. Compared as they are shown, in whole kcal and tenths of a gram of protein.
+     */
+    fun countsOtherwiseNow(ingredient: Ingredient): Boolean {
+        val kept = kcal ?: return false
+        val now = NutritionCalculator.ofLines(listOf(row().input() to ingredient), servings = 1)?.perServing ?: return false
+        return (now.kcal ?: 0.0).roundToLong() != kept.roundToLong() || ((now.proteinG ?: 0.0) * 10).roundToLong() != ((proteinG ?: 0.0) * 10).roundToLong()
+    }
+}
 
 /**
  * A food picked in an amount, for a slot of the plan (issue 358, [SlotFoodScreen]) or the log of what was eaten (issue 362,
@@ -57,7 +87,7 @@ fun <T> FoodScreen(
     var reload by remember { mutableIntStateOf(0) }
     // Kept over a re-created activity, as what was typed: the food picked with its amount, or none while searching.
     var row by rememberSaveable(stateSaver = jsonSaver(DraftRow.serializer().nullable)) {
-        mutableStateOf(food?.let { DraftRow(0, amountText(it.amount), it.unit, it.name, it.ingredientId, null) })
+        mutableStateOf(food?.row())
     }
     var nextKey by rememberSaveable { mutableStateOf(1L) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -138,12 +168,14 @@ fun <T> FoodScreen(
         val amount = r.amountValue ?: return@let null
         MealFoodInput(id, amount, r.unit ?: return@let null)
     }
+    // The food as it was chosen: saving it changes nothing, so nothing is sent (a logged food would keep its numbers anyway).
+    val asChosen = food != null && current != null && food.isAsChosen(current)
     SubScreen(
         title, onBack, snackbar,
         actions = {
             TextButton(enabled = input != null && !busy, onClick = {
                 val sent = input ?: return@TextButton
-                send(Msg.FOOD_SAVE_FAILED) { save(sent) }
+                if (asChosen) onBack() else send(Msg.FOOD_SAVE_FAILED) { save(sent) }
             }) { Text(t(if (food == null) Msg.ADD else Msg.SAVE)) }
         },
     ) { padding ->
@@ -161,13 +193,23 @@ fun <T> FoodScreen(
                     IngredientSearch(query, { query = it }, found, searchFailed, enabled = !busy, onNewProduct = { newProduct = it }, onPick = ::pick)
                 } else {
                     val byId = ingredients.associateBy { it.id }
-                    // The name picks another; the cross takes a chosen food out, or a picked one back to the search.
+                    val ingredient = current.ingredientId?.let(byId::get)
+                    // The name picks another; the cross takes a chosen food out, or a picked one back to the search. A logged
+                    // food in its own amount says what it counted, which it keeps; in another, what the values of now give.
                     DraftRowItem(
-                        current, current.ingredientId?.let(byId::get), focus, enabled = !busy,
+                        current, ingredient, focus, enabled = !busy,
                         onChange = { row = it },
                         onOpen = { row = null },
                         onRemove = { if (food == null) row = null else send(Msg.FOOD_REMOVE_FAILED) { remove() } },
+                        keptKcal = food?.kcal?.takeIf { asChosen },
                     )
+                    if (food != null && ingredient?.id == food.ingredientId && food.countsOtherwiseNow(ingredient)) {
+                        Text(
+                            t(Msg.LOG_FOOD_VALUES_CHANGED, food.name),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
