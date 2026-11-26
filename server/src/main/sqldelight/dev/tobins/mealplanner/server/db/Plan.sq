@@ -12,15 +12,32 @@ CREATE TABLE planMeal (
     leftover INTEGER NOT NULL,
     locked INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'PLANNED',   -- PLANNED | EATEN | SKIPPED
+    -- The recipe of the foods planned in this slot (issue 358, recipe.slotFoods), whose lines they are; NULL without foods.
+    -- The same as recipeId when the slot holds foods and no recipe. No reference, as recipeId has none: the plan deletes
+    -- that recipe once no meal holds it (deleteUnusedSlotFoods).
+    foodsId INTEGER,
     PRIMARY KEY (userId, weekStart, day, slot)
 );
 
 selectWeek:
 SELECT * FROM planMeal WHERE userId = ? AND weekStart = ? ORDER BY day;
 
+-- A meal in place of what was in its slot, without foods (foodsId NULL) unless setMealFoods gives it the slot's.
 upsertMeal:
 INSERT OR REPLACE INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- The foods of a slot (issue 358), which stay in it when its meal is replaced.
+selectMealFoods:
+SELECT foodsId FROM planMeal WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
+
+setMealFoods:
+UPDATE planMeal SET foodsId = :foodsId WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
+
+-- A slot of foods alone (issue 358) as an app that does not know foods reads it: their names and their numbers as stored.
+setFoodsMeal:
+UPDATE planMeal SET title = :title, kcal = :kcal, proteinG = :proteinG
+WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot AND foodsId = recipeId;
 
 -- Where a recipe is planned in weeks that started after the given date (an ISO date).
 selectPlannedFrom:
@@ -36,10 +53,11 @@ setLocked:
 UPDATE planMeal SET locked = ? WHERE userId = ? AND weekStart = ? AND day = ? AND slot = ?;
 
 -- The last week each recipe was eaten in before the given week (issue 255): planned there as a meal of its own, not
--- skipped. A meal still planned in a week that is over counts as eaten, as nobody marks every meal.
+-- skipped. A meal still planned in a week that is over counts as eaten, as nobody marks every meal. A slot of foods alone
+-- (issue 358) is no recipe eaten.
 selectLastEaten:
 SELECT recipeId, max(weekStart) AS weekStart FROM planMeal
-WHERE userId = ? AND weekStart < ? AND status != 'SKIPPED' AND leftover = 0
+WHERE userId = ? AND weekStart < ? AND status != 'SKIPPED' AND leftover = 0 AND (foodsId IS NULL OR foodsId != recipeId)
 GROUP BY recipeId;
 
 -- A dinner chosen for a week on the planning screen (issue 255) and not yet put on a day, or (refused 1) a recipe hidden

@@ -14,7 +14,9 @@ import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.nutrition.hadPortion
 import dev.tobins.mealplanner.nutrition.inPortionOf
 import dev.tobins.mealplanner.nutrition.measured
+import dev.tobins.mealplanner.nutrition.PIECE_UNIT
 import dev.tobins.mealplanner.nutrition.portionNamed
+import dev.tobins.mealplanner.nutrition.units
 import dev.tobins.mealplanner.nutrition.values
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.recipes.IngredientLine
@@ -187,7 +189,7 @@ fun RecipeDetail.toDraft(): RecipeDraft {
 private const val UNREADABLE_LINE = "Unreadable ingredient line: "
 
 /** A row's unit when it counts pieces: the table's key, which the cooking site's `stuks` means too. */
-const val PIECE = "piece"
+const val PIECE = PIECE_UNIT
 
 /**
  * The units a row of [ingredient] can be in (issue 342): grams always, millilitres when a millilitre's weight is known
@@ -197,10 +199,7 @@ const val PIECE = "piece"
  * on its button and says the portion is gone ([RowCount.PORTION_GONE]).
  */
 fun unitChoices(ingredient: Ingredient?, current: String?): List<String> = buildList {
-    add("g")
-    if (ingredient == null || ingredient.gramsPerMl != null || ingredient.values?.basis == FoodBasis.PER_100_ML) add("ml")
-    if (ingredient == null || ingredient.gramsPerPiece != null) add(PIECE)
-    ingredient?.portions?.forEach { add(it.name) }
+    addAll(ingredient?.units ?: listOf("g", "ml", PIECE))
     val goneOrNamed = ingredient != null && current != null && (ingredient.portionNamed(current) != null || ingredient.hadPortion(current))
     if (current != null && current !in this && !goneOrNamed) add(current)
 }

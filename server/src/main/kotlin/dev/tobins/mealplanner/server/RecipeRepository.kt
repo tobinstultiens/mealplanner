@@ -351,7 +351,7 @@ class RecipeRepository(
     fun setRating(id: Long, rating: Int?): RecipeDetail {
         require(rating == null || rating in 1..5) { "rating must be 1 to 5, or null" }
         db.writing {
-            q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+            ownRecipe(id)
             q.setRating(rating?.toLong(), userId, id)
         }
         return find(id)!!
@@ -359,11 +359,15 @@ class RecipeRepository(
 
     /**
      * The account's recipe [id], when it is in the bank or one of mine. One whose file left the site
-     * while it was only in the bank is as good as not there, as removed recipes were before the bank.
+     * while it was only in the bank is as good as not there, as removed recipes were before the bank; so are the foods of
+     * a slot of the plan (issue 358), which are no recipe to the person: they are not added, chosen, prepped or deleted.
      */
     private fun known(id: Long): Recipe =
-        q.selectById(userId, id).executeAsOneOrNull()?.takeIf { it.addedAt != null || it.removedAt == null }
-            ?: throw NotFoundException("No recipe with id $id")
+        ownRecipe(id).takeIf { it.addedAt != null || it.removedAt == null } ?: throw NotFoundException("No recipe with id $id")
+
+    /** The account's recipe [id], from any source, but not the foods of a slot of the plan (issue 358), which only the plan changes. */
+    private fun ownRecipe(id: Long): Recipe =
+        q.selectById(userId, id).executeAsOneOrNull()?.takeIf { it.slotFoods == 0L } ?: throw NotFoundException("No recipe with id $id")
 
     /** The account's recipe [id] as one of mine ([known]); a [ConflictException] while it is only in the bank. */
     fun requireMine(id: Long): Recipe =
@@ -488,7 +492,7 @@ class RecipeRepository(
             require(days in 1..RecipeKeeps.MAX_DAYS) { "keeps must be 1 to ${RecipeKeeps.MAX_DAYS} days, or null" }
         }
         db.writing {
-            q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+            ownRecipe(id)
             q.setKeeps(keeps.days?.toLong(), keeps.vacuumDays?.toLong(), userId, id)
         }
         return find(id)!!
@@ -544,7 +548,7 @@ class RecipeRepository(
 
     fun updateSettings(id: Long, settings: RecipeSettings): RecipeDetail {
         db.writing {
-            q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
+            ownRecipe(id)
             q.updateSettings(settings.kind.name, Json.encodeToString(settings.mealSlots), userId, id)
         }
         return find(id)!!

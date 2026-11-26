@@ -111,6 +111,13 @@ data class ShoppingItem(
     val boughtSaving: Double? = null,
     /** The store of the offer [boughtSaving] was saved with, under which the app keeps the bought row; null when it saved nothing. */
     val boughtOfferStore: Store? = null,
+    /**
+     * The slots of the week whose foods (issue 358) use it, as [recipes] names the recipes that do; a food is in no
+     * recipe, so it is never in [recipes]. Empty without any and from a server before foods, and the app words them.
+     */
+    val foodSlots: List<PlannedSlot> = emptyList(),
+    /** Of [foodSlots], those still to eat, as [toComeRecipes] has the recipes; null where [toComeRecipes] is. */
+    val toComeFoodSlots: List<PlannedSlot>? = null,
 )
 
 /**

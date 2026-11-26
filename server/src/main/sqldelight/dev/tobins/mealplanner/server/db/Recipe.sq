@@ -29,6 +29,9 @@ CREATE TABLE recipe (
     keepsVacuumDays INTEGER,           -- App-owned: days it keeps once made and vacuum sealed; NULL: not prepped that way
     standardMeal INTEGER NOT NULL DEFAULT 0, -- App-owned: 1 when it is a standard meal of my recipes (issue 265)
     editedAt TEXT,                     -- App-owned: when it was last saved in the app (issue 340); NULL: never
+    -- App-owned: 1 for the foods planned in one slot of the plan (issue 358), made and deleted by the app with that slot. Never
+    -- added, so in no list of mine and no rotation, and left out of the bank (selectBank); its lines are the foods.
+    slotFoods INTEGER NOT NULL DEFAULT 0,
     UNIQUE (userId, sourcePath)
 );
 
@@ -68,9 +71,9 @@ CREATE INDEX recipeTopping_ingredient ON recipeTopping(ingredientId);
 selectMine:
 SELECT * FROM recipe WHERE userId = ? AND addedAt IS NOT NULL ORDER BY title COLLATE NOCASE;
 
--- The bank: cooking-site recipes on the site now that the account has not added.
+-- The bank: cooking-site recipes on the site now that the account has not added; never the foods of a slot (issue 358).
 selectBank:
-SELECT * FROM recipe WHERE userId = ? AND addedAt IS NULL AND removedAt IS NULL ORDER BY title COLLATE NOCASE;
+SELECT * FROM recipe WHERE userId = ? AND addedAt IS NULL AND removedAt IS NULL AND slotFoods = 0 ORDER BY title COLLATE NOCASE;
 
 selectById:
 SELECT * FROM recipe WHERE userId = ? AND id = ?;
@@ -165,3 +168,27 @@ DELETE FROM recipeTopping WHERE userId = :userId AND recipeId = :recipeId;
 
 insertTopping:
 INSERT INTO recipeTopping (userId, recipeId, ingredientId, position, grams) VALUES (?, ?, ?, ?, ?);
+
+-- The recipe of the foods of one slot (issue 358): one serving, never added, so in no list and no rotation. Edited now, so
+-- that the unit a food was picked in is the one its ingredient starts in next (Ingredient.sq, selectLinkedUnits).
+insertSlotFoods:
+INSERT INTO recipe (userId, source, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, addedAt, inRotation, editedAt, slotFoods)
+VALUES (:userId, 'MANUAL', 'own', :title, '[]', 1, '', 1, '[]', 'MEAL', NULL, 0, :editedAt, 1);
+
+setSlotFoodsTitle:
+UPDATE recipe SET title = :title, editedAt = :editedAt WHERE userId = :userId AND id = :id AND slotFoods = 1;
+
+-- One food of a slot in another amount, unit or ingredient: the line [id] of the slot's recipe [recipeId].
+updateSlotFood:
+UPDATE recipeIngredient SET amount = :amount, unit = :unit, dimension = :dimension, baseAmount = :baseAmount, item = :item, ingredientId = :ingredientId
+WHERE id = :id AND recipeId = (SELECT id FROM recipe WHERE userId = :userId AND id = :recipeId AND slotFoods = 1);
+
+deleteSlotFood:
+DELETE FROM recipeIngredient WHERE id = :id AND recipeId = (SELECT id FROM recipe WHERE userId = :userId AND id = :recipeId AND slotFoods = 1);
+
+-- The recipes of slots' foods that no planned meal holds any more: the slot was removed or replaced, or lost its last food
+-- (issue 358). Their lines go with them (recipeIngredient's ON DELETE CASCADE).
+deleteUnusedSlotFoods:
+DELETE FROM recipe WHERE userId = :userId AND slotFoods = 1
+    AND id NOT IN (SELECT foodsId FROM planMeal WHERE userId = :userId AND foodsId IS NOT NULL)
+    AND id NOT IN (SELECT recipeId FROM planMeal WHERE userId = :userId);

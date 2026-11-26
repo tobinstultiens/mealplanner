@@ -44,6 +44,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
@@ -432,6 +435,10 @@ enum class Shot(
     val laterVerdicts: Boolean = false,
     /** The fake backend for writing recipes (issue 342): a catalogue with foods, foods to add, the stew taken with its groups. */
     val writing: Boolean = false,
+    /** The fake backend's week with foods in slots (issue 358): Monday's snack two foods alone, its breakfast a food next to the oats. */
+    val slotFoods: Boolean = false,
+    /** Texts to type before the [taps], each into the text field labelled with the first of the pair. */
+    val types: List<Pair<String, String>> = emptyList(),
     /** Texts to tap in turn once each is shown, each with a text to wait for after it, such as a dialog's or a snackbar's. */
     val taps: List<Pair<String, String>> = emptyList(),
     /** A text the picture must show, waited for before it is taken: one that comes from the last answer the screen needs. */
@@ -463,6 +470,36 @@ enum class Shot(
     // Fibre next to kcal and protein in Dutch, where the totals are longest (#223).
     TODAY_NL(dutch = true, heightDp = 1300, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     PLAN_NL(weekRest = true, dutch = true, heightDp = 4400, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // Foods in slots (issue 358): Monday's snack of two foods alone, each in its own unit with its kcal, and Greek yoghurt next to
+    // the breakfast's oats; every day offers "Add a food…" for its empty snack. In both languages and at the largest font.
+    PLAN_FOODS(slotFoods = true, heightDp = 1300, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_FOODS_NL(slotFoods = true, dutch = true, heightDp = 1350, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_FOODS_X2(slotFoods = true, fontScale = 2.0f, heightDp = 2600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // Today's snack of two foods alone: the foods where a recipe's title is, then their numbers; no Adjust.
+    TODAY_FOODS(slotFoods = true, heightDp = 1700, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    TODAY_FOODS_NL(slotFoods = true, dutch = true, heightDp = 1800, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    // A food picked for Tuesday's empty snack: the protein bar found among the account's own, starting in 100 g, its weight
+    // and kcal under its name, its units on the button. In both languages and at the largest font.
+    SLOT_FOOD_PICKED(
+        writing = true, slotFoods = true, heightDp = 640,
+        types = listOf("Add an ingredient" to "protein"), taps = listOf("Protein bar chocolate" to "Amount"),
+        content = { api, _ -> SlotFoodScreen(api, FakeBackend.WEEK_START, FoodPlace(1, MealSlot.SNACK), {}, {}) },
+    ),
+    SLOT_FOOD_PICKED_NL(
+        writing = true, slotFoods = true, dutch = true, heightDp = 640,
+        types = listOf("Ingrediënt toevoegen" to "protein"), taps = listOf("Protein bar chocolate" to "Hoeveelheid"),
+        content = { api, _ -> SlotFoodScreen(api, FakeBackend.WEEK_START, FoodPlace(1, MealSlot.SNACK), {}, {}) },
+    ),
+    SLOT_FOOD_PICKED_X2(
+        writing = true, slotFoods = true, fontScale = 2.0f, heightDp = 900,
+        types = listOf("Add an ingredient" to "protein"), taps = listOf("Protein bar chocolate" to "Amount"),
+        content = { api, _ -> SlotFoodScreen(api, FakeBackend.WEEK_START, FoodPlace(1, MealSlot.SNACK), {}, {}) },
+    ),
+    // What the search finds for the snack, as the recipe editor's: the account's product first, "New product" last.
+    SLOT_FOOD_SEARCH(
+        writing = true, slotFoods = true, heightDp = 640, types = listOf("Add an ingredient" to "protein"), shows = "New product",
+        content = { api, _ -> SlotFoodScreen(api, FakeBackend.WEEK_START, FoodPlace(1, MealSlot.SNACK), {}, {}) },
+    ),
     // A prep made on Monday's dinner, eaten until Thursday, with Wednesday's skipped lunch still in the box (issue 234).
     PLAN_PREP(prepped = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     PLAN_PREP_NL(prepped = true, dutch = true, heightDp = 4600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
@@ -932,6 +969,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         nothingToSuggest = shot.nothingToSuggest,
         laterVerdicts = shot.laterVerdicts,
         writing = shot.writing,
+        slotFoods = shot.slotFoods,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)
@@ -968,6 +1006,12 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
                 compose.onNodeWithTag(FOCUSED).requestFocus().assertIsFocused()
                 // The ring shows for a keyboard user only; a key press (a harmless one) says this is one.
                 compose.onNodeWithTag(FOCUSED).performKeyInput { pressKey(Key.ShiftLeft) }
+                compose.waitForIdle()
+            }
+            shot.types.forEach { (field, text) ->
+                val input = hasText(field) and hasSetTextAction()
+                compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(input).fetchSemanticsNodes().isNotEmpty() }
+                compose.onNode(input).performTextReplacement(text)
                 compose.waitForIdle()
             }
             // Each comes from more than one answer (the list, the account's stores): wait for the node itself.

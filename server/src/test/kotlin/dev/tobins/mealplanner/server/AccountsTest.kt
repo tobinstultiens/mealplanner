@@ -30,6 +30,7 @@ import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.NotificationFacts
 import dev.tobins.mealplanner.api.MealChoice
+import dev.tobins.mealplanner.api.MealFoodInput
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
@@ -280,6 +281,52 @@ class AccountsTest {
         assertEquals(adjusted, alice.get(lines).body<MealLines>())
         assertTrue(alice.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single().adjusted)
         assertEquals(480.0, eggsLeft(aliceId, aliceMeal.second))
+    }
+
+    /**
+     * Issue 358: the foods of a slot are the account's own. Another account's ingredient cannot be planned (404, as for a
+     * recipe line), another account's foods cannot be changed or taken out through a slot of one's own, and the recipe
+     * that holds them is not there for another account.
+     */
+    @Test
+    fun anotherAccountsFoodsCanNeitherBePlannedNorChanged() = testApplication {
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = null)
+        val db = openDatabase(config.databaseUrl).second
+        application { module(config, db, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val week = "2026-11-16"
+        val foods = "/api/plans/$week/meals/0/SNACK/foods"
+        val accounts = listOf("alice", "bob").associateWith { name ->
+            val client = clientFor(name)
+            client.put("/api/profile") { setBody(Profile(80.0, 175.0, 40, Sex.FEMALE, ActivityLevel.LIGHT)) }
+            client to client.post("/api/ingredients") { setBody(IngredientInput("Banana", gramsPerPiece = 120.0)) }.body<Ingredient>()
+        }
+        val (alice, aliceBanana) = accounts.getValue("alice")
+        val (bob, bobBanana) = accounts.getValue("bob")
+        assertEquals(HttpStatusCode.OK, alice.post(foods) { setBody(MealFoodInput(aliceBanana.id, 2.0, "piece")) }.status)
+        val aliceSnack = alice.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single()
+        val aliceFood = aliceSnack.foods.single()
+
+        // Bob cannot plan Alice's banana, in an empty slot nor next to his own.
+        assertEquals(HttpStatusCode.NotFound, bob.post(foods) { setBody(MealFoodInput(aliceBanana.id, 1.0, "piece")) }.status)
+        assertTrue(bob.get("/api/plans/$week").body<WeekPlan>().days[0].meals.isEmpty())
+        assertEquals(HttpStatusCode.OK, bob.post(foods) { setBody(MealFoodInput(bobBanana.id, 1.0, "piece")) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.post(foods) { setBody(MealFoodInput(aliceBanana.id, 1.0, "piece")) }.status)
+        // Nor change or take out Alice's food through his own slot, nor replace his with her banana.
+        val bobFood = bob.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single().foods.single()
+        assertEquals(HttpStatusCode.NotFound, bob.put("$foods/${aliceFood.id}") { setBody(MealFoodInput(bobBanana.id, 3.0, "piece")) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.delete("$foods/${aliceFood.id}").status)
+        assertEquals(HttpStatusCode.NotFound, bob.put("$foods/${bobFood.id}") { setBody(MealFoodInput(aliceBanana.id, 1.0, "piece")) }.status)
+        // Nor read or change the recipe that holds Alice's foods.
+        assertEquals(HttpStatusCode.NotFound, bob.get("/api/recipes/${aliceSnack.recipeId}").status)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/plans/$week/meals/1/SNACK") { setBody(MealChoice(aliceSnack.recipeId)) }.status)
+
+        // Alice's snack is as she made it, and Bob's his own.
+        assertEquals(listOf(aliceFood), alice.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single().foods)
+        assertEquals(listOf(bobBanana.id to 1.0), bob.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single().foods.map { it.ingredientId to it.amount })
+        // Bob taking out his last food leaves Alice's slot and its recipe alone.
+        assertEquals(HttpStatusCode.OK, bob.delete("$foods/${bobFood.id}").status)
+        assertEquals(listOf(aliceFood), alice.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single().foods)
+        assertEquals(HttpStatusCode.OK, alice.get("/api/recipes/${aliceSnack.recipeId}").status)
     }
 
     /** Issue 226: a recipe's toppings and its quick add-ons are the account's own. */

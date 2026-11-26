@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.DinnerMove
 import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealChoice
+import dev.tobins.mealplanner.api.MealFoodInput
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PrepInput
@@ -124,6 +125,16 @@ fun Route.planRoutes() {
             put("/status") {
                 call.respond(call.user.plans.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))
             }
+            // Foods in the slot (issue 358), each change answering the week: add one, body {"ingredientId": 7, "amount": 2,
+            // "unit": "bar"}, by which an empty slot becomes a slot of foods; replace one, same body; take one out, the last of a
+            // slot of foods alone taking the meal with it.
+            route("/foods") {
+                post { call.respond(call.user.plans.addFood(call.week(), call.day(), call.slot(), call.receive<MealFoodInput>())) }
+                route("/{foodId}") {
+                    put { call.respond(call.user.plans.changeFood(call.week(), call.day(), call.slot(), call.foodId(), call.receive<MealFoodInput>())) }
+                    delete { call.respond(call.user.plans.removeFood(call.week(), call.day(), call.slot(), call.foodId())) }
+                }
+            }
             // What was in the meal (issue 226): its recipe's ingredients with this meal's changes, and their numbers.
             route("/lines") {
                 get { call.respond(call.user.plans.lines(call.week(), call.day(), call.slot())) }
@@ -142,7 +153,9 @@ fun Route.planRoutes() {
 
 private fun RoutingCall.prepId() = parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Prep id must be a number")
 
-private fun RoutingCall.recipeId() = parameters["recipeId"]?.toLongOrNull() ?: throw IllegalArgumentException("Recipe id must be a number")
+private fun RoutingCall.foodId() = parameters["foodId"]?.toLongOrNull() ?: throw IllegalArgumentException("Food id must be a number")
+
+private fun RoutingCall.recipeId() =parameters["recipeId"]?.toLongOrNull() ?: throw IllegalArgumentException("Recipe id must be a number")
 
 /** The recipes the planning screen showed already, `?seen=12,15`; none without it. */
 private fun RoutingCall.seen(): Set<Long> = request.queryParameters["seen"].orEmpty().split(',').filter { it.isNotBlank() }

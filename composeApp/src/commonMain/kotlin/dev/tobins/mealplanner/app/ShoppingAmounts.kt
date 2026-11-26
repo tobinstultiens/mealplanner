@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.layout.size
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.PlannedSlot
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.pricing.PacksToBuy
 import dev.tobins.mealplanner.shopping.SCRAP_GRAMS
@@ -64,6 +65,13 @@ internal fun ShoppingItem.amountText(locale: FormatLocale): String = when {
 
 /** The meals to name as the row's source: those still to cook when the server says them, else the week's. */
 internal val ShoppingItem.sourceMeals: List<String> get() = toComeRecipes ?: recipes
+
+/** The slots whose foods (issue 358) to name as the row's source, as [sourceMeals] has the recipes: those still to eat when the server says them. */
+internal val ShoppingItem.sourceFoodSlots: List<PlannedSlot> get() = if (toComeRecipes != null) toComeFoodSlots.orEmpty() else foodSlots
+
+/** Everything the row names as its source, in [t]'s words: its recipes, then the slots of its foods (`snack on Mon 16 Nov`). */
+internal fun ShoppingItem.sources(t: Strings): List<String> =
+    sourceMeals + sourceFoodSlots.map { t(Msg.FOOD_SOURCE, t.slot(it.slot), dayLabel(it.date, t.locale)) }
 
 /**
  * What a row not ticked yet says under its name of what is at home and still to buy: `300 g on

@@ -136,11 +136,12 @@ private val HANGS_OFF = mapOf(
  */
 private val ALLOWED = mapOf(
     ("Recipe.sq" to "selectIngredients") to
-        "takes a recipe id that RecipeRepository read with the account's id first (selectById(userId, id), selectMine(userId) or selectBank(userId))",
+        "takes a recipe id that RecipeRepository read with the account's id first (selectById(userId, id), selectMine(userId) or selectBank(userId)), " +
+            "or SlotFoods one of the account's planMeal rows holds (selectWeek(userId, ...)) or that it just inserted for it",
     ("Recipe.sq" to "deleteIngredients") to
         "RecipeRepository.replaceIngredients, called only with a recipe id read with the account's id or just inserted for it",
     ("Recipe.sq" to "insertIngredient") to
-        "RecipeRepository.replaceIngredients, called only with a recipe id read with the account's id or just inserted for it",
+        "RecipeRepository.replaceIngredients and SlotFoods.add, called only with a recipe id read with the account's id or just inserted for it",
     ("Ingredient.sq" to "selectEveryIngredient") to
         "the shared price lookup and price history read every account's ingredient names on purpose",
     ("Ingredient.sq" to "selectEveryAlias") to

@@ -100,11 +100,12 @@ class DueNotifications(
     /**
      * Tonight's [meal], still to eat, as what there is to cook: its main, also when that makes a prepped batch ([DinnerToday.prep]);
      * else, when the main cooks nothing (a later meal of a batch made on an earlier day), the side next to it when that is
-     * a batch made tonight ([DinnerToday.side], issue 263); null when nothing is cooked tonight.
+     * a batch made tonight ([DinnerToday.side], issue 263); null when nothing is cooked tonight. A dinner of foods alone (issue
+     * 358) has no recipe to cook.
      */
     private fun dinner(meal: PlannedMeal, weekStart: LocalDate, index: Int): DinnerToday? {
         val cooks = meal.cookPortions ?: meal.portions
-        if (cooks > 0.0) return DinnerToday(meal.recipeId, meal.title, meal.portions, cooks, weekStart.toString(), index, prep = meal.prep != null)
+        if (cooks > 0.0 && !meal.foodsOnly) return DinnerToday(meal.recipeId, meal.title, meal.portions, cooks, weekStart.toString(), index, prep = meal.prep != null)
         val side = meal.side?.takeIf { it.cookPortions > 0.0 } ?: return null
         return DinnerToday(side.recipeId, side.title, side.portions, side.cookPortions, weekStart.toString(), index, prep = true, side = true)
     }

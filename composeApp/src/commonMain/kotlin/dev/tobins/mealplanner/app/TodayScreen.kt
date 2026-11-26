@@ -276,19 +276,25 @@ private fun MealCard(
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // A meal with a photo shows it at the end of the meal's lines; one without keeps them full width.
-            Row(Modifier.fillMaxWidth().clickable(onClick = onOpen), horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
+            // Foods alone (issue 358) have no recipe to open: each is listed by its name instead of their one-line title.
+            Row(Modifier.fillMaxWidth().clickable(enabled = !meal.foodsOnly, onClick = onOpen), horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
                 Column(Modifier.weight(1f)) {
                     Text(
                         t.mealLabel(meal),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
-                        meal.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        textDecoration = if (meal.status == MealStatus.SKIPPED) TextDecoration.LineThrough else null,
-                    )
+                    if (meal.foodsOnly) {
+                        FoodRows(meal.foods)
+                    } else {
+                        Text(
+                            meal.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            textDecoration = if (meal.status == MealStatus.SKIPPED) TextDecoration.LineThrough else null,
+                        )
+                    }
                     MealNumbers(meal.macrosText(t), meal.cost?.let { "≈ ${formatEuro(it, t.locale)}" })
+                    if (!meal.foodsOnly && meal.foods.isNotEmpty()) FoodRows(meal.foods)
                 }
                 recipePicture(pictureUrl)?.let { RecipePhoto(it, Modifier.size(64.dp)) }
             }
@@ -300,13 +306,13 @@ private fun MealCard(
                     MealStatus.PLANNED -> {
                         Button(onClick = { onStatus(MealStatus.EATEN) }) { Text(t(Msg.STATUS_EATEN)) }
                         OutlinedButton(onClick = { onStatus(MealStatus.SKIPPED) }) { Text(t(Msg.STATUS_SKIPPED)) }
-                        // Toppings are often decided while cooking: a meal still to eat can be adjusted too.
-                        TextButton(onClick = onAdjust) { Text(t(Msg.ADJUST)) }
+                        // Toppings are often decided while cooking: a meal still to eat can be adjusted too; foods alone are changed on the Plan.
+                        if (!meal.foodsOnly) TextButton(onClick = onAdjust) { Text(t(Msg.ADJUST)) }
                     }
                     MealStatus.EATEN -> {
                         Text(t(Msg.STATUS_EATEN_MARK), color = MaterialTheme.colorScheme.primary)
                         TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text(t(Msg.UNDO)) }
-                        TextButton(onClick = onAdjust) { Text(t(Msg.ADJUST)) }
+                        if (!meal.foodsOnly) TextButton(onClick = onAdjust) { Text(t(Msg.ADJUST)) }
                     }
                     MealStatus.SKIPPED -> {
                         Text(t(Msg.STATUS_SKIPPED), color = MaterialTheme.colorScheme.onSurfaceVariant)

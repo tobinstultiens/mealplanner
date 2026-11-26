@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.BatchToMake
 import dev.tobins.mealplanner.api.ClosedSlot
 import dev.tobins.mealplanner.api.LaterShortfall
+import dev.tobins.mealplanner.api.MealFoodInput
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSide
@@ -58,13 +59,14 @@ class PlanRepository(
 ) {
     private val q = db.planQueries
     private val adjustments = MealAdjustments(db, userId, recipes, recipes.ingredients)
+    private val foods = SlotFoods(db, userId, recipes)
 
     fun get(weekStart: String): WeekPlan = view(parseWeekStart(weekStart))
 
     /**
      * Replaces every meal of the week with a newly planned one, except those it keeps: locked ones, those
-     * already eaten or skipped (history), one with a side added by hand (issue 234), one with a skipped prepped
-     * meal's share in the box under its slot (issue 265), and any other meal the
+     * already eaten or skipped (history), one with a side added by hand (issue 234), one with foods (issue 358), one with a
+     * skipped prepped meal's share in the box under its slot (issue 265), and any other meal the
      * stock went down for ([whyKeepsItsRecipe]: the leftover lunch of an eaten dinner). The planner plans around
      * the kept meals as it does around locked ones, so a kept leftover lunch is not planned twice, and no new one
      * of an eaten dinner ([plan]); it never adds a side.
@@ -96,13 +98,15 @@ class PlanRepository(
 
     /**
      * The meals of [week] (starting [start]) that planning it keeps as they are ([generate]): locked ones, those eaten or
-     * skipped (history), one with a side added by hand, one with a skipped prepped meal's share in the box under its slot,
-     * and any other meal the stock went down for ([whyKeepsItsRecipe]).
+     * skipped (history), one with a side or foods added by hand (a slot of foods alone too, which the planner never fills
+     * itself), one with a skipped prepped meal's share in the box under its slot, and any other meal the stock went down
+     * for ([whyKeepsItsRecipe]).
      */
     internal fun kept(start: LocalDate, week: List<PlannedMeal>): List<PlannedMeal> {
         val boxes = boxesIn(start)
         return week.filter {
-            it.locked || it.status != MealStatus.PLANNED || it.side != null || (it.day to it.slot) in boxes || whyKeepsItsRecipe(start, it, week) != null
+            it.locked || it.status != MealStatus.PLANNED || it.side != null || it.foodsId != null || (it.day to it.slot) in boxes ||
+                whyKeepsItsRecipe(start, it, week) != null
         }
     }
 
@@ -211,9 +215,9 @@ class PlanRepository(
 
     /**
      * Writes [moves] (each meal as it is, or null for a new one, and as it will be) and takes the lunches of the [emptied]
-     * days out, in the caller's transaction: what was in a moved meal goes with it, and what is in a slot a meal moves to
-     * goes. A meal moved to where it is changes nothing. Every old row goes before a new one is written, as two meals may
-     * swap places.
+     * days out, in the caller's transaction: what was in a moved meal goes with it, its foods too ([save]), and what is in a
+     * slot a meal moves to goes. A meal moved to where it is changes nothing. Every old row goes before a new one is
+     * written, as two meals may swap places.
      */
     private fun relocate(start: LocalDate, moves: List<Pair<PlannedMeal?, PlannedMeal>>, emptied: Collection<Int>) {
         val week = start.toString()
@@ -251,12 +255,12 @@ class PlanRepository(
 
     /**
      * Whether [lunch] of [week] may change when the dinner before it changes day ([moveDinner]): one still planned, not
-     * locked, of no batch, without a side and without a share in the box under it, that does not keep its recipe
+     * locked, of no batch, without a side or foods and without a share in the box under it, that does not keep its recipe
      * ([whyKeepsItsRecipe]). A leftover lunch of that kind changes with its dinner, as [leftoversToReplace] has it; so may
      * any other lunch of that kind, which is the planner's to choose.
      */
     private fun replaceableLunch(start: LocalDate, week: List<PlannedMeal>, lunch: PlannedMeal): Boolean =
-        lunch.prep == null && !lunch.locked && lunch.side == null && lunch.status == MealStatus.PLANNED &&
+        lunch.prep == null && !lunch.locked && lunch.side == null && lunch.foodsId == null && lunch.status == MealStatus.PLANNED &&
             whyKeepsItsRecipe(start, lunch, week) == null && box(start, lunch.day, lunch.slot) == null
 
     /**
@@ -447,13 +451,16 @@ class PlanRepository(
         q.moveStockUses(week, day, slot, MealRef.BOX, userId, week, day, slot, MealRef.MEAL)
     }
 
-    /** Locks a meal or unlocks it. A prepped meal is always locked: the batch is made for it, so unlocking it is a [ConflictException]. */
+    /**
+     * Locks a meal or unlocks it. A prepped meal is always locked: the batch is made for it, so unlocking it is a
+     * [ConflictException]; so is a slot of foods alone (issue 358), which the planner leaves alone whatever a lock says.
+     */
     fun setLocked(weekStart: String, day: Int, slot: MealSlot, locked: Boolean): WeekPlan {
         val start = parseWeekStart(weekStart)
         db.writing {
-            if (!locked && meals(start).any { it.day == day && it.slot == slot && it.prep != null }) {
-                throw ConflictException("A prepped meal stays in the plan: remove it or the prep instead")
-            }
+            val meal = meals(start).firstOrNull { it.day == day && it.slot == slot }
+            if (!locked && meal?.prep != null) throw ConflictException("A prepped meal stays in the plan: remove it or the prep instead")
+            if (!locked && meal?.foodsOnly == true) throw ConflictException("A meal of foods stays in the plan: remove it instead")
             q.setLocked(if (locked) 1 else 0, userId, start.toString(), day.toLong(), slot.name)
         }
         return view(start)
@@ -550,10 +557,23 @@ class PlanRepository(
         leftoversOf(meal, week)?.takeIf { it.status != MealStatus.EATEN }?.let { stock.giveBack(MealRef(start, it.day, it.slot)) }
     }
 
-    /** Takes [meal]'s portions of its recipe from the stock, as it was adjusted ([MealAdjustments.gramsEaten]), kept under [meal]. */
+    /** Takes what eating [meal] uses from the stock ([eatenGrams]), kept under [meal]. */
     private fun take(start: LocalDate, meal: PlannedMeal) {
-        val recipe = recipes.linesWithIngredients(listOf(meal.recipeId))[meal.recipeId] ?: return
-        stock.useUp(MealRef(start, meal.day, meal.slot), adjustments.gramsEaten(start, meal, recipe))
+        val grams = eatenGrams(start, meal) ?: return
+        stock.useUp(MealRef(start, meal.day, meal.slot), grams)
+    }
+
+    /**
+     * Grams of each ingredient that eating [meal] uses: its portions of its recipe as it was adjusted
+     * ([MealAdjustments.gramsEaten]) and the foods next to it ([SlotFoods.gramsNextTo]); null when its recipe is gone and it
+     * has no foods, which takes nothing.
+     */
+    private fun eatenGrams(start: LocalDate, meal: PlannedMeal): Map<Long, Double>? {
+        val recipe = recipes.linesWithIngredients(listOf(meal.recipeId))[meal.recipeId]
+        val next = foods.gramsNextTo(meal)
+        if (recipe == null && next.isEmpty()) return null
+        val own = recipe?.let { adjustments.gramsEaten(start, meal, it) }.orEmpty()
+        return (own.keys + next.keys).associateWith { (own[it] ?: 0.0) + (next[it] ?: 0.0) }
     }
 
     /**
@@ -614,7 +634,12 @@ class PlanRepository(
         val batches = batchesOf(week)
         return week.mapNotNull { meal ->
             val batch = meal.prep?.let { batches[it.id] }
-            val changes = if (batch == null) ofSlots[meal.day to meal.slot] else batchChanges(batch, lines[batch.recipeId])
+            val changes = when {
+                // Foods are never adjusted: those next to a recipe share its slot, whose changes are the recipe's.
+                meal.foodsOnly -> null
+                batch == null -> ofSlots[meal.day to meal.slot]
+                else -> batchChanges(batch, lines[batch.recipeId])
+            }
             changes?.let { meal to it }
         }.toMap()
     }
@@ -667,7 +692,8 @@ class PlanRepository(
      * toppings are often decided while cooking; a skipped one counts for nothing, so that is a
      * [ConflictException]. When the meal's share of the stock was taken already ([shareTaken]), the stock
      * moves by the difference ([StockRepository.retake]), and un-eating it later gives back what it holds
-     * then. A leftover lunch is adjusted on its own: its dinner keeps its lines.
+     * then. A leftover lunch is adjusted on its own: its dinner keeps its lines. A slot of foods alone (issue 358) has
+     * no recipe to adjust, a [ConflictException]: its foods are changed themselves ([changeFood]).
      */
     fun adjust(weekStart: String, day: Int, slot: MealSlot, changes: List<MealLineChange>): MealLines {
         val start = parseWeekStart(weekStart)
@@ -675,16 +701,112 @@ class PlanRepository(
             val week = meals(start)
             val meal = mealAt(week, day, slot)
             if (meal.status == MealStatus.SKIPPED) throw ConflictException("This meal was skipped: mark it eaten or planned to say what was in it")
-            val recipe = recipes.linesWithIngredients(listOf(meal.recipeId))[meal.recipeId]
-            val before = recipe?.let { adjustments.gramsEaten(start, meal, it) }
-            adjustments.replace(start, meal, changes)
-            if (recipe != null && before != null && shareTaken(start, meal, week)) {
-                val after = adjustments.gramsEaten(start, meal, recipe)
-                val moved = (before.keys + after.keys).filter { abs((before[it] ?: 0.0) - (after[it] ?: 0.0)) > 1e-9 }
-                stock.retake(MealRef(start, day, slot), moved.associateWith { after[it] ?: 0.0 })
-            }
+            if (meal.foodsOnly) throw ConflictException("This meal is foods, not a recipe: change the foods themselves")
+            retakingStock(start, meal, week) { adjustments.replace(start, meal, changes) }
             adjustments.lines(start, meal).copy(shortfalls = warnings(start, meal, week))
         }
+    }
+
+    /**
+     * Runs [change] of what [meal] (of [week], starting [start]) eats. When its share of the stock was taken already
+     * ([shareTaken]), the stock moves by the difference ([StockRepository.retake]), and un-eating it later gives back what
+     * it holds then. The meal is read again after [change], which may have given it foods.
+     */
+    private fun retakingStock(start: LocalDate, meal: PlannedMeal, week: List<PlannedMeal>, change: () -> Unit) {
+        val before = if (shareTaken(start, meal, week)) eatenGrams(start, meal) else null
+        change()
+        if (before == null) return
+        val after = meals(start).firstOrNull { it.day == meal.day && it.slot == meal.slot }?.let { eatenGrams(start, it) }.orEmpty()
+        val moved = (before.keys + after.keys).filter { abs((before[it] ?: 0.0) - (after[it] ?: 0.0)) > 1e-9 }
+        stock.retake(MealRef(start, meal.day, meal.slot), moved.associateWith { after[it] ?: 0.0 })
+    }
+
+    /**
+     * Adds a food to [day]'s [slot] (issue 358): [input]'s ingredient in its amount and unit ([SlotFoods.lineOf]). An empty
+     * slot becomes a slot of foods alone: one portion, locked as a meal chosen by hand, titled by its foods for the apps
+     * that do not know them. A slot with a meal gets it next to what is there, a recipe or foods. When the meal's share of
+     * the stock was taken already, the stock takes the food too ([retakingStock]). Refused where foods would not count
+     * ([requireRoomForFoods]); another account's ingredient is not there (404).
+     */
+    fun addFood(weekStart: String, day: Int, slot: MealSlot, input: MealFoodInput): WeekPlan {
+        val start = parseWeekStart(weekStart)
+        val line = foods.lineOf(input)
+        db.writing {
+            val week = meals(start)
+            val meal = week.firstOrNull { it.day == day && it.slot == slot }
+            if (meal == null) {
+                val id = foods.create(line)
+                val (kcal, protein) = foods.numbersOf(id)
+                save(start, PlannedMeal(day, slot, id, foods.titleOf(id), 1.0, kcal, protein, locked = true, foodsOnly = true, foodsId = id))
+                return@writing
+            }
+            requireRoomForFoods(meal)
+            retakingStock(start, meal, week) {
+                val id = meal.foodsId
+                if (id == null) q.setMealFoods(foods.create(line), userId, start.toString(), day.toLong(), slot.name) else foods.add(id, line)
+            }
+            storeFoodsMeal(start, meal)
+        }
+        return view(start)
+    }
+
+    /**
+     * Replaces food [foodId] of [day]'s [slot] with [input] (issue 358): another amount or unit, as [addFood] checks it; the
+     * stock follows a meal whose share was taken ([retakingStock]). A food that is not in the slot is not there (404).
+     */
+    fun changeFood(weekStart: String, day: Int, slot: MealSlot, foodId: Long, input: MealFoodInput): WeekPlan {
+        val start = parseWeekStart(weekStart)
+        val line = foods.lineOf(input)
+        db.writing {
+            val week = meals(start)
+            val meal = mealAt(week, day, slot)
+            val id = meal.foodsId ?: throw NotFoundException("No food with id $foodId in this meal")
+            requireRoomForFoods(meal)
+            retakingStock(start, meal, week) { foods.change(id, foodId, line) }
+            storeFoodsMeal(start, meal)
+        }
+        return view(start)
+    }
+
+    /**
+     * Takes food [foodId] out of [day]'s [slot] (issue 358), and gives the stock back what it took for it. The last food of a
+     * slot of foods alone takes the meal with it, as [remove] does, so not of one that was eaten (409: un-eat it first);
+     * next to a recipe, the recipe stays alone. Nothing of the foods is left behind ([SlotFoods.dropUnused]).
+     */
+    fun removeFood(weekStart: String, day: Int, slot: MealSlot, foodId: Long): WeekPlan {
+        val start = parseWeekStart(weekStart)
+        db.writing {
+            val week = meals(start)
+            val meal = mealAt(week, day, slot)
+            val id = meal.foodsId ?: throw NotFoundException("No food with id $foodId in this meal")
+            if (meal.foodsOnly && foods.idsOf(id).size == 1) {
+                if (foods.idsOf(id).single() != foodId) throw NotFoundException("No food with id $foodId in this meal")
+                removeIn(start, day, slot)
+                return@writing
+            }
+            retakingStock(start, meal, week) {
+                if (foods.remove(id, foodId) == 0) q.setMealFoods(null, userId, start.toString(), day.toLong(), slot.name)
+            }
+            storeFoodsMeal(start, meal)
+            foods.dropUnused()
+        }
+        return view(start)
+    }
+
+    /**
+     * Refuses foods for [meal] where they would not count as planned: a skipped meal counts for nothing (mark it planned or
+     * eaten first), and a meal of a prepped batch is bought and taken from the stock as the batch, which knows no foods.
+     */
+    private fun requireRoomForFoods(meal: PlannedMeal) {
+        if (meal.status == MealStatus.SKIPPED) throw ConflictException("This meal was skipped: mark it planned or eaten to change its foods")
+        if (meal.prep != null) throw ConflictException("This meal is of a prepped batch: add the food to another meal")
+    }
+
+    /** Stores the title and numbers of [meal]'s foods when they are all it is, for the apps that do not know foods. */
+    private fun storeFoodsMeal(start: LocalDate, meal: PlannedMeal) {
+        val id = meal.foodsId?.takeIf { meal.foodsOnly } ?: return
+        val (kcal, protein) = foods.numbersOf(id)
+        q.setFoodsMeal(foods.titleOf(id), kcal, protein, userId, start.toString(), meal.day.toLong(), meal.slot.name)
     }
 
     /**
@@ -707,7 +829,7 @@ class PlanRepository(
         val week = meals(start)
         val holding = holdingStock(start, week)
         val ofDay = week.filter { it.day == index }.sortedBy { it.slot.ordinal }.map { it.copy(cookPortions = cookPortions(it, week, holding)) }
-        return Triple(start, index, adjustments.withNutrition(start, ofDay))
+        return Triple(start, index, foods.withFoods(adjustments.withNutrition(start, ofDay)))
     }
 
     /**
@@ -721,11 +843,11 @@ class PlanRepository(
     /** The meals of [week], the week starting [start] as [forShopping] has it, still to cook and to buy for ([toCook]). */
     fun stillToCook(start: LocalDate, week: List<PlannedMeal>): List<PlannedMeal> = toCook(week, holdingStock(start, week))
 
-    /** Titles of meals planned from two weeks before [today] up to [today], newest first. */
+    /** Titles of meals planned from two weeks before [today] up to [today], newest first; a slot of foods alone is no recipe eaten. */
     fun recentTitles(today: LocalDate): List<String> {
         val start = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         return listOf(start, start.minusDays(7), start.minusDays(14))
-            .flatMap { week -> meals(week).filter { !week.plusDays(it.day.toLong()).isAfter(today) }.sortedByDescending { it.day } }
+            .flatMap { week -> meals(week).filter { !it.foodsOnly && !week.plusDays(it.day.toLong()).isAfter(today) }.sortedByDescending { it.day } }
             .map { it.title }
             .distinct()
     }
@@ -740,6 +862,12 @@ class PlanRepository(
      */
     fun remove(weekStart: String, day: Int, slot: MealSlot): WeekPlan {
         val start = parseWeekStart(weekStart)
+        removeIn(start, day, slot)
+        return view(start)
+    }
+
+    /** [remove] without answering the week, for a caller that writes more in the same transaction. */
+    private fun removeIn(start: LocalDate, day: Int, slot: MealSlot) {
         db.writing {
             val week = meals(start)
             requireReplaceable(start, week, day, slot)
@@ -749,8 +877,8 @@ class PlanRepository(
             val inBox = stock.taken(MealRef(start, day, slot, boxed = true))
             q.deleteMeal(userId, start.toString(), day.toLong(), slot.name)
             box?.let { unbox(start, day, slot, it, inBox) }
+            foods.dropUnused()
         }
-        return view(start)
     }
 
     /**
@@ -869,7 +997,7 @@ class PlanRepository(
         val costOf = costsIn(start)
         val week = meals(start)
         val holding = holdingStock(start, week)
-        val meals = adjustments.withNutrition(start, week).map { meal -> priced(meal, costOf).copy(cookPortions = cookPortions(meal, week, holding)) }
+        val meals = foods.withFoods(adjustments.withNutrition(start, week)).map { meal -> priced(meal, costOf).copy(cookPortions = cookPortions(meal, week, holding)) }
         val (cost, costWithoutOffers) = costOfWeek(meals, costOf)
         return WeekPlan(
             weekStart = start.toString(),
@@ -900,13 +1028,20 @@ class PlanRepository(
      * gives them ([view]): a kept meal's as adjusted, the fibre of each, and what each costs ([costOf]).
      */
     internal fun withNumbers(start: LocalDate, kept: List<PlannedMeal>, chosen: List<PlannedMeal>, costOf: (Long) -> RecipeCost?): List<PlannedMeal> =
-        (adjustments.withNutrition(start, kept) + adjustments.withNutrition(start, chosen, changes = emptyMap())).map { priced(it, costOf) }
+        (foods.withFoods(adjustments.withNutrition(start, kept)) + adjustments.withNutrition(start, chosen, changes = emptyMap())).map { priced(it, costOf) }
 
-    /** [meal] with what its portions cost with the week's offers ([costOf]), and its side's. */
+    /**
+     * [meal] with what its portions cost with the week's offers ([costOf]), the foods next to its recipe with it (issue 358),
+     * and its side's. Not known when its recipe's or its foods' cost is not.
+     */
     internal fun priced(meal: PlannedMeal, costOf: (Long) -> RecipeCost?): PlannedMeal = meal.copy(
-        cost = costOf(meal.recipeId)?.let { it.perServingWithOffers * meal.portions },
+        cost = pricedParts(meal).map { (id, portions) -> costOf(id)?.let { it.perServingWithOffers * portions } }.takeIf { null !in it }?.sumOf { it ?: 0.0 },
         side = meal.side?.let { side -> side.copy(cost = costOf(side.recipeId)?.let { it.perServingWithOffers * side.portions }) },
     )
+
+    /** What [meal] is priced as, each a recipe and its portions: its own recipe, and one portion of the foods next to it. */
+    private fun pricedParts(meal: PlannedMeal): List<Pair<Long, Double>> =
+        listOfNotNull(meal.recipeId to meal.portions, meal.foodsId?.takeUnless { meal.foodsOnly }?.let { it to 1.0 })
 
     /**
      * What [meals] cost with the week's offers and at regular prices: of each meal's main and side whose cost is known
@@ -914,7 +1049,7 @@ class PlanRepository(
      */
     internal fun costOfWeek(meals: List<PlannedMeal>, costOf: (Long) -> RecipeCost?): Pair<Double?, Double?> {
         val eaten = meals.filter { it.status != MealStatus.SKIPPED }
-        val priced = eaten.map { it.recipeId to it.portions } + eaten.mapNotNull { it.side }.map { it.recipeId to it.portions }
+        val priced = eaten.flatMap(::pricedParts) + eaten.mapNotNull { it.side }.map { it.recipeId to it.portions }
         val known = priced.mapNotNull { (id, portions) -> costOf(id)?.let { it to portions } }.takeIf { it.isNotEmpty() } ?: return null to null
         return known.sumOf { (cost, portions) -> cost.perServingWithOffers * portions } to known.sumOf { (cost, portions) -> cost.perServing * portions }
     }
@@ -974,6 +1109,8 @@ class PlanRepository(
                 leftover = it.leftover != 0L,
                 locked = it.locked != 0L,
                 status = MealStatus.valueOf(it.status),
+                foodsOnly = it.foodsId != null && it.foodsId == it.recipeId,
+                foodsId = it.foodsId,
             )
         }
         val prepOf = q.selectWeekPrepIds(userId, start.toString()).executeAsList().associate { (it.day.toInt() to MealSlot.valueOf(it.slot)) to it.prepId }
@@ -1019,7 +1156,8 @@ class PlanRepository(
      * ([Batch.status]); the other meals of a batch are not there, wherever it was made, as they cook and buy
      * nothing. So the batch is bought once, in the week it is made, also for meals the week after. A batch made
      * with a side is that one meal too, next to the meal the side goes with, in its slot (its `prep` has a side
-     * there); the meal's main is there as itself.
+     * there); the meal's main is there as itself. Foods next to a recipe (issue 358) are a meal of their own in the slot
+     * ([foodsNextTo]).
      */
     fun forShopping(start: LocalDate, week: List<PlannedMeal> = meals(start)): List<PlannedMeal> {
         val batches = batchesOf(week)
@@ -1041,7 +1179,16 @@ class PlanRepository(
             )
         }
         // A side is bought with its batch, where that is cooked: the meals here are their mains.
-        return meals.map { it.copy(side = null) } + cookedAsSides
+        return meals.map { it.copy(side = null) } + cookedAsSides + week.mapNotNull(::foodsNextTo)
+    }
+
+    /**
+     * The foods next to [meal]'s recipe as the shopping list and the stock count them ([forShopping]): a meal of foods alone in
+     * its slot, one portion, eaten or skipped with [meal]; null when it has none. A meal of a batch has none ([addFood]).
+     */
+    private fun foodsNextTo(meal: PlannedMeal): PlannedMeal? {
+        val id = meal.foodsId?.takeUnless { meal.foodsOnly || meal.prep != null } ?: return null
+        return PlannedMeal(meal.day, meal.slot, id, meal.title, 1.0, 0.0, 0.0, locked = true, status = meal.status, foodsOnly = true, foodsId = id)
     }
 
     /** Whether the week starting [start] has meals of its own: the meals of a batch made the week before are there before it is planned. */
@@ -1060,9 +1207,12 @@ class PlanRepository(
      * batch, what it took from the stock, what was in it); its side stays, next to the new main, with what the stock
      * gave for it: the side was added to the slot by hand, and its batch is not made smaller by a new main. So does a
      * skipped prepped meal's share in the box under the slot (issue 265), with what the stock gave for it: it is in a
-     * box in the fridge, whatever is eaten in its place.
+     * box in the fridge, whatever is eaten in its place. So do the slot's foods (issue 358): they leave it only when taken
+     * out or when the slot is removed, so a new recipe goes in next to them, and a slot of foods alone becomes a recipe with
+     * those foods next to it. A meal moved carries its own ([PlannedMeal.foodsId]) to a slot its move emptied first.
      */
     internal fun save(start: LocalDate, meal: PlannedMeal): Unit = db.writing {
+        val foodsId = meal.foodsId ?: q.selectMealFoods(userId, start.toString(), meal.day.toLong(), meal.slot.name).executeAsOneOrNull()?.foodsId
         val side = q.selectSidePortion(userId, start.toString(), meal.day.toLong(), meal.slot.name).executeAsOneOrNull()
         val sideRef = MealRef(start, meal.day, meal.slot, side = true)
         val taken = if (side == null) emptyList() else stock.taken(sideRef)
@@ -1073,6 +1223,7 @@ class PlanRepository(
             userId, start.toString(), meal.day.toLong(), meal.slot.name, meal.recipeId, meal.title, meal.portions,
             meal.kcal, meal.proteinG, if (meal.leftover) 1 else 0, if (meal.locked) 1 else 0, meal.status.name,
         )
+        foodsId?.let { q.setMealFoods(it, userId, start.toString(), meal.day.toLong(), meal.slot.name) }
         if (side != null) {
             q.insertSidePortion(userId, start.toString(), meal.day.toLong(), meal.slot.name, side.prepId, side.portions)
             stock.keep(sideRef, taken)

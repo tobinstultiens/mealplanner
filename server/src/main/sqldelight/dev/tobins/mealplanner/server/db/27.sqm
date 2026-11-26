@@ -1,0 +1,7 @@
+-- Version 27 -> 28: foods planned in a slot of the plan (issue 358). Two columns are added, one 0 and one NULL in every row,
+-- and no table is rebuilt, so no foreign key cascades and no row goes or changes: every recipe stays what it was, one of the
+-- account's (slotFoods 0), and every planned meal stays its recipe alone, without foods (foodsId NULL).
+
+ALTER TABLE recipe ADD COLUMN slotFoods INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE planMeal ADD COLUMN foodsId INTEGER;

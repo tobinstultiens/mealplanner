@@ -261,6 +261,7 @@ class ReleasedAppTest {
         http.readsAWeekWithAPrepOf(mine.summary.id)
         http.readsAWeekWithASideOf(mine.summary.id)
         http.readsAWeekWithABatchOfMealsAndSidesOf(mine.summary.id)
+        http.readsAWeekWithFoods(chicken, ingredients.first { it.food?.nevoCode == 5 })
 
         // The day, a log entry and weights.
         val date = "2026-11-17"
@@ -376,6 +377,43 @@ class ReleasedAppTest {
      * that does not, and a comparison of whole meals would then differ by exactly the side).
      */
     private fun PlannedMeal.main() = listOf(day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status, cost, cookPortions, fibreG)
+
+    /**
+     * Foods planned in a newer app (issue 358): Sunday's snack of 150 g of [chicken] and 100 g of [rice] with no recipe, and
+     * 50 g of the chicken next to a recipe planned on Saturday. The installed app reads the week and the day: the
+     * snack as a meal of one portion of a recipe titled by its foods, with their kcal, which the day counts; the recipe's meal
+     * with its own recipe and title, and the chicken's kcal on top. It opens the snack's recipe, which lists the two foods,
+     * marks the snack eaten and planned again, reads the list and what is due, and removes it: the slot is empty again.
+     */
+    private suspend fun HttpClient.readsAWeekWithFoods(chicken: Ingredient, rice: Ingredient) {
+        val snack = "/api/plans/$week/meals/6/SNACK"
+        if (read<WeekPlan>("/api/plans/$week").days[6].meals.any { it.slot == MealSlot.SNACK }) delete(snack).read<WeekPlan>()
+        for ((id, grams) in listOf(chicken.id to 150.0, rice.id to 100.0)) {
+            val added = post("$snack/foods") { setBody("""{"ingredientId":$id,"amount":$grams,"unit":"g"}""") }
+            assertTrue(added.status.isSuccess(), added.bodyAsText())
+        }
+        val days = read<WeekPlan>("/api/plans/$week").days
+        val foods = days[6].meals.single { it.slot == MealSlot.SNACK }
+        // 150 g of chicken (200 kcal per 100 g) and 100 g of rice (350): one portion of 650 kcal.
+        assertEquals(listOf(1.0, 650.0), listOf(foods.portions, Math.round(foods.kcal).toDouble()))
+        assertEquals("${chicken.name}, ${rice.name}", foods.title)
+        assertTrue(days[6].kcal >= foods.kcal)
+        assertTrue(read<DayView>("/api/days/2026-11-22").meals.any { it.recipeId == foods.recipeId && it.title == foods.title })
+        assertEquals(2, read<RecipeDetail>("/api/recipes/${foods.recipeId}").ingredients.size)
+
+        val host = days[5].meals.first { it.status == MealStatus.PLANNED && it.prep == null }
+        val next = post("/api/plans/$week/meals/5/${host.slot}/foods") { setBody("""{"ingredientId":${chicken.id},"amount":50.0,"unit":"g"}""") }
+        assertTrue(next.status.isSuccess(), next.bodyAsText())
+        val withFood = next.read<WeekPlan>().days[5].meals.single { it.slot == host.slot }
+        assertEquals(host.recipeId to host.title, withFood.recipeId to withFood.title)
+        assertEquals(Math.round(host.kcal + 100.0), Math.round(withFood.kcal))
+
+        assertEquals(MealStatus.EATEN, put("$snack/status") { setBody(MealStatus.EATEN) }.read<WeekPlan>().days[6].meals.single { it.slot == MealSlot.SNACK }.status)
+        put("$snack/status") { setBody(MealStatus.PLANNED) }.read<WeekPlan>()
+        read<ShoppingList>("/api/plans/$week/shopping")
+        read<NotificationFacts>("/api/notifications")
+        assertTrue(delete(snack).read<WeekPlan>().days[6].meals.none { it.slot == MealSlot.SNACK })
+    }
 
     /**
      * Recipe [recipeId], which keeps since [readsAWeekWithAPrepOf], eaten in a newer app as a side of half a serving next to

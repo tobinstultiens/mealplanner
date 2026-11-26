@@ -37,6 +37,22 @@ fun Ingredient.portionNamed(unit: String?): Portion? {
     return portions.firstOrNull { portionKey(it.name) == key }
 }
 
+/** The unit table's key for pieces, which the cooking site's `stuks` means too. */
+const val PIECE_UNIT = "piece"
+
+/**
+ * The units an amount of [this] can be in and still weigh something (issues 342, 358): grams always, millilitres when a
+ * millilitre's weight is known (its density, or values counted per 100 ml), pieces when a piece's weight is, then its
+ * named portions. What the recipe editor offers a row of it, and what a food planned in a slot may be in.
+ */
+val Ingredient.units: List<String>
+    get() = buildList {
+        add("g")
+        if (gramsPerMl != null || values?.basis == FoodBasis.PER_100_ML) add("ml")
+        if (gramsPerPiece != null) add(PIECE_UNIT)
+        portions.forEach { add(it.name) }
+    }
+
 /** True when [unit] names a portion [this] had and removed, and has not been given again. */
 fun Ingredient.hadPortion(unit: String?): Boolean {
     val key = unit?.let(::portionKey) ?: return false
