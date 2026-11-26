@@ -31,6 +31,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -154,6 +155,10 @@ fun ProductScreen(
         scanner?.onResult = ::scanned
         onDispose { scanner?.onResult = null }
     }
+
+    // The refusal is no longer true once the camera has been allowed (in the settings, then back to the form).
+    val cameraAllowed = scanner?.cameraAllowed == true
+    LaunchedEffect(cameraAllowed) { if (cameraAllowed && scanProblem == ScanResult.Refused) scanProblem = null }
 
     val nameTaken = draft.nameTaken(catalogue)
 
