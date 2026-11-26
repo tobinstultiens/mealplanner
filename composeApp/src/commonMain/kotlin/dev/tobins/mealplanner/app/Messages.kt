@@ -637,6 +637,9 @@ enum class Msg(private val english: String, private val dutch: String) {
     SCAN_HELP("Hold the barcode inside the frame.", "Houd de streepjescode in het kader."),
     SCAN_CLOSE("Close the scanner", "Scanner sluiten"),
     SCAN_TORCH("Torch", "Zaklamp"),
+    SCAN_TORCH_ON("On", "Aan"),
+    SCAN_TORCH_OFF("Off", "Uit"),
+    SCAN_SETTINGS("Open the app's settings", "Instellingen van de app openen"),
     SCAN_REFUSED(
         "The camera is not allowed, so nothing can be scanned. Type the digits instead, or allow the camera for this app in the phone's settings (Settings, Apps, Meal planner, Permissions).",
         "De camera is niet toegestaan, dus er kan niets gescand worden. Typ de cijfers in, of sta de camera voor deze app toe in de instellingen van de telefoon (Instellingen, Apps, Meal planner, Rechten).",

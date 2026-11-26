@@ -1046,5 +1046,11 @@ private fun recipesRefreshFailed(api: ApiClient) {
 
 /** A scanner whose camera permission is refused, for the pictures of the form's scan button. */
 private val refusingScanner = object : BarcodeScanner {
-    override fun scan(onResult: (ScanResult) -> Unit) = onResult(ScanResult.Refused)
+    override var onResult: ((ScanResult) -> Unit)? = null
+
+    override fun scan() {
+        onResult?.invoke(ScanResult.Refused)
+    }
+
+    override fun openSettings() = Unit
 }

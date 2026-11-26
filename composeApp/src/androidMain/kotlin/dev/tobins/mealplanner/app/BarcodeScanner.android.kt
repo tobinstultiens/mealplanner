@@ -1,7 +1,11 @@
 package dev.tobins.mealplanner.app
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,22 +26,29 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -58,38 +69,42 @@ import java.util.concurrent.atomic.AtomicBoolean
 actual fun rememberBarcodeScanner(): BarcodeScanner? {
     val context = LocalContext.current
     if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) return null
-    var asker by remember { mutableStateOf<((ScanResult) -> Unit)?>(null) }
-    var open by remember { mutableStateOf(false) }
+    // Saved, so that a scan open when the phone is turned stays open: the camera is bound again, and the permission, once given, is not asked again.
+    var open by rememberSaveable { mutableStateOf(false) }
+    val scanner = remember(context) { CameraScanner(context) }
     // The permission is asked at the first scan, not before; a refusal is said, and the next tap asks again where Android lets it.
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            open = true
-        } else {
-            asker?.invoke(ScanResult.Refused)
-            asker = null
+        if (granted) open = true else scanner.onResult?.invoke(ScanResult.Refused)
+    }
+    SideEffect {
+        scanner.start = {
+            // Read now, not remembered: the person may have allowed it in the settings since the last tap.
+            if (context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) open = true
+            else permission.launch(Manifest.permission.CAMERA)
         }
     }
     if (open) {
         ScanScreen(
             onResult = { result ->
                 open = false
-                asker?.invoke(result)
-                asker = null
+                scanner.onResult?.invoke(result)
             },
-            onClose = {
-                open = false
-                asker = null
-            },
+            onClose = { open = false },
         )
     }
-    return remember(context) {
-        object : BarcodeScanner {
-            override fun scan(onResult: (ScanResult) -> Unit) {
-                asker = onResult
-                if (context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) open = true
-                else permission.launch(Manifest.permission.CAMERA)
-            }
-        }
+    return scanner
+}
+
+/** The scanner a screen holds: [start] is set by [rememberBarcodeScanner], which owns the state of the scan. */
+private class CameraScanner(private val context: Context) : BarcodeScanner {
+    override var onResult: ((ScanResult) -> Unit)? = null
+    var start: () -> Unit = {}
+
+    override fun scan() = start()
+
+    override fun openSettings() {
+        val page = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+        context.startActivity(page.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
 
@@ -105,7 +120,7 @@ private fun ScanScreen(onResult: (ScanResult) -> Unit, onClose: () -> Unit) {
     val report = rememberUpdatedState(onResult)
     val preview = remember { PreviewView(context).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE } }
     var camera by remember { mutableStateOf<Camera?>(null) }
-    var torch by remember { mutableStateOf(false) }
+    var torch by rememberSaveable { mutableStateOf(false) }
 
     DisposableEffect(lifecycle) {
         val executor = Executors.newSingleThreadExecutor()
@@ -152,26 +167,45 @@ private fun ScanScreen(onResult: (ScanResult) -> Unit, onClose: () -> Unit) {
     }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        CompositionLocalProvider(LocalContentColor provides Color.White) {
-            Box(Modifier.fillMaxSize().background(Color.Black)) {
-                AndroidView({ preview }, Modifier.fillMaxSize())
-                Box(
-                    Modifier.align(Alignment.Center).fillMaxWidth(0.8f).aspectRatio(1.6f)
-                        .border(3.dp, Color.White, RoundedCornerShape(12.dp)),
-                )
-                Text(
-                    t(Msg.SCAN_HELP),
-                    Modifier.align(Alignment.BottomCenter).padding(32.dp).background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)).padding(12.dp),
-                )
-                Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    BarAction(AppIcons.Close, t(Msg.SCAN_CLOSE), onClose)
-                    Box(Modifier.weight(1f))
-                    if (camera?.cameraInfo?.hasFlashUnit() == true) {
-                        TextButton(onClick = { torch = !torch }) { Text(t(Msg.SCAN_TORCH), color = if (torch) Color.Yellow else Color.White) }
-                    }
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            AndroidView({ preview }, Modifier.fillMaxSize())
+            // A dark ring around a white one: the frame shows on a white pack as well as on a black one.
+            Box(
+                Modifier.align(Alignment.Center).fillMaxWidth(0.8f).aspectRatio(1.6f)
+                    .border(7.dp, Color.Black.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                    .padding(2.dp).border(3.dp, Color.White, RoundedCornerShape(12.dp)),
+            )
+            Text(
+                t(Msg.SCAN_HELP),
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(32.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(12.dp),
+                color = Color.White,
+            )
+            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                ScanControl(t(Msg.SCAN_CLOSE), AppIcons.Close, lit = false, onClick = onClose)
+                Box(Modifier.weight(1f))
+                if (camera?.cameraInfo?.hasFlashUnit() == true) {
+                    // On is told from off by the bolt struck through when off, and a white disc instead of a dark one, and by what a screen reader says.
+                    val state = t(if (torch) Msg.SCAN_TORCH_ON else Msg.SCAN_TORCH_OFF)
+                    ScanControl(
+                        t(Msg.SCAN_TORCH), if (torch) AppIcons.Torch else AppIcons.TorchOff, lit = torch,
+                        onClick = { torch = !torch },
+                        modifier = Modifier.semantics { stateDescription = state },
+                    )
                 }
             }
         }
+    }
+}
+
+/** A round button of the scanner, 48 dp, on a dark translucent disc (a white one when [lit]) so that it shows on any picture. */
+@Composable
+private fun ScanControl(description: String, icon: ImageVector, lit: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(48.dp).background(if (lit) Color.White else Color.Black.copy(alpha = 0.6f), CircleShape),
+    ) {
+        Icon(icon, description, tint = if (lit) Color.Black else Color.White)
     }
 }
 

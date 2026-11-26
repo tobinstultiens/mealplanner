@@ -6,6 +6,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -35,14 +36,23 @@ class ProductScanScreenTest {
     private val backend = FakeBackend(writing = true)
     private val api = ApiClient(backend.settings)
 
-    /** Answers each scan with the next of [answers]; counts them. */
+    /** Answers each scan with the next of [answers], to whichever screen listens; counts scans and settings opened. */
     private class FakeScanner(vararg answers: ScanResult) : BarcodeScanner {
         private val left = answers.toMutableList()
+        override var onResult: ((ScanResult) -> Unit)? = null
         var scans = 0
+        var settingsOpened = 0
 
-        override fun scan(onResult: (ScanResult) -> Unit) {
+        override fun scan() {
             scans++
-            onResult(left.removeAt(0))
+            answer(left.removeAt(0))
+        }
+
+        /** What the camera would say, later than the tap: also to a screen made again since. */
+        fun answer(result: ScanResult) = onResult?.invoke(result)
+
+        override fun openSettings() {
+            settingsOpened++
         }
     }
 
@@ -109,6 +119,37 @@ class ProductScanScreenTest {
         waitFor("Values from AH")
         compose.onNodeWithText("The camera is not allowed", substring = true).assertDoesNotExist()
         assertEquals(2, scanner.scans)
+    }
+
+    @Test
+    fun theRefusalOffersTheAppsSettingsAndTheNextScanOpensTheScannerOnceAllowed() {
+        val scanner = FakeScanner(ScanResult.Refused, ScanResult.Read("8712800035626"))
+        show(scanner)
+        waitFor("Values per")
+        compose.onNodeWithText("Open the app's settings").assertDoesNotExist()
+        tap("Scan barcode")
+        waitFor("The camera is not allowed")
+        tap("Open the app's settings")
+        assertEquals(1, scanner.settingsOpened)
+        // Back from the settings with the camera allowed: the next tap is a scan, and the refusal is gone.
+        tap("Scan barcode")
+        waitFor("Values from AH")
+        compose.onNodeWithText("Open the app's settings").assertDoesNotExist()
+    }
+
+    @Test
+    fun aScanThatOutlivesTheScreenReachesTheScreenMadeAgain() {
+        val scanner = FakeScanner()
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
+            CompositionLocalProvider(LocalStrings provides Strings.English) { ProductScreen(api, null, {}, {}, scanner = scanner) }
+        }
+        waitFor("Values per")
+        restoration.emulateSavedInstanceStateRestore()
+        waitFor("Values per")
+        compose.runOnUiThread { scanner.answer(ScanResult.Read("8712800035626")) }
+        waitFor("Values from AH")
+        assertEquals("Optimel Drinkyoghurt framboos", shown("Name"))
     }
 
     @Test

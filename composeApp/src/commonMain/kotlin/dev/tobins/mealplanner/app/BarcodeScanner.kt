@@ -19,8 +19,17 @@ sealed interface ScanResult {
  * Closing the scanner without a barcode gives no result.
  */
 interface BarcodeScanner {
+    /**
+     * Where what a scan came to goes: set by the screen while it is shown, so that a scan still open after the phone was
+     * turned (the screen is made again) reaches the new screen.
+     */
+    var onResult: ((ScanResult) -> Unit)?
+
     /** Asks for the camera's permission when it is first needed, opens the scanner and gives [onResult] what it came to. */
-    fun scan(onResult: (ScanResult) -> Unit)
+    fun scan()
+
+    /** Opens this app's page in the system's settings, where the camera can be allowed after a refusal. */
+    fun openSettings()
 }
 
 /**

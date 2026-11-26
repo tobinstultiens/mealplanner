@@ -424,7 +424,9 @@ afterwards or sent, and a frame is dropped once read. The decoder is ZXing's (`c
 ships inside the app, with CameraX for the preview: no Google Play services (`:androidApp:assemble…` and `lint…` fail when
 the app's runtime dependencies hold `com.google.android.gms`), so it works on a phone without them. The camera's permission is
 asked when "Scan barcode" is first used, not at start; refused, the form says so under the lookup, with what to do (type
-the digits, or allow the camera in the phone's settings), and the button asks again where Android still lets it. The
+the digits, or allow the camera in the phone's settings) and a button to the app's page there; the next tap on "Scan barcode"
+asks again, or opens the scanner when the camera was allowed in the meantime. The scanner stays open when the phone is turned.
+Its close and torch buttons sit on dark discs, so that they show on a white pack. The
 manifest marks the camera `required="false"`: a phone without one installs the app and has no scan button. The web client
 has no scanner and types the barcode. The decoding (`BarcodeReader`) is kept apart from the camera and tested on pictures
 made with ZXing's writer.
