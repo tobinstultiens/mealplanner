@@ -102,6 +102,15 @@ androidComponents {
             doLast { QueriesCheck.verify(manifest.get().asFile) }
         }
         tasks.matching { it.name == "assemble$name" || it.name == "lint$name" }.configureEach { dependsOn(verify) }
+
+        // The barcode scan (issue 356) reads with a decoder that ships in the app; nothing may pull in Google Play services.
+        val runtime = variant.runtimeConfiguration.incoming.resolutionResult.rootComponent
+        val noPlayServices = tasks.register("verify${name}NoPlayServices") {
+            group = "verification"
+            description = "Fails when the ${variant.name} app depends on Google Play services (com.google.android.gms)."
+            doLast { PlayServicesCheck.verify(runtime.get()) }
+        }
+        tasks.matching { it.name == "assemble$name" || it.name == "lint$name" }.configureEach { dependsOn(noPlayServices) }
     }
 }
 
@@ -129,5 +138,28 @@ object QueriesCheck {
             }
         }
         check(problems.isEmpty()) { "Android would refuse to install this app; in <queries> of $manifest:\n" + problems.joinToString("\n") }
+    }
+}
+
+/** An object rather than a function of this script, which the configuration cache could not keep. */
+object PlayServicesCheck {
+    private const val GROUP = "com.google.android.gms"
+
+    /** Fails naming the libraries of Google Play services in the dependencies below [root], and the first way to each. */
+    fun verify(root: org.gradle.api.artifacts.result.ResolvedComponentResult) {
+        val found = mutableMapOf<String, String>()
+        val seen = mutableSetOf<org.gradle.api.artifacts.result.ResolvedComponentResult>()
+        fun walk(component: org.gradle.api.artifacts.result.ResolvedComponentResult, path: String) {
+            if (!seen.add(component)) return
+            val module = component.moduleVersion
+            val here = if (path.isEmpty()) "${module?.name}" else "$path -> ${module?.group}:${module?.name}"
+            if (module != null && (module.group == GROUP || module.group.startsWith("$GROUP."))) found.putIfAbsent("${module.group}:${module.name}", here)
+            component.dependencies.filterIsInstance<org.gradle.api.artifacts.result.ResolvedDependencyResult>().forEach { walk(it.selected, here) }
+        }
+        walk(root, "")
+        check(found.isEmpty()) {
+            "The app must not depend on Google Play services (issue 356: the barcode scan is read by a decoder inside the app):\n" +
+                found.entries.joinToString("\n") { "${it.key}, through ${it.value}" }
+        }
     }
 }

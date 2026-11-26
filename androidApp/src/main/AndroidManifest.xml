@@ -5,6 +5,10 @@
     <!-- In-app updates: install the downloaded APK, and notify when a new release is out. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Scanning a product's barcode in its form; asked when the scan is first used. The app installs and works
+         on a phone without a camera: the scan button is simply not there. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- The login opens in a Custom Tab where a browser offers them: Android 11+ only shows the app browsers it asks for here.
          Android refuses to install an app whose query intent names more than one action, scheme, host or

@@ -635,6 +635,28 @@ enum class Shot(
         taps = listOf("Look up" to "Optimel · 1 l", "Optimel Drinkyoghurt framboos" to "Values from AH"),
         content = { api, _ -> ProductScreen(api, null, {}, {}, name = "drinkyoghurt") },
     ),
+    // The lookup with the scan button of the Android app (issue 356), and after a scan whose camera permission was refused:
+    // the line that says so and what to do. The camera's preview is not pictured: the scanner is a fake. Both languages and the largest font.
+    PRODUCT_SCAN(heightDp = 760, content = { api, _ -> ProductScreen(api, null, {}, {}, scanner = refusingScanner) }),
+    PRODUCT_SCAN_NL(dutch = true, heightDp = 760, content = { api, _ -> ProductScreen(api, null, {}, {}, scanner = refusingScanner) }),
+    PRODUCT_SCAN_X2(heightDp = 1300, fontScale = 2.0f, content = { api, _ -> ProductScreen(api, null, {}, {}, scanner = refusingScanner) }),
+    PRODUCT_SCAN_REFUSED(
+        heightDp = 900,
+        taps = listOf("Scan barcode" to "The camera is not allowed"),
+        content = { api, _ -> ProductScreen(api, null, {}, {}, scanner = refusingScanner) },
+    ),
+    PRODUCT_SCAN_REFUSED_NL(
+        dutch = true,
+        heightDp = 900,
+        taps = listOf("Streepjescode scannen" to "De camera is niet toegestaan"),
+        content = { api, _ -> ProductScreen(api, null, {}, {}, scanner = refusingScanner) },
+    ),
+    PRODUCT_SCAN_REFUSED_X2(
+        heightDp = 1700,
+        fontScale = 2.0f,
+        taps = listOf("Scan barcode" to "The camera is not allowed"),
+        content = { api, _ -> ProductScreen(api, null, {}, {}, scanner = refusingScanner) },
+    ),
     // Opened from a planned meal: the amounts of 1.5 of the recipe's 2 servings, and nothing to cook for leftovers.
     RECIPE_FROM_MEAL(heightDp = 1900, content = { api, _ ->
         RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 1.5, skipped = false))
@@ -1020,4 +1042,9 @@ private fun recipesRefreshFailed(api: ApiClient) {
         ApiClient(ServerSettings("http://localhost"), engine = MockEngine { respond("""{"error":"down"}""", HttpStatusCode.InternalServerError) })
     }
     CompositionLocalProvider(LocalScreenMemory provides memory) { RecipeListScreen(unreachable, {}, {}, {}, {}) }
+}
+
+/** A scanner whose camera permission is refused, for the pictures of the form's scan button. */
+private val refusingScanner = object : BarcodeScanner {
+    override fun scan(onResult: (ScanResult) -> Unit) = onResult(ScanResult.Refused)
 }

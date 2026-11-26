@@ -416,6 +416,19 @@ which is typed by hand as before. Nothing is saved until Save. The source is kep
 given or typed: the form shows at most three decimals (a salt of `0,005` g as such), and a value left as shown is saved
 as the number it stood for, so a product opened and saved without a change is the same.
 
+**Scanning a barcode** (issue 356). In the Android app, on a phone with a camera, "Scan barcode" sits next to "Look up":
+the camera opens full screen with a frame to aim at, reads the first EAN-13, EAN-8 or UPC-A in view (the check digit must be
+right; the code may be held either way up) and closes itself; the digits go into the lookup's field and are looked up as
+if typed, by the same route (`GET /api/products/barcode/…`). Only the digits leave the scanner: no picture is saved, shown
+afterwards or sent, and a frame is dropped once read. The decoder is ZXing's (`com.google.zxing:core`, Apache-2.0), which
+ships inside the app, with CameraX for the preview: no Google Play services (`:androidApp:assemble…` and `lint…` fail when
+the app's runtime dependencies hold `com.google.android.gms`), so it works on a phone without them. The camera's permission is
+asked when "Scan barcode" is first used, not at start; refused, the form says so under the lookup, with what to do (type
+the digits, or allow the camera in the phone's settings), and the button asks again where Android still lets it. The
+manifest marks the camera `required="false"`: a phone without one installs the app and has no scan button. The web client
+has no scanner and types the barcode. The decoding (`BarcodeReader`) is kept apart from the camera and tested on pictures
+made with ZXing's writer.
+
 The routes, behind the login like every other, read and save nothing of the account; what the app sends is checked
 before anything is asked (400 otherwise): `GET /api/products/search?q=<2 to 80 characters>` answers `ProductSearch`
 (`products`: AH's `id`, `name`, `brand`, `netContent` and of a multi-pack `packOf`, its `id` being that of one item);
