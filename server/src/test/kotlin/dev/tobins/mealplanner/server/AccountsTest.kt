@@ -42,6 +42,7 @@ import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -314,6 +315,33 @@ class AccountsTest {
 
         assertEquals(alicesAddOns, alice.get("/api/recipes/${stew.id}/add-ons").body<List<AddOn>>())
         assertEquals(listOf(egg.id to 60.0), alice.get("/api/recipes/${stew.id}").body<RecipeDetail>().toppings.map { it.ingredientId to it.grams })
+    }
+
+    /**
+     * A recipe line saved with its ingredient (issue 340) has one of the account's own: another account's is refused in a
+     * new recipe and in a changed one, and nothing is saved; a recipe whose lines have Alice's ingredients is Alice's alone.
+     */
+    @Test
+    fun aLineCannotBeSavedWithAnotherAccountsIngredient() = testApplication {
+        start()
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val alicesBeef = alice.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+        val bobsBeef = bob.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+        fun stew(beef: Ingredient) = RecipeInput("Stew", 2, lines = listOf(RecipeLineInput(400.0, "g", "stewing meat", beef.id)))
+        val alicesStew = alice.post("/api/recipes") { setBody(stew(alicesBeef)) }.body<RecipeDetail>()
+
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/recipes") { setBody(stew(alicesBeef)) }.status)
+        assertEquals(emptyList(), bob.get("/api/recipes").body<List<RecipeSummary>>())
+        val bobsStew = bob.post("/api/recipes") { setBody(stew(bobsBeef)) }.body<RecipeDetail>()
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/${bobsStew.summary.id}") { setBody(stew(alicesBeef)) }.status)
+        assertEquals(bobsStew, bob.get("/api/recipes/${bobsStew.summary.id}").body<RecipeDetail>(), "his stew as it was, with his beef")
+
+        assertEquals(HttpStatusCode.NotFound, bob.get("/api/recipes/${alicesStew.summary.id}").status)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/recipes/${alicesStew.summary.id}") { setBody(stew(bobsBeef)) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.delete("/api/recipes/${alicesStew.summary.id}").status)
+        assertEquals(alicesStew, alice.get("/api/recipes/${alicesStew.summary.id}").body<RecipeDetail>())
+        assertEquals(listOf(alicesBeef.id), alicesStew.ingredients.map { it.ingredientId })
     }
 
     @Test
@@ -1425,11 +1453,16 @@ class AccountsTest {
         assertEquals(url, alice.get("/api/recipes").body<List<RecipeSummary>>().single().imageUrl)
         assertEquals(HttpStatusCode.OK, alice.get(url).status)
 
-        // Alice moving to another site of her own removes her pictures until that one is synced; Bob keeps his.
+        // Alice moving to another site of her own keeps the picture of the pizza she took (issue 340); Bob's bank keeps his.
         alice.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting("https://example.org/alice/cooking.git")) }
-        assertNull(alice.get("/api/recipes").body<List<RecipeSummary>>().single().imageUrl)
-        assertEquals(HttpStatusCode.NotFound, alice.get(url).status)
+        assertEquals(url, alice.get("/api/recipes").body<List<RecipeSummary>>().single().imageUrl)
+        assertEquals(HttpStatusCode.OK, alice.get(url).status)
         assertTrue(bob.get("/api/recipes/bank").body<List<RecipeSummary>>().single().imageUrl != null)
+        // Bob moving the same way loses the pizza only he never took, and gets nothing of Alice's.
+        bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting("https://example.org/bob/cooking.git")) }
+        assertEquals(HttpStatusCode.NotFound, bob.get(bobsUrl).status)
+        assertEquals(HttpStatusCode.NotFound, bob.get(url).status)
+        assertEquals(HttpStatusCode.OK, alice.get(url).status)
     }
 
     /** A cooking site's pages, each a recipe of 400 g of a [meat] that no catalogue links. */
@@ -1512,7 +1545,7 @@ class AccountsTest {
         assertNull(status.serverRepoUrl)
     }
 
-    /** An account may have no bank at all: what it added stays its own, the rest leaves its bank. */
+    /** An account may have no bank at all: what it took stays its own, as it was (issue 340), the rest leaves its bank. */
     @Test
     fun anAccountCanChooseNoSite() = testApplication {
         val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = site("Stew", "Curry"))
@@ -1527,11 +1560,11 @@ class AccountsTest {
         assertEquals(listOf(false, true), listOf(none.shared, none.serverSite))
         assertNull(none.repoUrl)
         assertEquals(emptyList(), bob.get("/api/recipes/bank").body<List<RecipeSummary>>())
-        assertEquals(listOf("Stew" to true), bob.get("/api/recipes").body<List<RecipeSummary>>().map { it.title to it.removedFromSite })
+        assertEquals(listOf("Stew" to false), bob.get("/api/recipes").body<List<RecipeSummary>>().map { it.title to it.removedFromSite })
         assertEquals(HttpStatusCode.ServiceUnavailable, bob.post("/api/sync/cooking").status)
         assertEquals(2, alice.get("/api/recipes/bank").body<List<RecipeSummary>>().size, "Alice's bank is hers")
 
-        // Back to the server's site: the curry is in the bank again, and the stew on the site.
+        // Back to the server's site: the curry is in the bank again, and the stew, taken, is not.
         assertTrue(bob.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting(null)) }.body<CookingSyncStatus>().shared)
         assertEquals(listOf("Curry"), bob.get("/api/recipes/bank").body<List<RecipeSummary>>().map { it.title })
         assertEquals(listOf("Stew" to false), bob.get("/api/recipes").body<List<RecipeSummary>>().map { it.title to it.removedFromSite })

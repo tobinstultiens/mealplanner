@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.ActivityLevel
+import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
@@ -205,7 +206,24 @@ class MigrationTest {
 
     /** Version 25 added the requests for an account (24.sqm): a table. */
     private fun dropAccountRequests(statement: Statement) {
+        dropLineIngredients(statement)
         statement.execute("DROP TABLE accountRequest")
+    }
+
+    /**
+     * Version 26 added a line's own ingredient and when a recipe was saved in the app (25.sqm): two columns. SQLite drops
+     * no column with a foreign key, so the lines' table, empty here, is made again as it was.
+     */
+    private fun dropLineIngredients(statement: Statement) {
+        statement.execute("DROP INDEX recipeIngredient_ingredient")
+        statement.execute("DROP INDEX recipeIngredient_recipe")
+        statement.execute("DROP TABLE recipeIngredient")
+        statement.execute(
+            "CREATE TABLE recipeIngredient (id INTEGER PRIMARY KEY AUTOINCREMENT, recipeId INTEGER NOT NULL REFERENCES recipe(id) ON DELETE CASCADE, " +
+                "position INTEGER NOT NULL, amount REAL, unit TEXT, dimension TEXT, baseAmount REAL, item TEXT NOT NULL, groupName TEXT)",
+        )
+        statement.execute("CREATE INDEX recipeIngredient_recipe ON recipeIngredient(recipeId, position)")
+        statement.execute("ALTER TABLE recipe DROP COLUMN editedAt")
     }
 
     @Test
@@ -1274,7 +1292,10 @@ class MigrationTest {
         fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
         val columns = listOf("id", "userId", "title", "kind", "mealSlotsJson", "addedAt", "inRotation", "keepsDays")
         fun recipes() = single(url, "SELECT ${columns.joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }} FROM recipe ORDER BY id")
-        val before = Triple(counts(), recipes(), everythingBut(url, "recipe"))
+        // The lines gain a column in a later version: compared by those they had.
+        val lineColumns = columns(url, "recipeIngredient")
+        val lines = rowsOf(url, "recipeIngredient", lineColumns)
+        val before = Triple(counts(), recipes(), everythingBut(url, "recipe", "recipeIngredient"))
 
         val (driver, db) = openDatabase(url)
 
@@ -1283,7 +1304,8 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        assertEquals(before, Triple(counts(), recipes(), everythingBut(url, "recipe", "planPick", "offerExclusion", "accountRequest")), "every row as it was, in every table")
+        assertEquals(before, Triple(counts(), recipes(), everythingBut(url, "recipe", "recipeIngredient", "planPick", "offerExclusion", "accountRequest")), "every row as it was, in every table")
+        assertEquals(lines, rowsOf(url, "recipeIngredient", lineColumns))
         assertEquals("0", single(url, "SELECT group_concat(DISTINCT standardMeal) FROM recipe"), "no recipe is a standard meal")
 
         // Alice marks her toast and eats it in place of the skipped lunch: the share stays in the box with its beef, Bob's as it was.
@@ -1331,7 +1353,10 @@ class MigrationTest {
         }
         val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
         fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
-        val before = counts() to everythingBut(url, "planPick")
+        // The recipes and their lines gain a column in a later version: compared by those they had.
+        val recipeColumns = columns(url, "recipe") to columns(url, "recipeIngredient")
+        fun recipes() = rowsOf(url, "recipe", recipeColumns.first) to rowsOf(url, "recipeIngredient", recipeColumns.second)
+        val before = Triple(counts(), recipes(), everythingBut(url, "planPick", "recipe", "recipeIngredient"))
 
         val (driver, db) = openDatabase(url)
 
@@ -1340,7 +1365,11 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        assertEquals(before, counts() to everythingBut(url, "planPick", "offerExclusion", "accountRequest"), "every row as it was, in every table")
+        assertEquals(
+            before,
+            Triple(counts(), recipes(), everythingBut(url, "planPick", "recipe", "recipeIngredient", "offerExclusion", "accountRequest")),
+            "every row as it was, in every table",
+        )
         assertEquals("0", single(url, "SELECT count(*) FROM planPick"), "no dinner chosen, no recipe hidden")
 
         // Alice chooses her soup and hides her stew; deleting the soup takes its pick along, and Bob has none.
@@ -1431,6 +1460,119 @@ class MigrationTest {
         assertEquals(listOf(1L, 1L, 0L), listOf("ALICE", "bob", "carl").map { db.registrationQueries.countAccountsNamed(it).executeAsOne() })
         driver.close()
     }
+
+    /**
+     * Version 25 is the schema of 24.sqm, which servers before lines of their own ingredient (issue 340) run. Every row
+     * stays, every line is looked up by its text as before, and the recipes taken from the cooking site long ago are the
+     * account's own copies: a later sync changes none of them, also not one whose file had left the site already, which
+     * loses that mark, and none keeps or loses its picture, its plan, its prep, its toppings or its being a standard meal.
+     */
+    @Test
+    fun aVersionTwentyFiveDatabaseKeepsEveryRowAndItsTakenRecipesNoLongerFollowTheSite() {
+        val file = createTempFile("v25", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropLineIngredients(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-01-01T00:00:00Z'), (2, 'bob', '2026-01-01T00:00:00Z')")
+                statement.execute("INSERT INTO ingredient (id, userId, name, isStaple) VALUES (1, 1, 'Beef', 1), (2, 1, 'Egg', 0), (3, 2, 'Beef', 0)")
+                statement.execute("INSERT INTO ingredientAlias (userId, text, ingredientId) VALUES (1, 'beef', 1), (2, 'beef', 3)")
+                // Alice: a stew taken long ago, with its picture, a prep, a topping, a plan and a standard meal; a soup taken
+                // whose file left the site; a curry in the bank and one in the bank whose file left; porridge of her own.
+                // Bob: the same stew, taken from the same site.
+                statement.execute(
+                    "INSERT INTO recipe (id, userId, source, sourcePath, contentHash, section, title, tagsJson, servings, instructions, hasIngredientsBlock, " +
+                        "problemsJson, kind, mealSlotsJson, removedAt, rating, imageSourceHash, imageVersion, addedAt, inRotation, keepsDays, standardMeal) VALUES " +
+                        "(1, 1, 'COOKING_SITE', 'recipes/stew.md', 'h1', 'recipes', 'Stew', '[\"winter\"]', 4, 'Brown it.', 1, '[]', 'MEAL', '[\"DINNER\"]', NULL, 4, 'p1', 'v1', '2026-02-01T00:00:00Z', 1, 3, 1), " +
+                        "(2, 1, 'COOKING_SITE', 'soup/gone.md', 'h2', 'soup', 'Gone soup', '[]', 2, '', 1, '[]', 'MEAL', NULL, '2026-06-01T00:00:00Z', NULL, NULL, NULL, '2026-02-01T00:00:00Z', 0, NULL, 0), " +
+                        "(3, 1, 'COOKING_SITE', 'recipes/curry.md', 'h3', 'recipes', 'Curry', '[]', 2, '', 1, '[]', 'MEAL', NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, 0), " +
+                        "(4, 1, 'COOKING_SITE', 'recipes/old.md', 'h4', 'recipes', 'Old', '[]', 2, '', 1, '[]', 'MEAL', NULL, '2026-06-01T00:00:00Z', NULL, NULL, NULL, NULL, 0, NULL, 0), " +
+                        "(5, 1, 'MANUAL', NULL, NULL, 'own', 'Porridge', '[]', 1, '', 1, '[]', 'MEAL', '[\"BREAKFAST\"]', NULL, NULL, NULL, NULL, '2026-02-01T00:00:00Z', 1, NULL, 0), " +
+                        "(6, 2, 'COOKING_SITE', 'recipes/stew.md', 'h1', 'recipes', 'Bob stew', '[]', 4, '', 1, '[]', 'MEAL', NULL, NULL, NULL, NULL, NULL, '2026-02-01T00:00:00Z', 1, NULL, 0)",
+                )
+                statement.execute(
+                    "INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item, groupName) VALUES " +
+                        "(1, 0, 1200, 'g', 'WEIGHT', 1200, 'beef', 'Stew'), (1, 1, 1, 'onion', 'COUNT', NULL, 'large', 'Stew'), (2, 0, 1, NULL, NULL, NULL, 'leek', NULL), " +
+                        "(3, 0, 300, 'g', 'WEIGHT', 300, 'beef', NULL), (4, 0, 300, 'g', 'WEIGHT', 300, 'beef', NULL), (5, 0, 80, 'g', 'WEIGHT', 80, 'oats', NULL), " +
+                        "(6, 0, 1200, 'g', 'WEIGHT', 1200, 'beef', NULL)",
+                )
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 1, 'DINNER', 1, 'Stew', 1.0, 600.0, 40.0, 0, 1, 'EATEN'), (1, '$week', 2, 'LUNCH', 1, 'Stew', 1.0, 600.0, 40.0, 0, 1, 'PLANNED'), " +
+                        "(2, '$week', 0, 'DINNER', 6, 'Bob stew', 1.0, 600.0, 40.0, 0, 0, 'PLANNED')",
+                )
+                statement.execute("INSERT INTO prep (id, userId, recipeId, madeOn, lastDay, vacuum) VALUES (1, 1, 1, '2026-11-17', '2026-11-19', 0)")
+                statement.execute("INSERT INTO prepPortion (userId, weekStart, day, slot, role, prepId, portions) VALUES (1, '$week', 1, 'DINNER', 'MEAL', 1, NULL), (1, '$week', 2, 'LUNCH', 'MEAL', 1, NULL)")
+                statement.execute("INSERT INTO recipeTopping (userId, recipeId, ingredientId, position, grams) VALUES (1, 1, 2, 0, 60.0)")
+                statement.execute("INSERT INTO planPick (userId, weekStart, recipeId, refused, position) VALUES (1, '2026-11-23', 1, 0, 0)")
+                statement.execute("INSERT INTO userMeta (userId, key, value) VALUES (1, 'routines', '{\"breakfast\":5}')")
+                statement.execute("PRAGMA user_version = 25")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        val recipeColumns = columns(url, "recipe") - "removedAt"
+        val lineColumns = columns(url, "recipeIngredient")
+        fun rows() = listOf(rowsOf(url, "recipe", recipeColumns), rowsOf(url, "recipeIngredient", lineColumns))
+        fun removed() = single(url, "SELECT id || ':' || (removedAt IS NOT NULL) FROM recipe ORDER BY id")
+        val before = listOf(counts(), rows(), everythingBut(url, "recipe", "recipeIngredient"))
+        assertEquals("1:0,2:1,3:0,4:1,5:0,6:0", removed())
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        val after = listOf(counts(), rows(), everythingBut(url, "recipe", "recipeIngredient"))
+        assertEquals(before, after, "every row as it was, in every table")
+        assertEquals("1:0,2:0,3:0,4:1,5:0,6:0", removed(), "the taken soup is no longer marked; the bank's curry whose file left still is")
+        assertEquals("", single(url, "SELECT group_concat(id) FROM recipeIngredient WHERE ingredientId IS NOT NULL"), "no line has an ingredient of its own")
+        assertEquals("", single(url, "SELECT group_concat(id) FROM recipe WHERE editedAt IS NOT NULL"), "none saved in the app")
+
+        // Alice's site: the stew changed, the soup still gone, the curry changed, the old one back.
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        fun scope(id: Long) = UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(week) })
+        val alice = scope(1)
+        val stew = alice.recipes.find(1)!!
+        val parser = HugoRecipeParser()
+        fun site(vararg files: Pair<String, String>) = files.map { (path, hash) ->
+            SitePage(parser.parse(path, "---\ntitle: New ${path.substringAfter('/').removeSuffix(".md")}\n---\n```ingredients\nservings: 2\n100 | g | beef\n```"), hash)
+        }
+        val pages = site("recipes/stew.md" to "h1b", "recipes/curry.md" to "h3b", "recipes/old.md" to "h4")
+        // The curry and the old one are the bank's; the stew is taken, and the soup's file is gone from a copy that is hers.
+        assertEquals(Triple(2, 0, 1), alice.recipes.syncCookingSite(pages).let { Triple(it.updated, it.removed, it.unchanged) })
+        alice.pictures.sync(pages)
+        assertEquals(stew, alice.recipes.find(1), "the stew as it was, picture and all")
+        assertEquals("/api/recipes/1/image?v=v1", stew.summary.imageUrl)
+        assertEquals(listOf("Gone soup", "Porridge", "Stew"), alice.recipes.list().map { it.title })
+        assertTrue(alice.recipes.list().none { it.removedFromSite })
+        assertEquals(listOf("New curry", "New old"), alice.recipes.bank().map { it.title }, "the bank follows the site; the taken stew is not in it")
+        assertEquals(listOf(1L), alice.recipes.standardMeals().map { it.recipeId })
+        assertEquals(listOf("Egg"), alice.recipes.toppings(1).map { it.name })
+        assertEquals("1:MEAL,2:MEAL", single(url, "SELECT day || ':' || role FROM prepPortion WHERE userId = 1 ORDER BY day"))
+
+        // The stew is hers to edit and stays edited, its file changed or gone; the soup, never edited, goes back to the
+        // bank, hidden while its file is away.
+        val edited = alice.recipes.update(1, RecipeInput("My stew", 4, "1000 | g | beef", "Brown it well.", listOf("winter")))
+        alice.recipes.syncCookingSite(site("recipes/stew.md" to "h1c", "recipes/curry.md" to "h3b", "recipes/old.md" to "h4"))
+        assertEquals(edited, alice.recipes.find(1))
+        alice.recipes.setAdded(2, AddedInput(added = false))
+        alice.recipes.syncCookingSite(site("recipes/curry.md" to "h3b", "recipes/old.md" to "h4"))
+        assertEquals(edited, alice.recipes.find(1))
+        assertEquals(listOf("My stew", "Porridge"), alice.recipes.list().map { it.title })
+        assertEquals(listOf("New curry", "New old"), alice.recipes.bank().map { it.title })
+        assertEquals("Bob stew", scope(2).recipes.find(6)!!.summary.title, "Bob's copy is his")
+        driver.close()
+    }
+
+    /** The rows of [table] in [columns] only, by id: a table compared by the columns it had before a migration added one. */
+    private fun rowsOf(url: String, table: String, columns: List<String>): String =
+        single(url, "SELECT ${columns.joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }} FROM \"$table\" ORDER BY id")
 
     /**
      * Every row of every table of the file but [tables], to compare before and after a migration that adds a column to one

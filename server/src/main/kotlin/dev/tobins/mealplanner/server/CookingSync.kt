@@ -112,14 +112,15 @@ class CookingSync(
     }
 
     /**
-     * Forgets the account's site: its clone and pictures go, its recipes leave the bank (those it added stay
-     * its own, as no longer on the site, until the new site has them again), and it counts as never synced.
+     * Forgets the account's site: its clone and its bank's pictures go, its bank's recipes leave the bank, and it counts
+     * as never synced. Those it took stay its own as they are, pictures and all (issue 340); a file of the new site at
+     * the path of one of them is taken already, so it is not offered.
      */
     private fun leaveSite(accountId: Long) {
         // Never the server's clone, should the configuration put it there.
         cloneDir(accountId).takeIf { it.canonicalFile != serverSite?.dir?.canonicalFile }?.deleteRecursively()
         val user = scope(accountId)
-        user.pictures.removeAll()
+        user.pictures.removeBank()
         user.recipes.syncCookingSite(emptyList())
         users.setMeta(accountId, listOf(SYNCED_AT_KEY, SYNCED_COMMIT_KEY, SYNC_ERROR_KEY).associateWith { null })
     }

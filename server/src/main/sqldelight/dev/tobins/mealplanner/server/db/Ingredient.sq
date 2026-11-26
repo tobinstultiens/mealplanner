@@ -78,7 +78,7 @@ DELETE FROM ingredientAlias WHERE userId = ? AND text = ?;
 -- Every ingredient line of my recipes (as Recipe.sq's selectMine), for finding unmapped texts: what
 -- only bank recipes use is not the account's to link.
 selectMyLines:
-SELECT ri.amount, ri.unit, ri.dimension, ri.baseAmount, ri.item, ri.groupName, r.title
+SELECT ri.amount, ri.unit, ri.dimension, ri.baseAmount, ri.item, ri.groupName, ri.ingredientId, r.title
 FROM recipeIngredient ri JOIN recipe r ON r.id = ri.recipeId
 WHERE r.userId = ? AND r.addedAt IS NOT NULL;
 

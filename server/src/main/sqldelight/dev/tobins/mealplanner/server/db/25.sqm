@@ -1,0 +1,16 @@
+-- Version 25 -> 26: a recipe line that knows its ingredient, and a recipe taken from the cooking site that is the
+-- account's own (issue 340). Two columns are added and no table is rebuilt, so no foreign key cascades and no row
+-- goes: every line starts without an ingredient of its own and is looked up by its text as before, and no recipe
+-- has been saved in the app since.
+--
+-- An added cooking-site recipe is taken from now on: the sync no longer changes it or marks it removed. One whose
+-- file had already left the site is a copy like any other, so it loses the mark; were it put back in the bank, the
+-- next sync would mark it again while the file is away. Its picture went with the file, then, as it does now.
+
+ALTER TABLE recipeIngredient ADD COLUMN ingredientId INTEGER REFERENCES ingredient(id) ON DELETE SET NULL;
+
+CREATE INDEX recipeIngredient_ingredient ON recipeIngredient(ingredientId);
+
+ALTER TABLE recipe ADD COLUMN editedAt TEXT;
+
+UPDATE recipe SET removedAt = NULL WHERE source = 'COOKING_SITE' AND addedAt IS NOT NULL AND removedAt IS NOT NULL;

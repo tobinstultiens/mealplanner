@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.api
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 enum class RecipeSource { COOKING_SITE, MANUAL, GENERATED }
@@ -128,16 +130,51 @@ data class GenerateRequest(
 @Serializable
 data class Routines(val breakfast: Long? = null, val snack: Long? = null)
 
-/** Body for creating or replacing a recipe of the user's own (source MANUAL). */
+/**
+ * Body for creating (`POST /api/recipes`) or replacing (`PUT /api/recipes/{id}`) a recipe of mine: one made in the app,
+ * or one taken from the cooking site, which is the account's own copy (issue 340). Its ingredients are either [lines]
+ * or, when that is null, the text [ingredients].
+ */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class RecipeInput(
     val title: String,
     val servings: Int,
-    /** One ingredient per line as `amount | unit | item`, the format of the cooking site. */
-    val ingredients: String,
+    /**
+     * One ingredient per line as `amount | unit | item`, the format of the cooking site, with `# Group` lines for
+     * headings; what released apps send. Read only when [lines] is null. Lines read from it carry no ingredient of
+     * their own, except that a replaced recipe's line keeps the ingredient of a line it had with the same text.
+     */
+    val ingredients: String = "",
     val instructions: String = "",
     val tags: List<String> = emptyList(),
     val mealSlots: List<MealSlot> = emptyList(),
+    /**
+     * The ingredients one by one, each with the catalogue ingredient it is when known; null to send [ingredients] instead.
+     * Never sent when null, so that a body with text only is the one apps sent before, which a server from before
+     * lines (refusing fields it does not know) still takes.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val lines: List<RecipeLineInput>? = null,
+)
+
+/**
+ * One ingredient line of [RecipeInput.lines]: what `amount | unit | text` under the heading [group] says, and the
+ * account's catalogue ingredient it is. A line with an [ingredientId] is that ingredient whatever its text says; one
+ * without is looked up by its text, as a line of the import format is. A recipe read back ([RecipeDetail]) gives each
+ * line's fields in [MappedLine.line] (`amount`, `unit`, `item`, `ingredientId`, `group`), so it can be saved as it was.
+ */
+@Serializable
+data class RecipeLineInput(
+    /** Null for a line without an amount, such as salt to taste. */
+    val amount: Double? = null,
+    /** A unit of the cooking site's table (`g`, `tbsp`, `clove`) or any other word, counted as pieces; null for none. */
+    val unit: String? = null,
+    val text: String,
+    /** The account's own ingredient; another account's is refused (404). */
+    val ingredientId: Long? = null,
+    /** The heading the line sits under, as `# Group` in the text. */
+    val group: String? = null,
 )
 
 /**

@@ -1,6 +1,7 @@
 package dev.tobins.mealplanner.server
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.server.db.Database
 import java.io.File
 import java.sql.DriverManager
@@ -13,7 +14,8 @@ import kotlin.test.assertEquals
  * Migrates a copy of a real database across the recipe bank (16.sqm) and checks that every table keeps its
  * rows, every recipe what it had, and that what each account listed before is what it lists after: the
  * recipes on the site or made in the app are added and in the rotation, those that had left the site are
- * not. Prints row counts and integrity checks. Runs only when RECIPES_DB names a database file; that file
+ * not. The same across the recipes taken from the site becoming the account's own (25.sqm, issue 340).
+ * Prints row counts and integrity checks. Runs only when RECIPES_DB names a database file; that file
  * is copied first and never opened itself:
  * `RECIPES_DB=/path/to/mealplanner.db ./gradlew :server:test --tests '*RecipeBankRealDataTest*' -i`
  */
@@ -77,8 +79,58 @@ class RecipeBankRealDataTest {
         assertEquals(Database.Schema.version, version(url))
     }
 
+    /**
+     * Across 25.sqm (issue 340): every table keeps its rows and every recipe and line what it had; only the taken
+     * recipes whose file had left the site lose that mark, and no line has an ingredient of its own. Then every account's
+     * recipes read as they did, and a sync of a site with no file at all leaves every taken one as it was: the bank's
+     * are hidden, the taken ones stay. Run as the test above.
+     */
+    @Test
+    fun aCopyOfARealDatabaseKeepsEveryRowAndEveryTakenRecipeAsItWas() {
+        val original = System.getenv("RECIPES_DB")?.let(::File) ?: return
+        val copy = File(createTempDirectory("recipes").toFile(), "copy.db")
+        original.copyTo(copy)
+        val url = "jdbc:sqlite:${copy.path}"
+        migrate(url, TAKEN_VERSION - 1)
+        val before = counts(url)
+        val recipes = query(url, "SELECT ${columnsOf(url, "recipe").filter { it != "removedAt" }.joined()} FROM recipe ORDER BY id")
+        val lines = query(url, "SELECT ${columnsOf(url, "recipeIngredient").joined()} FROM recipeIngredient ORDER BY id")
+        val unmarked = query(url, "SELECT id FROM recipe WHERE removedAt IS NOT NULL AND addedAt IS NOT NULL AND source = 'COOKING_SITE' ORDER BY id")
+        val stillMarked = query(url, "SELECT id FROM recipe WHERE removedAt IS NOT NULL AND NOT (addedAt IS NOT NULL AND source = 'COOKING_SITE') ORDER BY id")
+        println("Before: version ${version(url)}, checks ${checks(url)}, rows $before, taken copies losing the removed mark ${unmarked.size}")
+
+        migrate(url, TAKEN_VERSION)
+        println("After: version ${version(url)}, checks ${checks(url)}, rows ${counts(url)}")
+        assertEquals(listOf("ok") to emptyList(), checks(url))
+        assertEquals(before, counts(url), "every table keeps its rows")
+        assertEquals(recipes, query(url, "SELECT ${columnsOf(url, "recipe").filter { it != "removedAt" && it != "editedAt" }.joined()} FROM recipe ORDER BY id"))
+        assertEquals(lines, query(url, "SELECT ${columnsOf(url, "recipeIngredient").filter { it != "ingredientId" }.joined()} FROM recipeIngredient ORDER BY id"))
+        assertEquals(stillMarked, query(url, "SELECT id FROM recipe WHERE removedAt IS NOT NULL ORDER BY id"))
+        assertEquals(listOf("0", "0"), query(url, "SELECT (SELECT count(*) FROM recipeIngredient WHERE ingredientId IS NOT NULL) UNION ALL SELECT count(*) FROM recipe WHERE editedAt IS NOT NULL"))
+
+        val (driver, db) = openDatabase(url)
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        for (account in UserRepository(db).all()) {
+            val recipes = UserScope(account, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile()).recipes
+            val taken = recipes.list().filter { it.source == RecipeSource.COOKING_SITE }.associate { it.id to recipes.find(it.id) }
+            val result = recipes.syncCookingSite(emptyList())
+            println("Account $account: ${taken.size} taken, ${recipes.list().size} mine; a sync of no file hides ${result.removed}")
+            assertEquals(taken, taken.keys.associateWith { recipes.find(it) }, "account $account: every taken recipe as it was")
+            assertEquals(emptyList(), recipes.bank())
+        }
+        driver.close()
+    }
+
+    private fun columnsOf(url: String, table: String) = query(url, "SELECT name FROM pragma_table_info('$table')")
+
+    private fun List<String>.joined() = joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }
+
     private companion object {
         /** The version that has the recipe bank (16.sqm). */
         const val BANK_VERSION = 17L
+
+        /** The version whose recipes taken from the site are the account's own and whose lines can know their ingredient (25.sqm). */
+        const val TAKEN_VERSION = 26L
     }
 }
