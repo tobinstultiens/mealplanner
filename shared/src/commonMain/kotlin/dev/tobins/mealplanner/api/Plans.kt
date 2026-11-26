@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.api
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /** The meals of a day, in eating order. [share] is the part of the daily calories a slot gets. */
 enum class MealSlot(val share: Double) {
@@ -65,6 +66,21 @@ data class PlannedMeal(
      * meal's [status]: eaten, skipped or planned with it. An app that does not know sides shows the main alone.
      */
     val side: MealSide? = null,
+    /**
+     * The foods planned in this slot (issue 358), in the order they were added; empty for a meal of a recipe alone and from
+     * a server before foods. Next to a recipe, [kcal], [proteinG], [fibreG] and [cost] count them with it, as an adjusted
+     * meal's do, so an app that does not know foods shows the right numbers.
+     */
+    val foods: List<MealFood> = emptyList(),
+    /**
+     * True when the slot holds [foods] and no recipe. [recipeId] and [title] are then those of the recipe the server makes of
+     * the foods for an app that does not know them (the foods' names, "Banana + 2 more"); it is in no list of recipes, is
+     * one portion, and is no leftover. The meal is eaten, skipped, moved and removed as any other.
+     */
+    val foodsOnly: Boolean = false,
+    /** The server's own: the recipe that holds the slot's [foods], or null for none. Never sent. */
+    @Transient
+    val foodsId: Long? = null,
 ) {
     /** The kcal of the meal with its [side]: what the meal and its day count. */
     val totalKcal: Double get() = kcal + (side?.kcal ?: 0.0)

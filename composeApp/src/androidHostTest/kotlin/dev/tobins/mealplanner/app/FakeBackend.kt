@@ -28,10 +28,14 @@ import dev.tobins.mealplanner.api.DinnerPick
 import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.FoodDataset
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.LabelNutrition
+import dev.tobins.mealplanner.api.Portion
 import dev.tobins.mealplanner.api.IngredientPrice
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MealAdjustment
+import dev.tobins.mealplanner.api.MealFood
+import dev.tobins.mealplanner.api.MealFoodInput
 import dev.tobins.mealplanner.api.MealLine
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
@@ -172,6 +176,11 @@ class FakeBackend(
      * saved and lines looked up are read as the server reads them, with the shared code it uses.
      */
     private val writing: Boolean = false,
+    /**
+     * Foods in slots (issue 358): Monday's snack is two foods alone (two bars of a protein bar, in its catalogue then, and an
+     * egg) and its breakfast has Greek yoghurt next to the oats. Foods added, changed and taken out are kept in any week.
+     */
+    private val slotFoods: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -316,6 +325,7 @@ class FakeBackend(
         if (parts.getOrNull(1) == "plans" && (parts.getOrNull(3) == "planning" || parts.lastOrNull() == "move")) return planningRoute(method, path, sent, query)
         if (parts.getOrNull(1) == "recipes" && method != "GET") return changeRecipes(method, parts, sent)
         if (parts.getOrNull(1) == "registration" || parts.getOrNull(1) == "registrations") return registrationRoute(method, parts, sent)
+        if (parts.getOrNull(1) == "plans" && parts.getOrNull(6) == "foods") return foodsRoute(method, path, parts, sent)
         return when {
             path == "/api/me" -> json.encodeToString(Me("anna", "Anna", approvesRequests = owner))
             path == "/api/foods/dataset" -> json.encodeToString(FoodDataset(2328, "NEVO online version 2025/9.0, RIVM, Bilthoven"))
@@ -427,6 +437,68 @@ class FakeBackend(
             Ingredient(12, "Egg", nevo(12, "Egg chicken raw", "Kippenei rauw", 143.0, 12.6), 60.0, null, null, null, false),
         ),
     )
+
+    /** The protein bar of [slotFoods]: the values of its label and a portion "bar" of 45 g. */
+    private val proteinBar = Ingredient(
+        40, "Protein bar chocolate", null, null, null, null, null, false,
+        label = LabelNutrition(FoodBasis.PER_100_G, Nutrition(380.0, 31.0, 14.0, 6.5, 32.0, 3.2, 6.0, Salt.sodiumMg(0.48))),
+        portions = listOf(Portion("bar", grams = 45.0)),
+    )
+
+    init {
+        if (slotFoods) catalogue += proteinBar
+    }
+
+    /** The foods of each slot (issue 358), by week, day and slot: those of [slotFoods] and any added since. */
+    private val plannedFoods: MutableMap<Triple<String, Int, MealSlot>, List<MealFood>> = java.util.concurrent.ConcurrentHashMap<Triple<String, Int, MealSlot>, List<MealFood>>().also {
+        if (!slotFoods) return@also
+        it[Triple(WEEK_START, 0, MealSlot.SNACK)] = listOf(foodOf(1, MealFoodInput(proteinBar.id, 2.0, "bar")), foodOf(2, MealFoodInput(12, 1.0, PIECE)))
+        it[Triple(WEEK_START, 0, MealSlot.BREAKFAST)] = listOf(foodOf(3, MealFoodInput(3, 150.0, "g")))
+    }
+
+    /** [input] as the server lists a food: its ingredient's name, and its weight and numbers as the shared code counts them. */
+    private fun foodOf(id: Long, input: MealFoodInput): MealFood {
+        val ingredient = catalogue.single { it.id == input.ingredientId }
+        val line = RecipeLineInput(input.amount, input.unit, ingredient.name, ingredient.id).toIngredientLine()!!
+        val counted = NutritionCalculator.perServing(listOf(line to ingredient), servings = 1).perServing
+        return MealFood(
+            id, ingredient.id, ingredient.name, input.amount, input.unit, NutritionCalculator.quantityOf(line, ingredient)?.grams,
+            counted.kcal ?: 0.0, counted.proteinG ?: 0.0, counted.fibreG ?: 0.0,
+        )
+    }
+
+    /** `POST`, `PUT` and `DELETE /api/plans/{week}/meals/{day}/{slot}/foods[/{id}]`: the slot's foods changed, and the week. */
+    private fun foodsRoute(method: String, path: String, parts: List<String>, sent: String): String {
+        changes += "$method $path $sent".trim()
+        val slot = Triple(parts[2], parts[4].toInt(), MealSlot.valueOf(parts[5]))
+        val foods = plannedFoods[slot].orEmpty()
+        val id = parts.getOrNull(7)?.toLong()
+        plannedFoods[slot] = when (method) {
+            "POST" -> foods + foodOf((plannedFoods.values.flatten().maxOfOrNull { it.id } ?: 0) + 1, json.decodeFromString<MealFoodInput>(sent))
+            "PUT" -> foods.map { if (it.id == id) foodOf(it.id, json.decodeFromString<MealFoodInput>(sent)) else it }
+            else -> foods.filterNot { it.id == id }
+        }
+        return json.encodeToString(plan(parts[2]))
+    }
+
+    /**
+     * [meals] of [day] of the week starting [weekStart] with their slots' foods, as the server answers them: a slot of foods
+     * alone where there is no meal, titled by their names, and foods next to a meal counted with it.
+     */
+    private fun withFoods(weekStart: String, day: Int, meals: List<PlannedMeal>): List<PlannedMeal> {
+        val next = meals.map { meal ->
+            val foods = plannedFoods[Triple(weekStart, day, meal.slot)].orEmpty()
+            if (foods.isEmpty()) meal else meal.copy(foods = foods, kcal = meal.kcal + foods.sumOf { it.kcal }, proteinG = meal.proteinG + foods.sumOf { it.proteinG })
+        }
+        val alone = MealSlot.entries.filter { slot -> meals.none { it.slot == slot } }.mapNotNull { slot ->
+            val foods = plannedFoods[Triple(weekStart, day, slot)]?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            PlannedMeal(
+                day, slot, 900L + day * 4 + slot.ordinal, foods.joinToString(", ") { it.name }, 1.0, foods.sumOf { it.kcal }, foods.sumOf { it.proteinG },
+                locked = true, fibreG = foods.sumOf { it.fibreG }, foods = foods, foodsOnly = true,
+            )
+        }
+        return (next + alone).sortedBy { it.slot.ordinal }
+    }
 
     /** NEVO's foods as `/api/foods` searches them: those of the catalogue, and four the account does not have. */
     private val foods = catalogue.mapNotNull { it.food } + listOf(
@@ -584,9 +656,10 @@ class FakeBackend(
                 else -> meal.portions
             })
         }
+        val withFoods = withFoods(WEEK_START, index, meals)
         // As the server counts them: each meal with its side.
-        val counted = meals.filter { it.status != MealStatus.SKIPPED }
-        return PlanDay(plusDays(WEEK_START, index), meals, counted.sumOf { it.totalKcal }, counted.sumOf { it.totalProteinG }, counted.sumOf { it.totalFibreG!! })
+        val counted = withFoods.filter { it.status != MealStatus.SKIPPED }
+        return PlanDay(plusDays(WEEK_START, index), withFoods, counted.sumOf { it.totalKcal }, counted.sumOf { it.totalProteinG }, counted.sumOf { it.totalFibreG!! })
     }
 
     /**

@@ -494,7 +494,7 @@ past says that it is over and offers nothing to plan: the app decides it from th
 `/api/plans/{weekStart}/planning` and per account:
 
 - `GET planning` (`WeekPlanning`): the days whose dinner is still to choose (`openDays`: today and the days after it
-  without a dinner the week keeps when it is planned, which is one locked, prepped, eaten, skipped, with a prepped side
+  without a dinner the week keeps when it is planned, which is one locked, prepped, eaten, skipped, with a prepped side or foods
   or with a skipped share in the box under it; a day that has passed is no day to choose a dinner for, and of a week
   wholly ahead every day counts), the dinners chosen so far in the order they were, each at the portion the planner gives
   a dinner of it, the recipes hidden for the week, and `totals`, the strip: what the week's kept meals and the chosen
@@ -880,6 +880,48 @@ more again as it reads any row whose need grew.
 The planner also prefers a meal that uses up the rest of a fresh ingredient's pack that an earlier meal of the
 week opened (issue 222): the rest of a pack counts for meals on the day it was opened and three days after, the
 pack being that of the ingredient's regular AH price, and is wary of a recipe that opens a new pack for a small amount. The Plan says under the week's cost what small rests (under half a pack) the week leaves ("About €2.40 of fresh ingredients left over: 100 g crème fraîche, ..."; `WeekPlan.rest`, an optional field). See `docs/data-sources.md`, "Packs".
+
+## Foods in a slot
+
+A slot of the plan holds a recipe, foods, or a recipe with foods next to it (issue 358): two snacks, a banana and a
+protein bar, or a dinner put together from foods, without a recipe made by hand. On the Plan, a day's empty slot
+offers "Add a food…" next to "Add a meal…", and a meal's menu offers "Add a food…" too. A food is searched and picked
+as in the recipe editor (the account's own ingredients and products first, then NEVO foods, "New product" last), in an
+amount of one of its units: grams, millilitres where its weight per millilitre is known or it counts per 100 ml,
+pieces where a piece's weight is known, or one of its portions ("bar"). It starts in the unit it was last picked or
+saved in, in a slot or a recipe, and keeps the unit it was picked in: the slot shows "2 bar · 342 kcal" and the
+amount is changed in it. Each food of the slot is listed under the meal; a tap opens it to change its amount or unit,
+or take it out with its cross.
+
+How it counts:
+
+- A slot of foods alone is one portion of what is listed, each food in its own amount; its kcal, protein and fibre are
+  its foods' as they are now. Foods next to a recipe count on top of the recipe's portions. Both count in the day's and
+  the week's totals, Today, the cost, the week's shopping list (by their weight, as a recipe's lines are) and the stock
+  when the meal is eaten; changing a food of an eaten meal moves the stock by the difference, taking it out gives
+  back what it took.
+- The slot is eaten, skipped, moved (a dinner) and removed as any meal; a single food is taken out rather than
+  marked not eaten. Choosing a recipe for a slot of foods alone, or replacing a recipe that has foods next to it,
+  replaces the foods too. The last food taken out of a slot of foods alone takes the slot with it.
+- The planner leaves a slot with foods as it leaves a locked meal and never fills one with foods itself. A slot of
+  foods is no recipe to the person: it is not in my recipes, the bank, the planning screen's suggestions or search,
+  the recipes eaten before, the counts of "Link ingredients", or the titles a new recipe must differ from.
+- Foods are not added to a skipped meal, nor to a meal of a prepped batch (409); a slot of foods alone has no recipe
+  to adjust ("Adjust what was in it" is greyed) and no lock to take off.
+
+On the server a slot's foods are the lines of a recipe made for that slot alone (`recipe.slotFoods`, never added, one
+serving), which `planMeal.foodsId` names (version 28 of the database, `27.sqm`); with foods alone it is the slot's
+recipe as well. So the shopping list, the stock and the nutrition read them as any recipe's lines, and an installed app
+that knows nothing of foods reads a slot of foods alone as a meal of one portion of a recipe titled by its foods
+("Banana, Protein bar", "Banana + 2 more"), with their numbers, and opens it as a recipe that lists them; a recipe with
+foods next to it keeps its title, with the foods in its kcal and protein. That recipe goes once no meal holds it.
+
+- `POST /api/plans/{weekStart}/meals/{day}/{slot}/foods` with `{"ingredientId": 7, "amount": 2, "unit": "bar"}` adds a
+  food (an empty slot becomes a slot of foods), `PUT .../foods/{id}` with the same body replaces one, `DELETE
+  .../foods/{id}` takes one out; each answers the week. `PlannedMeal.foods` lists a slot's foods (`MealFood`: its id,
+  ingredient, amount, unit, weight and numbers), `PlannedMeal.foodsOnly` says there is no recipe. 404 for an empty slot
+  or a food not in it, and for an ingredient not in the account's catalogue; 400 for an amount of 0 or less, one above
+  5000 g, a unit the ingredient does not have, or more than 30 foods.
 
 ## Web client
 

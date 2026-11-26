@@ -895,7 +895,9 @@ back only its own share, and a leftover lunch un-eaten while its dinner stays ea
 nothing (the leftovers were cooked): whatever order the two are marked in, the stock ends the same.
 Nothing comes back once the owner has said otherwise: after the tick of that entry was taken back
 (not bought), or the ingredient was put on hand or removed by hand in the pantry. Meals eaten before
-version 11 of the database have nothing kept to give back.
+version 11 of the database have nothing kept to give back. Foods in a slot (README, "Foods in a slot") are taken and
+given back with the meal they are in, as its recipe's lines are; a food changed or taken out of an eaten meal moves the
+stock by the difference.
 
 **A prepped batch** (issue 234, README "Prepped meals") is made once, whichever of its meals is eaten first:
 then every meal's share (its portions as adjusted; a skipped meal's too, as it is in the box) is taken, each

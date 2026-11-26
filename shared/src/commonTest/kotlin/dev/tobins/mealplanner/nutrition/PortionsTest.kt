@@ -31,6 +31,14 @@ class PortionsTest {
         assertTrue(result.complete)
     }
 
+    /** What a food of a slot may be in (issue 358), and what the editor offers a row: only units that weigh something. */
+    @Test
+    fun anIngredientIsInGramsAndInTheUnitsItsWeightsAreKnownIn() {
+        assertEquals(listOf("g", "Bar"), bar.units)
+        assertEquals(listOf("g", "ml", PIECE_UNIT, "Bar"), bar.copy(gramsPerMl = 1.1, gramsPerPiece = 45.0).units)
+        assertEquals(listOf("g", "ml"), bar.copy(label = label.copy(basis = FoodBasis.PER_100_ML), portions = emptyList()).units)
+    }
+
     @Test
     fun itsOwnValuesCountRatherThanItsFoods() {
         val food = Food(1, "Reep", "Bar", null, "Snacks", FoodBasis.PER_100_G, Nutrition(500.0, 5.0, null, null, null, null, null, null))

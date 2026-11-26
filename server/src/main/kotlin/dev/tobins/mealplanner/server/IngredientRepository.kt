@@ -36,9 +36,10 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     }
 
     /**
-     * The unit each ingredient has in the recipe of mine saved last (issue 346), for the editor to start a picked
-     * ingredient in it. Only a line saved with its ingredient counts, not one that means it through its text: that
-     * is the cooking site's wording, not something the account picked. Several lines of one recipe: the last.
+     * The unit each ingredient has in the recipe of mine saved last (issue 346), or in the food of a slot of the plan
+     * picked or changed last (issue 358), for the editor and the plan to start a picked ingredient in it. Only a line saved
+     * with its ingredient counts, not one that means it through its text: that is the cooking site's wording, not something
+     * the account picked. Several lines of one recipe: the last.
      */
     private fun lastUnits(): Map<Long, String> = buildMap {
         q.selectLinkedUnits(userId).executeAsList().forEach { line -> line.unit?.let { put(line.ingredientId!!, it) } }

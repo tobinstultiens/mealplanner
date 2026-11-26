@@ -381,6 +381,15 @@ enum class Msg(private val english: String, private val dutch: String) {
     NOT_EATING_THIS("Not eating this", "Eet ik niet"),
     EAT_AFTER_ALL("Eat it after all", "Toch eten"),
     PLAN_ADD_MEAL("Add a meal…", "Maaltijd toevoegen…"),
+    // --- Foods in a slot (issue 358)
+    PLAN_ADD_FOOD("Add a food…", "Voedingsmiddel toevoegen…"),
+    PLAN_REMOVE_FOODS("Remove from the plan", "Uit het plan halen"),
+    FOOD_FOR("{0} on {1}", "{0} op {1}"),
+    FOOD_CHANGE("Change {0}", "{0} wijzigen"),
+    FOOD_AMOUNT("{0} · {1} kcal", "{0} · {1} kcal"),
+    FOOD_UNCOUNTED("{0} · not counted", "{0} · telt niet mee"),
+    FOOD_SAVE_FAILED("Could not save the food: {0}", "Het voedingsmiddel opslaan is niet gelukt: {0}"),
+    FOOD_REMOVE_FAILED("Could not take the food out: {0}", "Het voedingsmiddel weghalen is niet gelukt: {0}"),
     // --- Prepped meals (issue 234)
     MEAL_PREP_DAY("{0} · prep day", "{0} · prepdag"),
     MEAL_PREPPED("{0} · prepped {1}", "{0} · geprept {1}"),

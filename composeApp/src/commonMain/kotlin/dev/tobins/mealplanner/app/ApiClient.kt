@@ -19,6 +19,7 @@ import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealChoice
+import dev.tobins.mealplanner.api.MealFoodInput
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.MealSlot
@@ -555,6 +556,27 @@ class ApiClient(
             contentType(ContentType.Application.Json)
             setBody(MealAdjustment(changes))
         }.body()
+
+    /**
+     * Adds [food] to the slot (issue 358), which an empty slot becomes a slot of foods by, next to what is there otherwise;
+     * answers the week.
+     */
+    suspend fun addFood(weekStart: String, day: Int, slot: MealSlot, food: MealFoodInput): WeekPlan =
+        http.post("api/plans/$weekStart/meals/$day/${slot.name}/foods") {
+            contentType(ContentType.Application.Json)
+            setBody(food)
+        }.body()
+
+    /** Replaces food [id] of the slot with [food]: another amount or unit (issue 358); answers the week. */
+    suspend fun changeFood(weekStart: String, day: Int, slot: MealSlot, id: Long, food: MealFoodInput): WeekPlan =
+        http.put("api/plans/$weekStart/meals/$day/${slot.name}/foods/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(food)
+        }.body()
+
+    /** Takes food [id] out of the slot (issue 358); the last of a slot of foods alone takes the meal with it. Answers the week. */
+    suspend fun removeFood(weekStart: String, day: Int, slot: MealSlot, id: Long): WeekPlan =
+        http.delete("api/plans/$weekStart/meals/$day/${slot.name}/foods/$id").body()
 
     suspend fun setMealLocked(weekStart: String, day: Int, slot: MealSlot, locked: Boolean): WeekPlan {
         val path = "api/plans/$weekStart/meals/$day/${slot.name}/lock"

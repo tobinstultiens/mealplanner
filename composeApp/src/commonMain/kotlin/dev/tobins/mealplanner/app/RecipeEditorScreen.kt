@@ -421,9 +421,12 @@ private fun Totals(nutrition: RecipeNutrition?, servingsKnown: Boolean) {
     }
 }
 
-/** One row: what it is and how it counts (a tap chooses its ingredient, its text and group), its amount and unit. */
+/**
+ * One row: what it is and how it counts (a tap chooses its ingredient, its text and group), its amount and unit. Also the
+ * food being picked for a slot of the plan (issue 358), as a food is picked as a recipe's row is.
+ */
 @Composable
-private fun DraftRowItem(
+internal fun DraftRowItem(
     row: DraftRow,
     ingredient: Ingredient?,
     focus: FocusRequester,

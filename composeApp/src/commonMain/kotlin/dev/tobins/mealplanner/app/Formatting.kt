@@ -123,10 +123,12 @@ fun servingsText(portions: Double, strings: Strings): String =
 
 /**
  * What a planned meal gives, e.g. `1.75 servings · 461 kcal · 46 g protein · 8 g fibre`; its cost is
- * shown apart. From a server before fibre counted, without the fibre.
+ * shown apart. From a server before fibre counted, without the fibre. Foods alone (issue 358) are no servings of a recipe:
+ * their numbers only, each food saying its amount itself.
  */
 fun PlannedMeal.macrosText(strings: Strings): String =
-    "${unbrokenParts(servingsText(portions, strings))} · ${macrosText(kcal, proteinG, fibreG, strings)}"
+    if (foodsOnly) macrosText(kcal, proteinG, fibreG, strings)
+    else "${unbrokenParts(servingsText(portions, strings))} · ${macrosText(kcal, proteinG, fibreG, strings)}"
 
 /**
  * What a planned meal tells the recipe opened from it, in a sentence: how much to cook now and for

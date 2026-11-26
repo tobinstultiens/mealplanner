@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
  * rows, every recipe what it had, and that what each account listed before is what it lists after: the
  * recipes on the site or made in the app are added and in the rotation, those that had left the site are
  * not. The same across the recipes taken from the site becoming the account's own (25.sqm, issue 340).
- * And across an ingredient's own values and portions (26.sqm, issue 351).
+ * And across an ingredient's own values and portions (26.sqm, issue 351), and the foods of a slot (27.sqm, issue 358).
  * Prints row counts and integrity checks. Runs only when RECIPES_DB names a database file; that file
  * is copied first and never opened itself:
  * `RECIPES_DB=/path/to/mealplanner.db ./gradlew :server:test --tests '*RecipeBankRealDataTest*' -i`
@@ -162,6 +162,63 @@ class RecipeBankRealDataTest {
         driver.close()
     }
 
+    /**
+     * Across 27.sqm (issue 358): every table keeps its rows and every row what it had, no recipe is the foods of a slot and no
+     * planned meal has foods, and every account reads its recipes, its bank and every planned meal of every week as the
+     * rows had them before. Run as the tests above; prints each account's weeks and meals.
+     */
+    @Test
+    fun aCopyOfARealDatabaseKeepsEveryRowAndEveryPlannedMealAsItWas() {
+        val original = System.getenv("RECIPES_DB")?.let(::File) ?: return
+        val copy = File(createTempDirectory("recipes").toFile(), "copy.db")
+        original.copyTo(copy)
+        val url = "jdbc:sqlite:${copy.path}"
+        migrate(url, SLOT_FOODS_VERSION - 1)
+        val tables = query(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        val added = mapOf("recipe" to "slotFoods", "planMeal" to "foodsId")
+        fun rows() = tables.associateWith { table -> query(url, "SELECT ${columnsOf(url, table).filterNot { added[table] == it }.joined()} FROM \"$table\"") }
+        fun meals(account: Long) = query(
+            url,
+            "SELECT weekStart || ' ' || day || ' ' || slot || ' ' || recipeId || ' ' || title || ' ' || printf('%.3f', portions) || ' ' || printf('%.3f', kcal) || ' ' || status " +
+                "FROM planMeal WHERE userId = $account ORDER BY weekStart, day, slot",
+        )
+        val before = counts(url)
+        val rows = rows()
+        val accounts = query(url, "SELECT id FROM appUser ORDER BY id").map { it.toLong() }
+        val plans = accounts.associateWith(::meals)
+        val lists = accounts.associateWith { account ->
+            query(url, "SELECT id FROM recipe WHERE userId = $account AND addedAt IS NOT NULL ORDER BY id") to
+                query(url, "SELECT id FROM recipe WHERE userId = $account AND addedAt IS NULL AND removedAt IS NULL ORDER BY id")
+        }
+        println("Before: version ${version(url)}, checks ${checks(url)}, rows $before")
+
+        migrate(url, SLOT_FOODS_VERSION)
+        println("After: version ${version(url)}, checks ${checks(url)}, rows ${counts(url)}")
+        assertEquals(listOf("ok") to emptyList(), checks(url))
+        assertEquals(before, counts(url), "every table keeps its rows")
+        assertEquals(rows, rows(), "every row as it was")
+        assertEquals(listOf("0", "0"), query(url, "SELECT count(*) FROM recipe WHERE slotFoods != 0 UNION ALL SELECT count(*) FROM planMeal WHERE foodsId IS NOT NULL"))
+
+        val (driver, db) = openDatabase(url)
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        for (account in accounts) {
+            val scope = UserScope(account, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+            val weeks = query(url, "SELECT DISTINCT weekStart FROM planMeal WHERE userId = $account ORDER BY weekStart").map(java.time.LocalDate::parse)
+            val read = weeks.flatMap { week ->
+                scope.plans.meals(week).sortedWith(compareBy({ it.day }, { it.slot.name })).map { meal ->
+                    assertTrue(meal.foodsId == null && !meal.foodsOnly && meal.foods.isEmpty(), "account $account, $week: $meal")
+                    "$week ${meal.day} ${meal.slot} ${meal.recipeId} ${meal.title} ${"%.3f".format(java.util.Locale.ROOT, meal.portions)} ${"%.3f".format(java.util.Locale.ROOT, meal.kcal)} ${meal.status}"
+                }
+            }
+            println("Account $account: ${weeks.size} weeks, ${read.size} meals")
+            assertEquals(plans.getValue(account), read, "account $account: every planned meal as it was")
+            val ids = scope.recipes.list().map { it.id.toString() }.sortedBy(String::toLong) to scope.recipes.bank().map { it.id.toString() }.sortedBy(String::toLong)
+            assertEquals(lists.getValue(account), ids, "account $account: the same recipes mine and in the bank")
+        }
+        driver.close()
+    }
+
     private fun columnsOf(url: String, table: String) = query(url, "SELECT name FROM pragma_table_info('$table')")
 
     private fun List<String>.joined() = joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }
@@ -175,5 +232,8 @@ class RecipeBankRealDataTest {
 
         /** The version whose ingredients can have values of their own and portions (26.sqm). */
         const val PRODUCTS_VERSION = 27L
+
+        /** The version whose slots of the plan can hold foods (27.sqm). */
+        const val SLOT_FOODS_VERSION = 28L
     }
 }
