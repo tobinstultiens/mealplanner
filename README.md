@@ -325,7 +325,10 @@ opens. Its unit is chosen from those the ingredient has
 (grams, millilitres when a millilitre's weight is known or its values are per 100 ml, pieces when a piece's weight is, its portions,
 and the unit a line of the site had), and another unit keeps the quantity where it can be worked out: a weight as a weight
 and a volume as a volume (a portion as what it holds, in g or ml, a piece by its weight), and the one into the other only
-through a known density; else the number stays. A row of a volume whose weight is not known says its millilitres. Nothing is typed in the import format, and a
+through a known density; else the number stays. The quantity is not rounded: the field shows a converted amount to a
+thousandth (grams and millilitres from 10 on to a tenth) and the row keeps the exact one, so 100 g changed to a pack of
+650 g shows 0.154 and back is 100 g again. A row of a volume whose weight is not known says its millilitres. A portion's
+name is a size, not the ingredient: "1 pack" of a drink is called by the drink's name, and its saved text has no unit. Nothing is typed in the import format, and a
 picked row is saved with its ingredient (`lines`). The bar under the title says what a serving has and what is not
 counted, worked out in the app from the catalogue and each row's ingredient with the server's own code
 (`NutritionCalculator.ofLines`, reading each line as the server stores it): the saved recipe has the same numbers.
@@ -404,7 +407,10 @@ Filled are the name, per 100 g or per 100 ml, the eight values (each the source 
 cannot be read, left empty, and the form says which), and the pack's net content as a portion "pack" (of a multi-pack
 its single item, "item") to rename or remove. Under the name the form says "Values from AH" or "Values from Open Food
 Facts" (with the credit and link Open Food Facts' licence asks); a value or the basis changed afterwards makes it
-"Values from AH, changed by hand", which is saved with the product. A source that does not answer is said in the form,
+"Values from AH, changed by hand", which is saved with the product. A product a source has without any value that reads
+(a table per portion only, or AH's without a table) gives its name and pack only: the form says its values are to be
+typed, shows no source, and saves none. Values whose basis the source does not say (Open Food Facts without a quantity)
+fill the form with neither "per 100 g" nor "per 100 ml" chosen, and Save waits until one is. A source that does not answer is said in the form,
 which is typed by hand as before. Nothing is saved until Save. The source is kept in `LabelNutrition.source` as
 `ah:<AH's product id>` or `off:<barcode>`, followed by `;changed` after a change by hand. A value is saved as it was
 given or typed: the form shows at most three decimals (a salt of `0,005` g as such), and a value left as shown is saved

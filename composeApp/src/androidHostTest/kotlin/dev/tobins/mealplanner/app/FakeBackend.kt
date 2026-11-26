@@ -461,10 +461,19 @@ class FakeBackend(
         if (!productSourceAnswers) ProductSearch(problems = listOf(LookupProblem.AH_FAILED))
         else ProductSearch(productHits.takeIf { text.isNotBlank() }.orEmpty())
 
-    /** `GET /api/products/ah/{id}` and `GET /api/products/barcode/{code}`: [optimel] by its id or barcode, nothing else. */
+    /**
+     * `GET /api/products/ah/{id}` and `GET /api/products/barcode/{code}`: [optimel] by its id or barcode; by made-up
+     * barcodes, a product of AH without a table, one of Open Food Facts without values (per portion only) and one of Open
+     * Food Facts whose values do not say per what; nothing else.
+     */
     private fun productLookup(by: String, key: String): ProductLookup = when {
         !productSourceAnswers -> ProductLookup(problems = listOf(LookupProblem.AH_FAILED))
         (by == "ah" && key == "61758") || (by == "barcode" && key == "8712800035626") -> ProductLookup(optimel)
+        by == "barcode" && key == AH_WITHOUT_TABLE ->
+            ProductLookup(FoundProduct("ah:609144", "Optimel Proteine extra 4-pack", "Optimel", pack = PackSize(ml = 330.0, single = true), packOf = 4), listOf(LookupProblem.AH_NO_TABLE))
+        by == "barcode" && key == OFF_WITHOUT_VALUES -> ProductLookup(FoundProduct("off:$key", "Cola zero", "Brand", pack = PackSize(ml = 330.0)))
+        by == "barcode" && key == OFF_WITHOUT_BASIS ->
+            ProductLookup(FoundProduct("off:$key", "Snack bar", "Brand", per100 = Nutrition(380.0, 20.0, 15.0, 6.0, 40.0, 20.0, null, Salt.sodiumMg(0.3))))
         else -> ProductLookup()
     }
 
@@ -1357,6 +1366,15 @@ class FakeBackend(
         /** The day all pictures are taken on: a Wednesday. */
         const val TODAY = "2026-11-18"
         val WEEK_START = mondayOf(TODAY)
+
+        /** Made-up barcodes of the product lookup ([productLookup]): AH has it without a table. */
+        const val AH_WITHOUT_TABLE = "8720000000001"
+
+        /** Open Food Facts has it, with values per portion only. */
+        const val OFF_WITHOUT_VALUES = "4000000000006"
+
+        /** Open Food Facts has its values, without saying per 100 g or per 100 ml. */
+        const val OFF_WITHOUT_BASIS = "5000000000001"
 
         /** An access token every call answers 401 to. */
         const val REFUSED_TOKEN = "refused-token"

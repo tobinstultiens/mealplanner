@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.LabelSource
 import dev.tobins.mealplanner.api.LookupProblem
 import dev.tobins.mealplanner.api.ProductHit
 import dev.tobins.mealplanner.api.ProductLookup
+import dev.tobins.mealplanner.api.hasValues
 
 /*
  * What the product form says of a lookup (issue 354): the server asks AH and Open Food Facts, and these are its answers
@@ -73,13 +74,16 @@ fun problemText(problem: String, t: Strings): String = t(
 
 /**
  * What the form says after a lookup: what went wrong at a source, and of the product found the values not given or not
- * read, and whether they are of one item of a multi-pack. When it found nothing to count by, that the values are typed.
+ * read, that the basis is to be chosen when the source did not say it, and whether they are of one item of a multi-pack.
+ * When it found nothing to count by, that the values are typed.
  */
 fun lookupNotes(answer: ProductLookup, t: Strings): List<String> = buildList {
     val product = answer.product
     if (product == null && answer.problems.isEmpty()) add(t(Msg.LOOKUP_NOT_FOUND))
     answer.problems.forEach { add(problemText(it, t)) }
-    if (product?.basis != null) {
+    val source = product?.source?.let { sourceName(it) ?: it }.orEmpty()
+    if (product != null && !product.hasValues && LookupProblem.AH_NO_TABLE !in answer.problems) add(t(Msg.LOOKUP_NO_VALUES, source))
+    if (product?.hasValues == true) {
         val unread = product.unread.mapNotNull(::labelValueOf).toSet()
         val values = product.per100
         val missing = mapOf(
@@ -89,7 +93,8 @@ fun lookupNotes(answer: ProductLookup, t: Strings): List<String> = buildList {
         ).filter { (value, number) -> number == null && value !in unread }.keys
         if (missing.isNotEmpty()) add(t(Msg.LOOKUP_NOT_GIVEN, missing.joinToString { it.lowerName(t) }))
         if (unread.isNotEmpty()) add(t(Msg.LOOKUP_UNREAD, LabelValue.entries.filter { it in unread }.joinToString { it.lowerName(t) }))
+        if (product.basis == null) add(t(Msg.LOOKUP_BASIS_UNKNOWN, source))
     }
     product?.packOf?.let { add(t(Msg.LOOKUP_ONE_OF_PACK, it)) }
-    if (product?.basis == null) add(t(Msg.LOOKUP_TYPE_VALUES))
+    if (product?.hasValues != true) add(t(Msg.LOOKUP_TYPE_VALUES))
 }

@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.FoundProduct
 import dev.tobins.mealplanner.api.LookupProblem
 import dev.tobins.mealplanner.api.ProductLookup
 import dev.tobins.mealplanner.api.ProductSearch
+import dev.tobins.mealplanner.api.hasValues
 import org.slf4j.LoggerFactory
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -48,7 +49,7 @@ class ProductFinder(private val ah: AhProducts, private val off: OpenFoodFacts?)
         val (offProduct, offProblem) = openFoodFacts(barcode)
         offProblem?.let { problems += it }
         // Open Food Facts' without values helps no more than AH's without values, whose name is the store's.
-        return ProductLookup(offProduct?.takeIf { it.basis != null || ahProduct == null } ?: ahProduct, problems)
+        return ProductLookup(offProduct?.takeIf { it.hasValues || ahProduct == null } ?: ahProduct, problems)
     }
 
     /** Open Food Facts' product of [barcode], or none; and what kept it from answering, if anything did. */

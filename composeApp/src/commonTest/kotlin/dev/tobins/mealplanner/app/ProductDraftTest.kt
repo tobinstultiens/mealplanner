@@ -158,10 +158,44 @@ class ProductDraftTest {
         assertEquals(optimel.per100, draft.label()!!.per100)
         assertEquals(listOf(Portion("pack", ml = 1000.0)), draft.input().portions)
         // Looked up again, the pack is there already; one without a table fills no values.
-        val again = draft.filledWith(optimel.copy(basis = null), "pack", FormatLocale.English)
+        val again = draft.filledWith(withoutValues, "pack", FormatLocale.English)
         assertEquals(1, again.portions.size)
         assertNull(again.label())
         assertTrue(again.perMl, "as it was")
+    }
+
+    /** The drink as a source that has it but no table that reads: values per portion only, or AH without one. */
+    private val withoutValues = optimel.copy(basis = null, per100 = Nutrition(null, null, null, null, null, null, null, null))
+
+    @Test
+    fun aLookupWithoutValuesGivesTheNameAndPackButNoSourceAndValuesTypedAreTheLabels() {
+        for (source in listOf("ah:609144", "off:4000000000006")) {
+            val draft = ProductDraft().filledWith(withoutValues.copy(source = source), "pack", FormatLocale.English)
+            assertEquals("Optimel Drinkyoghurt framboos", draft.name)
+            assertEquals(listOf(Portion("pack", ml = 1000.0)), draft.input().portions)
+            assertNull(draft.source, source)
+            val typed = draft.withValue(LabelValue.ENERGY, "31").withValue(LabelValue.PROTEIN, "3.1")
+            assertNull(typed.input().label!!.source, "$source: every value is the label's")
+            assertFalse(typed.changedByHand)
+        }
+        // A lookup without values after one with them leaves no source behind either.
+        assertNull(ProductDraft().filledWith(optimel, "pack", FormatLocale.English).filledWith(withoutValues, "pack", FormatLocale.English).source)
+    }
+
+    @Test
+    fun valuesWhoseBasisTheSourceDoesNotSayAreKeptAndTheBasisIsChosenBeforeSaving() {
+        val bar = optimel.copy(source = "off:5000000000001", name = "Snack bar", basis = null, pack = null)
+        val draft = ProductDraft().filledWith(bar, "pack", FormatLocale.English)
+        assertTrue(draft.basisNeeded)
+        assertEquals("31", draft.value(LabelValue.ENERGY))
+        assertFalse(draft.canSave, "per 100 g or per 100 ml first")
+        for (ml in listOf(false, true)) {
+            val chosen = draft.choosingBasis(ml)
+            assertTrue(chosen.canSave)
+            assertEquals(if (ml) FoodBasis.PER_100_ML else FoodBasis.PER_100_G, chosen.label()!!.basis)
+            assertEquals("off:5000000000001", chosen.label()!!.source, "choosing what the source did not say is no change of its values")
+        }
+        assertEquals("off:5000000000001;changed", draft.choosingBasis(false).withValue(LabelValue.FAT, "1").source)
     }
 
     @Test
@@ -195,6 +229,18 @@ class ProductDraftTest {
             lookupNotes(ProductLookup(problems = listOf(LookupProblem.AH_FAILED, LookupProblem.OFF_NOT_CONFIGURED)), t),
         )
         assertEquals(listOf("A source answered in a way this app does not know.", "Type the values from the label."), lookupNotes(ProductLookup(problems = listOf("later_code")), t))
+        assertEquals(
+            listOf("AH gives no values per 100 g or 100 ml for it.", "Type the values from the label."),
+            lookupNotes(ProductLookup(withoutValues.copy(source = "ah:609144"), listOf(LookupProblem.AH_NO_TABLE)), t),
+        )
+        assertEquals(
+            listOf("Open Food Facts gives no values per 100 g or 100 ml for it.", "Type the values from the label."),
+            lookupNotes(ProductLookup(withoutValues.copy(source = "off:4000000000006")), t),
+        )
+        assertEquals(
+            listOf("Not given: fibre.", "Open Food Facts does not say whether the values are per 100 g or per 100 ml: choose below."),
+            lookupNotes(ProductLookup(optimel.copy(source = "off:5000000000001", basis = null)), t),
+        )
         assertEquals("Values from Open Food Facts, changed by hand", sourceLine("off:8712800035626;changed", t))
         assertEquals("AH, met de hand aangepast", sourceLabel("ah:61758;changed", Strings.Dutch))
         assertNull(sourceLabel("typed", t))

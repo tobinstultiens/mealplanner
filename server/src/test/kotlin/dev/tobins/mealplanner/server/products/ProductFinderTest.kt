@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.Nutrition
 import dev.tobins.mealplanner.api.PackSize
 import dev.tobins.mealplanner.api.ProductHit
 import dev.tobins.mealplanner.api.ProductLookup
+import dev.tobins.mealplanner.api.hasValues
 import dev.tobins.mealplanner.nutrition.Salt
 import dev.tobins.mealplanner.server.BuildInfo
 import io.ktor.http.HttpStatusCode
@@ -145,6 +146,18 @@ class ProductFinderTest {
         assertEquals("ah:61758", ahOnly.product!!.source)
         assertNull(ahOnly.product!!.basis)
         assertEquals(PackSize(ml = 1000.0), ahOnly.product!!.pack)
+    }
+
+    @Test
+    fun openFoodFactsWithoutAQuantityGivesItsValuesAndLeavesTheirBasisOpen() {
+        // The recorded drink without its quantity: nothing says whether its values are per 100 g or per 100 ml.
+        val body = RecordedSources.recording("off-v3-product-8712800035626.json")!!.replace(Regex("""\s*"quantity": "100 ml","""), "")
+        val drink = OpenFoodFactsReader.product(body, "8712800035626")!!
+
+        assertNull(drink.basis)
+        assertTrue(drink.hasValues)
+        assertEquals(31.0, drink.per100.kcal)
+        assertNull(drink.pack)
     }
 
     @Test

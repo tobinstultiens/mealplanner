@@ -433,7 +433,7 @@ private fun DraftRowItem(
     onRemove: () -> Unit,
 ) {
     val t = LocalStrings.current
-    val label = row.label().ifBlank { ingredient?.name.orEmpty() }
+    val label = row.label(ingredient).ifBlank { ingredient?.name.orEmpty() }
     val count = row.count(ingredient)
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -460,7 +460,7 @@ private fun DraftRowItem(
  */
 private fun DraftRow.countsAsWritten(ingredient: Ingredient?, count: RowCount): Boolean = when (count) {
     RowCount.COUNTED, RowCount.NEGLIGIBLE -> true
-    RowCount.NO_AMOUNT -> NutritionCalculator.isSeasoning(label(), ingredient)
+    RowCount.NO_AMOUNT -> NutritionCalculator.isSeasoning(label(ingredient), ingredient)
     else -> false
 }
 

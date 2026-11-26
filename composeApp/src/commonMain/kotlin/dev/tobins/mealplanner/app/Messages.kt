@@ -643,6 +643,12 @@ enum class Msg(private val english: String, private val dutch: String) {
     LOOKUP_OFF_FAILED("Open Food Facts did not answer.", "Open Food Facts gaf geen antwoord."),
     LOOKUP_OFF_BUSY("Open Food Facts was asked too often this minute: try again in a moment.", "Open Food Facts is deze minuut te vaak gevraagd: probeer het zo nog eens."),
     LOOKUP_OFF_NOT_CONFIGURED("Open Food Facts is not set up on this server, so it was not asked.", "Open Food Facts is niet ingesteld op deze server en is dus niet gevraagd."),
+    LOOKUP_NO_VALUES("{0} gives no values per 100 g or 100 ml for it.", "{0} geeft er geen waarden per 100 g of 100 ml voor."),
+    LOOKUP_BASIS_UNKNOWN(
+        "{0} does not say whether the values are per 100 g or per 100 ml: choose below.",
+        "{0} zegt niet of de waarden per 100 g of per 100 ml zijn: kies hieronder.",
+    ),
+    PRODUCT_BASIS_NEEDED("Needed: per 100 g or per 100 ml, as on the label", "Nodig: per 100 g of per 100 ml, zoals op het etiket"),
     LOOKUP_OTHER_PROBLEM("A source answered in a way this app does not know.", "Een bron gaf een antwoord dat deze app niet kent."),
     LOOKUP_TYPE_VALUES("Type the values from the label.", "Typ de waarden van het etiket over."),
     LOOKUP_UNREAD("Could not be read: {0}.", "Niet te lezen: {0}."),

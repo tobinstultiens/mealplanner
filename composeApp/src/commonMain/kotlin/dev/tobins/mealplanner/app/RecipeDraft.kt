@@ -50,10 +50,16 @@ data class DraftRow(
     val group: String?,
     val original: RecipeLineInput? = null,
     val originalMeaning: Long? = null,
+    val converted: Converted? = null,
 ) {
-    /** The amount: the one loaded while its text is as it was shown (so a rounded number changes nothing), else as typed. */
+    /**
+     * The amount: the one loaded, or the one a change of unit gave ([converted]), while its text is as it was shown (so a
+     * rounded number changes nothing); else as typed.
+     */
     val amountValue: Double?
-        get() = original?.takeIf { amount == amountText(it.amount) }?.amount ?: readAmount(amount)
+        get() = original?.takeIf { amount == amountText(it.amount) }?.amount
+            ?: converted?.takeIf { it.text == amount }?.amount
+            ?: readAmount(amount)
 
     /** False while the amount field holds something that is no amount above 0; empty is none. */
     val amountValid: Boolean get() = amount.isBlank() || amountValue != null
@@ -67,8 +73,14 @@ data class DraftRow(
     /** The row as the line it saves ([toIngredientLine]); null when it has no amount, unit or text. */
     fun line(): IngredientLine? = input().toIngredientLine()
 
-    /** What the row is called: the text the recipe shows, with a unit that names the ingredient (`lemon, juiced`). */
-    fun label(): String = line()?.ingredientText ?: text
+    /**
+     * What the row is called: the text the recipe shows, with a unit that names the ingredient (`lemon, juiced`); not one
+     * of [ingredient]'s portions, which names a size ("1 pack" of the drink is not "pack, drink").
+     */
+    fun label(ingredient: Ingredient? = null): String {
+        val line = line() ?: return text
+        return if (ingredient != null && line.inPortionOf(ingredient)) text else line.ingredientText
+    }
 }
 
 /** Typed [text] as an amount, as the server reads one ([parseAmount]: `1.5`, `1,5`, `1/2`); null for none or 0. */
@@ -214,19 +226,39 @@ fun startingAmount(ingredient: Ingredient): Pair<Double, String> {
 
 /**
  * [row] in [unit], its amount the same quantity of [ingredient] where that can be worked out (both sides a weight or both
- * a volume, a portion as what it holds and a piece by its weight, or across the two through a known density), rounded to
- * what can be measured; else the same number. A unit that named the ingredient (`1 | lemon | juiced`) leaves its name in
- * the text (`lemon, juiced`), so the row still says what it is.
+ * a volume, a portion as what it holds and a piece by its weight, or across the two through a known density); else the
+ * same number. The quantity is not rounded: the field shows at most three decimals ([convertedText]) and the row keeps
+ * the exact amount and the quantity it stood for behind it ([DraftRow.converted]), so g to a pack and back is the grams it
+ * was. A unit that named the ingredient (`1 | lemon | juiced`) leaves its name in the text (`lemon, juiced`), so the row
+ * still says what it is; a portion of the ingredient names a size, not the ingredient, and stays out of the text.
  */
 fun DraftRow.inUnit(unit: String, ingredient: Ingredient?): DraftRow {
     val before = line()
-    val text = if (before?.unitIsTheIngredient == true) before.ingredientText else text
-    val amount = amountValue?.let { value -> converted(value, this.unit, unit, ingredient)?.let { rounded(it, unit) } }
-    return copy(unit = unit, text = text, amount = amount?.let(::amountText) ?: this.amount)
+    val namesIt = before?.unitIsTheIngredient == true && (ingredient == null || !before.inPortionOf(ingredient))
+    val text = if (namesIt) before!!.ingredientText else text
+    val held = converted?.takeIf { it.text == amount }?.held ?: amountValue?.let { value -> this.unit?.let { measureOf(value, it, ingredient) } }
+    val value = held?.let { quantityIn(it, unit, ingredient) }
+        ?: return copy(unit = unit, text = text, converted = converted?.takeIf { it.text == amount }?.copy(held = null))
+    val shown = convertedText(value, unit)
+    return copy(unit = unit, text = text, amount = shown, converted = Converted(shown, value, held))
 }
 
 /** A quantity of an ingredient as a weight in grams or, when [ml], a volume in millilitres. */
-private data class Measure(val amount: Double, val ml: Boolean)
+@Serializable
+data class Measure(val amount: Double, val ml: Boolean)
+
+/**
+ * An amount a change of unit gave a row: the [text] the field shows, the exact [amount] it stands for, and the quantity
+ * the row [held] before any change of unit (null once a unit could not be converted to), which each later change starts from.
+ */
+@Serializable
+data class Converted(val text: String, val amount: Double, val held: Measure?)
+
+/** A converted amount as the field shows it: grams and millilitres to a tenth from 10 on, anything else to a thousandth. */
+private fun convertedText(amount: Double, unit: String): String {
+    val shown = if ((unit == "g" || unit == "ml") && amount >= 10) (amount * 10).roundToLong() / 10.0 else amount
+    return formatLabelValue(shown, FormatLocale.English)
+}
 
 /**
  * [amount] in [unit] of [ingredient] as a [Measure]: a weight or a volume of the unit table as it is, one of its portions
@@ -244,21 +276,14 @@ private fun measureOf(amount: Double, unit: String, ingredient: Ingredient?): Me
 }
 
 /**
- * [amount] of [from] in [to]: within weights or within volumes as they are, which is how a drink counted per 100 ml
- * counts too; between a weight and a volume only through the ingredient's known density; null when unknown.
+ * [held] in [unit]: within weights or within volumes as they are, which is how a drink counted per 100 ml counts too;
+ * between a weight and a volume only through the ingredient's known density; null when unknown.
  */
-private fun converted(amount: Double, from: String?, to: String, ingredient: Ingredient?): Double? {
-    val have = from?.let { measureOf(amount, it, ingredient) } ?: return null
-    val one = measureOf(1.0, to, ingredient) ?: return null
-    if (have.ml == one.ml) return have.amount / one.amount
+private fun quantityIn(held: Measure, unit: String, ingredient: Ingredient?): Double? {
+    val one = measureOf(1.0, unit, ingredient) ?: return null
+    if (held.ml == one.ml) return held.amount / one.amount
     val gramsPerMl = ingredient?.gramsPerMl ?: return null
-    return if (have.ml) have.amount * gramsPerMl / one.amount else have.amount / gramsPerMl / one.amount
-}
-
-/** Grams and millilitres whole (one decimal below 10), anything else to a quarter and at least one. */
-private fun rounded(amount: Double, unit: String): Double = when (unit) {
-    "g", "ml" -> if (amount < 10) (amount * 10).roundToLong() / 10.0 else amount.roundToLong().toDouble()
-    else -> maxOf((amount * 4).roundToLong() / 4.0, 0.25)
+    return if (held.ml) held.amount * gramsPerMl / one.amount else held.amount / gramsPerMl / one.amount
 }
 
 /** How a row counts in the totals, for the line under it. */

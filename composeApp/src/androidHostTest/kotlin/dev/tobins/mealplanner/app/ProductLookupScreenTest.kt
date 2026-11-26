@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
@@ -181,6 +182,50 @@ class ProductLookupScreenTest {
     }
 
     @Test
+    fun aLookupWithoutValuesGivesNameAndPackAndTheTypedProductHasNoSource() {
+        showMapping()
+        for ((barcode, said) in listOf(
+            FakeBackend.AH_WITHOUT_TABLE to "AH gives no values per 100 g or 100 ml for it.",
+            FakeBackend.OFF_WITHOUT_VALUES to "Open Food Facts gives no values per 100 g or 100 ml for it.",
+        )) {
+            waitFor("New product")
+            tap("New product")
+            waitFor("Values per")
+            lookUp(barcode)
+            waitFor(said)
+            says("Type the values from the label.")
+            compose.onAllNodesWithText("Values from", substring = true, useUnmergedTree = true).assertCountEquals(0)
+            compose.onAllNodesWithText("Open Database Licence", substring = true, useUnmergedTree = true).assertCountEquals(0)
+            val name = shown("Name")
+            assertEquals("330", shown("Size"), "its pack")
+
+            type("Energy", "42")
+            compose.onAllNodesWithText("Values from", substring = true, useUnmergedTree = true).assertCountEquals(0)
+            compose.onNodeWithText("Save").performClick()
+            waitFor("Saved $name")
+            assertNull(sent("POST", "/api/ingredients").label!!.source, "$barcode: the values are the label's")
+        }
+    }
+
+    @Test
+    fun valuesWhoseBasisTheSourceDoesNotSayAreSavedOnlyOnceItIsChosen() {
+        newProduct()
+        lookUp(FakeBackend.OFF_WITHOUT_BASIS)
+        waitFor("Open Food Facts does not say whether the values are per 100 g or per 100 ml: choose below.")
+        says("Needed: per 100 g or per 100 ml, as on the label")
+        assertEquals("380", shown("Energy"))
+        compose.onNode(hasText("Save") and hasClickAction()).assertIsNotEnabled()
+
+        tap("100 g")
+        compose.onAllNodesWithText("Needed: per 100 g", substring = true, useUnmergedTree = true).assertCountEquals(0)
+        says("Values from Open Food Facts")
+        compose.onNodeWithText("Save").performClick()
+        waitFor("Saved Snack bar")
+        val made = sent("POST", "/api/ingredients").label!!
+        assertEquals(FoodBasis.PER_100_G to "off:${FakeBackend.OFF_WITHOUT_BASIS}", made.basis to made.source)
+    }
+
+    @Test
     fun aNameAnotherIngredientHasIsSaidAtTheNameAndTheFilledFormIsKept() {
         runBlocking { api.createIngredient(IngredientInput("Optimel Drinkyoghurt framboos", label = LabelNutrition(FoodBasis.PER_100_ML, Nutrition(31.0, null, null, null, null, null, null, null)))) }
         newProduct()
@@ -210,16 +255,17 @@ class ProductLookupScreenTest {
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(found).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(found).performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) { amounts().fetchSemanticsNodes().size == 1 }
-        amounts()[0].performTextReplacement("500")
+        amounts()[0].performTextReplacement("330")
 
         compose.onAllNodes(hasText("ml") and hasClickAction()).onLast().performScrollTo().performClick()
         compose.onNode(hasText("pack") and hasAnyAncestor(isPopup())).performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { shown("Amount") == "0.5" }
-        waitFor("Drink yoghurt · 500 ml · 155 kcal")
+        compose.waitUntil(timeoutMillis = 10_000) { shown("Amount") == "0.33" }
+        waitFor("Drink yoghurt · 330 ml · 102 kcal")
 
         compose.onAllNodes(hasText("pack") and hasClickAction()).onLast().performScrollTo().performClick()
         compose.onNode(hasText("ml") and hasAnyAncestor(isPopup())).performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { shown("Amount") == "500" }
+        compose.waitUntil(timeoutMillis = 10_000) { shown("Amount") == "330" }
+        waitFor("Drink yoghurt · 330 ml · 102 kcal")
     }
 
     @Test

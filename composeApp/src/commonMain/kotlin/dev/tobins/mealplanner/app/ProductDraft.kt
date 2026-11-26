@@ -8,6 +8,7 @@ import dev.tobins.mealplanner.api.LabelNutrition
 import dev.tobins.mealplanner.api.LabelSource
 import dev.tobins.mealplanner.api.Nutrition
 import dev.tobins.mealplanner.api.Portion
+import dev.tobins.mealplanner.api.hasValues
 import dev.tobins.mealplanner.nutrition.Salt
 import dev.tobins.mealplanner.nutrition.portionKey
 import dev.tobins.mealplanner.nutrition.portionNameProblem
@@ -77,15 +78,17 @@ fun numberProblem(text: String): NumberProblem? = when {
 
 /**
  * What the values of the form were filled with, as the product was loaded or a lookup gave them: the [source] they came
- * from (null: typed from the label), whether per 100 ml, and each value given (salt's number as sodium, as it is kept).
+ * from (null: typed from the label), whether per 100 ml (null: the source did not say, and the person chose), and each
+ * value given (salt's number as sodium, as it is kept).
  */
 @Serializable
-data class Filled(val source: String?, val perMl: Boolean, val values: Map<LabelValue, Given>)
+data class Filled(val source: String?, val perMl: Boolean?, val values: Map<LabelValue, Given>)
 
 /**
  * The product form's fields: the [name], whether the [values] (each as typed) are per 100 ml ([perMl]) or per 100 g, and
  * the [portions]. [original] is the ingredient being changed, null for a new one: what the form does not show of it
  * (its NEVO food, weights, price, being a staple) is saved as it was. [filled] is what its values were filled with.
+ * [basisNeeded] while a lookup gave values without saying per what: the person chooses before it can be saved.
  */
 @Serializable
 data class ProductDraft(
@@ -96,6 +99,7 @@ data class ProductDraft(
     val nextKey: Long = 0,
     val original: Ingredient? = null,
     val filled: Filled? = null,
+    val basisNeeded: Boolean = false,
 ) {
     fun value(of: LabelValue): String = values[of].orEmpty()
 
@@ -110,7 +114,8 @@ data class ProductDraft(
 
     /** Whether a value or the basis is no longer what the form was filled with: then its source says so once saved. */
     val changedByHand: Boolean
-        get() = filled != null && (perMl != filled.perMl || LabelValue.entries.any { value(it) != filled.values[it]?.text.orEmpty() })
+        get() = filled != null &&
+            ((filled.perMl != null && perMl != filled.perMl) || LabelValue.entries.any { value(it) != filled.values[it]?.text.orEmpty() })
 
     /** Where the values came from, as saved ([LabelSource]): marked once changed by hand; null for values typed from the label. */
     val source: String?
@@ -169,7 +174,7 @@ data class ProductDraft(
      * Each thing that keeps it off is said at its own field ([valueProblem], [nameProblem], [PortionRow.sizeProblem]).
      */
     val canSave: Boolean
-        get() = name.isNotBlank() && LabelValue.entries.all { valueProblem(it) == null } &&
+        get() = name.isNotBlank() && !basisNeeded && LabelValue.entries.all { valueProblem(it) == null } &&
             portions.all { nameProblem(it) == null && it.sizeProblem == null }
 
     /**
@@ -186,24 +191,29 @@ data class ProductDraft(
     }
 
     /**
-     * The form filled with what a lookup [found]: its name, its basis and its values, each left empty that it does not
-     * give (all of them when it has no table), and its source; its pack as a portion named [packName], unless a portion
-     * of that name is there. The portions there are stay: a lookup only adds.
+     * The form filled with what a lookup [found]: its name, its values, each left empty that it does not give, its basis
+     * (to be chosen when it does not say: [basisNeeded]) and its source; its pack as a portion named [packName], unless a
+     * portion of that name is there. The portions there are stay: a lookup only adds. A product without any value
+     * ([hasValues]) gives its name and pack only: the values are empty, to be typed, and no source is kept, as none of
+     * them comes from it.
      */
     fun filledWith(found: FoundProduct, packName: String, locale: FormatLocale): ProductDraft {
-        val ml = found.basis?.let { it == FoodBasis.PER_100_ML } ?: perMl
-        val given = if (found.basis == null) emptyMap() else found.per100.given(locale)
         val pack = found.pack?.takeIf { size -> (size.grams ?: size.ml) != null && portions.none { portionKey(it.name) == portionKey(packName) } }
             ?.let { size -> Portion(packName, grams = size.grams, ml = size.ml).row(nextKey, locale) }
-        return copy(
-            name = found.name,
-            perMl = ml,
+        val named = copy(name = found.name, portions = portions + listOfNotNull(pack), nextKey = nextKey + if (pack != null) 1 else 0)
+        if (!found.hasValues) return named.copy(values = emptyMap(), filled = null, basisNeeded = false)
+        val ml = found.basis?.let { it == FoodBasis.PER_100_ML }
+        val given = found.per100.given(locale)
+        return named.copy(
+            perMl = ml ?: perMl,
             values = given.mapValues { it.value.text },
-            portions = portions + listOfNotNull(pack),
-            nextKey = nextKey + if (pack != null) 1 else 0,
             filled = Filled(found.source, ml, given),
+            basisNeeded = ml == null,
         )
     }
+
+    /** Values per 100 ml when [ml], else per 100 g, as the person chose. */
+    fun choosingBasis(ml: Boolean): ProductDraft = copy(perMl = ml, basisNeeded = false)
 
     /** The body that saves it; only when [canSave]. */
     fun input(): IngredientInput {

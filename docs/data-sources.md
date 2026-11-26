@@ -1424,8 +1424,9 @@ only the server (`server/.../products/`). Routes, all as of 26 November 2026, co
   200 with `result.id` `product_found`; unknown: 404 with `product_not_found`. Its values are numbers: `energy-kcal_100g`,
   `fat_100g`, `saturated-fat_100g`, `carbohydrates_100g`, `sugars_100g`, `fiber_100g`, `proteins_100g`, `salt_100g`;
   an absent key is not given (a 0 is often a field nobody filled in, which the person sees and corrects). Its `_100g`
-  values are per 100 ml for a product whose `quantity` is in ml or l; values given per portion only
-  (`nutrition_data_per` other than `100g`) are not read. Its `product_name` often leaves the brand out, so the first of
+  values are per 100 ml for a product whose `quantity` is in ml or l and per 100 g for one in g or kg; without a
+  quantity that reads the basis is not guessed: the answer leaves it open and the person chooses it in the form before
+  saving. Values given per portion only (`nutrition_data_per` other than `100g`) are not read. Its `product_name` often leaves the brand out, so the first of
   `brands` is put before it when it does not have it.
 
 **Open Food Facts' terms.** The database is under the Open Database License (ODbL), its contents under the Database
@@ -1447,7 +1448,9 @@ form that is not understood, is said in the form ("AH did not answer."), which i
 the server as a warning.
 
 **Where the source is kept.** `LabelNutrition.source` holds the source and its reference in one text: `ah:<AH's product
-id>` or `off:<barcode>`; once a value or the basis is changed in the form after the lookup, `;changed` follows
+id>` or `off:<barcode>`, only when at least one value came from it (a product found without a table that reads gives its
+name and pack, and the values typed are the label's, with no source); once a value or a basis the source gave is changed
+in the form after the lookup, `;changed` follows
 (`ah:61758;changed`), and the form shows "Values from AH, changed by hand". A value is saved as it was given or typed:
 the form shows at most three decimals, and a value whose text is left as shown is saved as the number it stood for, so a
 product opened and saved without a change is the same product.

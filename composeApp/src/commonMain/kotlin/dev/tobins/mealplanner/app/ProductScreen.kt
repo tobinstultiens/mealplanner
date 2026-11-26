@@ -198,8 +198,13 @@ fun ProductScreen(
             draft.source?.let { SourceLine(it) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), itemVerticalAlignment = Alignment.CenterVertically) {
                 Text(t(Msg.PRODUCT_VALUES_PER), style = MaterialTheme.typography.labelLarge)
-                FilterChip(selected = !draft.perMl, onClick = { draft = draft.copy(perMl = false) }, label = { Text(per100(FoodBasis.PER_100_G)) }, enabled = enabled)
-                FilterChip(selected = draft.perMl, onClick = { draft = draft.copy(perMl = true) }, label = { Text(per100(FoodBasis.PER_100_ML)) }, enabled = enabled)
+                // Neither is chosen while a lookup left it open.
+                val chosen = !draft.basisNeeded
+                FilterChip(selected = chosen && !draft.perMl, onClick = { draft = draft.choosingBasis(ml = false) }, label = { Text(per100(FoodBasis.PER_100_G)) }, enabled = enabled)
+                FilterChip(selected = chosen && draft.perMl, onClick = { draft = draft.choosingBasis(ml = true) }, label = { Text(per100(FoodBasis.PER_100_ML)) }, enabled = enabled)
+            }
+            if (draft.basisNeeded) {
+                Text(t(Msg.PRODUCT_BASIS_NEEDED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
             Text(t(Msg.PRODUCT_VALUES_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             val firstPortion = draft.portions.firstOrNull()?.key

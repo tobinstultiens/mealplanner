@@ -40,7 +40,10 @@ data class ProductLookup(
 /**
  * A product as a source gives it, to fill the form with. Values are as the source gives them, salt as sodium ([per100],
  * [dev.tobins.mealplanner.nutrition.Salt]); one it does not give is null, and one it gives in a form that cannot be read
- * is null and named in [unread]. [basis] is null when the source has no table per 100 g or 100 ml.
+ * is null and named in [unread]. Without any value ([hasValues]) the source had no table per 100 g or 100 ml that reads:
+ * then only the name and the pack are of use, and [source] is not where any value came from. [basis] is null then, and
+ * also when the source gives values without saying whether per 100 g or per 100 ml (Open Food Facts without a quantity):
+ * the person chooses.
  */
 @Serializable
 data class FoundProduct(
@@ -57,6 +60,10 @@ data class FoundProduct(
     /** Of a multi-pack sold as one: how many items it holds; the values and [pack] are those of one item. */
     val packOf: Int? = null,
 )
+
+/** Whether the source gave any of the eight values. */
+val FoundProduct.hasValues: Boolean
+    get() = with(per100) { listOf(kcal, proteinG, fatG, saturatedFatG, carbsG, sugarG, fibreG, sodiumMg).any { it != null } }
 
 /** A pack's net content: [grams] or [ml]; [single] when it is one item of a multi-pack ("6 x 250 ml" is 250 ml). */
 @Serializable

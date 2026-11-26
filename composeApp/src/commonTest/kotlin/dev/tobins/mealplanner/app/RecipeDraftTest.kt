@@ -129,7 +129,7 @@ class RecipeDraftTest {
         val draft = RecipeDraft().adding(bar).let { it.changing(0) { row -> row.inUnit("bar", bar) } }.changing(0) { it.copy(amount = "2") }
         assertEquals(RowCount.COUNTED, draft.rows.single().count(bar))
         assertEquals(listOf(360.0, 27.0), draft.nutrition(mapOf(bar.id to bar))!!.perServing.let { listOf(it.kcal, it.proteinG) })
-        assertEquals("2.25", RecipeDraft().adding(bar).rows.single().inUnit("bar", bar).amount, "100 g is about two and a quarter bars")
+        assertEquals("2.222", RecipeDraft().adding(bar).rows.single().inUnit("bar", bar).amount, "100 g is 2.222 bars, to a thousandth")
         val gone = bar.copy(portions = emptyList(), removedPortions = listOf("bar"), gramsPerPiece = 40.0)
         assertEquals(RowCount.PORTION_GONE, draft.rows.single().count(gone))
         assertFalse(draft.nutrition(mapOf(bar.id to gone))!!.complete)
@@ -140,9 +140,9 @@ class RecipeDraftTest {
     fun anotherUnitKeepsTheQuantityWhereItIsKnown() {
         val oneThigh = RecipeDraft().adding(chicken).rows.single()
         assertEquals("110", oneThigh.inUnit("g", chicken).amount)
-        assertEquals("1.75", oneThigh.copy(amount = "180", unit = "g").inUnit(PIECE, chicken).amount, "to a quarter")
-        assertEquals("30", oneThigh.copy(amount = "2", unit = "tbsp").inUnit("ml", oil).amount, "a volume to a volume")
-        assertEquals("27", oneThigh.copy(amount = "2", unit = "tbsp").inUnit("g", oil).amount, "through its density")
+        assertEquals("1.636", oneThigh.copy(amount = "180", unit = "g").inUnit(PIECE, chicken).amount, "to a thousandth")
+        assertEquals("29.6", oneThigh.copy(amount = "2", unit = "tbsp").inUnit("ml", oil).amount, "a volume to a volume, to a tenth")
+        assertEquals("26.9", oneThigh.copy(amount = "2", unit = "tbsp").inUnit("g", oil).amount, "through its density")
         assertEquals("2", oneThigh.copy(amount = "2", unit = "tbsp").inUnit(PIECE, oil).amount, "unknown: the same number")
         val juiced = stew.toDraft().rows[2].inUnit("g", lemon)
         assertEquals(RecipeLineInput(100.0, "g", "lemon, juiced", lemon.id, "Stew"), juiced.input())
@@ -180,14 +180,55 @@ class RecipeDraftTest {
         // Across the two through the known density.
         assertEquals("693", row("2", "bottle").to("g", shake))
         assertEquals("2", row("693", "g").to("bottle", shake))
-        assertEquals("29", row("1", "scoop").to("ml", shake))
-        assertEquals("23", row("2", "bottle").to("scoop", shake))
-        assertEquals("190", row("1", PIECE).to("ml", shake))
-        assertEquals("1.75", row("330", "ml").to(PIECE, shake))
+        assertEquals("28.6", row("1", "scoop").to("ml", shake))
+        assertEquals("23.1", row("2", "bottle").to("scoop", shake))
+        assertEquals("190.5", row("1", PIECE).to("ml", shake))
+        assertEquals("1.733", row("330", "ml").to(PIECE, shake))
         // No density: a weight and a volume are not turned into each other, the number stays.
         assertEquals("100", row("100", "g").to("ml", drink))
         assertEquals("100", row("100", "g").to("pack", drink))
         assertEquals("2", row("2", "bar").to("ml", bar))
+    }
+
+    /** A product per 100 g sold in a pack of 650 g. */
+    private val peanutButter = Ingredient(
+        9, "Peanut butter", null, null, null, null, null, false,
+        label = LabelNutrition(FoodBasis.PER_100_G, Nutrition(630.0, 25.0, null, null, null, null, null, null)),
+        portions = listOf(Portion("pack", grams = 650.0)),
+    )
+
+    @Test
+    fun aChangeOfUnitCountsTheSameQuantityAndBackGivesTheAmountItWas() {
+        fun counted(row: DraftRow, ingredient: Ingredient) =
+            RecipeDraft(servings = "1", rows = listOf(row.copy(ingredientId = ingredient.id))).nutrition(mapOf(ingredient.id to ingredient))!!.perServing.kcal!!
+        val grams = row("100", "g").copy(ingredientId = peanutButter.id)
+        val pack = grams.inUnit("pack", peanutButter)
+        assertEquals("0.154", pack.amount, "shown to a thousandth")
+        assertEquals(100.0 / 650.0, pack.input().amount!!, 1e-12)
+        assertEquals(counted(grams, peanutButter), counted(pack, peanutButter), 1e-9)
+        val back = pack.inUnit("g", peanutButter)
+        assertEquals("100", back.amount)
+        assertEquals(100.0, back.input().amount)
+
+        val ml = row("330", "ml")
+        val ofPack = ml.inUnit("pack", drink)
+        assertEquals("0.33", ofPack.amount)
+        assertEquals(counted(ml, drink), counted(ofPack, drink), 1e-9)
+        assertEquals(330.0, ofPack.inUnit("glass", drink).inUnit("ml", drink).input().amount, "through two portions and back")
+        // A number typed over the shown one is the one typed.
+        assertEquals(0.2, ofPack.copy(amount = "0.2").input().amount)
+    }
+
+    @Test
+    fun aPortionNamesASizeAndChangingUnitsLeavesTheRowsTextAsItWas() {
+        val picked = RecipeDraft().adding(drink.copy(lastUnit = "pack")).rows.single()
+        assertEquals("pack" to "Drink yoghurt", picked.unit to picked.label(drink))
+        val roundTrip = picked.inUnit("ml", drink).inUnit("pack", drink).inUnit("glass", drink).inUnit("pack", drink)
+        assertEquals("Drink yoghurt", roundTrip.text)
+        assertEquals("Drink yoghurt", roundTrip.label(drink))
+        assertEquals(RecipeLineInput(1.0, "pack", "Drink yoghurt", drink.id, null), roundTrip.input(), "the saved line carries no unit in its text")
+        // A unit that names the ingredient still goes into the text, as before.
+        assertEquals("lemon, juiced", stew.toDraft().rows[2].inUnit("g", lemon).text)
     }
 
     @Test

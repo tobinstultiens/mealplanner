@@ -88,8 +88,9 @@ object OpenFoodFactsReader {
 
     /**
      * The product of an answer of API v3, its values per 100 g, salt as sodium; null when it says the product is not found.
-     * Its `_100g` values are per 100 ml for a drink, which its quantity tells (`1000 ml`); values given per portion only
-     * (`nutrition_data_per` other than `100g`) are not read.
+     * Its `_100g` values are per 100 ml for a drink, which its quantity tells (`1000 ml`, else per 100 g: `57 g`); without
+     * a quantity that reads the basis is left open, not guessed. Values given per portion only (`nutrition_data_per` other
+     * than `100g`) are not read.
      */
     fun product(body: String, barcode: String): FoundProduct? {
         val answer = json.parseToJsonElement(body).jsonObject
@@ -111,7 +112,12 @@ object OpenFoodFactsReader {
             // Its names often leave the brand out ("drinkyoghurt framboos"), which AH's titles have.
             name = if (brand != null && !name.contains(brand, ignoreCase = true)) "$brand $name".trim() else name,
             brand = brand,
-            basis = if (!per100) null else if (pack?.ml != null) FoodBasis.PER_100_ML else FoodBasis.PER_100_G,
+            basis = when {
+                !per100 -> null
+                pack?.ml != null -> FoodBasis.PER_100_ML
+                pack?.grams != null -> FoodBasis.PER_100_G
+                else -> null
+            },
             per100 = Nutrition(
                 kcal = read("energy-kcal_100g", "kcal"),
                 proteinG = read("proteins_100g", "proteinG"),
