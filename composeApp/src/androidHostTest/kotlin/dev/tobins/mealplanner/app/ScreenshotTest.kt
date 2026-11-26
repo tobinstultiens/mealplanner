@@ -312,6 +312,19 @@ private fun ingredientSearch(api: ApiClient, query: String) {
     Column(Modifier.padding(16.dp)) { IngredientSearch(query, {}, found, failed, enabled = true, onPick = {}) }
 }
 
+/**
+ * A protein bar as its form shows it (issue 351): the values of its label per 100 g, its fibre not given, salt as the label
+ * has it, and two portions.
+ */
+private val proteinBar = dev.tobins.mealplanner.api.Ingredient(
+    40, "Protein bar chocolate", null, null, null, null, null, false,
+    label = dev.tobins.mealplanner.api.LabelNutrition(
+        dev.tobins.mealplanner.api.FoodBasis.PER_100_G,
+        dev.tobins.mealplanner.api.Nutrition(380.0, 31.0, 14.0, 6.5, 32.0, 3.2, null, dev.tobins.mealplanner.nutrition.Salt.sodiumMg(0.48)),
+    ),
+    portions = listOf(dev.tobins.mealplanner.api.Portion("bar", grams = 45.0), dev.tobins.mealplanner.api.Portion("half bar", grams = 22.5)),
+)
+
 /** The cooking-site dialog's body on a server that offers its site, with [choice] made and [url] typed. */
 @Composable
 private fun cookingSiteChoices(choice: SiteChoice, url: String) {
@@ -589,6 +602,13 @@ enum class Shot(
     RECIPE_EDITOR_X2(writing = true, heightDp = 3800, fontScale = 2.0f, shows = "coriander", content = { api, _ -> RecipeEditorScreen(api, 4, {}, {}) }),
     RECIPE_EDITOR_SEARCH(writing = true, heightDp = 640, shows = "Chickpeas", content = { api, _ -> ingredientSearch(api, "chick") }),
     RECIPE_EDITOR_SEARCH_NL(writing = true, dutch = true, heightDp = 640, shows = "Kikkererwten", content = { api, _ -> ingredientSearch(api, "chick") }),
+    // A product's form (issue 351): its name, the values of its label with one left empty, and two portions. In both
+    // languages and at the largest font.
+    PRODUCT_FORM(heightDp = 1550, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
+    PRODUCT_FORM_NL(dutch = true, heightDp = 1550, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
+    PRODUCT_FORM_X2(heightDp = 2300, fontScale = 2.0f, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
+    // A new product: what keeps Save off is said in red at its field.
+    PRODUCT_FORM_NEW(heightDp = 1300, content = { api, _ -> ProductScreen(api, null, {}, {}) }),
     // Opened from a planned meal: the amounts of 1.5 of the recipe's 2 servings, and nothing to cook for leftovers.
     RECIPE_FROM_MEAL(heightDp = 1900, content = { api, _ ->
         RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 1.5, skipped = false))

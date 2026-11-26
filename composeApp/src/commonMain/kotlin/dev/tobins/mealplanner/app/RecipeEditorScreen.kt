@@ -70,6 +70,8 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.nutrition.Values
+import dev.tobins.mealplanner.nutrition.values
 import dev.tobins.mealplanner.recipes.PlainLines
 import dev.tobins.mealplanner.recipes.oneLine
 import kotlinx.coroutines.delay
@@ -435,6 +437,7 @@ internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t:
         RowCount.NEGLIGIBLE -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.NOT_COUNTED))
         RowCount.NO_AMOUNT -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_NO_AMOUNT))
         RowCount.NO_NUTRITION -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_NO_NUTRITION))
+        RowCount.PORTION_GONE -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_PORTION_GONE, row.unit.orEmpty()))
         RowCount.WEIGHT_UNKNOWN -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_WEIGHT_UNKNOWN))
         RowCount.COUNTED -> {
             val grams = NutritionCalculator.quantityOf(row.line()!!, ingredient!!)!!.grams
@@ -595,11 +598,11 @@ internal fun IngredientSearch(
 @Composable
 private fun FoundRow(found: Found, enabled: Boolean, onPick: () -> Unit) {
     val t = LocalStrings.current
-    val (name, food) = when (found) {
-        is Found.Mine -> found.ingredient.name to found.ingredient.food
-        is Found.NewFood -> found.food.let { (if (t.language == Language.DUTCH) it.nameNl else it.nameEn) to it }
+    val (name, counted) = when (found) {
+        is Found.Mine -> found.ingredient.name to found.ingredient.values
+        is Found.NewFood -> found.food.let { (if (t.language == Language.DUTCH) it.nameNl else it.nameEn) to Values(it.basis, it.per100) }
     }
-    val values = food?.let { per100Text(it, t) } ?: t(Msg.FOUND_NO_NUTRITION)
+    val values = counted?.let { per100Text(it, t) } ?: t(Msg.FOUND_NO_NUTRITION)
     Row(
         Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onPick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -617,9 +620,12 @@ private fun FoundRow(found: Found, enabled: Boolean, onPick: () -> Unit) {
     }
 }
 
-/** `165 kcal · 31 g protein per 100 g`, or per 100 ml for a food NEVO counts so. */
-private fun per100Text(food: Food, t: Strings): String =
-    t(Msg.FOUND_PER_100, (food.per100.kcal ?: 0.0).roundToLong(), (food.per100.proteinG ?: 0.0).roundToLong(), if (food.basis == FoodBasis.PER_100_ML) "100 ml" else "100 g")
+/** `165 kcal · 31 g protein per 100 g`, or per 100 ml for what is counted so: the values of a label or of a NEVO food. */
+private fun per100Text(values: Values, t: Strings): String =
+    t(Msg.FOUND_PER_100, (values.per100.kcal ?: 0.0).roundToLong(), (values.per100.proteinG ?: 0.0).roundToLong(), per100(values.basis))
+
+/** `100 g`, or `100 ml` for what is counted per volume. */
+internal fun per100(basis: FoodBasis): String = if (basis == FoodBasis.PER_100_ML) "100 ml" else "100 g"
 
 /**
  * A row opened: its ingredient (searched and picked as below the rows; the search starts with the row's text when it has

@@ -198,8 +198,8 @@ data class MealNutrition(val kcal: Double, val proteinG: Double, val fibreG: Dou
  * The nutrition of [portions] of [recipe] when [changes] (grams eaten by ingredient id) replace the
  * recipe's amounts of those ingredients, for the whole meal. Worked out the way a recipe's is
  * ([NutritionCalculator.perServing]): the meal's own amounts become weighed lines of the recipe's
- * whole yield, so the recipe's other lines count exactly as they do in it. An ingredient without a
- * NEVO food counts as nothing and is named in [MealNutrition.uncounted], as a recipe's is.
+ * whole yield, so the recipe's other lines count exactly as they do in it. An ingredient without values
+ * (no label of its own and no NEVO food) counts as nothing and is named in [MealNutrition.uncounted], as a recipe's is.
  * [ingredients] is the catalogue by id, for those the recipe does not have.
  */
 fun mealNutrition(recipe: RecipeLines, portions: Double, changes: Map<Long, Double>, ingredients: Map<Long, Ingredient>): MealNutrition {

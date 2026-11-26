@@ -1,11 +1,18 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.Food
+import dev.tobins.mealplanner.api.FoodBasis
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.LabelNutrition
 import dev.tobins.mealplanner.api.MappingRequest
+import dev.tobins.mealplanner.api.Nutrition
+import dev.tobins.mealplanner.api.Portion
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.UnmappedText
+import dev.tobins.mealplanner.nutrition.inPortionOf
+import dev.tobins.mealplanner.nutrition.portionKey
+import dev.tobins.mealplanner.nutrition.portionNameProblem
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.offers.ExcludedMatch
@@ -13,6 +20,7 @@ import dev.tobins.mealplanner.server.offers.OfferTerms
 import dev.tobins.mealplanner.shopping.ShopSection
 import dev.tobins.mealplanner.units.Dimension
 import dev.tobins.mealplanner.server.db.Ingredient as IngredientRow
+import dev.tobins.mealplanner.server.db.IngredientPortion as PortionRow
 
 /** One account's ingredient catalogue and the remembered links from its recipe line texts to it. */
 class IngredientRepository(private val db: Database, private val foods: FoodRepository, private val userId: Long) {
@@ -23,7 +31,8 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     /** The account's ingredients, each with the unit it was last saved in ([Ingredient.lastUnit]). */
     fun list(): List<Ingredient> {
         val lastUnits = lastUnits()
-        return q.selectAllIngredients(userId).executeAsList().map { it.toIngredient().copy(lastUnit = lastUnits[it.id]) }
+        val portions = q.selectPortions(userId).executeAsList().groupBy { it.ingredientId }
+        return q.selectAllIngredients(userId).executeAsList().map { it.toIngredient(portions[it.id].orEmpty()).copy(lastUnit = lastUnits[it.id]) }
     }
 
     /**
@@ -39,6 +48,10 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
 
     fun create(input: IngredientInput): Ingredient = linking { insert(input) }
 
+    /**
+     * Replaces ingredient [id] with [input]: its values of its own too ([IngredientInput.label], none when null), and its
+     * portions when [IngredientInput.portions] gives them. Another account's is one that does not exist (404).
+     */
     fun update(id: Long, input: IngredientInput): Ingredient = linking {
         q.selectIngredient(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No ingredient with id $id")
         validate(input, selfId = id)
@@ -46,7 +59,30 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
             input.name.trim(), input.nevoCode?.toLong(), input.gramsPerPiece, input.gramsPerMl,
             input.category, input.pricePerKg, if (input.isStaple) 1 else 0, if (input.negligible) 1 else 0, userId, id,
         )
+        saveLabel(id, input.label)
+        input.portions?.let { savePortions(id, it) }
         q.selectIngredient(userId, id).executeAsOne().toIngredient()
+    }
+
+    private fun saveLabel(id: Long, label: LabelNutrition?) {
+        val values = label?.per100
+        q.setLabel(
+            label?.basis?.name, values?.kcal, values?.proteinG, values?.fatG, values?.saturatedFatG, values?.carbsG,
+            values?.sugarG, values?.fibreG, values?.sodiumMg, label?.source?.trim()?.ifEmpty { null }, userId, id,
+        )
+    }
+
+    /**
+     * Makes [portions] ingredient [id]'s, in their order. One it had that is not among them is kept as removed, so that a
+     * line in it counts as nothing rather than as pieces ([Ingredient.removedPortions]); one given again is the same row.
+     */
+    private fun savePortions(id: Long, portions: List<Portion>) {
+        q.removePortions(userId, id)
+        portions.forEachIndexed { index, portion ->
+            val name = portion.name.trim()
+            q.insertPortion(portionKey(name), name, portion.grams, portion.ml, index.toLong(), userId, id)
+            q.keepPortion(name, portion.grams, portion.ml, index.toLong(), userId, id, portionKey(name))
+        }
     }
 
     /**
@@ -255,7 +291,8 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
             if (line.amount == null) continue
             val ingredient = resolve(line)
             if (ingredient?.negligible == true) continue
-            val needsWeight = ingredient != null && line.dimension == Dimension.COUNT && ingredient.gramsPerPiece == null
+            // A line in a portion is weighed by the portion, or not at all once it is gone: a weight per piece would not help.
+            val needsWeight = ingredient != null && line.dimension == Dimension.COUNT && !line.inPortionOf(ingredient) && ingredient.gramsPerPiece == null
             if (ingredient != null && !needsWeight) continue
             // Unlinked variants of one ingredient ("garlic, minced", "garlic, crushed") are one entry.
             val text = IngredientLine.withoutDescriptors(IngredientLine.coreText(line.ingredientText))
@@ -295,7 +332,10 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
             input.name.trim(), input.nevoCode?.toLong(), input.gramsPerPiece, input.gramsPerMl,
             input.category, input.pricePerKg, if (input.isStaple) 1 else 0, if (input.negligible) 1 else 0,
         )
-        return q.selectIngredient(userId, q.lastIngredientId().executeAsOne()).executeAsOne().toIngredient()
+        val id = q.lastIngredientId().executeAsOne()
+        saveLabel(id, input.label)
+        input.portions?.let { savePortions(id, it) }
+        return q.selectIngredient(userId, id).executeAsOne().toIngredient()
     }
 
     private fun validate(input: IngredientInput, selfId: Long?) {
@@ -307,9 +347,38 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         q.selectIngredientByName(userId, input.name.trim()).executeAsOneOrNull()?.let {
             require(it.id == selfId) { "An ingredient named '${it.name}' already exists" }
         }
+        input.label?.let(::validateLabel)
+        input.portions?.let(::validatePortions)
     }
 
-    private fun IngredientRow.toIngredient() = Ingredient(
+    /**
+     * A label's values are each a number of 0 or more, or unknown; its energy must be known, since a product without it
+     * would add nothing to a day's kcal and still say it was counted.
+     */
+    private fun validateLabel(label: LabelNutrition) {
+        val values = with(label.per100) { listOf(kcal, proteinG, fatG, saturatedFatG, carbsG, sugarG, fibreG, sodiumMg) }
+        require(label.per100.kcal != null) { "A label's energy (kcal) is needed" }
+        require(values.filterNotNull().all { it >= 0 && it.isFinite() }) { "A label's values must be 0 or more" }
+        require((label.source?.length ?: 0) <= MAX_SOURCE) { "A label's source is at most $MAX_SOURCE characters" }
+    }
+
+    /** Each portion has a name ([portionNameProblem]) of its own, without regard to case, and a weight or a volume above 0. */
+    private fun validatePortions(portions: List<Portion>) {
+        val seen = HashSet<String>()
+        for (portion in portions) {
+            portionNameProblem(portion.name)?.let { throw IllegalArgumentException(it) }
+            require(seen.add(portionKey(portion.name))) { "Two portions are named '${portion.name.trim()}'" }
+            val size = listOfNotNull(portion.grams, portion.ml)
+            require(size.size == 1 && size.single() > 0 && size.single().isFinite()) {
+                "The portion '${portion.name.trim()}' needs a weight in grams or a volume in ml above 0, not both"
+            }
+        }
+    }
+
+    private fun IngredientRow.toIngredient(): Ingredient = toIngredient(q.selectPortionsOf(userId, id).executeAsList())
+
+    /** The ingredient of this row, with [portions], the rows of its portions (those removed too). */
+    private fun IngredientRow.toIngredient(portions: List<PortionRow>) = Ingredient(
         id = id,
         name = name,
         food = nevoCode?.let { foods.find(it.toInt()) },
@@ -319,6 +388,15 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         pricePerKg = pricePerKg,
         isStaple = isStaple != 0L,
         negligible = negligible != 0L,
+        label = labelBasis?.let { basis ->
+            LabelNutrition(
+                basis = FoodBasis.valueOf(basis),
+                per100 = Nutrition(labelKcal, labelProteinG, labelFatG, labelSaturatedFatG, labelCarbsG, labelSugarG, labelFibreG, labelSodiumMg),
+                source = labelSource,
+            )
+        },
+        portions = portions.filter { it.removed == 0L }.map { Portion(it.name, it.grams, it.ml) },
+        removedPortions = portions.filter { it.removed != 0L }.map { it.name },
     )
 
     private fun Ingredient.toInput() =
@@ -327,6 +405,9 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
     companion object {
         /** Less than this left of what was bought ahead is a scrap, not something to plan or shop around. */
         const val USED_UP_GRAMS = 1.0
+
+        /** The longest [LabelNutrition.source]: a product's id or barcode, with room to spare. */
+        private const val MAX_SOURCE = 200
 
         private fun singular(word: String): String = if (word.length > 3 && word.endsWith("s")) word.dropLast(1) else word
 

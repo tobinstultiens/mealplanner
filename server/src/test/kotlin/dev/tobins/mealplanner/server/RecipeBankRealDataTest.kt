@@ -9,12 +9,14 @@ import java.util.Properties
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Migrates a copy of a real database across the recipe bank (16.sqm) and checks that every table keeps its
  * rows, every recipe what it had, and that what each account listed before is what it lists after: the
  * recipes on the site or made in the app are added and in the rotation, those that had left the site are
  * not. The same across the recipes taken from the site becoming the account's own (25.sqm, issue 340).
+ * And across an ingredient's own values and portions (26.sqm, issue 351).
  * Prints row counts and integrity checks. Runs only when RECIPES_DB names a database file; that file
  * is copied first and never opened itself:
  * `RECIPES_DB=/path/to/mealplanner.db ./gradlew :server:test --tests '*RecipeBankRealDataTest*' -i`
@@ -122,6 +124,44 @@ class RecipeBankRealDataTest {
         driver.close()
     }
 
+    /**
+     * Across 26.sqm (issue 351): every table keeps its rows and every row what it had, no ingredient has values of its own
+     * or a portion, and every account's ingredients and recipes read as before: with no label and no portion anywhere, a
+     * recipe is counted by the NEVO foods and weights per piece alone, as it was. Run as the tests above; prints each
+     * account's recipes and how many of them are counted in full.
+     */
+    @Test
+    fun aCopyOfARealDatabaseKeepsEveryRowAndEveryIngredientWithoutValuesOrPortionsOfItsOwn() {
+        val original = System.getenv("RECIPES_DB")?.let(::File) ?: return
+        val copy = File(createTempDirectory("recipes").toFile(), "copy.db")
+        original.copyTo(copy)
+        val url = "jdbc:sqlite:${copy.path}"
+        migrate(url, PRODUCTS_VERSION - 1)
+        val tables = query(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        fun rows() = tables.associateWith { table -> query(url, "SELECT ${columnsOf(url, table).filterNot { table == "ingredient" && it.startsWith("label") }.joined()} FROM \"$table\"") }
+        val before = counts(url)
+        val rows = rows()
+        println("Before: version ${version(url)}, checks ${checks(url)}, rows $before")
+
+        migrate(url, PRODUCTS_VERSION)
+        println("After: version ${version(url)}, checks ${checks(url)}, rows ${counts(url)}")
+        assertEquals(listOf("ok") to emptyList(), checks(url))
+        assertEquals(before + ("ingredientPortion" to 0L), counts(url), "every table keeps its rows; no portion yet")
+        assertEquals(rows, rows(), "every row as it was")
+        assertEquals(listOf("0"), query(url, "SELECT count(*) FROM ingredient WHERE labelBasis IS NOT NULL OR labelKcal IS NOT NULL OR labelSource IS NOT NULL"))
+
+        val (driver, db) = openDatabase(url)
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        for (account in UserRepository(db).all()) {
+            val scope = UserScope(account, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
+            assertTrue(scope.ingredients.list().all { it.label == null && it.portions.isEmpty() && it.removedPortions.isEmpty() }, "account $account")
+            val recipes = scope.recipes.list()
+            println("Account $account: ${recipes.size} recipes, ${recipes.count { it.nutrition?.complete == true }} counted in full")
+        }
+        driver.close()
+    }
+
     private fun columnsOf(url: String, table: String) = query(url, "SELECT name FROM pragma_table_info('$table')")
 
     private fun List<String>.joined() = joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }
@@ -132,5 +172,8 @@ class RecipeBankRealDataTest {
 
         /** The version whose recipes taken from the site are the account's own and whose lines can know their ingredient (25.sqm). */
         const val TAKEN_VERSION = 26L
+
+        /** The version whose ingredients can have values of their own and portions (26.sqm). */
+        const val PRODUCTS_VERSION = 27L
     }
 }

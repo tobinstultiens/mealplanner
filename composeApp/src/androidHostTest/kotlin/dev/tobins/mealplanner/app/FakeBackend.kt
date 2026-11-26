@@ -367,7 +367,11 @@ class FakeBackend(
             (method == "PUT" || method == "DELETE") && path.startsWith("/api/weights/") -> changeWeights(method, path.substringAfterLast('/'), sent)
             path == "/api/weights" -> json.encodeToString(weights)
             method == "POST" && path == "/api/ingredients" -> json.encodeToString(createIngredient(sent))
+            method == "PUT" && parts.size == 3 && parts[1] == "ingredients" -> json.encodeToString(changeIngredient(parts[2].toLong(), sent))
             path == "/api/ingredients" -> json.encodeToString(if (writing) catalogue else ingredients)
+            // "Link ingredients" with nothing left to link and no section to show: its products are what is tested.
+            path == "/api/mappings/unmapped" -> "[]"
+            path == "/api/ingredients/sections" -> "[]"
             path == "/api/foods" -> json.encodeToString(foodsMatching(query.getValue("q")))
             path == "/api/pantry" -> json.encodeToString(pantry)
             // Never chosen: every store, as for an account that never opened the per-store list.
@@ -426,14 +430,34 @@ class FakeBackend(
     private fun foodsMatching(query: String): List<Food> =
         foods.filter { query.lowercase() in it.nameEn.lowercase() || query.lowercase() in it.nameNl.lowercase() }
 
-    /** `POST /api/ingredients`: one more of the catalogue, for the NEVO food it names. */
+    /** `POST /api/ingredients`: one more of the catalogue, for the NEVO food it names, or a product with its label and portions. */
     private fun createIngredient(sent: String): Ingredient {
         changes += "POST /api/ingredients $sent"
-        val input = json.decodeFromString<IngredientInput>(sent)
-        val made = Ingredient(catalogue.maxOf { it.id } + 1, input.name, foods.single { it.nevoCode == input.nevoCode }, null, null, null, null, false)
+        val made = ingredientOf(catalogue.maxOf { it.id } + 1, json.decodeFromString<IngredientInput>(sent))
         catalogue += made
         return made
     }
+
+    /**
+     * `PUT /api/ingredients/{id}`: the ingredient as sent, its portions as they were when it sends none; one it no longer
+     * has is a removed one, as the server keeps it.
+     */
+    private fun changeIngredient(id: Long, sent: String): Ingredient {
+        changes += "PUT /api/ingredients/$id $sent"
+        val before = catalogue.single { it.id == id }
+        val input = json.decodeFromString<IngredientInput>(sent)
+        val portions = input.portions ?: before.portions
+        val names = portions.map { it.name.lowercase() }
+        val removed = (before.removedPortions + before.portions.map { it.name }).filter { it.lowercase() !in names }.distinctBy { it.lowercase() }
+        val changed = ingredientOf(id, input).copy(portions = portions, removedPortions = removed)
+        catalogue.replaceAll { if (it.id == id) changed else it }
+        return changed
+    }
+
+    private fun ingredientOf(id: Long, input: IngredientInput) = Ingredient(
+        id, input.name, input.nevoCode?.let { code -> foods.single { it.nevoCode == code } }, input.gramsPerPiece, input.gramsPerMl,
+        input.category, input.pricePerKg, input.isStaple, input.negligible, label = input.label, portions = input.portions.orEmpty(),
+    )
 
     /** The account's links of texts (`/api/mappings`): the Dutch names it gave its ingredients, and salt in any form. */
     private val links = mapOf("kipdijfilet" to 1L, "olijfolie" to 5L, "spinazie" to 8L, "kokosmelk" to 10L, "salt and pepper to taste" to 7L, "zout" to 7L)

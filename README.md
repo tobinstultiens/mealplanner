@@ -309,16 +309,16 @@ those makes it an ingredient of the account first (`POST /api/ingredients`, name
 the name is taken); in a row's dialog it is made only when the row is saved, so a cancelled dialog leaves nothing behind. A picked row starts in the unit the account last saved that ingredient in (issue 346): its unit in the recipe the
 account saved most recently that has a line saved with the ingredient itself (`Ingredient.lastUnit`, which `GET /api/ingredients`
 works out from the saved lines, so it is the account's own on every device; a line that means the ingredient only
-through its text, as the cooking site's do, is not a pick and does not count), as one piece, 100 ml or 100 g. An ingredient
+through its text, as the cooking site's do, is not a pick and does not count), as one piece, one portion, 100 ml or 100 g. An ingredient
 the account has not used, or whose remembered unit it no longer has (its weight per piece or density was removed), starts at
-one piece when it has a weight per piece, else 100 ml of a food NEVO counts per 100 ml, else 100 g. Pasted lines keep
+one piece when it has a weight per piece, else 100 ml of what is counted per 100 ml, else 100 g. Pasted lines keep
 the unit of their text, a row already there keeps its unit, and an ingredient made on the spot from a food has no history.
 Each row has its amount selected for typing (the keyboard's Next goes on to the next row's amount,
 and from the last to the search). While the editor is open the keyboard makes room instead of sliding the screen up
 (Android: the window's soft input mode is "adjust resize" and the column ends above the keyboard, `imePadding`), and
 the focused amount field and what the search finds are brought wholly into view as they come and as the keyboard
 opens. Its unit is chosen from those the ingredient has
-(grams, millilitres when a millilitre's weight is known, pieces when a piece's weight is, and the unit a line of the site
+(grams, millilitres when a millilitre's weight is known, pieces when a piece's weight is, its portions, and the unit a line of the site
 had), and another unit keeps the quantity where it can be worked out. Nothing is typed in the import format, and a
 picked row is saved with its ingredient (`lines`). The bar under the title says what a serving has and what is not
 counted, worked out in the app from the catalogue and each row's ingredient with the server's own code
@@ -338,6 +338,55 @@ alone is saved exactly as it was read, so opening a recipe and saving it changes
 taken from the cooking site and not changed in the app offers "Remove from my recipes"; once changed, and any made in
 the app, "Delete" (for a taken one the dialog says the site's recipe comes back to the bank). "Remove from my recipes"
 on a selection leaves out those made or changed in the app and says how many.
+
+### An ingredient's nutrition and its portions
+
+**What an ingredient counts by** (issue 351). An ingredient with values of its own (`Ingredient.label`: a product's
+label, per 100 g or per 100 ml) counts by those; one without counts by its NEVO food, as before; one with neither is
+not counted (the recipe says so). An ingredient may have both: its own values win, and its NEVO food still gives it a
+shop section. A value the label does not give is `null`, unknown, never 0; in a recipe's sum it adds nothing, as a NEVO
+value that is missing does. Salt is typed and shown as grams of salt, as on a Dutch label, and kept as sodium in mg,
+as NEVO has it: sodium mg = salt g × 400 (`Salt`, the one place that converts; see `docs/data-sources.md`). A label
+without energy (kcal) is refused (400), since it would add nothing to a day and still count as counted. A label's
+values per 100 ml count a line in ml by its volume, without a density, as a drink of NEVO does.
+
+**Portions.** An ingredient has any number of named portions (`Ingredient.portions`: "bar" of 45 g, or for a drink
+"glass" of 250 ml; each is a weight or a volume, not both). A portion is a unit of that ingredient: a recipe line of it
+with the portion's name as its unit (`2 | bar | Protein bar`, saved with its `ingredientId`) is weighed by the portion
+each time it is counted, in nutrition, cost, the shopping list (as grams, not pieces), the stock and what a meal had in
+it; so correcting a portion's weight corrects every recipe that uses it. Names are compared without regard to case. A
+name must not be empty, hold `|` or a line break, or be a unit of the unit table (`g`, `el`, `tbsp`, `piece`, `stuks`
+and so on, which a line would be read in instead), and two portions of one ingredient may not share one: each is
+refused with a 400 that says why. A word such as `blik` or `plak`, which the table does not know, may be a portion; a
+line in it is then weighed by the portion rather than by the weight per piece. A portion that is removed is kept as
+removed (`Ingredient.removedPortions`): a line in it is said not to be counted, never counted as grams or pieces, and
+"Link ingredients" does not ask a weight per piece for it; given again (in any case) it counts again. `gramsPerPiece`
+and the unit "piece" are as before.
+
+`POST /api/ingredients` and `PUT /api/ingredients/{id}` take `label` (null: none, counted by the NEVO food) and
+`portions` (the whole list, in its order; left out, a `PUT` keeps the portions there are). Another account's ingredient
+is 404, as for a line's `ingredientId`. The app sends neither field when it has none, so its body for a NEVO food is the
+one servers before them take. The installed app (v0.1.12) reads a recipe with a line in a portion as any other: its row
+editor offers the line's unit as the unit the row already has and sends it back through `lines`, and an older app's
+text keeps the line's ingredient as any unchanged text does, so the line counts by the portion either way
+(`ReleasedAppTest`). Its own totals while editing do not know portions and show such a row as not counted; the saved
+recipe counts it.
+
+**In the app.** "Link ingredients" (the Recipes tab's menu) lists the account's products, those with values or portions
+of their own, under "Products", with "New product". The product's form (`ProductScreen.kt`, the same on the web) has a
+name, the values per 100 g or per 100 ml (energy in kcal, fat, saturated fat, carbohydrates, sugars, fibre, protein,
+salt; a decimal comma or point), and its portions as rows of a name and a size, in g or ml (a tap on the unit changes
+it; a new row starts in the unit of the values). Whatever keeps Save off is said in red at the field that causes it: a
+name or the energy that is needed, a value that is no number or below 0, a portion without a name or a size, one named
+like a unit (`“g” is a unit already: give the portion another name`) or like another. The keyboard's Next goes through
+the values in the label's order and from the salt on into the portions (a portion's name, its size, the next portion);
+the last field's key is Done. Saving without a portion the product had (removed or renamed) asks first, saying that
+recipes with a line in it will no longer count that line; "Keep it" puts it back. The form does not know how many
+recipes use it: that would need a route of its own. What the form does not show of an ingredient (its NEVO food,
+weights, price, being a staple) is saved as it was. A product is found by the recipe editor's search by its name, with
+its own values, and its portions are units of its row after grams, millilitres and pieces; a portion removed is not
+offered, and a row in one keeps it on its button and says it is gone. A picked product whose last saved unit is one of
+its portions starts at one of it.
 
 ## Portion per meal
 
@@ -670,7 +719,7 @@ Fibre counts next to protein (issue 223). The daily targets (`DailyTargets.fibre
 per 1000 kcal of what keeps the weight (`TargetCalculator`), not of the lower target when losing it: the
 Gezondheidsraad advises 3.0 to 3.5 g per MJ of the energy requirement (Voedingsnormen 2026, as the
 Voedingscentrum gives it), and 14 g per 1000 kcal is 3.35 g per MJ. The profile can set its own target
-(`Profile.fibreOverrideG`, 10 to 100 g). A recipe's fibre is its NEVO foods' per serving; a food without a
+(`Profile.fibreOverrideG`, 10 to 100 g). A recipe's fibre is its ingredients' per serving (their own values or their NEVO food's); one without a
 fibre value counts as none, and the recipe is planned all the same. Extras logged by hand have no fibre.
 
 The planner rewards fibre as it does protein: how far a meal goes towards its slot's share of the target,
@@ -716,7 +765,7 @@ dinner keeps its lines). The recipe itself, and the same recipe's meals on other
   catalogue as they are now with the meal's changes, the way a recipe's nutrition is; they replace the
   recipe's numbers in the plan's meal (`PlannedMeal.adjusted` is then true), its day and week totals, and the
   day view on Today. A meal without changes keeps the kcal and protein stored when it was planned, so a reset
-  restores nothing. An added ingredient without a NEVO food counts as nothing and the Adjust screen names it
+  restores nothing. An added ingredient without values (its own or a NEVO food's) counts as nothing and the Adjust screen names it
   (`MealLines.uncounted`). A meal's cost stays that of its recipe.
 - The changes are kept per meal (`mealLine`, version 18 of the database) and go with it: choosing another
   recipe, "Another recipe", replanning or removing the meal drops them.
@@ -937,7 +986,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch, and with that prep kept vacuum sealed, also in Dutch and at font scale 2), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the Plan with one batch eaten as sides and as a meal (also in Dutch), the Prep dialog with meals picked both ways (also in Dutch and at font scale 2), "Add a prepped side…" with batches still to make (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch; the question also of a prep that was made, of meals and of sides, in both languages, and of a prep of meals and sides, made or not, in both languages), a week holding only a meal of last week's batch on the Plan and Shopping (Shopping also in Dutch), the recipe of a later prepped meal and cook mode on a prep day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe editor (a recipe taken from the cooking site, also in Dutch and at font scale 2; its search, also in Dutch), the recipe picker (also with standard meals first and the line on a prep still to make, in Dutch and at font scale 2), Today with a skipped lunch and its standard-meal chips (also in Dutch), the Plan's skip sheet and a recipe's standard-meal switch with what it made staples (both also in Dutch and at font scale 2), Offers, the price verdicts on Offers (early with one opened, and later, also in Dutch and at font scale 2 in both languages) and on Shopping (later, also in Dutch, at font scale 2 in both languages down to the advice, per store and in shopping mode in Dutch; the dialog of a tapped deal, early and later, also in Dutch and at font scale 2 in both languages), "Not this ingredient" on Offers and on a deal of Shopping with its snackbar (each also in Dutch and at font scale 2), Prices, Progress, the profile (in English and Dutch),
+Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch, and with that prep kept vacuum sealed, also in Dutch and at font scale 2), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the Plan with one batch eaten as sides and as a meal (also in Dutch), the Prep dialog with meals picked both ways (also in Dutch and at font scale 2), "Add a prepped side…" with batches still to make (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch; the question also of a prep that was made, of meals and of sides, in both languages, and of a prep of meals and sides, made or not, in both languages), a week holding only a meal of last week's batch on the Plan and Shopping (Shopping also in Dutch), the recipe of a later prepped meal and cook mode on a prep day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe editor (a recipe taken from the cooking site, also in Dutch and at font scale 2; its search, also in Dutch), the product form (also in Dutch and at font scale 2, and new with what keeps Save off), the recipe picker (also with standard meals first and the line on a prep still to make, in Dutch and at font scale 2), Today with a skipped lunch and its standard-meal chips (also in Dutch), the Plan's skip sheet and a recipe's standard-meal switch with what it made staples (both also in Dutch and at font scale 2), Offers, the price verdicts on Offers (early with one opened, and later, also in Dutch and at font scale 2 in both languages) and on Shopping (later, also in Dutch, at font scale 2 in both languages down to the advice, per store and in shopping mode in Dutch; the dialog of a tapped deal, early and later, also in Dutch and at font scale 2 in both languages), "Not this ingredient" on Offers and on a deal of Shopping with its snackbar (each also in Dutch and at font scale 2), Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for, offering "Register a new account", and saying a request waits for approval, also in Dutch), the form that asks for an account (empty, after Send with every field wrong, refused by the server, and sent; each also in Dutch and at font scale 2), the owner's Requests card of Settings (also in Dutch and at font scale 2), the "Not this ingredient" list of Settings (also in Dutch and at font scale 2), the Notifications card (in English and Dutch, with notifications refused by Android, at font scale 2 in both languages, and the owner's with "Account requests"), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed

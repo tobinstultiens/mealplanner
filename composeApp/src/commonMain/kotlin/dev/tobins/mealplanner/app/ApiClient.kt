@@ -297,6 +297,12 @@ class ApiClient(
         setBody(input)
     }.body()
 
+    /** Replaces ingredient [id] with [input], such as a product with the values of its label and its portions (issue 351). */
+    suspend fun updateIngredient(id: Long, input: IngredientInput): Ingredient = http.put("api/ingredients/$id") {
+        contentType(ContentType.Application.Json)
+        setBody(input)
+    }.body()
+
     suspend fun setStaple(ingredientId: Long, staple: Boolean): Pantry =
         (if (staple) http.put("api/pantry/staples/$ingredientId") else http.delete("api/pantry/staples/$ingredientId")).body()
 

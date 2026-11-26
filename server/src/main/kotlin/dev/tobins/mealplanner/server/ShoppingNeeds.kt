@@ -4,6 +4,7 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.nutrition.inPortionOf
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.shopping.ShopSection
 import dev.tobins.mealplanner.shopping.bestOffer
@@ -109,11 +110,13 @@ fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, s
             val amount = line.amount ?: continue // "salt to taste": needed, but no quantity
             val grams = gramsOf(line, ingredient)
             if (grams != null) need.grams += grams * factor else need.gramsKnown = false
-            if (line.dimension == Dimension.COUNT) need.pieces += amount * factor
+            // A portion ("2 bar", issue 351) is weighed, not a piece of what the store sells; one that is gone says its unit.
+            val inPortion = ingredient != null && line.inPortionOf(ingredient)
+            if (line.dimension == Dimension.COUNT && !inPortion) need.pieces += amount * factor
             // Only a count that adds no weight: one with a weight per piece is in the grams already.
-            if (line.unitIsTheIngredient && grams == null) need.addOwnPieces(amount * factor)
+            if (line.unitIsTheIngredient && !inPortion && grams == null) need.addOwnPieces(amount * factor)
             val unit = line.unit
-            if (grams == null && unit != null && !line.unitIsTheIngredient) need.addOther(unit, amount * factor)
+            if (grams == null && unit != null && (inPortion || !line.unitIsTheIngredient)) need.addOther(unit, amount * factor)
         }
     }
     return ShoppingNeeds(
