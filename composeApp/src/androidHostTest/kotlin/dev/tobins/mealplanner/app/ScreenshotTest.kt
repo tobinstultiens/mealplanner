@@ -304,6 +304,14 @@ private fun standardSwitch() {
     Column(Modifier.padding(16.dp)) { StandardMealRow(standard = true, report = marked, enabled = true) {} }
 }
 
+/** The recipe editor's search with [query] typed, and what it found: the account's own ingredients and a NEVO food to add. */
+@Composable
+private fun ingredientSearch(api: ApiClient, query: String) {
+    val catalogue by produceState(emptyList<dev.tobins.mealplanner.api.Ingredient>()) { value = api.ingredients() }
+    val (found, failed) = rememberFound(api, catalogue, query)
+    Column(Modifier.padding(16.dp)) { IngredientSearch(query, {}, found, failed, enabled = true, onPick = {}) }
+}
+
 /** The cooking-site dialog's body on a server that offers its site, with [choice] made and [url] typed. */
 @Composable
 private fun cookingSiteChoices(choice: SiteChoice, url: String) {
@@ -406,6 +414,8 @@ enum class Shot(
     val fontScale: Float? = null,
     /** The fake backend's offers judged by weeks of price history (issue 118); without it, every one is too new to judge. */
     val laterVerdicts: Boolean = false,
+    /** The fake backend for writing recipes (issue 342): a catalogue with foods, foods to add, the stew taken with its groups. */
+    val writing: Boolean = false,
     /** Texts to tap in turn once each is shown, each with a text to wait for after it, such as a dialog's or a snackbar's. */
     val taps: List<Pair<String, String>> = emptyList(),
     /** A text the picture must show, waited for before it is taken: one that comes from the last answer the screen needs. */
@@ -571,6 +581,14 @@ enum class Shot(
     // With its optional toppings, one counted in pieces (#226).
     RECIPE_DETAIL(heightDp = 1900, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
     RECIPE_DETAIL_NL(dutch = true, heightDp = 1900, content = { api, _ -> RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}) }),
+    // The editor of rows (issue 342) on a recipe taken from the cooking site: the totals, two groups, rows that count, salt
+    // left out on purpose, a unit of the site's own (the lemon) and a row that means nothing; tags, steps and keeps. In
+    // both languages and at the largest font; and the search under the rows, with the account's own and a food to add.
+    RECIPE_EDITOR(writing = true, heightDp = 2500, shows = "coriander", content = { api, _ -> RecipeEditorScreen(api, 4, {}, {}) }),
+    RECIPE_EDITOR_NL(writing = true, dutch = true, heightDp = 2600, shows = "coriander", content = { api, _ -> RecipeEditorScreen(api, 4, {}, {}) }),
+    RECIPE_EDITOR_X2(writing = true, heightDp = 3800, fontScale = 2.0f, shows = "coriander", content = { api, _ -> RecipeEditorScreen(api, 4, {}, {}) }),
+    RECIPE_EDITOR_SEARCH(writing = true, heightDp = 640, shows = "Chickpeas", content = { api, _ -> ingredientSearch(api, "chick") }),
+    RECIPE_EDITOR_SEARCH_NL(writing = true, dutch = true, heightDp = 640, shows = "Kikkererwten", content = { api, _ -> ingredientSearch(api, "chick") }),
     // Opened from a planned meal: the amounts of 1.5 of the recipe's 2 servings, and nothing to cook for leftovers.
     RECIPE_FROM_MEAL(heightDp = 1900, content = { api, _ ->
         RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 1.5, skipped = false))
@@ -845,6 +863,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         planning = shot.planning,
         nothingToSuggest = shot.nothingToSuggest,
         laterVerdicts = shot.laterVerdicts,
+        writing = shot.writing,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)

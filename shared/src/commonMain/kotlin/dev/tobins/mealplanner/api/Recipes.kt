@@ -53,6 +53,12 @@ data class RecipeSummary(
      * meal of one of its [mealSlots] falls away. The planner picks it as any other recipe. False from a server before them.
      */
     val standardMeal: Boolean = false,
+    /**
+     * Saved with a change in the app (issue 342; a save that changes nothing does not count). A recipe taken from the
+     * cooking site that was has no bank to go back to: putting it back is refused (409), it is deleted instead. False
+     * from a server before it.
+     */
+    val edited: Boolean = false,
 )
 
 /**

@@ -6,6 +6,7 @@ import dev.tobins.mealplanner.api.ManyAddedInput
 import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeSettings
 import dev.tobins.mealplanner.api.RotationInput
@@ -72,6 +73,9 @@ fun Route.recipeRoutes(cooking: CookingSync) {
     }
 
     post("/api/recipes") { call.respond(HttpStatusCode.Created, call.user.recipes.create(call.receive<RecipeInput>())) }
+
+    // Lines as a recipe saved with them would have them, each with its ingredient; nothing is saved (issue 342).
+    post("/api/recipes/lines") { call.respond(call.user.recipes.readDraft(call.receive<List<RecipeLineInput>>())) }
 
     route("/api/recipes/{id}") {
         fun io.ktor.server.routing.RoutingCall.id() =

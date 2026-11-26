@@ -4,10 +4,12 @@ import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodBasis
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.Nutrition
+import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class NutritionCalculatorTest {
@@ -33,6 +35,21 @@ class NutritionCalculatorTest {
         assertEquals(40.0, result.perServing.proteinG)
         assertTrue(result.complete)
         assertFalse(result.approximate)
+    }
+
+    @Test
+    fun linesBeingWrittenCountAsTheSameLinesSaved() {
+        val written = listOf(
+            RecipeLineInput(400.0, "g", "kipfilet", ingredientId = 1) to chicken,
+            RecipeLineInput(2.0, "piece", "ui") to ingredient(chicken.food, gramsPerPiece = 50.0),
+            RecipeLineInput(null, null, "zout") to null,
+            RecipeLineInput(1.0, "tbsp", "olie") to null,
+        )
+        val saved = lines("400 | g | kipfilet", "2 | piece | ui", "| | zout", "1 | tbsp | olie").zip(written.map { it.second })
+        assertEquals(NutritionCalculator.perServing(saved, 2), NutritionCalculator.ofLines(written, 2))
+        assertEquals(listOf("olie"), NutritionCalculator.ofLines(written, 2)!!.uncounted)
+        // Without an amount anywhere there is nothing to count, as a saved recipe says by having no nutrition.
+        assertNull(NutritionCalculator.ofLines(listOf(RecipeLineInput(null, null, "zout") to null), 2))
     }
 
     @Test

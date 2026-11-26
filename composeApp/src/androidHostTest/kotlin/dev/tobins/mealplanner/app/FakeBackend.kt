@@ -89,7 +89,15 @@ import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeekRest
 import dev.tobins.mealplanner.api.WeightEntry
 import dev.tobins.mealplanner.api.WeightLog
+import dev.tobins.mealplanner.api.Food
+import dev.tobins.mealplanner.api.FoodBasis
+import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeLineInput
+import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.recipes.IngredientLine
+import dev.tobins.mealplanner.recipes.toIngredientLine
 import dev.tobins.mealplanner.shopping.ShopSection
 import dev.tobins.mealplanner.units.Dimension
 import kotlinx.serialization.encodeToString
@@ -151,6 +159,12 @@ class FakeBackend(
      * Without it every judged offer is "too new to judge", as in the first eight weeks.
      */
     private val laterVerdicts: Boolean = false,
+    /**
+     * Writing recipes (issue 342): a catalogue whose ingredients have NEVO foods, foods to search that the account does not
+     * have yet, links of Dutch texts, and the chicken thighs as a recipe taken from the cooking site with groups. Recipes
+     * saved and lines looked up are read as the server reads them, with the shared code it uses.
+     */
+    private val writing: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -352,7 +366,9 @@ class FakeBackend(
             path == "/api/prices" -> json.encodeToString(if (emptyPrices) PricesState(emptyList(), emptyList(), null) else prices)
             (method == "PUT" || method == "DELETE") && path.startsWith("/api/weights/") -> changeWeights(method, path.substringAfterLast('/'), sent)
             path == "/api/weights" -> json.encodeToString(weights)
-            path == "/api/ingredients" -> json.encodeToString(ingredients)
+            method == "POST" && path == "/api/ingredients" -> json.encodeToString(createIngredient(sent))
+            path == "/api/ingredients" -> json.encodeToString(if (writing) catalogue else ingredients)
+            path == "/api/foods" -> json.encodeToString(foodsMatching(query.getValue("q")))
             path == "/api/pantry" -> json.encodeToString(pantry)
             // Never chosen: every store, as for an account that never opened the per-store list.
             path == "/api/shops" -> json.encodeToString(ShopsSetting())
@@ -377,6 +393,75 @@ class FakeBackend(
     }
 
     private fun ingredient(id: Long, name: String, staple: Boolean = false) = Ingredient(id, name, null, null, null, null, null, isStaple = staple)
+
+    private fun nevo(code: Int, en: String, nl: String, kcal: Double, protein: Double, basis: FoodBasis = FoodBasis.PER_100_G) =
+        Food(code, nl, en, null, "Food", basis, Nutrition(kcal, protein, 5.0, 1.0, 3.0, 1.0, 1.0, 50.0))
+
+    /**
+     * With [writing], the catalogue a recipe is written from (issue 342): each ingredient with its NEVO food, a weight per
+     * piece where one is counted in pieces, the oil's density; salt left out of the nutrition. Ingredients made from a
+     * food picked in the editor are added.
+     */
+    private val catalogue: MutableList<Ingredient> = java.util.Collections.synchronizedList(
+        mutableListOf(
+            Ingredient(1, "Chicken thigh fillet", nevo(1, "Chicken thigh fillet raw", "Kipdijfilet rauw", 180.0, 18.0), 110.0, null, null, null, false),
+            Ingredient(3, "Greek yoghurt", nevo(3, "Yoghurt Greek", "Yoghurt Grieks", 120.0, 4.5), null, null, null, null, false),
+            Ingredient(5, "Olive oil", nevo(5, "Olive oil", "Olijfolie", 884.0, 0.0), null, 0.91, null, null, isStaple = true),
+            Ingredient(7, "Salt", null, null, null, null, null, isStaple = true, negligible = true),
+            Ingredient(8, "Spinach", nevo(8, "Spinach raw", "Spinazie rauw", 23.0, 2.9), null, null, null, null, false),
+            Ingredient(10, "Coconut milk", nevo(10, "Coconut milk", "Kokosmelk", 197.0, 1.8, FoodBasis.PER_100_ML), null, null, null, null, false),
+            Ingredient(11, "Lemon", nevo(11, "Lemon", "Citroen", 29.0, 1.1), 100.0, null, null, null, false),
+            Ingredient(12, "Egg", nevo(12, "Egg chicken raw", "Kippenei rauw", 143.0, 12.6), 60.0, null, null, null, false),
+        ),
+    )
+
+    /** NEVO's foods as `/api/foods` searches them: those of the catalogue, and four the account does not have. */
+    private val foods = catalogue.mapNotNull { it.food } + listOf(
+        nevo(500, "Rice white raw", "Rijst wit rauw", 350.0, 7.0),
+        nevo(501, "Lentils red raw", "Linzen rood rauw", 336.0, 24.0),
+        nevo(502, "Coriander fresh", "Koriander vers", 23.0, 2.1),
+        nevo(503, "Chickpeas canned", "Kikkererwten uit blik", 120.0, 7.0),
+    )
+
+    private fun foodsMatching(query: String): List<Food> =
+        foods.filter { query.lowercase() in it.nameEn.lowercase() || query.lowercase() in it.nameNl.lowercase() }
+
+    /** `POST /api/ingredients`: one more of the catalogue, for the NEVO food it names. */
+    private fun createIngredient(sent: String): Ingredient {
+        changes += "POST /api/ingredients $sent"
+        val input = json.decodeFromString<IngredientInput>(sent)
+        val made = Ingredient(catalogue.maxOf { it.id } + 1, input.name, foods.single { it.nevoCode == input.nevoCode }, null, null, null, null, false)
+        catalogue += made
+        return made
+    }
+
+    /** The account's links of texts (`/api/mappings`): the Dutch names it gave its ingredients, and salt in any form. */
+    private val links = mapOf("kipdijfilet" to 1L, "olijfolie" to 5L, "spinazie" to 8L, "kokosmelk" to 10L, "salt and pepper to taste" to 7L, "zout" to 7L)
+
+    /** The ingredient [line] means: the one it was saved with, else its text's link, else the one of that name. */
+    private fun resolve(line: IngredientLine): Ingredient? {
+        val text = IngredientLine.coreText(line.ingredientText)
+        val id = line.ingredientId ?: links[text] ?: catalogue.firstOrNull { it.name.equals(text, ignoreCase = true) }?.id
+        return catalogue.firstOrNull { it.id == id }
+    }
+
+    private fun mapped(line: IngredientLine): MappedLine {
+        val ingredient = resolve(line)
+        val grams = ingredient?.takeUnless { it.negligible }?.let { NutritionCalculator.quantityOf(line, it)?.grams }
+        return MappedLine(line, ingredient?.id, ingredient?.name, grams, ingredient?.negligible == true)
+    }
+
+    /**
+     * With [writing], the chicken thighs as taken from the cooking site: two groups, tags, steps, slots and keeps, its lines
+     * with no ingredient of their own but what their texts mean, one (the coriander) meaning nothing.
+     */
+    private fun takenStew(): RecipeDetail {
+        val text = "```ingredients\n# Stew\n700 | g | chicken thigh fillet\n400 | ml | coconut milk\n300 | g | spinach\n1 | lemon | juiced\n" +
+            "1 | bunch | coriander\n# To serve\n| | salt and pepper to taste\n```"
+        val lines = HugoRecipeParser().parse("x.md", text).ingredients
+        val nutrition = NutritionCalculator.perServing(lines.map { it to resolve(it) }, 2)
+        return recipeDetail(4).copy(summary = row(4).copy(nutrition = nutrition), ingredients = lines.map(::mapped))
+    }
 
     private val ingredients = listOf(
         ingredient(1, "Chicken thigh fillet"), ingredient(2, "Feta"), ingredient(3, "Greek yoghurt"),
@@ -780,7 +865,41 @@ class FakeBackend(
         json.encodeToJsonElement(list).let { if (olderServer) it.withoutFlags() else it }.toString()
 
     private fun detailJson(id: Long): String =
-        json.encodeToJsonElement(recipeDetail(id)).let { if (olderServer) it.withoutFlags() else it }.toString()
+        json.encodeToJsonElement(detailOf(id)).let { if (olderServer) it.withoutFlags() else it }.toString()
+
+    /** Recipe [id] as it is now: as last saved by the editor, else the sample (the stew with its groups when [writing]). */
+    private fun detailOf(id: Long): RecipeDetail =
+        saved[id]?.copy(summary = row(id)) ?: if (writing && id == 4L) takenStew() else recipeDetail(id)
+
+    /** The recipes saved by the editor while [writing], by id. */
+    private val saved = java.util.concurrent.ConcurrentHashMap<Long, RecipeDetail>()
+
+    /**
+     * Saves [input] as recipe [id], or as a new one of mine, as the server does: each line read as it reads them, with the
+     * ingredient it means ([resolve]), and the nutrition worked out from them. A save that changes nothing does not count
+     * as a change in the app (`edited`), as on the server.
+     */
+    private fun save(id: Long?, input: RecipeInput): RecipeDetail {
+        val before = id?.let(::detailOf)
+        val unchanged = before != null && input == asInput(before).copy(ingredients = input.ingredients)
+        val lines = input.lines!!.mapNotNull { it.toIngredientLine() }
+        val nutrition = NutritionCalculator.perServing(lines.map { it to resolve(it) }, input.servings).takeIf { lines.any { it.amount != null } }
+        val newId = id ?: (rows.maxOf { it.id } + 1)
+        val base = before?.summary ?: summary(newId, input.title, "", 0.0, 0.0, null, source = RecipeSource.MANUAL)
+        val summary = base.copy(
+            title = input.title, tags = input.tags, servings = input.servings, mealSlots = input.mealSlots, nutrition = nutrition,
+            edited = base.edited || !unchanged,
+        )
+        if (id == null) rows += summary else rows.replaceAll { if (it.id == id) summary else it }
+        return RecipeDetail(summary, lines.map(::mapped), input.instructions, emptyList()).also { saved[newId] = it }
+    }
+
+    /** [recipe] as the body that saves it again: each line's own fields, its own ingredient among them. */
+    private fun asInput(recipe: RecipeDetail) = RecipeInput(
+        recipe.summary.title, recipe.summary.servings ?: 1, instructions = recipe.instructions, tags = recipe.summary.tags,
+        mealSlots = recipe.summary.mealSlots,
+        lines = recipe.ingredients.map { RecipeLineInput(it.line.amount, it.line.unit, it.line.item, it.line.ingredientId, it.line.group) },
+    )
 
     /**
      * The changes of recipes the app can make, answering as the server does, refusals included: a recipe
@@ -788,13 +907,19 @@ class FakeBackend(
      * deleted instead. [refusing] makes every change fail with its sentence. Many at once is all or nothing.
      */
     private fun changeRecipes(method: String, parts: List<String>, sent: String): String? {
+        // Looking lines up saves nothing.
+        if (method == "POST" && parts.getOrNull(2) == "lines") {
+            return json.encodeToString(json.decodeFromString<List<RecipeLineInput>>(sent).mapNotNull { it.toIngredientLine() }.map(::mapped))
+        }
         changes += "$method /${parts.joinToString("/")} $sent"
         if (method == "DELETE" && parts.size == 3) {
             rows.removeAll { it.id == parts[2].toLong() }
             return ""
         }
-        // A recipe made or edited in the editor: the answer is always the sample recipe, which the screen only passes on.
-        if (method == "POST" || (method == "PUT" && parts.size == 3 && parts[2].toLongOrNull() != null)) return detailJson(parts.getOrNull(2)?.toLong() ?: 4)
+        val editing = method == "PUT" && parts.size == 3 && parts[2].toLongOrNull() != null
+        // Writing, a recipe is saved as the server saves it; else the answer is always the sample recipe, which the screen only passes on.
+        if (writing && (method == "POST" && parts.size == 2 || editing)) return json.encodeToString(save(parts.getOrNull(2)?.toLong(), json.decodeFromString<RecipeInput>(sent)))
+        if (method == "POST" || editing) return detailJson(parts.getOrNull(2)?.toLong() ?: 4)
         if (olderServer || method != "PUT") return null
         refusing?.let { throw Refusal(409, it) }
         val many = parts.size == 3
@@ -851,6 +976,7 @@ class FakeBackend(
                 when {
                     recipe.source != RecipeSource.COOKING_SITE ->
                         throw Refusal(409, "“${recipe.title}” was made in the app, so it has no bank to go back to: delete it instead")
+                    recipe.edited -> throw Refusal(409, "“${recipe.title}” was changed in the app, so it is no longer the cooking site's: delete it instead")
                     recipe.id == routine -> throw Refusal(409, "“${recipe.title}” is the breakfast routine, so it cannot go back to the bank")
                     recipe.id in planned ->
                         throw Refusal(409, "“${recipe.title}” is planned on Fri 20 Nov, so it cannot go back to the bank yet")

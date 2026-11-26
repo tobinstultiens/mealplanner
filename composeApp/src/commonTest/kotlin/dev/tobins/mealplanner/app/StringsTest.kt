@@ -18,19 +18,8 @@ class StringsTest {
         Msg.DETAILS, Msg.SLOT_LUNCH, Msg.CARD_SERVER, Msg.CARD_ACCOUNT, Msg.CARD_APP, Msg.LATER,
         Msg.LANGUAGE_ENGLISH, Msg.LANGUAGE_DUTCH, Msg.OFFER_WAS, Msg.PRICE_PER_KG, Msg.WEIGHING_ROW,
         Msg.SERVER_ADDRESS_HINT, Msg.PACKS_TO_TAKE, Msg.APP_NAME, Msg.ADJUST_SHORT_MEAL, Msg.PREP_MEAL_NOTES,
-        Msg.STANDARD_CHIP, Msg.VERDICT_UNIT_KG,
+        Msg.STANDARD_CHIP, Msg.VERDICT_UNIT_KG, Msg.ROW_COUNTED, Msg.ROW_NOT_COUNTED,
     )
-
-    @Test
-    fun aRefusedRecipeNamesTheLinesTheServerCouldNotRead() {
-        val server = "Unreadable ingredient line: 0,5x | kg | banaan\nUnreadable ingredient line: x | g | ei"
-        assertEquals(
-            "Dit is niet te lezen: \"0,5x | kg | banaan\" / \"x | g | ei\"\nElke regel heeft de vorm hoeveelheid | eenheid | product",
-            checkLinesMessage(Strings.Dutch, server),
-        )
-        assertTrue(checkLinesMessage(Strings.English, server).startsWith("Cannot read: \"0,5x"))
-        assertEquals(Strings.Dutch(Msg.CHECK_LINES), checkLinesMessage(Strings.Dutch, "title must not be blank"))
-    }
 
     @Test
     fun everyMessageHasBothLanguagesAndTheSamePlaceholders() {

@@ -29,6 +29,7 @@ import dev.tobins.mealplanner.planner.Pack
 import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.recipes.IngredientLine
+import dev.tobins.mealplanner.recipes.toIngredientLine
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.Recipe
 import dev.tobins.mealplanner.units.Dimension
@@ -104,20 +105,35 @@ class RecipeRepository(
         val lines = linesOf(id)
         return RecipeDetail(
             summary = row.toSummary(nutritionOf(row, lines, resolve), costOf(row, lines, resolve, currentPricing())),
-            ingredients = lines.map { line ->
-                val ingredient = resolve(line)
-                MappedLine(
-                    line = line,
-                    ingredientId = ingredient?.id,
-                    ingredientName = ingredient?.name,
-                    grams = ingredient?.takeUnless { it.negligible }?.let { NutritionCalculator.quantityOf(line, it)?.grams },
-                    negligible = ingredient?.negligible == true,
-                )
-            },
+            ingredients = lines.map { mapped(it, resolve) },
             instructions = row.instructions,
             problems = Json.decodeFromString(row.problemsJson),
             toppings = toppings(id),
         )
+    }
+
+    /** [line] with the ingredient it means ([resolve]) and the weight that counts. */
+    private fun mapped(line: IngredientLine, resolve: (IngredientLine) -> Ingredient?): MappedLine {
+        val ingredient = resolve(line)
+        return MappedLine(
+            line = line,
+            ingredientId = ingredient?.id,
+            ingredientName = ingredient?.name,
+            grams = ingredient?.takeUnless { it.negligible }?.let { NutritionCalculator.quantityOf(line, it)?.grams },
+            negligible = ingredient?.negligible == true,
+        )
+    }
+
+    /**
+     * [lines] as a recipe saved with them would have them, without saving anything (`POST /api/recipes/lines`, issue 342):
+     * each as stored, with the ingredient it means for the account now and its weight, as [find] gives them. The app's
+     * editor looks pasted lines up with it, as only the server knows the account's links of texts. Refused as a save
+     * would refuse the lines (400, and 404 for another account's ingredient).
+     */
+    fun readDraft(lines: List<RecipeLineInput>): List<MappedLine> {
+        val read = readLines(lines).also(::requireOwnIngredients)
+        val resolve = ingredients.resolver()
+        return read.map { mapped(it, resolve) }
     }
 
     /** The account's optional toppings of recipe [id] ([RecipeToppings]), in their order. */
@@ -272,10 +288,14 @@ class RecipeRepository(
     /**
      * Replaces one of my recipes ([requireMine]): one made in the app, or one taken from the cooking site, which is the
      * account's own copy (issue 340). Its kind, rating, picture and the like stay; a bank recipe is the site's (409).
+     * A save that changes nothing ([unchanged]) writes nothing, so a taken recipe opened in the editor and saved as it
+     * was is not changed in the app and can still go back to the bank (issue 342).
      */
     fun update(id: Long, input: RecipeInput): RecipeDetail = db.writing {
         val row = requireMine(id)
-        val lines = linesFrom(input, before = linesOf(id))
+        val before = linesOf(id)
+        val lines = linesFrom(input, before)
+        if (unchanged(row, before, input, lines)) return@writing find(id)!!
         q.updateMine(
             title = input.title.trim(),
             tagsJson = Json.encodeToString(input.tags),
@@ -289,6 +309,14 @@ class RecipeRepository(
         replaceIngredients(id, lines)
         find(id)!!
     }
+
+    /**
+     * Whether [input], read as [lines], is recipe [row] as it is, with its lines [before]: its title, servings,
+     * instructions (both trimmed, as saved), tags, slots and every line with its group and own ingredient.
+     */
+    private fun unchanged(row: Recipe, before: List<IngredientLine>, input: RecipeInput, lines: List<IngredientLine>): Boolean =
+        input.title.trim() == row.title && input.servings.toLong() == row.servings && input.instructions.trim() == row.instructions &&
+            input.tags == Json.decodeFromString<List<String>>(row.tagsJson) && input.mealSlots.toSet() == slotsOf(row) && lines == before
 
     /**
      * Deletes one of my recipes ([requireMine]), also one taken from the cooking site: the site's file is then in the bank
@@ -530,10 +558,15 @@ class RecipeRepository(
         require(input.servings in 1..100) { "servings must be between 1 and 100" }
         val lines = input.lines?.let(::readLines) ?: keepingIngredients(readText(input.ingredients), before)
         require(lines.isNotEmpty()) { "at least one ingredient line is required" }
+        requireOwnIngredients(lines)
+        return lines
+    }
+
+    /** Refuses [lines] with an ingredient that is not the account's, as for toppings: as one that does not exist (404). */
+    private fun requireOwnIngredients(lines: List<IngredientLine>) {
         for (id in lines.mapNotNullTo(LinkedHashSet()) { it.ingredientId }) {
             ingredients.find(id) ?: throw NotFoundException("No ingredient with id $id")
         }
-        return lines
     }
 
     /** The lines of the import format [text], read as the cooking site's are; a line that cannot be read is refused. */
@@ -544,15 +577,18 @@ class RecipeRepository(
         return parsed.ingredients
     }
 
-    /** [lines] as the same lines of the import format read ([HugoRecipeParser.line]), each with its ingredient. */
+    /**
+     * [lines] as the same lines of the import format read, each with its ingredient ([toIngredientLine], which the app's
+     * editor reads them with too), a line break in a text, unit or group as a space. A unit with a `|` is refused: the
+     * import format, in which the installed app edits a recipe, would read it as part of the text (issue 342).
+     */
     private fun readLines(lines: List<RecipeLineInput>): List<IngredientLine> {
         val parser = HugoRecipeParser()
         return lines.mapIndexed { index, line ->
             val amount = line.amount
             require(amount == null || (amount.isFinite() && amount > 0)) { "Line ${index + 1}: the amount must be above 0, or none" }
-            parser.line(amount, line.unit?.trim().orEmpty(), line.text.trim(), line.group?.trim()?.ifEmpty { null })
-                ?.copy(ingredientId = line.ingredientId)
-                ?: throw IllegalArgumentException("Line ${index + 1}: a line needs an amount, a unit or a text")
+            require(line.unit?.contains('|') != true) { "Line ${index + 1}: a unit cannot hold |" }
+            line.toIngredientLine(parser) ?: throw IllegalArgumentException("Line ${index + 1}: a line needs an amount, a unit or a text")
         }
     }
 
@@ -706,6 +742,7 @@ class RecipeRepository(
         keepsDays = keepsDays?.toInt(),
         keepsVacuumDays = keepsVacuumDays?.toInt(),
         standardMeal = standardMeal != 0L,
+        edited = editedAt != null,
     )
 
     private fun Boolean.toLong() = if (this) 1L else 0L

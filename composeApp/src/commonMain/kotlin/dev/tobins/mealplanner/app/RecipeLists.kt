@@ -52,19 +52,22 @@ internal fun bankShown(bank: List<RecipeSummary>, section: String?, query: Strin
     bank.filter { (section == null || it.section == section) && it.matches(query) }
 
 /**
- * What "Remove from my recipes" does with a selection: only recipes from the cooking site have a bank to
- * go back to, so [ids] leaves out those made in the app, and [keptMadeInApp] counts them for the message.
- * The server refuses to put such a recipe back (it is deleted instead, on its own screen).
+ * What "Remove from my recipes" does with a selection: only recipes that have a bank to go back to ([hasBank]) are
+ * put back, so [ids] leaves out those made or changed in the app, and [kept] counts them for the message. The server
+ * refuses to put such a recipe back, and with it the whole selection (it is deleted instead, on its own screen).
  */
-internal data class Removal(val ids: List<Long>, val keptMadeInApp: Int)
+internal data class Removal(val ids: List<Long>, val kept: Int)
 
 internal fun removalOf(selected: List<RecipeSummary>): Removal {
-    val (fromSite, madeHere) = selected.partition { it.source == RecipeSource.COOKING_SITE }
-    return Removal(fromSite.map { it.id }, madeHere.size)
+    val (toBank, kept) = selected.partition { it.hasBank() }
+    return Removal(toBank.map { it.id }, kept.size)
 }
 
-/** Whether the recipe can be put back in the bank (a cooking-site recipe), or is deleted instead. */
-internal fun RecipeSummary.hasBank(): Boolean = source == RecipeSource.COOKING_SITE
+/**
+ * Whether the recipe can be put back in the bank: one taken from the cooking site and not changed in the app since
+ * (issue 342; changed, the next sync would undo the change). Any other is deleted instead.
+ */
+internal fun RecipeSummary.hasBank(): Boolean = source == RecipeSource.COOKING_SITE && !edited
 
 /** How many ingredients of [recipes] are not linked to a food yet: what the user is told to link after adding. */
 internal fun unlinkedIngredients(recipes: List<RecipeSummary>): Int =

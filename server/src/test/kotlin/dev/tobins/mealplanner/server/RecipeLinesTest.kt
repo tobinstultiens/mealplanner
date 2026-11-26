@@ -4,12 +4,14 @@ import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
+import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -18,6 +20,8 @@ import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.api.SyncResult
 import dev.tobins.mealplanner.api.UnmappedText
+import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.recipes.PlainLines
 import dev.tobins.mealplanner.server.db.Database
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -45,6 +49,7 @@ import kotlin.io.path.createTempFile
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -248,6 +253,80 @@ class RecipeLinesTest {
         assertEquals(HttpStatusCode.OK, http.put("/api/recipes/${curry.id}/added") { setBody(AddedInput(added = false)) }.status)
         assertEquals(1, http.sync().updated)
         assertEquals(listOf("Hot curry", "Stew"), http.bank().map { it.title })
+    }
+
+    /**
+     * The totals the editor shows while a recipe is written (issue 342) are the saved recipe's: worked out in the app from
+     * the catalogue (`GET /api/ingredients`) and what each line means, which for a pasted text the account linked comes from
+     * `POST /api/recipes/lines`. Here a picked ingredient, a food the account did not have (made one of its ingredients as
+     * the editor makes it) and a pasted line; once saved every line is linked and the nutrition complete.
+     */
+    @Test
+    fun theTotalsWhileWritingAreTheSavedRecipes() = testApplication {
+        val http = start()
+        val beef = http.ingredient("Beef", 10, 10.0)
+        http.put("/api/mappings") { setBody(MappingRequest("rundvlees", ingredientId = beef.id)) }
+        val rice = http.post("/api/ingredients") { setBody(IngredientInput("Rice white raw", nevoCode = 5)) }.body<Ingredient>()
+        val pasted = PlainLines.read("300 g rundvlees\n1 ui")
+        val read = http.post("/api/recipes/lines") { setBody(pasted) }.body<List<MappedLine>>()
+        assertEquals(listOf(beef.id, null), read.map { it.ingredientId }, "the onion is no ingredient of the account")
+        assertEquals(listOf(300.0, null), read.map { it.grams })
+
+        val catalogue = http.get("/api/ingredients").body<List<Ingredient>>().associateBy { it.id }
+        val written = listOf(
+            RecipeLineInput(400.0, "g", "Beef", beef.id) to beef,
+            RecipeLineInput(1.5, "cup", "Rice white raw", rice.id) to rice,
+            pasted[0] to catalogue[read[0].ingredientId],
+        )
+        val shown = NutritionCalculator.ofLines(written, servings = 3)!!
+        val saved = http.post("/api/recipes") { setBody(RecipeInput("Beef and rice", 3, lines = written.map { it.first })) }.body<RecipeDetail>()
+        assertEquals(shown.perServing.kcal to shown.perServing.proteinG, saved.summary.nutrition!!.perServing.kcal to saved.summary.nutrition!!.perServing.proteinG)
+        assertEquals(shown, saved.summary.nutrition)
+        assertTrue(shown.complete && shown.approximate, "the cup of rice is a volume without a density")
+        assertEquals(listOf(beef.id, rice.id, beef.id), saved.ingredients.map { it.ingredientId })
+    }
+
+    /**
+     * A recipe opened in the editor and saved as it was is not changed in the app (issue 342): a taken one can still go back
+     * to the bank. With one amount changed it is changed (`edited`), and keeps all it had: tags, groups, steps, slots and
+     * how long it keeps; it cannot go back, also after a later save that changes nothing.
+     */
+    @Test
+    fun aSaveThatChangesNothingIsNoChangeInTheApp() = testApplication {
+        val http = start()
+        http.sync()
+        val stew = http.bank().single { it.title == "Stew" }
+        val taken = http.put("/api/recipes/${stew.id}/added") { setBody(AddedInput(added = true)) }.body<RecipeDetail>()
+        val same = http.put("/api/recipes/${stew.id}") { setBody(asInput(taken)) }.body<RecipeDetail>()
+        assertEquals(taken, same)
+        assertFalse(same.summary.edited)
+        assertEquals(HttpStatusCode.OK, http.put("/api/recipes/${stew.id}/added") { setBody(AddedInput(added = false)) }.status)
+
+        http.put("/api/recipes/${stew.id}/added") { setBody(AddedInput(added = true)) }
+        http.put("/api/recipes/${stew.id}/keeps") { setBody(RecipeKeeps(3, 6)) }
+        val before = http.recipe(stew.id)
+        val input = asInput(before)
+        val more = input.copy(lines = input.lines!!.mapIndexed { i, line -> if (i == 0) line.copy(amount = 1500.0) else line })
+        val edited = http.put("/api/recipes/${stew.id}") { setBody(more) }.body<RecipeDetail>()
+        assertTrue(edited.summary.edited)
+        assertEquals(listOf(1500.0, 1.0, 400.0, null), edited.ingredients.map { it.line.amount })
+        fun kept(recipe: RecipeDetail) = listOf(
+            recipe.summary.tags, recipe.ingredients.map { it.line.group }, recipe.instructions, recipe.summary.mealSlots,
+            recipe.summary.keepsDays to recipe.summary.keepsVacuumDays,
+        )
+        assertEquals(kept(before), kept(edited))
+        assertTrue(http.put("/api/recipes/${stew.id}") { setBody(asInput(edited)) }.body<RecipeDetail>().summary.edited)
+        assertEquals(HttpStatusCode.Conflict, http.put("/api/recipes/${stew.id}/added") { setBody(AddedInput(added = false)) }.status)
+    }
+
+    /** A unit is a word of its own: one with a `|` is refused, as the import format would read it as part of the text. */
+    @Test
+    fun aUnitWithABarIsRefused() = testApplication {
+        val http = start()
+        val bar = listOf(RecipeLineInput(1.0, "g|x", "beef"))
+        val refused = http.post("/api/recipes") { setBody(RecipeInput("Bowl", 2, lines = bar)) }
+        assertEquals(HttpStatusCode.BadRequest to "Line 1: a unit cannot hold |", refused.status to refused.error())
+        assertEquals(HttpStatusCode.BadRequest, http.post("/api/recipes/lines") { setBody(bar) }.status)
     }
 
     @Test

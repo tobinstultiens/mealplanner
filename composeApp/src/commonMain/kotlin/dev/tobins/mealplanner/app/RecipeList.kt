@@ -180,7 +180,7 @@ fun RecipeListScreen(
                         SelectionAction(t(Msg.TAKE_OUT_OF_ROTATION), any) {
                             change(Msg.ROTATION_FAILED, { api.setRecipesRotation(chosen.toList(), false) }) { t.plural(Plural.OUT_OF_ROTATION_NOW, chosen.size) }
                         }
-                        // Only recipes from the cooking site go back to the bank; the rest are left out and counted.
+                        // Only recipes of the cooking site not changed in the app go back to the bank; the rest are left out and counted.
                         SelectionAction(t(Msg.REMOVE_FROM_MINE), any) {
                             val removal = removalOf(picked())
                             if (removal.ids.isEmpty()) {
@@ -188,7 +188,7 @@ fun RecipeListScreen(
                             } else {
                                 change(Msg.REMOVE_FAILED, { api.setRecipesAdded(removal.ids, added = false) }) {
                                     t.plural(Plural.REMOVED_MANY, removal.ids.size) +
-                                        if (removal.keptMadeInApp > 0) ". " + t.plural(Plural.KEPT_MADE_IN_APP, removal.keptMadeInApp) else ""
+                                        if (removal.kept > 0) ". " + t.plural(Plural.KEPT_MADE_IN_APP, removal.kept) else ""
                                 }
                             }
                         }

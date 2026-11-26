@@ -195,7 +195,7 @@ class RecipeBankScreensTest {
         waitFor("2 selected")
 
         compose.onNodeWithText("Remove from my recipes").performClick()
-        waitFor("1 recipe is back in the bank. 1 recipe made in the app stays", substring = true)
+        waitFor("1 recipe is back in the bank. 1 recipe made or changed in the app stays", substring = true)
         // Only the recipe from the site was sent: the app-made one is never offered to the put-back route.
         assertEquals(listOf("""PUT /api/recipes/added {"ids":[3],"added":false,"inRotation":true}"""), fake.changes)
         compose.onAllNodesWithText("Tuna pasta salad").assertCountEquals(0)

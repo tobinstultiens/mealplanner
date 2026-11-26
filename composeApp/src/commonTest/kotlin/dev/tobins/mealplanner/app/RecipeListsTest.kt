@@ -84,18 +84,20 @@ class RecipeListsTest {
     }
 
     @Test
-    fun removingFromMyRecipesLeavesOutThoseMadeInTheAppAndCountsThem() {
+    fun removingFromMyRecipesLeavesOutThoseMadeOrChangedInTheAppAndCountsThem() {
         val selected = listOf(
             recipe(1, "From the site"),
             recipe(2, "Written here", source = RecipeSource.MANUAL),
             recipe(3, "Generated", source = RecipeSource.GENERATED),
             recipe(4, "Also from the site"),
+            recipe(5, "From the site, changed in the app").copy(edited = true),
         )
-        assertEquals(Removal(listOf(1L, 4L), keptMadeInApp = 2), removalOf(selected))
+        assertEquals(Removal(listOf(1L, 4L), kept = 3), removalOf(selected))
         // Only recipes made in the app: nothing is sent at all.
         assertEquals(Removal(emptyList(), 1), removalOf(selected.filter { it.id == 2L }))
         assertTrue(selected[0].hasBank())
         assertFalse(selected[1].hasBank())
+        assertFalse(selected[4].hasBank(), "changed in the app (issue 342), the next sync would undo it")
     }
 
     @Test
