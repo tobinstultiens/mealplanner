@@ -20,6 +20,11 @@ data class Ingredient(
     val isStaple: Boolean,
     /** Used in amounts that add next to nothing (herbs, spices, leaveners): left out of nutrition. */
     val negligible: Boolean = false,
+    /**
+     * The unit the ingredient has in the recipe the account saved last (a line saved with the ingredient itself), so
+     * the editor starts a picked one in it; null when no saved recipe has it. Only the list answers it.
+     */
+    val lastUnit: String? = null,
 )
 
 /** Body for creating or replacing an ingredient. */

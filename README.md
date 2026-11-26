@@ -306,8 +306,14 @@ recipes, also one taken from the cooking site, open the editor (`RecipeEditorScr
 web). Its ingredients are rows: "Add an ingredient" searches the account's ingredients (by their name and their NEVO
 food's English or Dutch name) and, after a pause in typing, the NEVO foods it has no ingredient for yet; picking one of
 those makes it an ingredient of the account first (`POST /api/ingredients`, named after the food, " (NEVO)" added when
-the name is taken); in a row's dialog it is made only when the row is saved, so a cancelled dialog leaves nothing behind. A picked row starts at one piece when the ingredient has a weight per piece, else 100 ml of a food
-NEVO counts per 100 ml or 100 g, with its amount selected for typing (the keyboard's Next goes on to the next row's amount,
+the name is taken); in a row's dialog it is made only when the row is saved, so a cancelled dialog leaves nothing behind. A picked row starts in the unit the account last saved that ingredient in (issue 346): its unit in the recipe the
+account saved most recently that has a line saved with the ingredient itself (`Ingredient.lastUnit`, which `GET /api/ingredients`
+works out from the saved lines, so it is the account's own on every device; a line that means the ingredient only
+through its text, as the cooking site's do, is not a pick and does not count), as one piece, 100 ml or 100 g. An ingredient
+the account has not used, or whose remembered unit it no longer has (its weight per piece or density was removed), starts at
+one piece when it has a weight per piece, else 100 ml of a food NEVO counts per 100 ml, else 100 g. Pasted lines keep
+the unit of their text, a row already there keeps its unit, and an ingredient made on the spot from a food has no history.
+Each row has its amount selected for typing (the keyboard's Next goes on to the next row's amount,
 and from the last to the search). While the editor is open the keyboard makes room instead of sliding the screen up
 (Android: the window's soft input mode is "adjust resize" and the column ends above the keyboard, `imePadding`), and
 the focused amount field and what the search finds are brought wholly into view as they come and as the keyboard

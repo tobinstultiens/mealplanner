@@ -151,6 +151,34 @@ class RecipeLinesTest {
         assertEquals(listOf(beef.id, rice.id), http.recipe(bowl.summary.id).ingredients.map { it.ingredientId })
     }
 
+    /**
+     * The catalogue says the unit each ingredient has in the recipe saved last (issue 346), for the editor to start a
+     * picked one in: only lines saved with their ingredient count, and a changed older recipe is the latest save.
+     */
+    @Test
+    fun theCatalogueSaysTheUnitAnIngredientWasLastSavedIn() = testApplication {
+        val http = start()
+        val beef = http.ingredient("Beef", 10, 10.0)
+        val rice = http.ingredient("Rice", 5, 2.0)
+        suspend fun lastUnits() = http.get("/api/ingredients").body<List<Ingredient>>().associate { it.name to it.lastUnit }
+        assertEquals(mapOf("Beef" to null, "Rice" to null), lastUnits().filterKeys { it in setOf("Beef", "Rice") }, "none saved yet")
+
+        suspend fun save(title: String, vararg lines: RecipeLineInput) =
+            http.post("/api/recipes") { setBody(RecipeInput(title, 2, lines = lines.toList())) }.body<RecipeDetail>()
+        val first = save("Bowl", RecipeLineInput(400.0, "g", "beef", beef.id), RecipeLineInput(2.0, "piece", "rice", rice.id))
+        assertEquals("g" to "piece", lastUnits().let { it["Beef"] to it["Rice"] })
+        save("Stew", RecipeLineInput(2.0, "piece", "beef", beef.id))
+        assertEquals("piece" to "piece", lastUnits().let { it["Beef"] to it["Rice"] })
+
+        // The older recipe saved again with the beef in grams is the latest save.
+        http.put("/api/recipes/${first.summary.id}") { setBody(asInput(first).copy(lines = listOf(RecipeLineInput(300.0, "g", "beef", beef.id), RecipeLineInput(150.0, "g", "rice", rice.id)))) }
+        assertEquals("g" to "g", lastUnits().let { it["Beef"] to it["Rice"] })
+
+        // A line that means the rice only through its text is not a pick.
+        save("Plain", RecipeLineInput(1.0, "kg", "rice"))
+        assertEquals("g", lastUnits()["Rice"])
+    }
+
     /** Nutrition, cost, the shopping list, what a meal had in it and a standard meal's staples all read the lines' ingredients. */
     @Test
     fun everythingThatReadsTheLinesUsesTheirIngredients() = testApplication {

@@ -346,6 +346,22 @@ class AccountsTest {
         assertEquals(listOf(alicesBeef.id), alicesStew.ingredients.map { it.ingredientId })
     }
 
+    /** The unit an ingredient was last saved in (issue 346) is the account's own: Bob saving the same food in another unit changes nothing for Alice. */
+    @Test
+    fun theUnitLastSavedForAnIngredientIsEachAccountsOwn() = testApplication {
+        start()
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val alicesBeef = alice.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+        val bobsBeef = bob.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+        suspend fun HttpClient.lastUnit() = get("/api/ingredients").body<List<Ingredient>>().single { it.name == "Beef" }.lastUnit
+        alice.post("/api/recipes") { setBody(RecipeInput("Stew", 2, lines = listOf(RecipeLineInput(400.0, "g", "beef", alicesBeef.id)))) }
+
+        bob.post("/api/recipes") { setBody(RecipeInput("Roast", 2, lines = listOf(RecipeLineInput(2.0, "piece", "beef", bobsBeef.id)))) }
+        assertEquals("g", alice.lastUnit())
+        assertEquals("piece", bob.lastUnit())
+    }
+
     /**
      * Lines read as a save would read them (`POST /api/recipes/lines`, issue 342) are read with the asking account's
      * catalogue and links of texts alone: Bob's text that Alice linked means nothing to him, and Alice's ingredient on a

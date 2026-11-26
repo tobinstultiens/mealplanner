@@ -898,6 +898,10 @@ class FakeBackend(
             edited = base.edited || !unchanged,
         )
         if (id == null) rows += summary else rows.replaceAll { if (it.id == id) summary else it }
+        // The unit each ingredient was last saved in, as the server lists it (issue 346).
+        input.lines.orEmpty().filter { it.ingredientId != null }.forEach { line ->
+            catalogue.replaceAll { if (it.id == line.ingredientId) it.copy(lastUnit = line.unit) else it }
+        }
         return RecipeDetail(summary, lines.map(::mapped), input.instructions, emptyList()).also { saved[newId] = it }
     }
 
