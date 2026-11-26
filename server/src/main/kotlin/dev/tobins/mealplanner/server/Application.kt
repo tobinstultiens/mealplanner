@@ -20,6 +20,7 @@ import dev.tobins.mealplanner.server.routes.ingredientRoutes
 import dev.tobins.mealplanner.server.routes.notificationRoutes
 import dev.tobins.mealplanner.server.routes.offerRoutes
 import dev.tobins.mealplanner.server.routes.planRoutes
+import dev.tobins.mealplanner.server.routes.productRoutes
 import dev.tobins.mealplanner.server.routes.publicRoutes
 import dev.tobins.mealplanner.server.routes.recipeRoutes
 import dev.tobins.mealplanner.server.routes.registrationRoutes
@@ -33,12 +34,16 @@ import io.ktor.http.ContentType
 import io.ktor.server.routing.routing
 import dev.tobins.mealplanner.server.generation.ClaudeRecipeGenerator
 import dev.tobins.mealplanner.server.generation.RecipeGenerator
+import dev.tobins.mealplanner.server.offers.AhApp
 import dev.tobins.mealplanner.server.offers.AhOfferSource
 import dev.tobins.mealplanner.server.offers.JumboOfferSource
 import dev.tobins.mealplanner.server.offers.LidlOfferSource
 import dev.tobins.mealplanner.server.offers.OfferSource
 import dev.tobins.mealplanner.server.prices.AhPriceSource
 import dev.tobins.mealplanner.server.prices.PriceSource
+import dev.tobins.mealplanner.server.products.AhProducts
+import dev.tobins.mealplanner.server.products.OpenFoodFacts
+import dev.tobins.mealplanner.server.products.ProductFinder
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -94,6 +99,11 @@ data class ServerConfig(
      * `/.well-known/assetlinks.json` so Android opens the app for the login redirect.
      */
     val androidCertificates: List<String> = emptyList(),
+    /**
+     * How Open Food Facts can reach whoever runs this server (`MEALPLANNER_OPENFOODFACTS_CONTACT`, an e-mail address or a
+     * web page), sent in the `User-Agent` its terms ask for; null: it is never asked, and a barcode is looked up at AH only.
+     */
+    val openFoodFactsContact: String? = null,
 ) {
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): ServerConfig {
@@ -121,6 +131,7 @@ data class ServerConfig(
                 dataDir = dataDir,
                 imageDir = env["MEALPLANNER_IMAGE_DIR"]?.takeIf { it.isNotBlank() }?.let(::File)
                     ?: File(databaseDir ?: dataDir, "recipe-images"),
+                openFoodFactsContact = env["MEALPLANNER_OPENFOODFACTS_CONTACT"]?.trim()?.takeIf { it.isNotEmpty() },
             )
         }
 
@@ -149,8 +160,11 @@ fun Application.module(
     today: () -> LocalDate = ::serverToday,
     /** The registration helper next to the directory (issue 314); null when none is set up, and then nobody can ask for an account. */
     directory: DirectoryHelper? = HttpDirectoryHelper.fromEnv(),
+    /** Where a product's label is looked up (issue 354); a test gives one that answers from recorded answers. */
+    products: ProductFinder = defaultProductFinder(config),
 ) {
     if (config.oidcIssuer == null && verifier === NoLogin) log.error("MEALPLANNER_OIDC_ISSUER is not set: nobody can log in")
+    if (config.openFoodFactsContact == null) log.info("MEALPLANNER_OPENFOODFACTS_CONTACT is not set: a barcode is looked up at AH only")
     val registrations = directory?.let { Registrations(database, it) }
     val registrationOpen = config.registration && registrations != null && config.oidcGroup != null
     if (config.registration && !registrationOpen) {
@@ -241,6 +255,7 @@ fun Application.module(
             trackingRoutes()
             notificationRoutes { account -> registrations?.takeIf { approves(account) }?.waiting().orEmpty().map { it.username } }
             offerRoutes(offers, prices)
+            productRoutes(products)
         }
     }
 }
@@ -263,6 +278,13 @@ val io.ktor.server.application.ApplicationCall.accountId: Long get() = principal
 val io.ktor.server.application.ApplicationCall.user: UserScope
     get() = attributes.computeIfAbsent(CallScope) { application.attributes[ScopeFactory](accountId) }
 
-fun defaultPriceSource(): PriceSource = AhPriceSource(HttpClient(OkHttp) {
-    install(HttpTimeout) { requestTimeoutMillis = 30_000 }
-})
+/** AH's app API, whose token the regular prices and the product lookup share. */
+private val defaultAh by lazy { AhApp(HttpClient(OkHttp) { install(HttpTimeout) { requestTimeoutMillis = 30_000 } }) }
+
+fun defaultPriceSource(): PriceSource = AhPriceSource(defaultAh)
+
+/** The product lookup at AH and, with a contact configured, at Open Food Facts; a person waits for it, so not too long. */
+fun defaultProductFinder(config: ServerConfig): ProductFinder = ProductFinder(
+    AhProducts(defaultAh),
+    config.openFoodFactsContact?.let { OpenFoodFacts(HttpClient(OkHttp) { install(HttpTimeout) { requestTimeoutMillis = 15_000 } }, it) },
+)

@@ -53,6 +53,12 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepMeal
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.PricesState
+import dev.tobins.mealplanner.api.FoundProduct
+import dev.tobins.mealplanner.api.LookupProblem
+import dev.tobins.mealplanner.api.PackSize
+import dev.tobins.mealplanner.api.ProductHit
+import dev.tobins.mealplanner.api.ProductLookup
+import dev.tobins.mealplanner.api.ProductSearch
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RecipeCost
@@ -95,6 +101,7 @@ import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.nutrition.Salt
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.recipes.toIngredientLine
@@ -373,6 +380,8 @@ class FakeBackend(
             path == "/api/mappings/unmapped" -> "[]"
             path == "/api/ingredients/sections" -> "[]"
             path == "/api/foods" -> json.encodeToString(foodsMatching(query.getValue("q")))
+            path == "/api/products/search" -> json.encodeToString(productSearch(query.getValue("q")))
+            parts.getOrNull(1) == "products" && parts.size == 4 -> json.encodeToString(productLookup(parts[2], parts[3]))
             path == "/api/pantry" -> json.encodeToString(pantry)
             // Never chosen: every store, as for an account that never opened the per-store list.
             path == "/api/shops" -> json.encodeToString(ShopsSetting())
@@ -429,6 +438,44 @@ class FakeBackend(
 
     private fun foodsMatching(query: String): List<Food> =
         foods.filter { query.lowercase() in it.nameEn.lowercase() || query.lowercase() in it.nameNl.lowercase() }
+
+    /** While false, the product lookup (issue 354) answers as the server does when AH does not answer. */
+    @Volatile
+    var productSourceAnswers: Boolean = true
+
+    /** AH's drink yoghurts as the product search found them on 26 November 2026, a multi-pack among them. */
+    private val productHits = listOf(
+        ProductHit(61758, "Optimel Drinkyoghurt framboos", "Optimel", "1 l"),
+        ProductHit(141708, "AH Drinkyoghurt framboossmaak", "AH", "1 l"),
+        ProductHit(585938, "Optimel Proteine extra framboos aardbei 4-pack", "Optimel", "4 stuks", packOf = 4),
+    )
+
+    /** The first of [productHits] as AH's table gives it, and by its barcode. */
+    private val optimel = FoundProduct(
+        "ah:61758", "Optimel Drinkyoghurt framboos", "Optimel", FoodBasis.PER_100_ML,
+        Nutrition(31.0, 3.1, 0.0, 0.0, 3.8, 3.2, null, Salt.sodiumMg(0.08)), pack = PackSize(ml = 1000.0),
+    )
+
+    /** `GET /api/products/search`: the [productHits], as AH found them for "drinkyoghurt", for any text; nothing for blank. */
+    private fun productSearch(text: String): ProductSearch =
+        if (!productSourceAnswers) ProductSearch(problems = listOf(LookupProblem.AH_FAILED))
+        else ProductSearch(productHits.takeIf { text.isNotBlank() }.orEmpty())
+
+    /**
+     * `GET /api/products/ah/{id}` and `GET /api/products/barcode/{code}`: [optimel] by its id or barcode; by made-up
+     * barcodes, a product of AH without a table, one of Open Food Facts without values (per portion only) and one of Open
+     * Food Facts whose values do not say per what; nothing else.
+     */
+    private fun productLookup(by: String, key: String): ProductLookup = when {
+        !productSourceAnswers -> ProductLookup(problems = listOf(LookupProblem.AH_FAILED))
+        (by == "ah" && key == "61758") || (by == "barcode" && key == "8712800035626") -> ProductLookup(optimel)
+        by == "barcode" && key == AH_WITHOUT_TABLE ->
+            ProductLookup(FoundProduct("ah:609144", "Optimel Proteine extra 4-pack", "Optimel", pack = PackSize(ml = 330.0, single = true), packOf = 4), listOf(LookupProblem.AH_NO_TABLE))
+        by == "barcode" && key == OFF_WITHOUT_VALUES -> ProductLookup(FoundProduct("off:$key", "Cola zero", "Brand", pack = PackSize(ml = 330.0)))
+        by == "barcode" && key == OFF_WITHOUT_BASIS ->
+            ProductLookup(FoundProduct("off:$key", "Snack bar", "Brand", per100 = Nutrition(380.0, 20.0, 15.0, 6.0, 40.0, 20.0, null, Salt.sodiumMg(0.3))))
+        else -> ProductLookup()
+    }
 
     /** `POST /api/ingredients`: one more of the catalogue, for the NEVO food it names, or a product with its label and portions. */
     private fun createIngredient(sent: String): Ingredient {
@@ -1319,6 +1366,15 @@ class FakeBackend(
         /** The day all pictures are taken on: a Wednesday. */
         const val TODAY = "2026-11-18"
         val WEEK_START = mondayOf(TODAY)
+
+        /** Made-up barcodes of the product lookup ([productLookup]): AH has it without a table. */
+        const val AH_WITHOUT_TABLE = "8720000000001"
+
+        /** Open Food Facts has it, with values per portion only. */
+        const val OFF_WITHOUT_VALUES = "4000000000006"
+
+        /** Open Food Facts has its values, without saying per 100 g or per 100 ml. */
+        const val OFF_WITHOUT_BASIS = "5000000000001"
 
         /** An access token every call answers 401 to. */
         const val REFUSED_TOKEN = "refused-token"

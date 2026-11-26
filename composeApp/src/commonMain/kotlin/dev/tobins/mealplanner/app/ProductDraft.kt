@@ -1,20 +1,25 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.FoodBasis
+import dev.tobins.mealplanner.api.FoundProduct
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.LabelNutrition
+import dev.tobins.mealplanner.api.LabelSource
 import dev.tobins.mealplanner.api.Nutrition
 import dev.tobins.mealplanner.api.Portion
+import dev.tobins.mealplanner.api.hasValues
 import dev.tobins.mealplanner.nutrition.Salt
 import dev.tobins.mealplanner.nutrition.portionKey
 import dev.tobins.mealplanner.nutrition.portionNameProblem
 import dev.tobins.mealplanner.recipes.parseAmount
 import kotlinx.serialization.Serializable
+import kotlin.math.roundToLong
 
 /*
  * The product form's model (issue 351): a product's name, the values of its label and its named portions, as typed, and
- * what it saves. Kept apart from the screen so that it is tested without drawing it.
+ * what it saves. Kept apart from the screen so that it is tested without drawing it. A value is saved as it was given or
+ * typed (issue 354): the form may show it rounded, and while its text is as shown it saves the number it stood for.
  */
 
 /** The values of a label, in the order a Dutch label lists them, each with its unit and its text on the form. */
@@ -29,10 +34,20 @@ enum class LabelValue(val unit: String, val msg: Msg) {
     SALT("g", Msg.LABEL_SALT),
 }
 
-/** One portion being written: its [name] and its [size] as typed, in millilitres when [ml], else in grams. */
+/** A number as the form was filled with it: the [text] it showed, and the [number] it stands for, unrounded. */
 @Serializable
-data class PortionRow(val key: Long, val name: String = "", val size: String = "", val ml: Boolean = false) {
-    val sizeValue: Double? get() = readAmount(size)
+data class Given(val text: String, val number: Double)
+
+/** [given]'s number while [text] is still the text it showed, else null. */
+private fun given(given: Given?, text: String): Double? = given?.takeIf { it.text == text }?.number
+
+/**
+ * One portion being written: its [name] and its [size] as typed, in millilitres when [ml], else in grams; [given] is the
+ * size it was loaded with, saved as it was while its text is unchanged.
+ */
+@Serializable
+data class PortionRow(val key: Long, val name: String = "", val size: String = "", val ml: Boolean = false, val given: Given? = null) {
+    val sizeValue: Double? get() = given(given, size) ?: readAmount(size)
 
     /** What is wrong with the size, or null: none given, no number, below 0, or 0, which no portion weighs. */
     val sizeProblem: NumberProblem?
@@ -62,9 +77,18 @@ fun numberProblem(text: String): NumberProblem? = when {
 }
 
 /**
+ * What the values of the form were filled with, as the product was loaded or a lookup gave them: the [source] they came
+ * from (null: typed from the label), whether per 100 ml (null: the source did not say, and the person chose), and each
+ * value given (salt's number as sodium, as it is kept).
+ */
+@Serializable
+data class Filled(val source: String?, val perMl: Boolean?, val values: Map<LabelValue, Given>)
+
+/**
  * The product form's fields: the [name], whether the [values] (each as typed) are per 100 ml ([perMl]) or per 100 g, and
  * the [portions]. [original] is the ingredient being changed, null for a new one: what the form does not show of it
- * (its NEVO food, weights, price, being a staple, where its values came from) is saved as it was.
+ * (its NEVO food, weights, price, being a staple) is saved as it was. [filled] is what its values were filled with.
+ * [basisNeeded] while a lookup gave values without saying per what: the person chooses before it can be saved.
  */
 @Serializable
 data class ProductDraft(
@@ -74,6 +98,8 @@ data class ProductDraft(
     val portions: List<PortionRow> = emptyList(),
     val nextKey: Long = 0,
     val original: Ingredient? = null,
+    val filled: Filled? = null,
+    val basisNeeded: Boolean = false,
 ) {
     fun value(of: LabelValue): String = values[of].orEmpty()
 
@@ -81,6 +107,22 @@ data class ProductDraft(
 
     /** [of] as a number: null when empty, which is unknown; also null when it is no number of 0 or more ([valueValid]). */
     fun number(of: LabelValue): Double? = readLabelValue(value(of))
+
+    /** [of] as it is kept, salt as sodium: as it was given while its text is as shown, else as typed. */
+    private fun kept(of: LabelValue): Double? = given(filled?.values?.get(of), value(of))
+        ?: number(of)?.let { if (of == LabelValue.SALT) Salt.sodiumMg(it) else it }
+
+    /** Whether a value or the basis is no longer what the form was filled with: then its source says so once saved. */
+    val changedByHand: Boolean
+        get() = filled != null &&
+            ((filled.perMl != null && perMl != filled.perMl) || LabelValue.entries.any { value(it) != filled.values[it]?.text.orEmpty() })
+
+    /** Where the values came from, as saved ([LabelSource]): marked once changed by hand; null for values typed from the label. */
+    val source: String?
+        get() {
+            val from = filled?.source ?: return null
+            return if (changedByHand) LabelSource.parse(from)?.changed()?.toString() ?: from else from
+        }
 
     /** False while the field of [of] holds something that is no number of 0 or more; empty is unknown. */
     fun valueValid(of: LabelValue): Boolean = numberProblem(value(of)) == null
@@ -95,21 +137,28 @@ data class ProductDraft(
     /** The energy is needed for a label, and for a product without a NEVO food to count by. */
     val needsEnergy: Boolean get() = value(LabelValue.ENERGY).isBlank() && (hasLabel || original?.food == null)
 
-    /** The label as typed, salt as sodium ([Salt]); null when no value is filled in, so it counts by its NEVO food. */
+    /** The label as given or typed, salt as sodium ([Salt]); null when no value is filled in, so it counts by its NEVO food. */
     fun label(): LabelNutrition? {
         if (!hasLabel) return null
         val per100 = Nutrition(
-            kcal = number(LabelValue.ENERGY),
-            proteinG = number(LabelValue.PROTEIN),
-            fatG = number(LabelValue.FAT),
-            saturatedFatG = number(LabelValue.SATURATED_FAT),
-            carbsG = number(LabelValue.CARBS),
-            sugarG = number(LabelValue.SUGARS),
-            fibreG = number(LabelValue.FIBRE),
-            sodiumMg = number(LabelValue.SALT)?.let(Salt::sodiumMg),
+            kcal = kept(LabelValue.ENERGY),
+            proteinG = kept(LabelValue.PROTEIN),
+            fatG = kept(LabelValue.FAT),
+            saturatedFatG = kept(LabelValue.SATURATED_FAT),
+            carbsG = kept(LabelValue.CARBS),
+            sugarG = kept(LabelValue.SUGARS),
+            fibreG = kept(LabelValue.FIBRE),
+            sodiumMg = kept(LabelValue.SALT),
         )
-        return LabelNutrition(if (perMl) FoodBasis.PER_100_ML else FoodBasis.PER_100_G, per100, original?.label?.source)
+        return LabelNutrition(if (perMl) FoodBasis.PER_100_ML else FoodBasis.PER_100_G, per100, source)
     }
+
+    /**
+     * Whether another ingredient of [catalogue] has this name, told apart without regard to case as the server does: it
+     * would refuse it, so the form says so at the name and keeps Save off.
+     */
+    fun nameTaken(catalogue: List<Ingredient>): Boolean =
+        name.isNotBlank() && catalogue.any { it.id != original?.id && it.name.trim().equals(name.trim(), ignoreCase = true) }
 
     /** What is wrong with the name of portion [row], or null; as the server refuses it ([portionNameProblem]). */
     fun nameProblem(row: PortionRow): PortionNameProblem? = when {
@@ -125,7 +174,7 @@ data class ProductDraft(
      * Each thing that keeps it off is said at its own field ([valueProblem], [nameProblem], [PortionRow.sizeProblem]).
      */
     val canSave: Boolean
-        get() = name.isNotBlank() && LabelValue.entries.all { valueProblem(it) == null } &&
+        get() = name.isNotBlank() && !basisNeeded && LabelValue.entries.all { valueProblem(it) == null } &&
             portions.all { nameProblem(it) == null && it.sizeProblem == null }
 
     /**
@@ -137,11 +186,34 @@ data class ProductDraft(
 
     /** With the [removedPortions] back as rows, at the end, as they were, their sizes as [locale] writes them: "keep it". */
     fun keepingRemovedPortions(locale: FormatLocale): ProductDraft {
-        val back = removedPortions.mapIndexed { index, portion ->
-            PortionRow(nextKey + index, portion.name, formatAmount(portion.grams ?: portion.ml ?: 0.0, locale), ml = portion.grams == null)
-        }
+        val back = removedPortions.mapIndexed { index, portion -> portion.row(nextKey + index, locale) }
         return copy(portions = portions + back, nextKey = nextKey + back.size)
     }
+
+    /**
+     * The form filled with what a lookup [found]: its name, its values, each left empty that it does not give, its basis
+     * (to be chosen when it does not say: [basisNeeded]) and its source; its pack as a portion named [packName], unless a
+     * portion of that name is there. The portions there are stay: a lookup only adds. A product without any value
+     * ([hasValues]) gives its name and pack only: the values are empty, to be typed, and no source is kept, as none of
+     * them comes from it.
+     */
+    fun filledWith(found: FoundProduct, packName: String, locale: FormatLocale): ProductDraft {
+        val pack = found.pack?.takeIf { size -> (size.grams ?: size.ml) != null && portions.none { portionKey(it.name) == portionKey(packName) } }
+            ?.let { size -> Portion(packName, grams = size.grams, ml = size.ml).row(nextKey, locale) }
+        val named = copy(name = found.name, portions = portions + listOfNotNull(pack), nextKey = nextKey + if (pack != null) 1 else 0)
+        if (!found.hasValues) return named.copy(values = emptyMap(), filled = null, basisNeeded = false)
+        val ml = found.basis?.let { it == FoodBasis.PER_100_ML }
+        val given = found.per100.given(locale)
+        return named.copy(
+            perMl = ml ?: perMl,
+            values = given.mapValues { it.value.text },
+            filled = Filled(found.source, ml, given),
+            basisNeeded = ml == null,
+        )
+    }
+
+    /** Values per 100 ml when [ml], else per 100 g, as the person chose. */
+    fun choosingBasis(ml: Boolean): ProductDraft = copy(perMl = ml, basisNeeded = false)
 
     /** The body that saves it; only when [canSave]. */
     fun input(): IngredientInput {
@@ -170,31 +242,53 @@ data class ProductDraft(
 
 /**
  * [this] ingredient as the product form starts on it: its label's values in [locale]'s way of writing a number (salt
- * from its sodium), its portions, and the rest kept as it is ([ProductDraft.original]).
+ * from its sodium), each kept as it was while unchanged ([ProductDraft.filled]), its portions, and the rest kept as it is
+ * ([ProductDraft.original]).
  */
 fun Ingredient.toProductDraft(locale: FormatLocale): ProductDraft {
-    val per100 = label?.per100
-    val numbers = mapOf(
-        LabelValue.ENERGY to per100?.kcal,
-        LabelValue.FAT to per100?.fatG,
-        LabelValue.SATURATED_FAT to per100?.saturatedFatG,
-        LabelValue.CARBS to per100?.carbsG,
-        LabelValue.SUGARS to per100?.sugarG,
-        LabelValue.FIBRE to per100?.fibreG,
-        LabelValue.PROTEIN to per100?.proteinG,
-        LabelValue.SALT to per100?.sodiumMg?.let(Salt::saltG),
-    )
-    val rows = portions.mapIndexed { index, portion ->
-        PortionRow(index.toLong(), portion.name, formatAmount(portion.grams ?: portion.ml ?: 0.0, locale), ml = portion.grams == null)
-    }
+    val given = label?.per100?.given(locale).orEmpty()
+    val rows = portions.mapIndexed { index, portion -> portion.row(index.toLong(), locale) }
+    val perMl = (label?.basis ?: food?.basis) == FoodBasis.PER_100_ML
     return ProductDraft(
         name = name,
-        perMl = (label?.basis ?: food?.basis) == FoodBasis.PER_100_ML,
-        values = numbers.mapNotNull { (value, number) -> number?.let { value to formatAmount(it, locale) } }.toMap(),
+        perMl = perMl,
+        values = given.mapValues { it.value.text },
         portions = rows,
         nextKey = rows.size.toLong(),
         original = this,
+        filled = Filled(label?.source, perMl, given),
     )
+}
+
+/** Each value of [this] as the form shows it in [locale]'s way ([formatLabelValue]; salt from its sodium), with its number as kept. */
+private fun Nutrition.given(locale: FormatLocale): Map<LabelValue, Given> = mapOf(
+    LabelValue.ENERGY to kcal,
+    LabelValue.FAT to fatG,
+    LabelValue.SATURATED_FAT to saturatedFatG,
+    LabelValue.CARBS to carbsG,
+    LabelValue.SUGARS to sugarG,
+    LabelValue.FIBRE to fibreG,
+    LabelValue.PROTEIN to proteinG,
+    LabelValue.SALT to sodiumMg,
+).mapNotNull { (value, number) ->
+    number?.let { value to Given(formatLabelValue(if (value == LabelValue.SALT) Salt.saltG(it) else it, locale), it) }
+}.toMap()
+
+/** [this] portion as a row of the form, its size as [locale] writes it and kept as it was ([PortionRow.given]). */
+private fun Portion.row(key: Long, locale: FormatLocale): PortionRow {
+    val size = grams ?: ml ?: 0.0
+    val text = formatLabelValue(size, locale)
+    return PortionRow(key, name, text, ml = grams == null, given = Given(text, size))
+}
+
+/**
+ * A label's value as the form shows it: up to three decimals, so that a salt of `0,005` g shows as such; a longer one is
+ * shown rounded and saved as it was ([Given]).
+ */
+fun formatLabelValue(value: Double, locale: FormatLocale): String {
+    val thousandths = (value * 1000).roundToLong()
+    val fraction = (thousandths % 1000).toString().padStart(3, '0').trimEnd('0')
+    return if (fraction.isEmpty()) "${thousandths / 1000}" else "${thousandths / 1000}${locale.decimalSeparator}$fraction"
 }
 
 /** A label's value as typed: `1.5` or `1,5`, and 0, which a label gives for sugar it has none of; null for anything else. */

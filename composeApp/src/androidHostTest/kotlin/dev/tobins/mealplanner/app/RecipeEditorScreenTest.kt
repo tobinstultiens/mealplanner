@@ -198,7 +198,8 @@ class RecipeEditorScreenTest {
         save()
         val nutrition = runBlocking { api.recipe(saved!!) }.summary.nutrition!!
         assertEquals(Strings.English(Msg.EDITOR_PER_SERVING, nutrition.headline(Strings.English)), shown)
-        assertEquals("Per serving: 756 kcal · 22 g protein", shown.replace(Typography.nbsp, ' '))
+        // The oil changed from 100 g to ml is still 100 g (109.9 ml shown), not a rounded 110 ml.
+        assertEquals("Per serving: 755 kcal · 22 g protein", shown.replace(Typography.nbsp, ' '))
     }
 
     @Test

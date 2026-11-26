@@ -1,0 +1,19 @@
+{
+ "data": null,
+ "errors": [
+  {
+   "message": "Subgraph errors redacted",
+   "path": [
+    "e"
+   ]
+  }
+ ],
+ "extensions": {
+  "valueCompletion": [
+   {
+    "message": "Cannot return null for non-nullable type Product",
+    "path": []
+   }
+  ]
+ }
+}

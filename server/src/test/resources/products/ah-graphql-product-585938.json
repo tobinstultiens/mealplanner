@@ -1,0 +1,149 @@
+{
+ "data": {
+  "product": {
+   "id": 585938,
+   "title": "Optimel Proteine extra framboos aardbei",
+   "brand": "Optimel",
+   "salesUnitSize": "330 ml",
+   "tradeItem": {
+    "contents": {
+     "netContents": [
+      "330.0 Milliliter"
+     ]
+    },
+    "nutritions": [
+     {
+      "basisQuantity": "100.0 Milliliter",
+      "nutrients": [
+       {
+        "type": "ENER-",
+        "value": "233.0 kJ (55.0 kcal)"
+       },
+       {
+        "type": "FAT",
+        "value": "0.0 g"
+       },
+       {
+        "type": "FASAT",
+        "value": "0.0 g"
+       },
+       {
+        "type": "CHOAVL",
+        "value": "5.6 g"
+       },
+       {
+        "type": "SUGAR-",
+        "value": "4.8 g"
+       },
+       {
+        "type": "FIBTG",
+        "value": "1.6 g"
+       },
+       {
+        "type": "PRO-",
+        "value": "6.1 g"
+       },
+       {
+        "type": "SALTEQ",
+        "value": "0.17 g"
+       },
+       {
+        "type": "CA",
+        "value": "157.0 mg"
+       },
+       {
+        "type": "THIA",
+        "value": "0.13 mg"
+       },
+       {
+        "type": "RIBF",
+        "value": "0.21 mg"
+       },
+       {
+        "type": "VITB6-",
+        "value": "0.16 mg"
+       },
+       {
+        "type": "VITB12",
+        "value": "0.38 µg"
+       },
+       {
+        "type": "VITD-",
+        "value": "0.57 µg"
+       },
+       {
+        "type": "FOLDFE",
+        "value": "30.0 µg"
+       }
+      ]
+     },
+     {
+      "basisQuantity": "330.0 Milliliter",
+      "nutrients": [
+       {
+        "type": "ENER-",
+        "value": "769.0 kJ (182.0 kcal)"
+       },
+       {
+        "type": "FAT",
+        "value": "0.0 g"
+       },
+       {
+        "type": "FASAT",
+        "value": "0.0 g"
+       },
+       {
+        "type": "CHOAVL",
+        "value": "18.0 g"
+       },
+       {
+        "type": "SUGAR-",
+        "value": "16.0 g"
+       },
+       {
+        "type": "FIBTG",
+        "value": "5.3 g"
+       },
+       {
+        "type": "PRO-",
+        "value": "20.0 g"
+       },
+       {
+        "type": "SALTEQ",
+        "value": "0.56 g"
+       },
+       {
+        "type": "CA",
+        "value": "518.0 mg"
+       },
+       {
+        "type": "THIA",
+        "value": "0.42 mg"
+       },
+       {
+        "type": "RIBF",
+        "value": "0.71 mg"
+       },
+       {
+        "type": "VITB6-",
+        "value": "0.53 mg"
+       },
+       {
+        "type": "VITB12",
+        "value": "1.25 µg"
+       },
+       {
+        "type": "VITD-",
+        "value": "1.9 µg"
+       },
+       {
+        "type": "FOLDFE",
+        "value": "99.0 µg"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

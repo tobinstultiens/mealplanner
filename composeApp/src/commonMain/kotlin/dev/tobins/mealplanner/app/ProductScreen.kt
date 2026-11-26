@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -10,13 +11,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -39,12 +43,18 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.FoodBasis
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.ProductHit
+import dev.tobins.mealplanner.api.ProductLookup
+import dev.tobins.mealplanner.api.ProductSearch
 import kotlinx.coroutines.launch
+import kotlinx.serialization.builtins.nullable
 
 /**
  * A product of the account's own (issue 351), new when [ingredient] is null: its name, the values of its label per 100 g
@@ -55,12 +65,25 @@ import kotlinx.coroutines.launch
  * Whatever keeps Save off is said in red at the field that causes it. The keyboard's Next goes from the salt on into the
  * portions, from a portion's name to its size and on to the next portion; the last one's is Done. Saving without a
  * portion the product had asks first, as recipes with a line in it stop counting that line.
+ *
+ * At its top a product is looked up (issue 354): a name is searched at AH and one of what it finds picked, a barcode is
+ * looked up at once (at Open Food Facts when AH cannot answer it). That fills the form, with its source shown and its pack
+ * as a portion, and says what the source did not give or could not answer; nothing is saved until Save. A new product
+ * starts with [name], in its name and in the lookup's field. A name that another ingredient of [catalogue] has is said at
+ * the name, as the server would refuse it.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) -> Unit, onCancel: () -> Unit) {
+fun ProductScreen(
+    api: ApiClient,
+    ingredient: Ingredient?,
+    onDone: (Ingredient) -> Unit,
+    onCancel: () -> Unit,
+    name: String = "",
+    catalogue: List<Ingredient> = emptyList(),
+) {
     val t = LocalStrings.current
-    val start = remember(ingredient) { ingredient?.toProductDraft(t.locale) ?: ProductDraft() }
+    val start = remember(ingredient) { ingredient?.toProductDraft(t.locale) ?: ProductDraft(name = name) }
     // Kept over a re-created activity, as what was typed.
     var draft by rememberSaveable(stateSaver = jsonSaver(ProductDraft.serializer())) { mutableStateOf(start) }
     var saving by remember { mutableStateOf(false) }
@@ -70,10 +93,50 @@ fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) 
     val leave = UnsavedChangesGuard(draft != start, onCancel)
     val nameFocus = remember { HashMap<Long, FocusRequester>() }
     val sizeFocus = remember { HashMap<Long, FocusRequester>() }
+    var query by rememberSaveable { mutableStateOf(name) }
+    var lookup by remember { mutableStateOf<LookupState>(LookupState.Idle) }
+    // What the last lookup that filled the form said, kept with the values it filled in.
+    var notes by rememberSaveable(stateSaver = jsonSaver(ProductLookup.serializer().nullable)) { mutableStateOf<ProductLookup?>(null) }
     KeyboardMakesRoom()
 
+    /** Fills the form with what [answer] found, its pack named as a portion in the form's language. */
+    fun fill(answer: ProductLookup) {
+        answer.product?.let { found -> draft = draft.filledWith(found, t(if (found.pack?.single == true) Msg.PORTION_ITEM else Msg.PORTION_PACK), t.locale) }
+        notes = answer
+        lookup = LookupState.Idle
+    }
+
+    /** Runs [ask] while the lookup says it is busy, and does [then] with its answer; a failure to reach the server is said. */
+    fun <T> looking(ask: suspend () -> T, then: (T) -> Unit) {
+        if (lookup == LookupState.Busy) return
+        lookup = LookupState.Busy
+        notes = null
+        scope.launch {
+            when (val result = load { ask() }) {
+                is Load.Ready -> then(result.value)
+                is Load.Failed -> lookup = LookupState.Failed(result)
+                Load.Loading -> Unit
+            }
+        }
+    }
+
+    /** A barcode is looked up at once; a name is searched, to pick one of what is found. */
+    fun lookUp() {
+        val text = query.trim()
+        if (text.length < 2) {
+            notes = null
+            lookup = LookupState.TooShort
+            return
+        }
+        val barcode = barcodeIn(text)
+        if (barcode != null) looking({ api.productByBarcode(barcode) }, ::fill)
+        else looking({ api.searchProducts(text) }) { lookup = LookupState.Found(text, it) }
+    }
+
+    val nameTaken = draft.nameTaken(catalogue)
+
     fun save() {
-        if (!draft.canSave || saving) return
+        if (!draft.canSave || nameTaken || saving) return
         saving = true
         val input = draft.input()
         scope.launch {
@@ -96,7 +159,7 @@ fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) 
             TopAppBar(
                 title = { Text(if (ingredient == null) t(Msg.NEW_PRODUCT) else t(Msg.EDIT_PRODUCT)) },
                 navigationIcon = { BarAction(AppIcons.Close, t(Msg.CANCEL), leave) },
-                actions = { TextButton(onClick = ::saveAsked, enabled = draft.canSave && !saving) { Text(t(Msg.SAVE)) } },
+                actions = { TextButton(onClick = ::saveAsked, enabled = draft.canSave && !nameTaken && !saving) { Text(t(Msg.SAVE)) } },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -106,23 +169,42 @@ fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) 
             Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
             verticalArrangement = Arrangement.spacedBy(Spacing.Related),
         ) {
+            LookupPanel(
+                query,
+                { text ->
+                    // What the last lookup said is of another text now.
+                    query = text
+                    if (lookup != LookupState.Busy) lookup = LookupState.Idle
+                    notes = null
+                },
+                lookup, notes, enabled,
+                onLookUp = ::lookUp,
+                onPick = { hit -> looking({ api.ahProduct(hit) }, ::fill) },
+            )
             OutlinedTextField(
                 draft.name, { draft = draft.copy(name = it) },
                 label = { Text(t(Msg.NAME)) },
-                isError = draft.name.isBlank(),
-                supportingText = if (draft.name.isBlank()) ({ Text(t(Msg.PRODUCT_NAME_NEEDED)) }) else null,
+                isError = draft.name.isBlank() || nameTaken,
+                supportingText = when {
+                    draft.name.isBlank() -> ({ Text(t(Msg.PRODUCT_NAME_NEEDED)) })
+                    nameTaken -> ({ Text(t(Msg.PRODUCT_NAME_TAKEN)) })
+                    else -> null
+                },
                 enabled = enabled,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth(),
             )
-            ingredient?.label?.source?.let {
-                Text(t(Msg.PRODUCT_VALUES_FROM, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            draft.source?.let { SourceLine(it) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), itemVerticalAlignment = Alignment.CenterVertically) {
                 Text(t(Msg.PRODUCT_VALUES_PER), style = MaterialTheme.typography.labelLarge)
-                FilterChip(selected = !draft.perMl, onClick = { draft = draft.copy(perMl = false) }, label = { Text(per100(FoodBasis.PER_100_G)) }, enabled = enabled)
-                FilterChip(selected = draft.perMl, onClick = { draft = draft.copy(perMl = true) }, label = { Text(per100(FoodBasis.PER_100_ML)) }, enabled = enabled)
+                // Neither is chosen while a lookup left it open.
+                val chosen = !draft.basisNeeded
+                FilterChip(selected = chosen && !draft.perMl, onClick = { draft = draft.choosingBasis(ml = false) }, label = { Text(per100(FoodBasis.PER_100_G)) }, enabled = enabled)
+                FilterChip(selected = chosen && draft.perMl, onClick = { draft = draft.choosingBasis(ml = true) }, label = { Text(per100(FoodBasis.PER_100_ML)) }, enabled = enabled)
+            }
+            if (draft.basisNeeded) {
+                Text(t(Msg.PRODUCT_BASIS_NEEDED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
             Text(t(Msg.PRODUCT_VALUES_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             val firstPortion = draft.portions.firstOrNull()?.key
@@ -167,6 +249,107 @@ fun ProductScreen(api: ApiClient, ingredient: Ingredient?, onDone: (Ingredient) 
             dismissButton = {
                 TextButton(onClick = { askingRemoval = false; draft = draft.keepingRemovedPortions(t.locale) }) { Text(t(Msg.KEEP_PORTIONS)) }
             },
+        )
+    }
+}
+
+/**
+ * Where the lookup is: nothing asked, a text too short to ask, waiting for the server, what a search found for
+ * [Found.text], or the server not reached.
+ */
+private sealed interface LookupState {
+    data object Idle : LookupState
+
+    data object TooShort : LookupState
+
+    data object Busy : LookupState
+
+    data class Found(val text: String, val search: ProductSearch) : LookupState
+
+    data class Failed(val failed: Load.Failed) : LookupState
+}
+
+/**
+ * The lookup at the top of the form: a field for a name or a barcode and its button; under it, while it waits a line
+ * saying so, what a search found to pick (each with its brand and pack), or what the last lookup said ([lookupNotes]),
+ * in the error colour when it left values to type.
+ */
+@Composable
+private fun LookupPanel(
+    query: String,
+    onQuery: (String) -> Unit,
+    state: LookupState,
+    notes: ProductLookup?,
+    enabled: Boolean,
+    onLookUp: () -> Unit,
+    onPick: (ProductHit) -> Unit,
+) {
+    val t = LocalStrings.current
+    val busy = state == LookupState.Busy
+    val quiet = MaterialTheme.colorScheme.onSurfaceVariant
+    val error = MaterialTheme.colorScheme.error
+    Text(t(Msg.LOOKUP_TITLE), style = MaterialTheme.typography.titleMedium)
+    Text(t(Msg.LOOKUP_HINT), style = MaterialTheme.typography.bodySmall, color = quiet)
+    OutlinedTextField(
+        query, onQuery,
+        label = { Text(t(Msg.LOOKUP_FIELD)) },
+        enabled = enabled && !busy,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onLookUp() }),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    TextButton(onClick = onLookUp, enabled = enabled && !busy) { Text(t(Msg.LOOKUP)) }
+    when (state) {
+        LookupState.Idle -> notes?.let { answer ->
+            val color = if (answer.product?.basis == null || answer.problems.isNotEmpty()) error else quiet
+            lookupNotes(answer, t).forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = color) }
+        }
+        LookupState.TooShort -> Text(t(Msg.LOOKUP_TOO_SHORT), style = MaterialTheme.typography.bodySmall, color = error)
+        LookupState.Busy -> Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            Text(t(Msg.LOOKUP_BUSY), style = MaterialTheme.typography.bodyMedium, color = quiet)
+        }
+        is LookupState.Found -> {
+            state.search.problems.forEach { Text(problemText(it, t), style = MaterialTheme.typography.bodySmall, color = error) }
+            if (state.search.problems.isNotEmpty()) Text(t(Msg.LOOKUP_TYPE_VALUES), style = MaterialTheme.typography.bodySmall, color = error)
+            if (state.search.products.isEmpty() && state.search.problems.isEmpty()) {
+                Text(t(Msg.LOOKUP_NOTHING, state.text), style = MaterialTheme.typography.bodyMedium, color = quiet)
+            }
+            state.search.products.forEach { hit -> HitRow(hit, enabled) { onPick(hit) } }
+        }
+        is LookupState.Failed -> Text(failureSentence(state.failed, Msg.LOOKUP_FAILED), style = MaterialTheme.typography.bodySmall, color = error)
+    }
+    HorizontalDivider(Modifier.padding(vertical = Spacing.Related))
+}
+
+/** A product a search found: its name, and under it its brand and pack; a tap fills the form with it. */
+@Composable
+private fun HitRow(hit: ProductHit, enabled: Boolean, onPick: () -> Unit) {
+    val t = LocalStrings.current
+    Column(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onPick).padding(vertical = 8.dp)) {
+        Text(hit.name, style = MaterialTheme.typography.bodyLarge)
+        hit.detail(t).takeIf { it.isNotEmpty() }?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * Where the values came from ([sourceLine]), and for Open Food Facts' the credit and link its licence (ODbL) asks
+ * wherever its values are shown.
+ */
+@Composable
+private fun SourceLine(source: String) {
+    val t = LocalStrings.current
+    val quiet = MaterialTheme.colorScheme.onSurfaceVariant
+    Text(sourceLine(source, t), style = MaterialTheme.typography.bodySmall, color = quiet)
+    if (fromOpenFoodFacts(source)) {
+        val link = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
+        Text(
+            inlineMarkdown(t(Msg.OFF_LICENCE, "[openfoodfacts.org]($OPEN_FOOD_FACTS_URL)"), link),
+            style = MaterialTheme.typography.bodySmall,
+            color = quiet,
         )
     }
 }

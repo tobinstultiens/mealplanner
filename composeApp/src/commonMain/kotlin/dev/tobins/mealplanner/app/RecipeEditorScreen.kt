@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -71,7 +72,9 @@ import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.nutrition.Values
+import dev.tobins.mealplanner.nutrition.measured
 import dev.tobins.mealplanner.nutrition.values
+import dev.tobins.mealplanner.units.Dimension
 import dev.tobins.mealplanner.recipes.PlainLines
 import dev.tobins.mealplanner.recipes.oneLine
 import kotlinx.coroutines.delay
@@ -86,7 +89,8 @@ import kotlin.math.roundToLong
  * The bar under the title says what a serving has, as the saved recipe will ([RecipeDraft.nutrition]). Pasted lines
  * become rows ([PlainLines]), looked up as a save looks them up (`POST /api/recipes/lines`); a row that means nothing is
  * tapped to choose its ingredient, or left as text, which it says is not counted. Tags, groups, steps, slots and how
- * long it keeps are edited here too, and what is not changed is saved as it was ([DraftRow.input]).
+ * long it keeps are edited here too, and what is not changed is saved as it was ([DraftRow.input]). Under what the search
+ * finds, "New product" opens the product's form with the text typed (issue 354); saved, the product is a row.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -110,6 +114,8 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
     var pasting by rememberSaveable { mutableStateOf(false) }
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
     var newGroup by rememberSaveable { mutableStateOf(false) }
+    // The name of a new product being made from the search, whose form is open.
+    var newProduct by rememberSaveable { mutableStateOf<String?>(null) }
     val rowFocus = remember { HashMap<Long, FocusRequester>() }
     var focusRow by remember { mutableStateOf<Long?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -135,11 +141,6 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
             is Load.Failed -> recipeFailed = result
             Load.Loading -> Unit
         }
-    }
-    // A row just added takes the focus, so its amount is typed at once (and the keyboard moves on from it with Next).
-    LaunchedEffect(focusRow) {
-        focusRow?.let { rowFocus[it]?.requestFocus() }
-        focusRow = null
     }
 
     val ingredients = (catalogue as? Load.Ready)?.value
@@ -224,6 +225,26 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
         }
     }
 
+    // A new product from the search (issue 354), in place of the editor, whose draft waits as it is: saved, the product is
+    // a row of it; cancelled, the editor is as it was.
+    newProduct?.let { name ->
+        ProductScreen(
+            api, null,
+            onDone = { made ->
+                catalogue = Load.Ready((catalogue as? Load.Ready)?.value.orEmpty() + made)
+                val key = draft.nextKey
+                draft = draft.adding(made)
+                query = ""
+                newProduct = null
+                focusRow = key
+            },
+            onCancel = { newProduct = null },
+            name = name,
+            catalogue = ingredients.orEmpty(),
+        )
+        return
+    }
+
     Scaffold(
         topBar = {
             Column {
@@ -305,6 +326,16 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                         onOpen = { opening { openRow = row.key } },
                         onRemove = { draft = draft.removing(row.key) },
                     )
+                    // A row just added takes the focus, so its amount is typed at once (and Next moves on from it). Asked
+                    // from the row, a frame after it is laid out: after the product form's detour the whole editor is new,
+                    // and asked any earlier the window gave the focus to the first field in view instead (issue 354).
+                    if (focusRow == row.key) {
+                        LaunchedEffect(row.key) {
+                            withFrameNanos { }
+                            rowFocus[row.key]?.requestFocus()
+                            focusRow = null
+                        }
+                    }
                 }
             }
             draft.addingTo?.takeIf { it != draft.rows.lastOrNull()?.group }?.let { next ->
@@ -312,7 +343,11 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                 Text(t(Msg.EDITOR_NEXT_GROUP), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             val (found, searchFailed) = rememberFound(api, ingredients.orEmpty(), query)
-            IngredientSearch(query, { query = it }, found, searchFailed, enabled = enabled && !busy, onPick = ::add)
+            IngredientSearch(
+                query, { query = it }, found, searchFailed, enabled = enabled && !busy,
+                onNewProduct = { name -> opening { newProduct = name } },
+                onPick = ::add,
+            )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 TextButton(onClick = { opening { pasting = true } }, enabled = enabled && !busy) { Text(t(Msg.EDITOR_PASTE)) }
                 TextButton(onClick = { opening { newGroup = true } }, enabled = enabled) { Text(t(Msg.EDITOR_NEW_GROUP)) }
@@ -398,7 +433,7 @@ private fun DraftRowItem(
     onRemove: () -> Unit,
 ) {
     val t = LocalStrings.current
-    val label = row.label().ifBlank { ingredient?.name.orEmpty() }
+    val label = row.label(ingredient).ifBlank { ingredient?.name.orEmpty() }
     val count = row.count(ingredient)
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -425,11 +460,15 @@ private fun DraftRowItem(
  */
 private fun DraftRow.countsAsWritten(ingredient: Ingredient?, count: RowCount): Boolean = when (count) {
     RowCount.COUNTED, RowCount.NEGLIGIBLE -> true
-    RowCount.NO_AMOUNT -> NutritionCalculator.isSeasoning(label(), ingredient)
+    RowCount.NO_AMOUNT -> NutritionCalculator.isSeasoning(label(ingredient), ingredient)
     else -> false
 }
 
-/** What a row says under its name: the ingredient with its weight and kcal, or why it is not counted. */
+/**
+ * What a row says under its name: the ingredient with its weight and kcal, or why it is not counted. A volume of an
+ * ingredient whose density is not known (a drink counted per 100 ml, a portion in ml) says its millilitres: its weight
+ * would be a guess.
+ */
 internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t: Strings): String {
     val name = ingredient?.name.orEmpty()
     return when (count) {
@@ -440,9 +479,11 @@ internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t:
         RowCount.PORTION_GONE -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_PORTION_GONE, row.unit.orEmpty()))
         RowCount.WEIGHT_UNKNOWN -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_WEIGHT_UNKNOWN))
         RowCount.COUNTED -> {
-            val grams = NutritionCalculator.quantityOf(row.line()!!, ingredient!!)!!.grams
+            val line = row.line()!!
+            val volume = measured(line, ingredient!!)?.takeIf { it.dimension == Dimension.VOLUME && ingredient.gramsPerMl == null }?.baseAmount
+            val quantity = volume?.let { formatMillilitres(it, t.locale) } ?: formatGrams(NutritionCalculator.quantityOf(line, ingredient)!!.grams, t.locale)
             val kcal = NutritionCalculator.ofLines(listOf(row.input() to ingredient), servings = 1)?.perServing?.kcal ?: 0.0
-            t(Msg.ROW_COUNTED, name, formatGrams(grams, t.locale), kcal.roundToLong())
+            t(Msg.ROW_COUNTED, name, quantity, kcal.roundToLong())
         }
     }
 }
@@ -565,7 +606,10 @@ internal fun rememberFound(api: ApiClient, catalogue: List<Ingredient>, query: S
     return found(catalogue, foods, query) to failed
 }
 
-/** The search field for an ingredient to add, and under it what it found ([found]), each picked with a tap. */
+/**
+ * The search field for an ingredient to add, and under it what it found ([found]), each picked with a tap. With
+ * [onNewProduct], the last row makes a new product named as typed (issue 354): what was meant may be found by nothing.
+ */
 @Composable
 internal fun IngredientSearch(
     query: String,
@@ -573,6 +617,7 @@ internal fun IngredientSearch(
     found: List<Found>,
     failed: Load.Failed?,
     enabled: Boolean,
+    onNewProduct: ((String) -> Unit)? = null,
     onPick: (Found) -> Unit,
 ) {
     val t = LocalStrings.current
@@ -591,6 +636,17 @@ internal fun IngredientSearch(
             Text(t(Msg.EDITOR_NOTHING_FOUND), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         found.forEach { FoundRow(it, enabled) { onPick(it) } }
+        val name = query.trim()
+        if (onNewProduct != null && name.length >= 2) {
+            Row(
+                Modifier.fillMaxWidth().clickable(enabled = enabled) { onNewProduct(name) }.padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
+            ) {
+                Text(t(Msg.NEW_PRODUCT_NAMED, name), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                Icon(AppIcons.Add, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+        }
     }
 }
 
@@ -602,7 +658,9 @@ private fun FoundRow(found: Found, enabled: Boolean, onPick: () -> Unit) {
         is Found.Mine -> found.ingredient.name to found.ingredient.values
         is Found.NewFood -> found.food.let { (if (t.language == Language.DUTCH) it.nameNl else it.nameEn) to Values(it.basis, it.per100) }
     }
-    val values = counted?.let { per100Text(it, t) } ?: t(Msg.FOUND_NO_NUTRITION)
+    // Open Food Facts' values are credited wherever they are shown, as its licence asks.
+    val credit = "Open Food Facts".takeIf { found is Found.Mine && fromOpenFoodFacts(found.ingredient.label?.source) }
+    val values = listOfNotNull(counted?.let { per100Text(it, t) } ?: t(Msg.FOUND_NO_NUTRITION), credit).joinToString(" · ")
     Row(
         Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onPick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

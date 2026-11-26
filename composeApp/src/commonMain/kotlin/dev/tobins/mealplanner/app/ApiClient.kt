@@ -29,6 +29,9 @@ import dev.tobins.mealplanner.api.PricesState
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.WeekPlanning
+import dev.tobins.mealplanner.api.ProductHit
+import dev.tobins.mealplanner.api.ProductLookup
+import dev.tobins.mealplanner.api.ProductSearch
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RatingInput
@@ -302,6 +305,16 @@ class ApiClient(
         contentType(ContentType.Application.Json)
         setBody(input)
     }.body()
+
+    /** AH's products for a name, to fill the product form with one of (issue 354). */
+    suspend fun searchProducts(text: String): ProductSearch = http.get("api/products/search") { parameter("q", text) }.body()
+
+    /** AH's product [hit] with its label's values; of a multi-pack, its single item. */
+    suspend fun ahProduct(hit: ProductHit): ProductLookup =
+        http.get("api/products/ah/${hit.id}") { hit.packOf?.let { parameter("packOf", it) } }.body()
+
+    /** The product of [barcode] (digits only), at AH or else at Open Food Facts. */
+    suspend fun productByBarcode(barcode: String): ProductLookup = http.get("api/products/barcode/${barcode.encodeURLPathPart()}").body()
 
     suspend fun setStaple(ingredientId: Long, staple: Boolean): Pantry =
         (if (staple) http.put("api/pantry/staples/$ingredientId") else http.delete("api/pantry/staples/$ingredientId")).body()

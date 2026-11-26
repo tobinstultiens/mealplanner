@@ -187,8 +187,9 @@ back. The plan's cost and the planning suggestions come from the server, so they
 Offers only say how much is taken off; to know what a meal costs, and so which offers make it
 cheap, the server keeps a regular price per kg for each ingredient (`PriceRepository`, `prices/`).
 
-- Once a week it searches AH's product search (`/mobile-services/product/search/v2?query=…`, same
-  anonymous token as the offers) for up to four of the ingredient's names, Dutch ones first.
+- Once a week it searches AH's product search (`/mobile-services/product/search/v2?query=…`, an
+  anonymous token as the offers get, kept for half an hour and shared with the product lookup, `AhApp`)
+  for up to four of the ingredient's names, Dutch ones first.
   `POST /api/prices/refresh` starts a lookup now; it takes a few minutes and `GET /api/prices`
   shows the result with the product each price came from.
 - A product counts for an ingredient when the offer matcher would give it that ingredient (see "Which ingredient an
@@ -1385,5 +1386,71 @@ from the packaging today: energy in kcal, fat, saturated fat, carbohydrates, sug
 or per 100 ml. They are the account's own and are not shared. Salt is typed as the label gives it and kept as sodium,
 as NEVO has it: a label's salt is its sodium times 2.5 (EU regulation 1169/2011), so 1 g of salt is 400 mg of sodium
 (`Salt` in `shared/.../nutrition/Portions.kt`). A value the label does not give stays empty, which is unknown, as in
-NEVO. `LabelNutrition.source` says where the values came from; it is empty for values typed from the label, and is
-there for a lookup (by search or barcode) to fill.
+NEVO. `LabelNutrition.source` says where the values came from; it is empty for values typed from the label.
+
+### Looked up at AH and Open Food Facts (issue 354)
+
+The product's form can fill itself from a lookup; the person checks the values against the pack and saves. A lookup
+saves nothing: the values found for one product differed between the two sources for six of seven products tried
+(issue 339, step 0, 26 November 2026), so they are a suggestion, not a fact. The server asks the sources; the app asks
+only the server (`server/.../products/`). Routes, all as of 26 November 2026, confirmed by hand that day:
+
+- **AH, by name:** the app's product search, `GET /mobile-services/product/search/v2?query=…&sortOn=RELEVANCE&size=15`
+  with the anonymous token and headers of the offers (`AhApp`). Of each product: `webshopId`, `title`, `brand`,
+  `salesUnitSize`. A multi-pack sold as one (`isVirtualBundle`, "4-pack", `4 stuks`) has no table of its own: its first
+  item (`virtualBundleItems[0].productId`, with its `quantity`) is the one read, and the form says the values are of one
+  item.
+- **AH, by barcode:** `GET /mobile-services/product/search/v1/gtin/{13 digits}` gives the product, in the search's
+  shape, or 404 with no body when AH does not have it. A 12-digit UPC-A is asked with a leading 0, a 14-digit code
+  without its leading 0.
+- **AH, the table:** `POST /graphql`, the app's GraphQL endpoint (no REST route gives a table any more: the product
+  detail routes answer 404), with `query FetchProduct($productId: Int!) { product(id: $productId) { id title brand
+  salesUnitSize tradeItem { contents { netContents } nutritions { basisQuantity nutrients { type value } } } } }`. An
+  id AH does not have is answered 200 with `"data": null`. The table read is the first of `nutritions` whose
+  `basisQuantity` is 100 g or 100 ml (`100.0 Gram`, `100.0 Milliliter`): a drink's is per 100 ml. A table on another
+  basis (per portion only) is not converted: the lookup says AH gives no values per 100 g or 100 ml. The values are
+  the nutrients with the GS1 codes `ENER-` (energy), `FAT`, `FASAT`, `CHOAVL`, `SUGAR-`, `FIBTG`, `PRO-` and `SALTEQ`
+  (salt, kept as sodium through `Salt`), all text: `"18.0 g"`, `"1618.0 kJ (388.0 kcal)"`. A decimal comma is read as a
+  point and `mg` as a thousandth of a gram. **"Less than" (`<0,5 g`) is read as the number itself (0.5)**: the most the
+  product can have, as the label says no more. Energy is read in kcal only: a value in kJ alone is not converted. A
+  nutrient the table does not list stays empty; one it lists in a form that does not read stays empty too and is named
+  in the answer (`unread`), so the form says "Could not be read: …". Nothing is guessed.
+- **The pack:** `tradeItem.contents.netContents` (`"50.0 Gram"`, `"1.0 Liter"`), else `salesUnitSize` (`"50 g"`); of a
+  multi-pack (`"6 x 250 ml"`) its single item. The form offers it as a portion named "pack" ("item" for one of a
+  multi-pack; "verpakking" and "los stuk" in Dutch), which the person can rename or remove. A count (`"4 stuks"`) offers
+  none.
+- **Open Food Facts, by barcode only:** `GET https://world.openfoodfacts.org/api/v3/product/{barcode}?fields=product_name,brands,quantity,nutrition_data_per,nutriments`,
+  asked only when AH does not have the barcode, has no table that reads (with its energy), or does not answer. Found:
+  200 with `result.id` `product_found`; unknown: 404 with `product_not_found`. Its values are numbers: `energy-kcal_100g`,
+  `fat_100g`, `saturated-fat_100g`, `carbohydrates_100g`, `sugars_100g`, `fiber_100g`, `proteins_100g`, `salt_100g`;
+  an absent key is not given (a 0 is often a field nobody filled in, which the person sees and corrects). Its `_100g`
+  values are per 100 ml for a product whose `quantity` is in ml or l and per 100 g for one in g or kg; without a
+  quantity that reads the basis is not guessed: the answer leaves it open and the person chooses it in the form before
+  saving. Values given per portion only (`nutrition_data_per` other than `100g`) are not read. Its `product_name` often leaves the brand out, so the first of
+  `brands` is put before it when it does not have it.
+
+**Open Food Facts' terms.** The database is under the Open Database License (ODbL), its contents under the Database
+Contents License. Reuse needs the credit "Open Food Facts" with a link: the product's form shows "Values from Open Food
+Facts" and a line with the licence and a link to openfoodfacts.org wherever such values are open, and the list of
+products and the recipe editor's search name Open Food Facts after the values of a product that has them. The
+values are kept only in the account's own product, not shared and not distributed. Each request names the app, its
+version and a contact in its `User-Agent` (`MealPlanner/<version> (<contact>)`), the contact from the server setting
+`MEALPLANNER_OPENFOODFACTS_CONTACT` (an e-mail address or a web page of whoever runs the server); without it the server
+never asks Open Food Facts and the form says so. Reads are limited to 15 a minute per address, beyond which an address
+is banned: the server holds its own requests to at most 15 in any minute for all accounts together (`RequestLimit`), and
+one beyond that is not sent: the form says to try again in a moment. No text search is used: its search is limited
+further and asked not to be used as one types.
+
+**What can break.** Both are undocumented or volunteer-run. AH's GraphQL endpoint answers errors with 200, so `data`
+is read and a missing one is a failure; AH has removed routes before (the REST product detail, 404 since at least 15
+November 2026). Open Food Facts answered 502 for a while on 26 November. A source that does not answer, or answers in a
+form that is not understood, is said in the form ("AH did not answer."), which is then typed by hand; it is logged on
+the server as a warning.
+
+**Where the source is kept.** `LabelNutrition.source` holds the source and its reference in one text: `ah:<AH's product
+id>` or `off:<barcode>`, only when at least one value came from it (a product found without a table that reads gives its
+name and pack, and the values typed are the label's, with no source); once a value or a basis the source gave is changed
+in the form after the lookup, `;changed` follows
+(`ah:61758;changed`), and the form shows "Values from AH, changed by hand". A value is saved as it was given or typed:
+the form shows at most three decimals, and a value whose text is left as shown is saved as the number it stood for, so a
+product opened and saved without a change is the same product.

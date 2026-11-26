@@ -304,12 +304,15 @@ private fun standardSwitch() {
     Column(Modifier.padding(16.dp)) { StandardMealRow(standard = true, report = marked, enabled = true) {} }
 }
 
-/** The recipe editor's search with [query] typed, and what it found: the account's own ingredients and a NEVO food to add. */
+/**
+ * The recipe editor's search with [query] typed, and what it found: the account's own ingredients, a NEVO food to add,
+ * and last a new product named as typed.
+ */
 @Composable
 private fun ingredientSearch(api: ApiClient, query: String) {
     val catalogue by produceState(emptyList<dev.tobins.mealplanner.api.Ingredient>()) { value = api.ingredients() }
     val (found, failed) = rememberFound(api, catalogue, query)
-    Column(Modifier.padding(16.dp)) { IngredientSearch(query, {}, found, failed, enabled = true, onPick = {}) }
+    Column(Modifier.padding(16.dp)) { IngredientSearch(query, {}, found, failed, enabled = true, onNewProduct = {}, onPick = {}) }
 }
 
 /**
@@ -604,11 +607,34 @@ enum class Shot(
     RECIPE_EDITOR_SEARCH_NL(writing = true, dutch = true, heightDp = 640, shows = "Kikkererwten", content = { api, _ -> ingredientSearch(api, "chick") }),
     // A product's form (issue 351): its name, the values of its label with one left empty, and two portions. In both
     // languages and at the largest font.
-    PRODUCT_FORM(heightDp = 1550, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
-    PRODUCT_FORM_NL(dutch = true, heightDp = 1550, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
-    PRODUCT_FORM_X2(heightDp = 2300, fontScale = 2.0f, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
+    PRODUCT_FORM(heightDp = 1850, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
+    PRODUCT_FORM_NL(dutch = true, heightDp = 1900, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
+    PRODUCT_FORM_X2(heightDp = 2800, fontScale = 2.0f, content = { api, _ -> ProductScreen(api, proteinBar, {}, {}) }),
     // A new product: what keeps Save off is said in red at its field.
-    PRODUCT_FORM_NEW(heightDp = 1300, content = { api, _ -> ProductScreen(api, null, {}, {}) }),
+    PRODUCT_FORM_NEW(heightDp = 1600, content = { api, _ -> ProductScreen(api, null, {}, {}) }),
+    // A product looked up at AH by name (issue 354), opened as "New product" from the editor's search: what the search
+    // found, with brand and pack; then the form filled with the one picked, its source, what AH does not give and its pack
+    // as a portion. In both languages and at the largest font.
+    PRODUCT_LOOKUP(heightDp = 900, taps = listOf("Look up" to "Optimel · 1 l"), content = { api, _ -> ProductScreen(api, null, {}, {}, name = "drinkyoghurt") }),
+    PRODUCT_LOOKUP_NL(dutch = true, heightDp = 900, taps = listOf("Opzoeken" to "Optimel · 1 l"), content = { api, _ -> ProductScreen(api, null, {}, {}, name = "drinkyoghurt") }),
+    PRODUCT_LOOKUP_X2(heightDp = 1600, fontScale = 2.0f, taps = listOf("Look up" to "Optimel · 1 l"), content = { api, _ -> ProductScreen(api, null, {}, {}, name = "drinkyoghurt") }),
+    PRODUCT_LOOKED_UP(
+        heightDp = 1700,
+        taps = listOf("Look up" to "Optimel · 1 l", "Optimel Drinkyoghurt framboos" to "Values from AH"),
+        content = { api, _ -> ProductScreen(api, null, {}, {}, name = "drinkyoghurt") },
+    ),
+    PRODUCT_LOOKED_UP_NL(
+        dutch = true,
+        heightDp = 1700,
+        taps = listOf("Opzoeken" to "Optimel · 1 l", "Optimel Drinkyoghurt framboos" to "Waarden van AH"),
+        content = { api, _ -> ProductScreen(api, null, {}, {}, name = "drinkyoghurt") },
+    ),
+    PRODUCT_LOOKED_UP_X2(
+        heightDp = 2700,
+        fontScale = 2.0f,
+        taps = listOf("Look up" to "Optimel · 1 l", "Optimel Drinkyoghurt framboos" to "Values from AH"),
+        content = { api, _ -> ProductScreen(api, null, {}, {}, name = "drinkyoghurt") },
+    ),
     // Opened from a planned meal: the amounts of 1.5 of the recipe's 2 servings, and nothing to cook for leftovers.
     RECIPE_FROM_MEAL(heightDp = 1900, content = { api, _ ->
         RecipeDetailScreen(api, 4, "NEVO online version 2025/9.0, RIVM, Bilthoven", {}, {}, meal = MealToCook(4, 0.75, 1.5, skipped = false))
