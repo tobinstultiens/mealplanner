@@ -1,4 +1,4 @@
-// Frozen from v0.1.11 (d67c66841795e71e94257aa85aa1af579c688842) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.12 (dd5ad93e7c8489f1199ba88c609352532d2b298f) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import kotlinx.serialization.EncodeDefault
