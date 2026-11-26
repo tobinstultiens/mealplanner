@@ -61,9 +61,12 @@ actual fun KeyboardMakesRoom() {
     }
 }
 
-/** An input method marks the keys it sends so (Gboard's delete, for one); a hardware keyboard's never are. */
+/**
+ * An input method marks the keys it sends so (Gboard's delete, for one: `FLAG_SOFT_KEYBOARD`), and the Enter of its
+ * action key, labelled "Next" or "Done", as an editor action (`FLAG_EDITOR_ACTION`); a hardware keyboard's never are.
+ */
 internal actual fun fromOnScreenKeyboard(event: androidx.compose.ui.input.key.KeyEvent): Boolean =
-    event.nativeKeyEvent.flags and android.view.KeyEvent.FLAG_SOFT_KEYBOARD != 0
+    event.nativeKeyEvent.flags and (android.view.KeyEvent.FLAG_SOFT_KEYBOARD or android.view.KeyEvent.FLAG_EDITOR_ACTION) != 0
 
 /**
  * Started means visible, also in split screen or behind a dialog; stopped means behind another app or
