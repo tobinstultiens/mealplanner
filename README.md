@@ -774,7 +774,8 @@ per 1000 kcal of what keeps the weight (`TargetCalculator`), not of the lower ta
 Gezondheidsraad advises 3.0 to 3.5 g per MJ of the energy requirement (Voedingsnormen 2026, as the
 Voedingscentrum gives it), and 14 g per 1000 kcal is 3.35 g per MJ. The profile can set its own target
 (`Profile.fibreOverrideG`, 10 to 100 g). A recipe's fibre is its ingredients' per serving (their own values or their NEVO food's); one without a
-fibre value counts as none, and the recipe is planned all the same. Extras logged by hand have no fibre.
+fibre value counts as none, and the recipe is planned all the same. Extras typed by hand have no fibre; a food logged
+from the catalogue has its own, stored with its entry (issue 362).
 
 The planner rewards fibre as it does protein: how far a meal goes towards its slot's share of the target,
 up to 1.5 (`WeekPlanner.score`). `Profile.priority` raises one part of the score and lowers none:
@@ -787,9 +788,10 @@ up to 1.5 (`WeekPlanner.score`). `Profile.priority` raises one part of the score
 | Price | price doubled (+1.2 to −2.4) |
 
 Calorie fit and the penalties for repeats and recently eaten recipes are the same under every priority.
-The fibre of planned meals (`PlannedMeal.fibreG`), of a plan's days (`PlanDay.fibreG`) and of the day view
-(`DayView.eatenFibreG`, `expectedFibreG`) is not stored: it follows from the recipes' nutrition as it is
-now, as a meal's cost follows from this week's prices, so meals planned before fibre counted have it too.
+The fibre of planned meals (`PlannedMeal.fibreG`) and of a plan's days (`PlanDay.fibreG`) is not stored: it follows
+from the recipes' nutrition as it is now, as a meal's cost follows from this week's prices, so meals planned before
+fibre counted have it too. The day view's (`DayView.eatenFibreG`, `expectedFibreG`) is that of the plan's meals the
+same way, with the fibre stored with each food logged off the plan (issue 362) added.
 All of them are null from a server before fibre counted, and the app then shows no fibre. An app from
 before the priority and the fibre target saves a profile without them; the server keeps the stored ones,
 as it does the portion range. A newer app sends `"fibreOverrideG": null` to take its own target away.

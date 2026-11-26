@@ -28,6 +28,7 @@ import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.api.WeekPlan
+import dev.tobins.mealplanner.api.WeekPlanning
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import dev.tobins.mealplanner.server.db.Database
@@ -242,6 +243,32 @@ class SlotFoodsTest {
         assertEquals(1000.0, k.stock()["Banana"])
         assertEquals(rounded(1000.0 - 150.0 * portions), rounded(k.stock().getValue("Rice")!!))
         assertEquals(stew.kcal, http.meal(1, MealSlot.DINNER).kcal)
+    }
+
+    @Test
+    fun theTotalPlanningReportsCountsAFoodNextToAKeptRecipeAsThePlanDoes() = testApplication {
+        start()
+        val http = clientFor("alice")
+        val k = http.kitchen("alice")
+
+        // A kept stew with a banana next to it: the stew's serving (825 kcal) and the banana's 108.
+        http.ok(http.put("/api/plans/$week/meals/1/DINNER") { setBody(MealChoice(k.stew.id)) })
+        val stew = http.meal(1, MealSlot.DINNER)
+        http.ok(http.addFood(1, MealSlot.DINNER, k.banana, 1.0, "piece"))
+        val kept = http.meal(1, MealSlot.DINNER)
+        assertEquals(rounded(stew.kcal + 108.0), rounded(kept.kcal))
+
+        // The planning screen's strip is the Plan's day, the banana in it, in kcal, protein and fibre.
+        val totals = http.get("/api/plans/$week/planning").body<WeekPlanning>().totals
+        val day = http.plan().days[1]
+        assertEquals(listOf(rounded(kept.kcal), rounded(kept.proteinG), rounded(kept.fibreG!!)), listOf(totals.kcal, totals.proteinG, totals.fibreG).map(::rounded))
+        assertEquals(listOf(rounded(day.kcal), rounded(day.proteinG), rounded(day.fibreG!!)), listOf(totals.kcal, totals.proteinG, totals.fibreG).map(::rounded))
+
+        // Planning the rest of the week keeps the slot with its banana, and the Plan counts it in the day.
+        val planned = http.ok(http.post("/api/plans/$week/generate")).body<WeekPlan>()
+        val after = planned.days[1]
+        assertEquals(rounded(kept.kcal), rounded(after.meals.single { it.slot == MealSlot.DINNER }.kcal))
+        assertEquals(rounded(after.meals.sumOf { it.kcal }), rounded(after.kcal))
     }
 
     @Test
