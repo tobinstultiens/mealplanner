@@ -72,6 +72,15 @@ class HugoRecipeParser(private val units: UnitTable = UnitTable.Default) {
         val (amountText, unitText, item) = parts
 
         val amount = if (amountText.isEmpty()) null else parseAmount(amountText) ?: return null
+        return line(amount, unitText, item, group)
+    }
+
+    /**
+     * The line of [amount] [unitText] of [item] under [group], as a line of the ingredients block with those three
+     * fields reads; null when all three are empty. Also how a recipe's lines sent one by one (`RecipeInput.lines`)
+     * are read, so that they mean exactly what the same line written as text would.
+     */
+    fun line(amount: Double?, unitText: String, item: String, group: String?): IngredientLine? {
         if (amount == null && unitText.isEmpty() && item.isEmpty()) return null
         if (unitText.isEmpty()) {
             return IngredientLine(amount, unit = null, dimension = null, baseAmount = null, item = item, group = group)

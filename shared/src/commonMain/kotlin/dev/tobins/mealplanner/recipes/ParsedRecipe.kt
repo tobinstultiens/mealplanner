@@ -17,6 +17,12 @@ data class IngredientLine(
     val item: String,
     /** The `# Group` heading the line sits under, if any. */
     val group: String?,
+    /**
+     * The account's catalogue ingredient this line is, when the line was saved with one (issue 340): it is that
+     * ingredient whatever its text says and whatever the account's aliases say. Null for a line read from text (the
+     * cooking site, the import format), whose ingredient is looked up by its text on every read.
+     */
+    val ingredientId: Long? = null,
 ) {
     /**
      * Text to match against the ingredient catalogue. For `1 | onion | large` the

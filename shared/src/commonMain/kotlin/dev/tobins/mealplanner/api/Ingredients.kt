@@ -73,7 +73,9 @@ data class MappingRequest(
 /** A recipe's ingredient line with what the catalogue knows about it. */
 @Serializable
 data class MappedLine(
+    /** The line as stored; its `ingredientId` is the ingredient it was saved with (issue 340), null when it has none. */
     val line: IngredientLine,
+    /** The ingredient the line means now: the one it was saved with, or else the one its text is linked to; null for none. */
     val ingredientId: Long?,
     val ingredientName: String?,
     /** Weight used for nutrition; null when the line is unmapped or cannot be converted. */

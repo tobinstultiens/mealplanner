@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.server
 
+import dev.tobins.mealplanner.api.AddedInput
+import dev.tobins.mealplanner.api.CookingRepoSetting
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -13,9 +15,11 @@ import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
@@ -250,9 +254,45 @@ class RecipePicturesTest {
         assertNotNull(account.user.pictures.find(pizza.id))
         assertEquals(newPizza.imageUrl, account.summary("Pizza").imageUrl, "the same picture keeps its URL")
 
-        // Changing the site forgets every picture until the next sync.
-        account.user.pictures.removeAll()
+        // Changing the site forgets every picture of the bank until the next sync.
+        account.user.pictures.removeBank()
         assertTrue(account.user.recipes.bank().all { it.imageUrl == null })
-        assertFalse(File(account.images, "1").exists())
+        assertEquals(emptyList(), File(account.images, "1").listFiles()!!.toList())
+    }
+
+    /**
+     * A recipe taken from the bank (issue 340) keeps the picture it had: a new photo on the site, the page gone, and
+     * another site chosen leave it as it was. Deleting the recipe deletes its copy.
+     */
+    @Test
+    fun aTakenRecipeKeepsItsPictureWhateverTheSiteDoesUntilItIsDeleted() = testApplication {
+        val dir = site(*siteFiles)
+        val images = createTempDirectory("images").toFile()
+        val config = ServerConfig(port = 0, databaseUrl = "jdbc:sqlite::memory:", cookingRepo = dir, imageDir = images)
+        application { module(config, openDatabase(config.databaseUrl).second, offerSources = emptyList(), priceSource = null, generator = null, verifier = TestTokens) }
+        val http = createClient {
+            install(ContentNegotiation) { json() }
+            defaultRequest {
+                bearerAuth("t")
+                contentType(ContentType.Application.Json)
+            }
+        }
+        http.post("/api/sync/cooking")
+        val pizza = http.get("/api/recipes/bank").body<List<RecipeSummary>>().single { it.title == "Pizza" }
+        val taken = http.put("/api/recipes/${pizza.id}/added") { setBody(AddedInput(added = true)) }.body<RecipeDetail>().summary
+        assertEquals(pizza.imageUrl, taken.imageUrl)
+        val photo = http.get(taken.imageUrl!!).readRawBytes()
+
+        PictureFixtures.write(dir, "content/recipes/pizza/pizza.jpg", jpeg(1600, 1200, background = Color.GREEN))
+        http.post("/api/sync/cooking")
+        assertEquals(taken.imageUrl, http.get("/api/recipes/${pizza.id}").body<RecipeDetail>().summary.imageUrl, "a new photo on the site")
+        File(dir, "content/recipes/pizza").deleteRecursively()
+        http.post("/api/sync/cooking")
+        assertEquals(taken.imageUrl, http.get("/api/recipes/${pizza.id}").body<RecipeDetail>().summary.imageUrl, "the page gone")
+        assertEquals(HttpStatusCode.OK, http.put("/api/sync/cooking/repo") { setBody(CookingRepoSetting(url = null, noSite = true)) }.status)
+        assertTrue(photo.contentEquals(http.get(taken.imageUrl!!).readRawBytes()), "another site chosen")
+
+        assertEquals(HttpStatusCode.NoContent, http.delete("/api/recipes/${pizza.id}").status)
+        assertFalse(File(images, "1/${pizza.id}.jpg").exists())
     }
 }

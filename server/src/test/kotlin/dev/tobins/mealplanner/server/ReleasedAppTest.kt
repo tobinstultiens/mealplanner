@@ -603,6 +603,31 @@ class ReleasedAppTest {
     }
 
     /**
+     * A recipe whose lines a newer app saved with their ingredients (issue 340). The installed app reads it, each line with
+     * its ingredient, and saves it as it does, as text. A line whose text it left as it was keeps its ingredient, also when
+     * its amount changed; one whose text it changed is looked up by the new text, as any line of text is.
+     */
+    @Test
+    fun theInstalledAppReadsAndSavesAsTextARecipeWithLinesOfTheirOwnIngredient() = testApplication {
+        val http = start()
+        val meat = http.post("/api/ingredients") { setBody(IngredientInput("Chicken", nevoCode = 1634)) }.read<Ingredient>()
+        val lines = """[{"amount":400.0,"unit":"g","text":"mystery meat","ingredientId":${meat.id}},{"amount":200.0,"unit":"g","text":"rice"}]"""
+        val made = http.post("/api/recipes") { setBody("""{"title":"Bowl","servings":2,"lines":$lines}""") }.read<RecipeDetail>()
+        val id = made.summary.id
+        val rice = made.ingredients[1].ingredientId
+        assertEquals(Triple(meat.id, "Chicken", 400.0), made.ingredients[0].let { Triple(it.ingredientId, it.ingredientName, it.grams) })
+        assertEquals(made, http.read<RecipeDetail>("/api/recipes/$id"))
+
+        // Saved as its editor shows the lines, with more meat: the meat is the chicken still.
+        val more = http.put("/api/recipes/$id") { setBody(RecipeInput("Bowl", 2, "500 | g | mystery meat\n200 | g | rice")) }.read<RecipeDetail>()
+        assertEquals(listOf(meat.id, rice), more.ingredients.map { it.ingredientId })
+        assertEquals(listOf(500.0, 200.0), more.ingredients.map { it.line.amount })
+        // Its text changed: no ingredient of its own any more, and nothing the account linked that text to.
+        val renamed = http.put("/api/recipes/$id") { setBody(RecipeInput("Bowl", 2, "500 | g | mystery meat, diced\n200 | g | rice")) }.read<RecipeDetail>()
+        assertEquals(listOf(null, rice), renamed.ingredients.map { it.ingredientId })
+    }
+
+    /**
      * No enum of the frozen types may have a value the current one lacks: an installed app fails to
      * read a response with a value it does not know, whatever else the response holds. The check
      * covers every enum under `released/` by itself, so a new frozen enum is covered after a freeze.

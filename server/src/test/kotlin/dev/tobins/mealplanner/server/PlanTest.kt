@@ -818,8 +818,9 @@ class PlanTest {
         http.addWholeBank()
         assertEquals(listOf(MealSlot.SNACK), http.get("/api/recipes/${dinner0.id}").body<RecipeDetail>().summary.mealSlots)
 
-        assertEquals(HttpStatusCode.Conflict, http.put("/api/recipes/${dinner0.id}") { setBody(RecipeInput("X", 1, "1 | g | beef")) }.status)
-        assertEquals(HttpStatusCode.Conflict, http.delete("/api/recipes/${dinner0.id}").status)
+        // Taken from the site, it is the account's own (issue 340): it is edited and deleted as one made in the app.
+        assertEquals(HttpStatusCode.OK, http.put("/api/recipes/${dinner0.id}") { setBody(RecipeInput("X", 1, "1 | g | beef")) }.status)
+        assertEquals(HttpStatusCode.NoContent, http.delete("/api/recipes/${dinner0.id}").status)
         assertEquals(HttpStatusCode.BadRequest, http.post("/api/recipes") { setBody(RecipeInput("X", 1, "some | broken line")) }.status)
         assertEquals(HttpStatusCode.BadRequest, http.post("/api/recipes") { setBody(RecipeInput(" ", 1, "1 | g | beef")) }.status)
         // A recipe that is still planned is kept (see aRecipeStillPlanned...), so clear the plan first.

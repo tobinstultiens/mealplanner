@@ -107,11 +107,12 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         q.selectIngredient(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No ingredient with id $id")
 
     /**
-     * Looks up the ingredient each line's text means. In order: a link for the exact
-     * text, a link for its core text ("garlic, minced" -> "garlic"), then an ingredient
+     * Looks up the ingredient each line means: the one it was saved with ([IngredientLine.ingredientId], issue 340),
+     * whatever its text and the aliases say. A line without one is looked up by its text, in order: a link for the
+     * exact text, a link for its core text ("garlic, minced" -> "garlic"), then an ingredient
      * whose name is the core text, ignoring a plural s; the last two are then retried
      * without leading preparation words ("chopped green onion" -> "green onion") and
-     * for each alternative of an "a or b" text.
+     * for each alternative of an "a or b" text. Every reader of a recipe's lines goes through this.
      */
     fun resolver(): (IngredientLine) -> Ingredient? {
         val all = list()
@@ -119,7 +120,8 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         val byName = all.associateBy { singular(it.name.lowercase()) }
         val aliases = q.selectAliases(userId).executeAsList().associate { it.text to it.ingredientId }
         return { line ->
-            aliases[normalise(line.ingredientText)]?.let(byId::get)
+            line.ingredientId?.let(byId::get)
+                ?: aliases[normalise(line.ingredientText)]?.let(byId::get)
                 ?: IngredientLine.lookupTexts(line.ingredientText).firstNotNullOfOrNull { text ->
                     (aliases[text] ?: aliases[singular(text)])?.let(byId::get) ?: byName[singular(text)]
                 }
@@ -187,7 +189,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
         generateSequence(name) { "$it (NEVO)" }.first { q.selectIngredientByName(userId, it).executeAsOneOrNull() == null }
 
     private fun myLines(): List<IngredientLine> = q.selectMyLines(userId).executeAsList().map {
-        IngredientLine(it.amount, it.unit, it.dimension?.let(Dimension::valueOf), it.baseAmount, it.item, it.groupName)
+        IngredientLine(it.amount, it.unit, it.dimension?.let(Dimension::valueOf), it.baseAmount, it.item, it.groupName, it.ingredientId)
     }
 
     /** Links a line text to an ingredient, creating the ingredient from a NEVO food if asked. */
@@ -236,7 +238,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
 
         val uses = linkedMapOf<String, Use>()
         for (row in q.selectMyLines(userId).executeAsList()) {
-            val line = IngredientLine(row.amount, row.unit, row.dimension?.let(Dimension::valueOf), row.baseAmount, row.item, row.groupName)
+            val line = IngredientLine(row.amount, row.unit, row.dimension?.let(Dimension::valueOf), row.baseAmount, row.item, row.groupName, row.ingredientId)
             if (line.amount == null) continue
             val ingredient = resolve(line)
             if (ingredient?.negligible == true) continue

@@ -1353,8 +1353,9 @@ picture.
 
 Each sync compares the SHA-256 of every picture file with the one it last read: a changed picture is
 copied again (and gets a new `v`), an unchanged one is left alone, and the copy of a recipe that is
-gone, or whose page no longer shows a picture, is deleted. Setting another cooking site deletes all of
-the account's copies until the new site is synced. Accounts that read the server's cooking site (issue 208)
+gone, or whose page no longer shows a picture, is deleted. That is so for the bank's recipes: a recipe the account
+took from the bank keeps the copy it had, whatever happens to the page (issue 340), until the recipe is deleted.
+Setting another cooking site deletes the copies of the bank's recipes until the new site is synced. Accounts that read the server's cooking site (issue 208)
 read its one clone, but each keeps copies of its own, under its own recipe ids: a copy is about 130 KB (the
 one photo on the site in November 2026: 3.2 MB as taken, 134 KB as copied, 0.12 s to scale), so a copy per
 account costs little, and a picture is served by the same check as any other: the account's own recipe. `GET /api/recipes/{id}/image` serves the copy to the

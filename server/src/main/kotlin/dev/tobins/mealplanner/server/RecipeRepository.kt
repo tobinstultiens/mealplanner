@@ -11,6 +11,7 @@ import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSettings
@@ -28,7 +29,6 @@ import dev.tobins.mealplanner.planner.Pack
 import dev.tobins.mealplanner.planner.PlanCandidate
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.recipes.IngredientLine
-import dev.tobins.mealplanner.recipes.ParsedRecipe
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.Recipe
 import dev.tobins.mealplanner.units.Dimension
@@ -51,7 +51,9 @@ data class RecipeLines(val servings: Int, val lines: List<Pair<IngredientLine, I
 /**
  * One account's recipes. Those from its cooking site start in its bank; the account adds the ones it
  * cooks to "my recipes", and the planner picks on its own only from my recipes in the rotation. Recipes
- * made in the app are always mine. See README, "Recipes: the bank, my recipes and the rotation".
+ * made in the app are always mine. A recipe added from the bank is taken: the account's own copy, edited
+ * and deleted as one made in the app, which the sync no longer changes (issue 340). See README, "Recipes:
+ * the bank, my recipes and the rotation".
  */
 class RecipeRepository(
     private val db: Database,
@@ -244,14 +246,14 @@ class RecipeRepository(
     /** Creates a recipe of the user's own, or one generated for them ([source] GENERATED): one of mine, in the rotation. */
     fun create(input: RecipeInput, source: RecipeSource = RecipeSource.MANUAL): RecipeDetail = db.writing {
         require(source != RecipeSource.COOKING_SITE) { "cooking site recipes come from the sync" }
-        val parsed = parse(input)
+        val lines = linesFrom(input, before = emptyList())
         q.insertRecipe(
             userId = userId,
             source = source.name,
             sourcePath = null,
             contentHash = null,
             section = MANUAL_SECTION,
-            title = parsed.title,
+            title = input.title.trim(),
             tagsJson = Json.encodeToString(input.tags),
             servings = input.servings.toLong(),
             instructions = input.instructions.trim(),
@@ -263,29 +265,43 @@ class RecipeRepository(
         )
         val id = q.lastInsertId().executeAsOne()
         q.updateSettings(RecipeKind.MEAL.name, Json.encodeToString(input.mealSlots), userId, id)
-        replaceIngredients(id, parsed.ingredients)
+        replaceIngredients(id, lines)
         find(id)!!
     }
 
-    /** Replaces a recipe of the user's own; imported recipes are edited on the cooking site. */
+    /**
+     * Replaces one of my recipes ([requireMine]): one made in the app, or one taken from the cooking site, which is the
+     * account's own copy (issue 340). Its kind, rating, picture and the like stay; a bank recipe is the site's (409).
+     */
     fun update(id: Long, input: RecipeInput): RecipeDetail = db.writing {
-        val row = q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
-        if (row.source == RecipeSource.COOKING_SITE.name) throw ConflictException("Recipes from the cooking site are edited there")
-        val parsed = parse(input)
-        q.updateManual(parsed.title, Json.encodeToString(input.tags), input.servings.toLong(), input.instructions.trim(), "[]", userId, id)
+        val row = requireMine(id)
+        val lines = linesFrom(input, before = linesOf(id))
+        q.updateMine(
+            title = input.title.trim(),
+            tagsJson = Json.encodeToString(input.tags),
+            servings = input.servings.toLong(),
+            instructions = input.instructions.trim(),
+            editedAt = Instant.now().toString(),
+            userId = userId,
+            id = id,
+        )
         q.updateSettings(row.kind, Json.encodeToString(input.mealSlots), userId, id)
-        replaceIngredients(id, parsed.ingredients)
+        replaceIngredients(id, lines)
         find(id)!!
     }
 
+    /**
+     * Deletes one of my recipes ([requireMine]), also one taken from the cooking site: the site's file is then in the bank
+     * again after the next sync, as a file the account never took. A bank recipe is the site's and is not deleted (409).
+     * The route deletes its picture too ([RecipePictures.forget]).
+     */
     fun delete(id: Long): Unit = db.writing {
-        val row = q.selectById(userId, id).executeAsOneOrNull() ?: throw NotFoundException("No recipe with id $id")
-        if (row.source == RecipeSource.COOKING_SITE.name) throw ConflictException("Recipes from the cooking site are removed there")
+        requireMine(id)
         val days = plannedDays(id)
         if (days.isNotEmpty()) {
             throw ConflictException("Planned on ${days.joinToString(", ", transform = ::dayName)}: choose another recipe there first")
         }
-        q.deleteManual(userId, id)
+        q.deleteMine(userId, id)
     }
 
     /**
@@ -380,11 +396,16 @@ class RecipeRepository(
     /**
      * Refuses to put [row] back in the bank while the plan or the routines use it: the shopping list would
      * go on buying for a recipe the account no longer has, as for [delete]. A recipe made in the app has no
-     * bank to go back to: it is deleted ([delete]), which putting back never does on its own.
+     * bank to go back to: it is deleted ([delete]), which putting back never does on its own. Nor has a
+     * taken one saved in the app since (issue 340): in the bank the next sync would make it the site's file
+     * again, and what was changed would be lost without a word.
      */
     private fun requireRemovable(row: Recipe) {
         if (row.source != RecipeSource.COOKING_SITE.name) {
             throw ConflictException("\"${row.title}\" was made in the app, so it has no bank to go back to: delete it instead")
+        }
+        if (row.editedAt != null) {
+            throw ConflictException("\"${row.title}\" was changed in the app, so it is no longer the cooking site's: delete it instead")
         }
         val days = plannedDays(row.id)
         if (days.isNotEmpty()) {
@@ -499,14 +520,51 @@ class RecipeRepository(
         return find(id)!!
     }
 
-    private fun parse(input: RecipeInput): ParsedRecipe {
+    /**
+     * The lines [input] saves, checked: its [RecipeInput.lines] when it has them, else those of its text, which keep the
+     * ingredients of the recipe's lines [before] ([keepingIngredients]). An ingredient that is not the account's is a
+     * [NotFoundException], as for toppings.
+     */
+    private fun linesFrom(input: RecipeInput, before: List<IngredientLine>): List<IngredientLine> {
         require(input.title.isNotBlank()) { "title must not be blank" }
         require(input.servings in 1..100) { "servings must be between 1 and 100" }
-        val parsed = HugoRecipeParser().parse("$MANUAL_SECTION/x.md", "```ingredients\n${input.ingredients}\n```")
+        val lines = input.lines?.let(::readLines) ?: keepingIngredients(readText(input.ingredients), before)
+        require(lines.isNotEmpty()) { "at least one ingredient line is required" }
+        for (id in lines.mapNotNullTo(LinkedHashSet()) { it.ingredientId }) {
+            ingredients.find(id) ?: throw NotFoundException("No ingredient with id $id")
+        }
+        return lines
+    }
+
+    /** The lines of the import format [text], read as the cooking site's are; a line that cannot be read is refused. */
+    private fun readText(text: String): List<IngredientLine> {
+        val parsed = HugoRecipeParser().parse("$MANUAL_SECTION/x.md", "```ingredients\n$text\n```")
         // One problem per line, so that an app can show each unreadable ingredient line on its own.
         require(parsed.problems.isEmpty()) { parsed.problems.joinToString("\n") }
-        require(parsed.ingredients.isNotEmpty()) { "at least one ingredient line is required" }
-        return parsed.copy(title = input.title.trim())
+        return parsed.ingredients
+    }
+
+    /** [lines] as the same lines of the import format read ([HugoRecipeParser.line]), each with its ingredient. */
+    private fun readLines(lines: List<RecipeLineInput>): List<IngredientLine> {
+        val parser = HugoRecipeParser()
+        return lines.mapIndexed { index, line ->
+            val amount = line.amount
+            require(amount == null || (amount.isFinite() && amount > 0)) { "Line ${index + 1}: the amount must be above 0, or none" }
+            parser.line(amount, line.unit?.trim().orEmpty(), line.text.trim(), line.group?.trim()?.ifEmpty { null })
+                ?.copy(ingredientId = line.ingredientId)
+                ?: throw IllegalArgumentException("Line ${index + 1}: a line needs an amount, a unit or a text")
+        }
+    }
+
+    /**
+     * [lines] read from text, each with the ingredient of the first line [before] with the same text that had one. So a
+     * recipe saved as text, as released apps save it, keeps the ingredients its lines were saved with where their text
+     * stayed as it was (amount and unit may change); a line whose text changed is looked up by its new text.
+     */
+    private fun keepingIngredients(lines: List<IngredientLine>, before: List<IngredientLine>): List<IngredientLine> {
+        val kept = HashMap<String, Long>()
+        for (line in before) line.ingredientId?.let { kept.putIfAbsent(IngredientRepository.normalise(line.ingredientText), it) }
+        return lines.map { it.copy(ingredientId = kept[IngredientRepository.normalise(it.ingredientText)]) }
     }
 
     private fun slotsOf(row: Recipe): Set<MealSlot> =
@@ -527,6 +585,7 @@ class RecipeRepository(
             baseAmount = it.baseAmount,
             item = it.item,
             group = it.groupName,
+            ingredientId = it.ingredientId,
         )
     }
 
@@ -549,13 +608,14 @@ class RecipeRepository(
     }
 
     /**
-     * Makes the stored cooking-site recipes match [pages], the full current content
+     * Makes the bank's cooking-site recipes match [pages], the full current content
      * of the repo. Files are identified by path; unchanged hashes are skipped; recipes
-     * whose file is gone are marked removed, and come back if the file reappears.
+     * whose file is gone are marked removed (hidden), and come back if the file reappears.
      * A new file's recipe goes to the bank. Whether a recipe is added and in the rotation
-     * is the account's and never changed here: an added recipe whose file is gone stays one
-     * of mine ([RecipeSummary.removedFromSite]), a bank one is hidden until it is back.
-     * Pictures are left to [RecipePictures.sync], after this.
+     * is the account's and never changed here. An added recipe is taken (issue 340): the
+     * account's own copy, which a sync leaves as it is, whether its file changed or went,
+     * and counts as unchanged; its row keeps the file's path, so the file is not offered
+     * as new again. Pictures are left to [RecipePictures.sync], after this.
      */
     fun syncCookingSite(pages: List<SitePage>, now: Instant = Instant.now()): SyncResult {
         var added = 0
@@ -588,7 +648,7 @@ class RecipeRepository(
                         replaceIngredients(q.lastInsertId().executeAsOne(), recipe.ingredients)
                         added++
                     }
-                    row.contentHash == hash && row.removedAt == null -> unchanged++
+                    row.addedAt != null || (row.contentHash == hash && row.removedAt == null) -> unchanged++
                     else -> {
                         q.updateSynced(
                             contentHash = hash,
@@ -609,7 +669,7 @@ class RecipeRepository(
             }
             val present = pages.mapTo(HashSet()) { it.recipe.path }
             for (row in existing.values) {
-                if (row.sourcePath !in present && row.removedAt == null) {
+                if (row.sourcePath !in present && row.removedAt == null && row.addedAt == null) {
                     q.markRemoved(now.toString(), userId, row.id)
                     removed++
                 }
@@ -622,7 +682,7 @@ class RecipeRepository(
     private fun replaceIngredients(recipeId: Long, lines: List<IngredientLine>) {
         q.deleteIngredients(recipeId)
         lines.forEachIndexed { index, line ->
-            q.insertIngredient(recipeId, index.toLong(), line.amount, line.unit, line.dimension?.name, line.baseAmount, line.item, line.group)
+            q.insertIngredient(recipeId, index.toLong(), line.amount, line.unit, line.dimension?.name, line.baseAmount, line.item, line.group, line.ingredientId)
         }
     }
 

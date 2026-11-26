@@ -188,8 +188,8 @@ class CookingRepoTest {
     /**
      * The recipe bank across syncs (issue 205). A new file's recipe is in the bank, not in my recipes. Whether
      * a recipe is added and in the rotation is the account's: a changed file, and a file that leaves the site
-     * and comes back, keep both. An added recipe whose file leaves stays one of mine, marked; a bank one is
-     * hidden until its file is back.
+     * and comes back, keep both. An added recipe is taken (issue 340): its file changing or leaving leaves it
+     * as it was, unmarked; a bank one follows its file, and is hidden until its file is back.
      */
     @Test
     fun aSyncKeepsWhatTheAccountAddedAndPutInItsRotation() = testApplication {
@@ -228,25 +228,26 @@ class CookingRepoTest {
         fun addedAt(title: String) = db.recipeQueries.selectById(account, ids.getValue(title)).executeAsOne().addedAt
         val addedWhen = listOf("Stew", "Curry").associateWith(::addedAt)
         assertTrue(addedWhen.values.all { it != null })
-        suspend fun assertKept(why: String, curryOnSite: Boolean = true) = mine().let { mine ->
+        suspend fun assertKept(why: String) = mine().let { mine ->
             assertEquals(listOf("Curry", "Stew"), mine.keys.sorted(), why)
             assertEquals(listOf(true, true), listOf(mine.getValue("Stew").inRotation, mine.getValue("Stew").added), why)
             assertEquals(listOf(false, true), listOf(mine.getValue("Curry").inRotation, mine.getValue("Curry").added), why)
-            assertEquals(!curryOnSite, mine.getValue("Curry").removedFromSite, why)
+            assertEquals(false, mine.getValue("Curry").removedFromSite, why)
             assertEquals(addedWhen, listOf("Stew", "Curry").associateWith(::addedAt), "$why: added when they were added")
         }
+        suspend fun grams(title: String) = http.get("/api/recipes/${ids.getValue(title)}").body<RecipeDetail>().ingredients.single().line.amount
 
-        // Changed files.
-        upstream.commit(mapOf("content/recipes/stew.md" to page("Stew", 500), "content/recipes/curry.md" to page("Curry", 600)))
+        // Changed files: the bank's soup follows, the stew taken does not.
+        upstream.commit(mapOf("content/recipes/stew.md" to page("Stew", 500), "content/recipes/soup.md" to page("Soup", 600)))
         sync()
         assertKept("after a change")
         assertEquals(listOf("Soup"), bank())
-        assertEquals(500.0, http.get("/api/recipes/${ids.getValue("Stew")}").body<RecipeDetail>().ingredients.single().line.amount)
+        assertEquals(400.0 to 600.0, grams("Stew") to grams("Soup"))
 
-        // The curry and the soup leave the site: the curry stays one of mine, the soup is gone from the bank.
+        // The curry and the soup leave the site: the curry stays one of mine as it was, the soup is gone from the bank.
         upstream.delete("content/recipes/curry.md", "content/recipes/soup.md")
         sync()
-        assertKept("after its file left the site", curryOnSite = false)
+        assertKept("after its file left the site")
         assertEquals(emptyList(), bank())
 
         // Back on the site, both are where they were.
@@ -318,7 +319,7 @@ class CookingRepoTest {
 
     /**
      * Two accounts on the server's site (issue 208): one fetch a round, and each account's own rows. A changed file
-     * reaches both; a deleted one leaves both banks, and stays where it was added.
+     * reaches both banks; a deleted one leaves both, and stays as it was where it was taken (issue 340).
      */
     @Test
     fun accountsOnTheServersSiteShareOneFetchAndKeepTheirOwnRows() = runBlocking {
@@ -345,11 +346,11 @@ class CookingRepoTest {
             assertEquals(500.0, accounts.grams(id, "Stew"), "account $id")
             assertTrue(accounts.cooking.status(id).shared)
         }
-        assertEquals(mapOf("Curry" to true), accounts.mine(other), "kept where it was added, as no longer on the site")
+        assertEquals(mapOf("Curry" to false), accounts.mine(other), "kept where it was taken, as it was")
         assertEquals(emptyMap(), accounts.mine(owner))
     }
 
-    /** An account that sets its own repository leaves the server's bank, and keeps what it added from it. */
+    /** An account that sets its own repository leaves the server's bank, and keeps what it took from it, as it was. */
     @Test
     fun anAccountThatSetsItsOwnRepositoryKeepsWhatItAddedFromTheServersSite() = runBlocking {
         val server = Upstream().apply { commit(mapOf("content/recipes/stew.md" to page("Stew"), "content/recipes/curry.md" to page("Curry"))) }
@@ -363,7 +364,7 @@ class CookingRepoTest {
         assertFailsWith<IllegalArgumentException> { accounts.cooking.setRepo(other, server.url) }
         accounts.cooking.setRepo(other, own)
         assertEquals(emptyList(), accounts.bank(other), "the server's bank-only recipes left with its site")
-        assertEquals(mapOf("Stew" to true), accounts.mine(other), "kept, as no longer on its site")
+        assertEquals(mapOf("Stew" to false), accounts.mine(other), "kept, a copy of its own")
         val status = accounts.cooking.status(other)
         assertEquals(listOf(own, "false", "null"), listOf(status.repoUrl, "${status.shared}", "${status.syncedAt}"))
         assertNull(status.fetchedAt, "the server's fetches are not its site's")
@@ -374,7 +375,7 @@ class CookingRepoTest {
         assertEquals(listOf("Curry", "Stew"), accounts.bank(owner), "the owner's bank is the server's still")
         assertEquals(emptyMap(), accounts.mine(owner))
 
-        // Back to the server's site: the curry is in the bank again, and the stew on the site, still added.
+        // Back to the server's site: the curry is in the bank again, and the stew, taken, is not.
         accounts.cooking.setRepo(other, null)
         accounts.cooking.importFirst(other)
         assertEquals(listOf("Curry"), accounts.bank(other))

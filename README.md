@@ -193,7 +193,8 @@ offers, regular prices, their history and the NEVO data are shared.
   are the errors of its fetch.
 - The server's site is one clone, fetched once every six hours and then imported into each account that reads
   it, as rows of the account's own: adding, rating, the rotation and the ingredient links stay per account, and
-  an edit on the site reaches every account. A repository of an account's own is fetched as often. A new account
+  an edit on the site reaches every account's bank (not the recipes an account took from it: see the next section).
+  A repository of an account's own is fetched as often. A new account
   finds the server's site in its bank on its first visit there (`GET /api/recipes/bank` imports it when the account
   was never synced), without waiting for the schedule. `POST /api/sync/cooking` fetches the account's site at once;
   the server's site at most once every five minutes (`COOKING_REPO_FETCH_INTERVAL_MINUTES`; issue 215), as every
@@ -203,8 +204,9 @@ offers, regular prices, their history and the NEVO data are shared.
   failed) such a sync fails at once rather than trying again. The accounts that waited for a fetch then import
   at once; their imports write one after another, each in a transaction of its own, so one account's failure
   takes back nothing of another's (issue 246).
-- Choosing another site leaves the old one at once: its bank-only recipes leave the bank, those the account added
-  stay among its recipes as no longer on the site (until the new site has them), and its pictures go; the new site
+- Choosing another site leaves the old one at once: its bank-only recipes leave the bank with their pictures, and
+  those the account took stay its own as they are, pictures and all (a file of the new site at the path of one of
+  them is not offered, as that path is taken); the new site
   is imported by the sync the app asks for next (or, for the server's site, the next visit to the bank). A
   sync also keeps a web-sized copy of each recipe's picture (see `docs/data-sources.md`, "Recipe pictures") per
   account, served only to that account. The site's recipes go to the account's bank, not straight into its
@@ -228,9 +230,20 @@ The cooking site is a bank of recipes to choose from, not the list of what an ac
   the breakfast or snack routine. A recipe made in the app has no bank to go back to: it is deleted
   (`DELETE /api/recipes/{id}`), and putting it back is refused. Ingredient amounts may be written with a decimal
   comma (`0,5 | kg | banaan`); a line that cannot be read is refused (400) with `Unreadable ingredient line: ...`,
-  one per line of the error, and the app shows those lines. An added recipe whose file leaves the
-  site stays one of my recipes, marked `removedFromSite`, and keeps working as before; it loses its
-  picture with the file. A bank recipe whose file leaves the site is hidden until the file is back.
+  one per line of the error, and the app shows those lines. A bank recipe whose file leaves the site is hidden
+  until the file is back.
+- **A recipe taken from the cooking site** (added from the bank) is the account's own copy from then on (issue
+  340): it is changed (`PUT /api/recipes/{id}`) and deleted (`DELETE /api/recipes/{id}`) as one made in the app,
+  and a sync leaves it as it is, whatever happens to its file on the site, with the picture it had. It stays
+  `"source": "COOKING_SITE"` in the section of the site it came from, so an installed app shows it as before (it
+  offers no editing for it, and "Remove from my recipes" puts it back); `removedFromSite` is never set for it.
+  Its row keeps the file's path, so the bank does not offer that file as new. Put back unchanged, it is a bank
+  recipe again, and the next sync makes it the site's file as it is then (or hides it, when the file is gone).
+  Once changed in the app it cannot be put back (409 "… delete it instead"), as the next sync would undo the
+  change unseen; deleted, the site's file is in the bank again after the next sync, as a file never taken. A bank
+  recipe is the site's: changing or deleting it is refused (409 "Add … to your recipes first"). The recipes taken
+  before this (database version 26, `25.sqm`) became such copies; those whose file had left the site lost that
+  mark.
 - **The rotation** is the part of my recipes the planner picks from on its own: planning or replanning a
   week, "Another recipe" and the buy-ahead advice for an unplanned week. Any of my recipes can still be
   put in a meal by hand. Adding a recipe puts it in the rotation unless the request says
@@ -247,6 +260,34 @@ account's: a sync never changes it, nor does saving a recipe's settings. `Recipe
 except those whose file had already left the site, which went to the bank, hidden: an installed app lists
 what it listed before. Apps from before the bank show my recipes only, so a recipe new on the site appears
 in them once it is added from a newer app.
+
+### A recipe's lines and their ingredients
+
+A recipe's ingredient line is an amount, a unit, a text and the `# Group` heading it sits under, and it can carry
+the catalogue ingredient it is (issue 340). A line with one is that ingredient whatever its text says and whatever
+the account's links of texts (`/api/mappings`) say; a line without one is looked up by its text as before: the
+account's link for the text, then an ingredient of that name. Nutrition, cost, the shopping list, the stock, what a
+meal had in it, standard meals, toppings, the planner's dislikes and "Link ingredients" all read a line's ingredient
+through that one lookup (`IngredientRepository.resolver`), so a linked line counts everywhere and is never listed to
+link. A line's ingredient is one of the account's own: another account's is refused (404). Lines read from the
+cooking site carry none.
+
+`POST /api/recipes` and `PUT /api/recipes/{id}` take a recipe's ingredients in either of two ways (`RecipeInput`):
+
+- `"lines": [{"amount": 400, "unit": "g", "text": "stewing beef", "ingredientId": 12, "group": "Stew"}, ...]`, each
+  line read as the same line of the import format would be (the unit `g` is a weight, an unknown unit counts pieces);
+  `amount`, `unit`, `ingredientId` and `group` may be left out. An amount must be above 0; a line with no amount, unit
+  or text, and a recipe with no line, are refused (400).
+- `"ingredients"`, the import format as one text (`200 | g | low-fat quark`, `# Group` lines for headings), as
+  released apps send it; read only when `lines` is not sent. Its lines carry no ingredient of their own, except that a
+  replaced recipe's line keeps the ingredient of the first line it had with the same text (ignoring case and spaces),
+  whatever its amount and unit. So an installed app that saves a recipe as text keeps the ingredients of the lines it
+  left alone; a line whose text it changed is looked up by its new text.
+
+`GET /api/recipes/{id}` gives each line as stored in `MappedLine.line` (`amount`, `unit`, `item`, `group` and its own
+`ingredientId`, absent when it has none) and the ingredient it means now in `MappedLine.ingredientId`. A recipe read
+this way and sent back with those fields as `lines`, with its `title`, `servings`, `instructions`, `tags` and
+`mealSlots`, is saved unchanged.
 
 ## Portion per meal
 
@@ -1105,7 +1146,10 @@ which is ignored by git.
 `../cooking`, or wherever `-PcookingRepo=<path>` points, and is skipped when that is missing.
 
 API overview: `/api/registration` and `/api/registrations` (asking for an account and the owner's decisions, see
-"Accounts and login"), `/api/recipes` (my recipes; `GET /api/recipes/bank` the bank, `PUT /api/recipes/{id}/added` with
+"Accounts and login"), `/api/recipes` (my recipes; `POST` and `PUT /api/recipes/{id}` with the ingredients as `lines`,
+each with the catalogue ingredient it is, or as the text of the import format, see "A recipe's lines and their
+ingredients"; `PUT` and `DELETE` also for a recipe taken from the cooking site, the account's own copy;
+`GET /api/recipes/bank` the bank, `PUT /api/recipes/{id}/added` with
 `{"added": true, "inRotation": true}` and `PUT /api/recipes/{id}/rotation` with `{"inRotation": false}` answering the
 recipe, `PUT /api/recipes/added` and `PUT /api/recipes/rotation` with `{"ids": [1, 2, 3], ...}` for many at once
 answering my recipes; see "Recipes: the bank, my recipes and the rotation"), `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue),

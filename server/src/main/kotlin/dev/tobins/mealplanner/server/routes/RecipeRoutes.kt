@@ -79,6 +79,7 @@ fun Route.recipeRoutes(cooking: CookingSync) {
         put { call.respond(call.user.recipes.update(call.id(), call.receive<RecipeInput>())) }
         delete {
             call.user.recipes.delete(call.id())
+            call.user.pictures.forget(call.id())
             call.respond(HttpStatusCode.NoContent)
         }
         put("/settings") { call.respond(call.user.recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }

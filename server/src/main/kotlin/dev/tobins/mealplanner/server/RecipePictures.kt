@@ -21,8 +21,9 @@ class RecipePictures(private val db: Database, root: File, private val userId: L
     data class Outcome(val stored: Int, val unchanged: Int, val removed: Int, val skipped: Int)
 
     /**
-     * Brings the copies in line with [pages], after [RecipeRepository.syncCookingSite] stored their
-     * recipes. A picture whose file is unchanged (same SHA-256) is left alone; one that cannot be used
+     * Brings the copies of the bank's recipes in line with [pages], after [RecipeRepository.syncCookingSite] stored their
+     * recipes; a recipe taken from the bank keeps the copy it had, as it keeps the rest of what the site had (issue 340).
+     * A picture whose file is unchanged (same SHA-256) is left alone; one that cannot be used
      * is logged and remembered by its hash, so it is logged once and not tried again until it changes.
      * Runs outside a database transaction: a photo takes a moment to scale, and other requests must
      * not wait for the write lock meanwhile. Each picture is stored on its own ([setPicture]).
@@ -34,7 +35,7 @@ class RecipePictures(private val db: Database, root: File, private val userId: L
         var stored = 0
         var unchanged = 0
         var skipped = 0
-        for (row in q.selectPictures(userId).executeAsList()) {
+        for (row in q.selectBankPictures(userId).executeAsList()) {
             val source = row.sourcePath?.let(pictures::get)
             if (source == null) {
                 if (row.imageSourceHash != null) setPicture(row.id, null, null)
@@ -72,10 +73,18 @@ class RecipePictures(private val db: Database, root: File, private val userId: L
         return copyOf(recipeId).takeIf { it.isFile }
     }
 
-    /** Forgets every picture of the account, e.g. when it changes its cooking site. */
-    fun removeAll() {
-        db.writing { q.clearPictures(userId) }
-        dir.deleteRecursively()
+    /**
+     * Forgets the pictures of the account's bank, when it changes its cooking site. Its own recipes, those taken from
+     * the old site among them, keep theirs (issue 340).
+     */
+    fun removeBank() {
+        db.writing { q.clearBankPictures(userId) }
+        removeStrays()
+    }
+
+    /** Deletes the copy of the picture of recipe [recipeId], once that recipe is deleted; nothing when it had none. */
+    fun forget(recipeId: Long) {
+        copyOf(recipeId).delete()
     }
 
     /** Stores what recipe [recipeId]'s picture is now: the [hash] of its file, and the [version] of its copy when it has one. */
@@ -99,7 +108,7 @@ class RecipePictures(private val db: Database, root: File, private val userId: L
      * cleans up after a sync that stopped half-way.
      */
     private fun removeStrays(): Int {
-        val kept = q.selectPictures(userId).executeAsList().filter { it.imageVersion != null }.mapTo(HashSet()) { "${it.id}.jpg" }
+        val kept = q.selectKeptPictures(userId).executeAsList().mapTo(HashSet()) { "$it.jpg" }
         return dir.listFiles().orEmpty().count { it.isFile && it.name !in kept && it.delete() }
     }
 

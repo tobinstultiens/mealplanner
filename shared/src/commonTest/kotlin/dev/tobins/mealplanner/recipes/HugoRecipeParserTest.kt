@@ -86,6 +86,19 @@ class HugoRecipeParserTest {
         assertEquals("Toppings", scallions.group)
     }
 
+    /**
+     * A line given by its fields (`RecipeInput.lines`, issue 340) is the line the same text reads as, and so is a line
+     * read back and given again: the unit as the table names it, its weight, its group.
+     */
+    @Test
+    fun aLineGivenByItsFieldsIsTheLineOfTheSameText() {
+        val lines = parser.parse("rice-bowls/gyudon.md", gyudon).ingredients
+        val given = lines.map { parser.line(it.amount, it.unit.orEmpty(), it.item, it.group) }
+        assertEquals(lines, given)
+        assertEquals(lines[4], parser.line(2.0, "teentjes", "garlic", "Sauce"))
+        assertNull(parser.line(null, "", "", "Sauce"))
+    }
+
     @Test
     fun recipeWithoutBlockKeepsBodyAndIsFlagged() {
         val text = "---\ntitle: \"Rice\"\ntags: [Vegetarian, 'Quick']\n---\n\nWash your rice.\n"
