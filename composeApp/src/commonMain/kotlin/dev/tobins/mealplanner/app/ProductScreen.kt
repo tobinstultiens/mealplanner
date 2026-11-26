@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -71,6 +72,9 @@ import kotlinx.serialization.builtins.nullable
  * as a portion, and says what the source did not give or could not answer; nothing is saved until Save. A new product
  * starts with [name], in its name and in the lookup's field. A name that another ingredient of [catalogue] has is said at
  * the name, as the server would refuse it.
+ *
+ * Where there is a [scanner] (the Android app on a phone with a camera) the lookup has a scan button: the barcode the camera
+ * reads is looked up as if it had been typed. A refused camera permission is said in a line under it, and typing stays possible.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -81,6 +85,7 @@ fun ProductScreen(
     onCancel: () -> Unit,
     name: String = "",
     catalogue: List<Ingredient> = emptyList(),
+    scanner: BarcodeScanner? = rememberBarcodeScanner(),
 ) {
     val t = LocalStrings.current
     val start = remember(ingredient) { ingredient?.toProductDraft(t.locale) ?: ProductDraft(name = name) }
@@ -95,6 +100,8 @@ fun ProductScreen(
     val sizeFocus = remember { HashMap<Long, FocusRequester>() }
     var query by rememberSaveable { mutableStateOf(name) }
     var lookup by remember { mutableStateOf<LookupState>(LookupState.Idle) }
+    // Why the last scan gave no barcode, said under the lookup until the next lookup or scan.
+    var scanProblem by remember { mutableStateOf<ScanResult?>(null) }
     // What the last lookup that filled the form said, kept with the values it filled in.
     var notes by rememberSaveable(stateSaver = jsonSaver(ProductLookup.serializer().nullable)) { mutableStateOf<ProductLookup?>(null) }
     KeyboardMakesRoom()
@@ -123,6 +130,7 @@ fun ProductScreen(
     /** A barcode is looked up at once; a name is searched, to pick one of what is found. */
     fun lookUp() {
         val text = query.trim()
+        scanProblem = null
         if (text.length < 2) {
             notes = null
             lookup = LookupState.TooShort
@@ -131,6 +139,20 @@ fun ProductScreen(
         val barcode = barcodeIn(text)
         if (barcode != null) looking({ api.productByBarcode(barcode) }, ::fill)
         else looking({ api.searchProducts(text) }) { lookup = LookupState.Found(text, it) }
+    }
+
+    /** The camera reads a barcode and it is looked up as a typed one is: put in the field, then looked up. */
+    fun scanned(result: ScanResult) {
+        if (result is ScanResult.Read) {
+            query = result.digits
+            lookUp()
+        } else {
+            scanProblem = result
+        }
+    }
+    DisposableEffect(scanner) {
+        scanner?.onResult = ::scanned
+        onDispose { scanner?.onResult = null }
     }
 
     val nameTaken = draft.nameTaken(catalogue)
@@ -176,9 +198,13 @@ fun ProductScreen(
                     query = text
                     if (lookup != LookupState.Busy) lookup = LookupState.Idle
                     notes = null
+                    scanProblem = null
                 },
                 lookup, notes, enabled,
                 onLookUp = ::lookUp,
+                onScan = scanner?.let { active -> { scanProblem = null; active.scan() } },
+                onOpenSettings = scanner?.let { active -> active::openSettings },
+                scanProblem = scanProblem,
                 onPick = { hit -> looking({ api.ahProduct(hit) }, ::fill) },
             )
             OutlinedTextField(
@@ -272,8 +298,10 @@ private sealed interface LookupState {
 /**
  * The lookup at the top of the form: a field for a name or a barcode and its button; under it, while it waits a line
  * saying so, what a search found to pick (each with its brand and pack), or what the last lookup said ([lookupNotes]),
- * in the error colour when it left values to type.
+ * in the error colour when it left values to type. With an [onScan] a button next to the lookup's reads the barcode with
+ * the camera; why a scan gave none is [scanProblem], with after a refusal the way to the app's settings ([onOpenSettings]).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LookupPanel(
     query: String,
@@ -282,6 +310,9 @@ private fun LookupPanel(
     notes: ProductLookup?,
     enabled: Boolean,
     onLookUp: () -> Unit,
+    onScan: (() -> Unit)?,
+    onOpenSettings: (() -> Unit)?,
+    scanProblem: ScanResult?,
     onPick: (ProductHit) -> Unit,
 ) {
     val t = LocalStrings.current
@@ -299,7 +330,18 @@ private fun LookupPanel(
         keyboardActions = KeyboardActions(onSearch = { onLookUp() }),
         modifier = Modifier.fillMaxWidth(),
     )
-    TextButton(onClick = onLookUp, enabled = enabled && !busy) { Text(t(Msg.LOOKUP)) }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), itemVerticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = onLookUp, enabled = enabled && !busy) { Text(t(Msg.LOOKUP)) }
+        onScan?.let { TextButton(onClick = it, enabled = enabled && !busy) { Text(t(Msg.SCAN)) } }
+    }
+    when (scanProblem) {
+        ScanResult.Refused -> {
+            Text(t(Msg.SCAN_REFUSED), style = MaterialTheme.typography.bodySmall, color = error)
+            onOpenSettings?.let { TextButton(onClick = it) { Text(t(Msg.SCAN_SETTINGS)) } }
+        }
+        ScanResult.Unavailable -> Text(t(Msg.SCAN_UNAVAILABLE), style = MaterialTheme.typography.bodySmall, color = error)
+        is ScanResult.Read, null -> Unit
+    }
     when (state) {
         LookupState.Idle -> notes?.let { answer ->
             val color = if (answer.product?.basis == null || answer.problems.isNotEmpty()) error else quiet

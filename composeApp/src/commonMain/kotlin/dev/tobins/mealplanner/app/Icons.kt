@@ -64,6 +64,12 @@ object AppIcons {
         )
     }
 
+    /** A lightning bolt, the torch of the barcode scanner when it is on. */
+    val Torch: ImageVector by lazy { symbol("Torch", "M560-880 240-480h200l-40 400 320-440H520Z") }
+
+    /** The bolt struck through, the torch when it is off. */
+    val TorchOff: ImageVector by lazy { symbol("TorchOff", "M560-880 240-480h200l-40 400 320-440H520Z M140-820 200-880 880-200 820-140Z") }
+
     /** Material Symbol `add`. */
     val Add: ImageVector by lazy {
         symbol(
@@ -446,7 +452,7 @@ object AppIcons {
     /** Every icon, for checking that all of them can be built. */
     internal val all: List<ImageVector> by lazy {
         listOf(
-            Back, ChevronLeft, ChevronRight, More, Close, Add, Sync, Refresh, Edit, Person, Settings,
+            Back, ChevronLeft, ChevronRight, More, Close, Torch, TorchOff, Add, Sync, Refresh, Edit, Person, Settings,
             Generate, Link, Offer, Pantry, Price,
             Today, TodayFilled, Plan, PlanFilled, Shopping, ShoppingFilled, Recipes, RecipesFilled,
             Progress, ProgressFilled, Lock, LockOpen, Swap, Star, StarFilled, Warning, Error,
