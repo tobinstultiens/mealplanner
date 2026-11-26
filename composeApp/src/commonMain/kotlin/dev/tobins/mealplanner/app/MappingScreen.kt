@@ -72,9 +72,13 @@ internal fun sectionsToShow(all: List<IngredientSection>, query: String): List<I
 /** The products of [catalogue]: its ingredients with values of their own or named portions (issue 351), by name. */
 internal fun productsOf(catalogue: List<Ingredient>): List<Ingredient> = catalogue.filter { it.label != null || it.portions.isNotEmpty() }
 
-/** `400 kcal per 100 g · portions: bar, half`, or what it counts by when it has portions only. */
+/**
+ * `400 kcal per 100 g · portions: bar, half`, or what it counts by when it has portions only; with the source of values
+ * looked up, so that Open Food Facts' are credited wherever they are shown, as its licence asks.
+ */
 private fun Ingredient.productSummary(t: Strings): String = listOfNotNull(
     values?.let { t(Msg.PRODUCT_SUMMARY, (it.per100.kcal ?: 0.0).roundToLong(), per100(it.basis)) } ?: t(Msg.FOUND_NO_NUTRITION),
+    sourceName(label?.source),
     portions.takeIf { it.isNotEmpty() }?.let { list -> t(Msg.PRODUCT_PORTIONS, list.joinToString { it.name }) },
 ).joinToString(" · ")
 

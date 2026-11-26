@@ -46,7 +46,7 @@ data class Ingredient(
 data class LabelNutrition(
     val basis: FoodBasis,
     val per100: Nutrition,
-    /** Where the values came from; null when they were typed from the label. Room for a looked-up product's id. */
+    /** Where the values came from ([LabelSource]: `ah:61758`, with `;changed` once corrected by hand); null when typed from the label. */
     val source: String? = null,
 )
 

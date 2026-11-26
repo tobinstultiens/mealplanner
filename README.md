@@ -40,6 +40,10 @@ For the app on an emulator, `adb reverse tcp:8080 tcp:8080` and `adb reverse tcp
 make both reachable as `localhost`, so the app and the server agree on the issuer; set the server
 address to `http://localhost:8080` in the app's settings.
 
+A product's lookup at AH works so, without more settings (it asks AH, so it needs the internet). A barcode AH cannot
+answer goes on to Open Food Facts only with `MEALPLANNER_OPENFOODFACTS_CONTACT` set; without it the form says Open Food
+Facts is not set up.
+
 To play a member and a non-member of the server's group, start the stand-in with users and their groups
 (`--user anna=mealplanner --user eve=family`, or `--users users.json` with `{"anna": ["mealplanner"]}`,
 read again for every token so a change shows at the next renewal) and the server with
@@ -386,7 +390,34 @@ recipes use it: that would need a route of its own. What the form does not show 
 weights, price, being a staple) is saved as it was. A product is found by the recipe editor's search by its name, with
 its own values, and its portions are units of its row after grams, millilitres and pieces; a portion removed is not
 offered, and a row in one keeps it on its button and says it is gone. A picked product whose last saved unit is one of
-its portions starts at one of it.
+its portions starts at one of it. Under what the editor's search finds, "New product “…”" opens the product's form with
+the text typed as its name and in its lookup (issue 354); saved, the product is a row of the recipe, and the recipe
+being written waits as it was (cancelled, nothing changes).
+
+**Looking a product up** (issue 354). At the top of the product's form, "Look up at AH" takes a name or a barcode. A
+name is searched at AH, which lists what it finds with brand and pack (a multi-pack with how many it holds); the one
+picked fills the form. A barcode (8 to 14 digits) fills it at once: from AH, or from Open Food Facts when AH does not
+have it or has no table that reads, and only when the server has a contact for it (`MEALPLANNER_OPENFOODFACTS_CONTACT`).
+Filled are the name, per 100 g or per 100 ml, the eight values (each the source does not give, or gives in a form that
+cannot be read, left empty, and the form says which), and the pack's net content as a portion "pack" (of a multi-pack
+its single item, "item") to rename or remove. Under the name the form says "Values from AH" or "Values from Open Food
+Facts" (with the credit and link Open Food Facts' licence asks); a value or the basis changed afterwards makes it
+"Values from AH, changed by hand", which is saved with the product. A source that does not answer is said in the form,
+which is typed by hand as before. Nothing is saved until Save. The source is kept in `LabelNutrition.source` as
+`ah:<AH's product id>` or `off:<barcode>`, followed by `;changed` after a change by hand. A value is saved as it was
+given or typed: the form shows at most three decimals (a salt of `0,005` g as such), and a value left as shown is saved
+as the number it stood for, so a product opened and saved without a change is the same.
+
+The routes, behind the login like every other, read and save nothing of the account; what the app sends is checked
+before anything is asked (400 otherwise): `GET /api/products/search?q=<2 to 80 characters>` answers `ProductSearch`
+(`products`: AH's `id`, `name`, `brand`, `netContent` and of a multi-pack `packOf`, its `id` being that of one item);
+`GET /api/products/ah/{id}` (digits; `?packOf=` as the search gave it) and `GET /api/products/barcode/{8 to 14 digits}`
+answer `ProductLookup`: `product` (`source`, `name`, `brand`, `basis`, `per100` with salt as sodium, `unread`, `pack`,
+`packOf`), null when not found, and `problems`, codes of what went wrong at a source (`ah_failed`, `ah_no_table`,
+`off_failed`, `off_busy`, `off_not_configured`; an app takes one it does not know as a problem). A source failing is in
+`problems`, never a failed request. Open Food Facts is asked at most 15 times a minute for the whole server; beyond that
+the answer is `off_busy`. Where the values are read and under which terms: `docs/data-sources.md`, "Nutrition: a
+product's label".
 
 ## Portion per meal
 
@@ -986,7 +1017,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch, and with that prep kept vacuum sealed, also in Dutch and at font scale 2), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the Plan with one batch eaten as sides and as a meal (also in Dutch), the Prep dialog with meals picked both ways (also in Dutch and at font scale 2), "Add a prepped side…" with batches still to make (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch; the question also of a prep that was made, of meals and of sides, in both languages, and of a prep of meals and sides, made or not, in both languages), a week holding only a meal of last week's batch on the Plan and Shopping (Shopping also in Dutch), the recipe of a later prepped meal and cook mode on a prep day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe editor (a recipe taken from the cooking site, also in Dutch and at font scale 2; its search, also in Dutch), the product form (also in Dutch and at font scale 2, and new with what keeps Save off), the recipe picker (also with standard meals first and the line on a prep still to make, in Dutch and at font scale 2), Today with a skipped lunch and its standard-meal chips (also in Dutch), the Plan's skip sheet and a recipe's standard-meal switch with what it made staples (both also in Dutch and at font scale 2), Offers, the price verdicts on Offers (early with one opened, and later, also in Dutch and at font scale 2 in both languages) and on Shopping (later, also in Dutch, at font scale 2 in both languages down to the advice, per store and in shopping mode in Dutch; the dialog of a tapped deal, early and later, also in Dutch and at font scale 2 in both languages), "Not this ingredient" on Offers and on a deal of Shopping with its snackbar (each also in Dutch and at font scale 2), Prices, Progress, the profile (in English and Dutch),
+Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch, and with that prep kept vacuum sealed, also in Dutch and at font scale 2), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the Plan with one batch eaten as sides and as a meal (also in Dutch), the Prep dialog with meals picked both ways (also in Dutch and at font scale 2), "Add a prepped side…" with batches still to make (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch; the question also of a prep that was made, of meals and of sides, in both languages, and of a prep of meals and sides, made or not, in both languages), a week holding only a meal of last week's batch on the Plan and Shopping (Shopping also in Dutch), the recipe of a later prepped meal and cook mode on a prep day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe editor (a recipe taken from the cooking site, also in Dutch and at font scale 2; its search with "New product" last, also in Dutch), the product form (also in Dutch and at font scale 2, and new with what keeps Save off; and its lookup at AH, what it found and the form filled with the one picked, each also in Dutch and at font scale 2), the recipe picker (also with standard meals first and the line on a prep still to make, in Dutch and at font scale 2), Today with a skipped lunch and its standard-meal chips (also in Dutch), the Plan's skip sheet and a recipe's standard-meal switch with what it made staples (both also in Dutch and at font scale 2), Offers, the price verdicts on Offers (early with one opened, and later, also in Dutch and at font scale 2 in both languages) and on Shopping (later, also in Dutch, at font scale 2 in both languages down to the advice, per store and in shopping mode in Dutch; the dialog of a tapped deal, early and later, also in Dutch and at font scale 2 in both languages), "Not this ingredient" on Offers and on a deal of Shopping with its snackbar (each also in Dutch and at font scale 2), Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for, offering "Register a new account", and saying a request waits for approval, also in Dutch), the form that asks for an account (empty, after Send with every field wrong, refused by the server, and sent; each also in Dutch and at font scale 2), the owner's Requests card of Settings (also in Dutch and at font scale 2), the "Not this ingredient" list of Settings (also in Dutch and at font scale 2), the Notifications card (in English and Dutch, with notifications refused by Android, at font scale 2 in both languages, and the owner's with "Account requests"), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
@@ -1236,6 +1267,7 @@ installed side by side: they share the application id but not the signing key.
 | `ANTHROPIC_API_KEY` | unset | Enables recipe generation (`POST /api/recipes/generate`) with Claude; pay per use. Without it both generate routes answer 503 `{"error": "...", "reason": "generation_off"}`; the optional `reason` lets the app tell this from the 503 of a write that waited too long, and say "This server does not write recipes" (the setting's name stays behind Details) |
 | `MEALPLANNER_MODEL` | `claude-opus-5-5` | Claude model for generation |
 | `MEALPLANNER_FETCH_OFFERS` | on | Set to `off` to stop fetching store offers and regular prices in the background |
+| `MEALPLANNER_OPENFOODFACTS_CONTACT` | unset | How Open Food Facts can reach whoever runs the server (an e-mail address or a web page), sent in the `User-Agent` its terms ask for (`MealPlanner/<version> (<contact>)`). Unset: a barcode AH cannot answer is not looked up at Open Food Facts, and the product form says so. See "An ingredient's nutrition and its portions" and `docs/data-sources.md` |
 | `NEVO_CSV_PATH` | unset | NEVO main csv (`NEVO2025_v9.0.csv`). Imported on first start; `POST /api/foods/import` re-imports |
 
 The NEVO dataset is not in this repository (see `docs/data-sources.md`). Keep it under `data/`,
@@ -1251,7 +1283,8 @@ ingredients"; `PUT` and `DELETE` also for a recipe taken from the cooking site, 
 `GET /api/recipes/bank` the bank, `PUT /api/recipes/{id}/added` with
 `{"added": true, "inRotation": true}` and `PUT /api/recipes/{id}/rotation` with `{"inRotation": false}` answering the
 recipe, `PUT /api/recipes/added` and `PUT /api/recipes/rotation` with `{"ids": [1, 2, 3], ...}` for many at once
-answering my recipes; see "Recipes: the bank, my recipes and the rotation"), `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue),
+answering my recipes; see "Recipes: the bank, my recipes and the rotation"), `/api/sync/cooking`, `/api/foods` (NEVO search), `/api/ingredients` (catalogue), `/api/products` (a product's label
+looked up at AH and Open Food Facts, saving nothing; see "An ingredient's nutrition and its portions"),
 `/api/ingredients/sections` (each ingredient's shop section, which orders the shopping list; `PUT
 /api/ingredients/{id}/section` corrects one for the account, `PUT /api/ingredients/{id}/keeps` whether it
 keeps until next week), `/api/mappings` (links from recipe

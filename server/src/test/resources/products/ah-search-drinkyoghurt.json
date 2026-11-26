@@ -1,0 +1,107 @@
+{
+ "products": [
+  {
+   "webshopId": 61758,
+   "title": "Optimel Drinkyoghurt framboos",
+   "brand": "Optimel",
+   "salesUnitSize": "1 l",
+   "isVirtualBundle": false,
+   "virtualBundleItems": null
+  },
+  {
+   "webshopId": 129244,
+   "title": "Optimel Drinkyoghurt mango passievrucht",
+   "brand": "Optimel",
+   "salesUnitSize": "1 l",
+   "isVirtualBundle": false,
+   "virtualBundleItems": null
+  },
+  {
+   "webshopId": 141708,
+   "title": "AH Drinkyoghurt framboossmaak",
+   "brand": "AH",
+   "salesUnitSize": "1 l",
+   "isVirtualBundle": false,
+   "virtualBundleItems": null
+  },
+  {
+   "webshopId": 456324,
+   "title": "AH Drinkyoghurt aardbei kerssmaak",
+   "brand": "AH",
+   "salesUnitSize": "1 l",
+   "isVirtualBundle": false,
+   "virtualBundleItems": null
+  },
+  {
+   "webshopId": 609144,
+   "title": "Optimel Proteine extra framboos aardbei 4-pack",
+   "brand": "Optimel",
+   "salesUnitSize": "4 stuks",
+   "isVirtualBundle": true,
+   "virtualBundleItems": [
+    {
+     "productId": 585938,
+     "quantity": 4
+    }
+   ]
+  },
+  {
+   "webshopId": 440374,
+   "title": "Optimel Drinkyoghurt aardbei",
+   "brand": "Optimel",
+   "salesUnitSize": "1 l",
+   "isVirtualBundle": false,
+   "virtualBundleItems": null
+  },
+  {
+   "webshopId": 456336,
+   "title": "AH Drinkyoghurt passievrucht mangosmaak",
+   "brand": "AH",
+   "salesUnitSize": "1 l",
+   "isVirtualBundle": false,
+   "virtualBundleItems": null
+  },
+  {
+   "webshopId": 194067,
+   "title": "AH Drinkyoghurt banaan kiwismaak",
+   "brand": "AH",
+   "salesUnitSize": "1 l",
+   "isVirtualBundle": false,
+   "virtualBundleItems": null
+  },
+  {
+   "webshopId": 608524,
+   "title": "Vifit Goedemorgen framboos blauwe bes 6-pack",
+   "brand": "Vifit",
+   "salesUnitSize": "6 stuks",
+   "isVirtualBundle": true,
+   "virtualBundleItems": [
+    {
+     "productId": 421590,
+     "quantity": 6
+    }
+   ]
+  },
+  {
+   "webshopId": 593114,
+   "title": "Vifit Drinkyoghurt aardbei 500ml 3-pack",
+   "brand": "Vifit",
+   "salesUnitSize": " 3 stuks",
+   "isVirtualBundle": true,
+   "virtualBundleItems": [
+    {
+     "productId": 185566,
+     "quantity": 3
+    }
+   ]
+  },
+  {
+   "webshopId": 447765,
+   "title": "AH Yoghurtdrink aardbeismaak",
+   "brand": "AH",
+   "salesUnitSize": "1 l",
+   "isVirtualBundle": false,
+   "virtualBundleItems": null
+  }
+ ]
+}

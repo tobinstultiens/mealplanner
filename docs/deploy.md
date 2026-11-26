@@ -27,6 +27,10 @@ Gatus checks `/health`.
 5. Deploy: `ansible-playbook -Kk docker/mealplanner.yml`. It sets `MEALPLANNER_OIDC_ISSUER`,
    `MEALPLANNER_OWNER` and `MEALPLANNER_ANDROID_CERTS` (the release key's certificate fingerprint, for
    the App Link).
+6. **Open Food Facts** (optional, issue 354): for a barcode AH cannot answer to be looked up there, the
+   container needs `MEALPLANNER_OPENFOODFACTS_CONTACT`, an e-mail address or web page by which Open Food
+   Facts can reach you; it goes in the `User-Agent` its terms ask for. Keep it in the vault like the other
+   personal values. Without it the product lookup asks AH only.
 
 ## Who may use it (the group `mealplanner`)
 

@@ -1,17 +1,11 @@
 package dev.tobins.mealplanner.server.prices
 
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.server.offers.AhApp
 import dev.tobins.mealplanner.server.offers.AhParser
-import dev.tobins.mealplanner.server.offers.ahHeaders
-import dev.tobins.mealplanner.server.offers.ahToken
 import dev.tobins.mealplanner.server.offers.ok
-import io.ktor.client.HttpClient
-import io.ktor.client.request.bearerAuth
-import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -19,8 +13,6 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.time.Duration
-import java.time.Instant
 
 /** A product as a store's search lists it, with its regular (not discounted) price. */
 data class StoreProduct(
@@ -50,27 +42,16 @@ interface PriceSource {
 }
 
 /** Albert Heijn's product search, through the API its app uses. */
-class AhPriceSource(private val http: HttpClient, private val baseUrl: String = "https://api.ah.nl") : PriceSource {
+class AhPriceSource(private val ah: AhApp) : PriceSource {
     override val store = Store.AH
 
-    private val lock = Mutex()
-    private var token: Pair<String, Instant>? = null
-
     override suspend fun search(term: String): List<StoreProduct> {
-        val body = http.get("$baseUrl/mobile-services/product/search/v2") {
-            ahHeaders()
-            bearerAuth(token())
+        val body = ah.get("/mobile-services/product/search/v2") {
             parameter("query", term)
             parameter("sortOn", "RELEVANCE")
             parameter("size", 15)
         }.ok().bodyAsText()
         return AhProductParser.products(body)
-    }
-
-    /** Anonymous tokens last a while; one per half hour is plenty. */
-    private suspend fun token(): String = lock.withLock {
-        token?.takeIf { Duration.between(it.second, Instant.now()) < Duration.ofMinutes(30) }?.first
-            ?: ahToken(http, baseUrl).also { token = it to Instant.now() }
     }
 }
 

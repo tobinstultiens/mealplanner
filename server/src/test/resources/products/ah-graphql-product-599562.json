@@ -1,0 +1,64 @@
+{
+ "data": {
+  "product": {
+   "id": 599562,
+   "title": "AH Proteïne reep witte choco pistache",
+   "brand": "AH",
+   "salesUnitSize": "50 g",
+   "tradeItem": {
+    "contents": {
+     "netContents": [
+      "50.0 Gram"
+     ]
+    },
+    "nutritions": [
+     {
+      "basisQuantity": "100.0 Gram",
+      "nutrients": [
+       {
+        "type": "ENER-",
+        "value": "1618.0 kJ (388.0 kcal)"
+       },
+       {
+        "type": "FAT",
+        "value": "18.0 g"
+       },
+       {
+        "type": "FASAT",
+        "value": "7.8 g"
+       },
+       {
+        "type": "X_FUNS",
+        "value": "9.4 g"
+       },
+       {
+        "type": "CHOAVL",
+        "value": "28.0 g"
+       },
+       {
+        "type": "SUGAR-",
+        "value": "4.4 g"
+       },
+       {
+        "type": "POLYL",
+        "value": "22.0 g"
+       },
+       {
+        "type": "FIBTG",
+        "value": "8.6 g"
+       },
+       {
+        "type": "PRO-",
+        "value": "33.0 g"
+       },
+       {
+        "type": "SALTEQ",
+        "value": "0.68 g"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

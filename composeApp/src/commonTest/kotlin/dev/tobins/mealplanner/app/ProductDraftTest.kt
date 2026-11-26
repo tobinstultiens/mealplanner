@@ -2,10 +2,14 @@ package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodBasis
+import dev.tobins.mealplanner.api.FoundProduct
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.LabelNutrition
+import dev.tobins.mealplanner.api.LookupProblem
 import dev.tobins.mealplanner.api.Nutrition
+import dev.tobins.mealplanner.api.PackSize
 import dev.tobins.mealplanner.api.Portion
+import dev.tobins.mealplanner.api.ProductLookup
 import dev.tobins.mealplanner.nutrition.Salt
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,12 +17,18 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** The product form's model (issue 351): what is typed, what it saves and what it refuses. */
+/** The product form's model (issues 351 and 354): what is typed or looked up, what it saves and what it refuses. */
 class ProductDraftTest {
     private val bar = Ingredient(
         5, "Protein bar", null, 45.0, null, "Snacks", 12.0, isStaple = true,
         label = LabelNutrition(FoodBasis.PER_100_G, Nutrition(400.0, 30.0, null, null, null, null, null, Salt.sodiumMg(0.5)), source = "typed"),
         portions = listOf(Portion("bar", grams = 45.0), Portion("bottle", ml = 330.0)),
+    )
+
+    /** A drink yoghurt as AH's lookup gives it: per 100 ml, no fibre on its label, a pack of 1 l. */
+    private val optimel = FoundProduct(
+        "ah:61758", "Optimel Drinkyoghurt framboos", "Optimel", FoodBasis.PER_100_ML,
+        Nutrition(31.0, 3.1, 0.0, 0.0, 3.8, 3.2, null, Salt.sodiumMg(0.08)), pack = PackSize(ml = 1000.0),
     )
 
     private fun typed(vararg values: Pair<LabelValue, String>) =
@@ -107,6 +117,77 @@ class ProductDraftTest {
         assertEquals(listOf(Portion("glass", ml = 250.0)), drink.input().portions)
         assertEquals(FoodBasis.PER_100_ML, drink.label()!!.basis)
         assertEquals(listOf(Portion("glass", grams = 250.0)), drink.changingPortion(0) { it.copy(ml = false) }.input().portions)
+    }
+
+    @Test
+    fun aValueIsSavedAsItWasGivenWhateverTheFormShowsOfIt() {
+        val exact = bar.copy(
+            label = LabelNutrition(FoodBasis.PER_100_G, Nutrition(381.70175438, 20.0, null, null, null, null, null, Salt.sodiumMg(0.005)), "off:5056357909515"),
+            portions = listOf(Portion("bar", grams = 33.3333)),
+        )
+        val draft = exact.toProductDraft(FormatLocale.Dutch)
+        assertEquals(listOf("381,702", "0,005", "33,333"), listOf(draft.value(LabelValue.ENERGY), draft.value(LabelValue.SALT), draft.portions.single().size))
+        assertEquals(exact.label, draft.input().label, "unchanged, every value is as it was, the source too")
+        assertEquals(exact.portions, draft.input().portions)
+        // Another value changed: the ones left alone are still as they were.
+        val changed = draft.withValue(LabelValue.PROTEIN, "21").input().label!!
+        assertEquals(381.70175438 to Salt.sodiumMg(0.005), changed.per100.kcal to changed.per100.sodiumMg)
+        assertEquals(380.0, draft.withValue(LabelValue.ENERGY, "380").input().label!!.per100.kcal)
+    }
+
+    @Test
+    fun aValueChangedByHandAfterALookupMarksItsSource() {
+        val draft = ProductDraft().filledWith(optimel, "pack", FormatLocale.English)
+        assertEquals("ah:61758", draft.source)
+        assertEquals("ah:61758;changed", draft.withValue(LabelValue.SUGARS, "3.3").source)
+        assertEquals("ah:61758;changed", draft.withValue(LabelValue.FIBRE, "1").source, "a value it did not give is typed by hand")
+        assertEquals("ah:61758;changed", draft.copy(perMl = false).source)
+        assertEquals("ah:61758", draft.copy(name = "Optimel").addingPortion().source, "the name and the portions are not its values")
+        val saved = bar.copy(label = draft.withValue(LabelValue.SUGARS, "3.3").label())
+        assertEquals("ah:61758;changed", saved.toProductDraft(FormatLocale.English).input().label!!.source, "once changed, it stays so")
+        assertNull(typed(LabelValue.ENERGY to "400").source, "typed from the label")
+    }
+
+    @Test
+    fun aLookupFillsTheFormWithItsValuesAndOffersItsPackAsAPortion() {
+        val draft = ProductDraft(name = "yoghurt").filledWith(optimel, "pack", FormatLocale.English)
+        assertEquals("Optimel Drinkyoghurt framboos", draft.name)
+        assertTrue(draft.perMl)
+        assertEquals(mapOf(LabelValue.ENERGY to "31", LabelValue.PROTEIN to "3.1", LabelValue.SALT to "0.08"), draft.values.filterKeys { it in setOf(LabelValue.ENERGY, LabelValue.PROTEIN, LabelValue.SALT) })
+        assertEquals("", draft.value(LabelValue.FIBRE))
+        assertEquals(optimel.per100, draft.label()!!.per100)
+        assertEquals(listOf(Portion("pack", ml = 1000.0)), draft.input().portions)
+        // Looked up again, the pack is there already; one without a table fills no values.
+        val again = draft.filledWith(optimel.copy(basis = null), "pack", FormatLocale.English)
+        assertEquals(1, again.portions.size)
+        assertNull(again.label())
+        assertTrue(again.perMl, "as it was")
+    }
+
+    @Test
+    fun aBarcodeIsDigitsAndANameIsSearched() {
+        assertEquals("8712800035626", barcodeIn("8712800035626"))
+        assertEquals("8712800035626", barcodeIn(" 87 1280 0035626 "))
+        assertEquals("12345670", barcodeIn("12345670"))
+        listOf("1234567", "123456789012345", "drinkyoghurt", "7up 330 ml", "８７１２８０００３５６２６").forEach { assertNull(barcodeIn(it), it) }
+    }
+
+    @Test
+    fun theFormSaysWhatTheSourceDidNotGiveOrCouldNotAnswer() {
+        val t = Strings.English
+        assertEquals(listOf("Not given: fibre."), lookupNotes(ProductLookup(optimel), t))
+        assertEquals(
+            listOf("Not given: fibre.", "Could not be read: saturated fat, salt.", "The values are of one of the 4 in the pack."),
+            lookupNotes(ProductLookup(optimel.copy(per100 = optimel.per100.copy(saturatedFatG = null, sodiumMg = null), unread = listOf("saturatedFatG", "sodiumMg"), packOf = 4)), t),
+        )
+        assertEquals(listOf("No product found for it.", "Type the values from the label."), lookupNotes(ProductLookup(), t))
+        assertEquals(
+            listOf("AH did not answer.", "Open Food Facts is not set up on this server, so it was not asked.", "Type the values from the label."),
+            lookupNotes(ProductLookup(problems = listOf(LookupProblem.AH_FAILED, LookupProblem.OFF_NOT_CONFIGURED)), t),
+        )
+        assertEquals(listOf("A source answered in a way this app does not know.", "Type the values from the label."), lookupNotes(ProductLookup(problems = listOf("later_code")), t))
+        assertEquals("Values from Open Food Facts, changed by hand", sourceLine("off:8712800035626;changed", t))
+        assertEquals("Waarden van AH", sourceLine("ah:61758", Strings.Dutch))
     }
 
     @Test

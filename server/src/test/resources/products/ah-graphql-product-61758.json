@@ -1,0 +1,109 @@
+{
+ "data": {
+  "product": {
+   "id": 61758,
+   "title": "Optimel Drinkyoghurt framboos",
+   "brand": "Optimel",
+   "salesUnitSize": "1 l",
+   "tradeItem": {
+    "contents": {
+     "netContents": [
+      "1000.0 Milliliter"
+     ]
+    },
+    "nutritions": [
+     {
+      "basisQuantity": "100.0 Milliliter",
+      "nutrients": [
+       {
+        "type": "ENER-",
+        "value": "130.0 kJ (31.0 kcal)"
+       },
+       {
+        "type": "FAT",
+        "value": "0.0 g"
+       },
+       {
+        "type": "FASAT",
+        "value": "0.0 g"
+       },
+       {
+        "type": "CHOAVL",
+        "value": "3.8 g"
+       },
+       {
+        "type": "SUGAR-",
+        "value": "3.2 g"
+       },
+       {
+        "type": "PRO-",
+        "value": "3.1 g"
+       },
+       {
+        "type": "SALTEQ",
+        "value": "0.08 g"
+       },
+       {
+        "type": "VITB12",
+        "value": "0.31 µg"
+       },
+       {
+        "type": "RIBF",
+        "value": "0.17 mg"
+       },
+       {
+        "type": "CA",
+        "value": "108.0 mg"
+       }
+      ]
+     },
+     {
+      "basisQuantity": "200.0 Milliliter",
+      "nutrients": [
+       {
+        "type": "ENER-",
+        "value": "260.0 kJ (62.0 kcal)"
+       },
+       {
+        "type": "FAT",
+        "value": "0.0 g"
+       },
+       {
+        "type": "FASAT",
+        "value": "0.0 g"
+       },
+       {
+        "type": "CHOAVL",
+        "value": "7.6 g"
+       },
+       {
+        "type": "SUGAR-",
+        "value": "6.4 g"
+       },
+       {
+        "type": "PRO-",
+        "value": "6.2 g"
+       },
+       {
+        "type": "SALTEQ",
+        "value": "0.16 g"
+       },
+       {
+        "type": "VITB12",
+        "value": "0.62 µg"
+       },
+       {
+        "type": "RIBF",
+        "value": "0.34 mg"
+       },
+       {
+        "type": "CA",
+        "value": "216.0 mg"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ }
+}
