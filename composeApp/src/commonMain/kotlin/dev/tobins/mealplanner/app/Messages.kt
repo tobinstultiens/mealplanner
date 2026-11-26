@@ -103,6 +103,12 @@ enum class Msg(private val english: String, private val dutch: String) {
     EXTRA_WHAT("What", "Wat"),
     EXTRA_CALORIES("Calories (a rough number is fine)", "Calorieën (ruwe schatting)"),
     EXTRA_PROTEIN("Protein in grams (optional)", "Eiwit in gram (optioneel)"),
+    // --- Foods logged as eaten outside the plan (issue 362)
+    LOG_ADD_FOOD("Add a food you ate", "Voeg een voedingsmiddel toe dat je at"),
+    LOG_FOOD_GONE(
+        "{0} is no longer among your foods, so it cannot be counted again. Type its numbers over, or remove it.",
+        "{0} staat niet meer bij je voedingsmiddelen en kan dus niet opnieuw worden berekend. Typ de getallen opnieuw in, of verwijder het.",
+    ),
 
     // --- Settings: language
     LANGUAGE("Language", "Taal"),

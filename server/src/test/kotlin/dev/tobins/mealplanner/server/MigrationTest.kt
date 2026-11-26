@@ -2,6 +2,9 @@ package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.AddedInput
+import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LogFoodInput
+import dev.tobins.mealplanner.api.LoggedFood
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
@@ -237,12 +240,31 @@ class MigrationTest {
 
     /** Version 28 added the foods of a slot (27.sqm, issue 358): a column of the recipes and one of the planned meals. */
     private fun dropSlotFoods(statement: Statement) {
+        dropLoggedFoods(statement)
         statement.execute("ALTER TABLE recipe DROP COLUMN slotFoods")
         statement.execute("ALTER TABLE planMeal DROP COLUMN foodsId")
     }
 
+    /**
+     * Version 29 added a food logged as eaten (28.sqm, issue 362): seven columns of the log and an index. SQLite drops no
+     * column with a foreign key, so the log, empty here, is made again as it was.
+     */
+    private fun dropLoggedFoods(statement: Statement) {
+        statement.execute("DROP INDEX foodLog_ingredient")
+        statement.execute("DROP INDEX foodLog_date")
+        statement.execute("DROP TABLE foodLog")
+        statement.execute(
+            "CREATE TABLE foodLog (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES appUser(id) ON DELETE CASCADE, " +
+                "date TEXT NOT NULL, description TEXT NOT NULL, kcal REAL NOT NULL, proteinG REAL NOT NULL)",
+        )
+        statement.execute("CREATE INDEX foodLog_date ON foodLog(userId, date)")
+    }
+
     /** The columns 27.sqm adds, by table. */
     private val slotFoodsColumns = mapOf("recipe" to "slotFoods", "planMeal" to "foodsId")
+
+    /** The columns of the log 28.sqm adds. */
+    private val loggedFoodColumns = listOf("fibreG", "ingredientId", "foodName", "amount", "unit", "counted", "pickedAt")
 
     private val labelColumns = listOf(
         "labelBasis", "labelKcal", "labelProteinG", "labelFatG", "labelSaturatedFatG", "labelCarbsG", "labelSugarG",
@@ -1741,14 +1763,78 @@ class MigrationTest {
         driver.close()
     }
 
+    /**
+     * 28.sqm (issue 362) adds columns to the log alone: every table keeps its rows and every row what it had, every entry
+     * stays a typed one (no food, no fibre, counted), and each account reads its days with the entries, numbers and totals
+     * they had. A food is logged in the new columns afterwards.
+     */
+    @Test
+    fun aVersionTwentyEightDatabaseKeepsEveryRowAndEveryLoggedEntryAsItWas() {
+        val file = createTempFile("v28", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val date = "2026-11-17"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropLoggedFoods(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-01-01T00:00:00Z'), (2, 'bob', '2026-01-01T00:00:00Z')")
+                statement.execute(
+                    "INSERT INTO food (nevoCode, nameNl, nameEn, synonym, groupNl, groupEn, basis, kcal, protein, fat, saturatedFat, carbs, sugar, fibre, sodiumMg) VALUES " +
+                        "(10, 'Rundvlees', 'Beef raw', NULL, 'Vlees', 'Meat', 'PER_100_G', 150, 20, 4, 2, 0, 0, 1, 50)",
+                )
+                statement.execute("INSERT INTO ingredient (id, userId, name, nevoCode, gramsPerPiece, gramsPerMl, isStaple) VALUES (1, 1, 'Beef', 10, NULL, NULL, 0)")
+                statement.execute(
+                    "INSERT INTO foodLog (id, userId, date, description, kcal, proteinG) VALUES " +
+                        "(1, 1, '$date', 'Apple', 80.0, 0.5), (2, 1, '$date', 'A handful of almonds', 170.0, 6.0), " +
+                        "(3, 1, '2026-11-10', 'Beer', 210.5, 1.5), (4, 2, '$date', 'Crisps', 300.0, 3.0)",
+                )
+                statement.execute("PRAGMA user_version = 28")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        val logColumns = columns(url, "foodLog")
+        fun rows() = listOf(counts(), rowsOf(url, "foodLog", logColumns), everythingBut(url, "foodLog"))
+        val before = rows()
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, rows(), "every row as it was")
+        assertEquals(
+            "4:0:0:0:0:0:0:4",
+            single(url, "SELECT count(*) || ':' || count(fibreG) || ':' || count(ingredientId) || ':' || count(foodName) || ':' || count(amount) || ':' || count(unit) || ':' || count(pickedAt) || ':' || sum(counted) FROM foodLog"),
+            "every entry a typed one, counted",
+        )
+
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        fun scope(id: Long) = UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(date) })
+        val alice = scope(1).tracking.day(date)
+        assertEquals(listOf(LogEntry(1, date, "Apple", 80.0, 0.5), LogEntry(2, date, "A handful of almonds", 170.0, 6.0)), alice.extras)
+        assertEquals(listOf(250.0, 6.5, 0.0), listOf(alice.eatenKcal, alice.eatenProteinG, alice.eatenFibreG))
+        assertEquals(listOf(LogEntry(3, "2026-11-10", "Beer", 210.5, 1.5)), scope(1).tracking.day("2026-11-10").extras)
+        assertEquals(listOf(LogEntry(4, date, "Crisps", 300.0, 3.0)), scope(2).tracking.day(date).extras)
+
+        // A food goes in the new columns: 100 g of beef, 150 kcal, 20 g protein and 1 g fibre.
+        val logged = scope(1).tracking.logFood(LogFoodInput(date, 1, 100.0, "g")).extras.last()
+        assertEquals(LogEntry(5, date, "100 g Beef", 150.0, 20.0, fibreG = 1.0, food = LoggedFood(1, "Beef", 100.0, "g")), logged)
+        driver.close()
+    }
+
     /** The rows of [table] in [columns] only, by id: a table compared by the columns it had before a migration added one. */
     private fun rowsOf(url: String, table: String, columns: List<String>): String =
         single(url, "SELECT ${columns.joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }} FROM \"$table\" ORDER BY id")
 
     /**
      * Every row of every table of the file but [tables], to compare before and after a migration that adds a column to one
-     * of them; a table a later migration adds is one of them too. The ingredients' label columns, which 26.sqm adds, and
-     * the columns of slots' foods, which 27.sqm adds, are left out, so that a migration before them is compared by what it changed.
+     * of them; a table a later migration adds is one of them too. The ingredients' label columns, which 26.sqm adds, the
+     * columns of slots' foods, which 27.sqm adds, and those of logged foods, which 28.sqm adds, are left out, so that a
+     * migration before them is compared by what it changed.
      */
     private fun everythingBut(url: String, vararg tables: String): List<String> = DriverManager.getConnection(url).use { connection ->
         fun query(sql: String): List<String> = connection.createStatement().executeQuery(sql).use { rows ->
@@ -1758,7 +1844,9 @@ class MigrationTest {
         query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
             .filter { it !in tables }
             .flatMap { name ->
-                val columns = columns(url, name).filterNot { name == "ingredient" && it in labelColumns || slotFoodsColumns[name] == it }
+                val columns = columns(url, name).filterNot {
+                    name == "ingredient" && it in labelColumns || slotFoodsColumns[name] == it || name == "foodLog" && it in loggedFoodColumns
+                }
                 listOf(name) + query("SELECT ${columns.joinToString { "\"$it\"" }} FROM \"$name\"")
             }
     }

@@ -437,6 +437,8 @@ enum class Shot(
     val writing: Boolean = false,
     /** The fake backend's week with foods in slots (issue 358): Monday's snack two foods alone, its breakfast a food next to the oats. */
     val slotFoods: Boolean = false,
+    /** The fake backend's log with foods (issue 362): after the typed apple, a bar of the protein bar and a muesli bar since gone. */
+    val loggedFoods: Boolean = false,
     /** Texts to type before the [taps], each into the text field labelled with the first of the pair. */
     val types: List<Pair<String, String>> = emptyList(),
     /** Texts to tap in turn once each is shown, each with a text to wait for after it, such as a dialog's or a snackbar's. */
@@ -494,6 +496,29 @@ enum class Shot(
         writing = true, slotFoods = true, fontScale = 2.0f, heightDp = 900,
         types = listOf("Add an ingredient" to "protein"), taps = listOf("Protein bar chocolate" to "Amount"),
         content = { api, _ -> SlotFoodScreen(api, FakeBackend.WEEK_START, FoodPlace(1, MealSlot.SNACK), {}, {}) },
+    ),
+    // Foods logged as eaten outside the plan (issue 362): under the typed apple, a bar of the protein bar in its unit with what
+    // it counted, and a muesli bar since gone from the catalogue, which reads as it did; both ways of adding under them. In
+    // both languages and at the largest font.
+    TODAY_LOGGED(loggedFoods = true, heightDp = 2000, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    TODAY_LOGGED_NL(loggedFoods = true, dutch = true, heightDp = 2100, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    TODAY_LOGGED_X2(loggedFoods = true, fontScale = 2.0f, heightDp = 3200, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    // A food picked for the log: "Also eaten" and the day above the protein bar found among the account's own, starting in
+    // 100 g, its weight and kcal under its name. In both languages and at the largest font.
+    LOG_FOOD_PICKED(
+        writing = true, loggedFoods = true, heightDp = 640,
+        types = listOf("Add an ingredient" to "protein"), taps = listOf("Protein bar chocolate" to "Amount"),
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY), {}, {}) },
+    ),
+    LOG_FOOD_PICKED_NL(
+        writing = true, loggedFoods = true, dutch = true, heightDp = 640,
+        types = listOf("Ingrediënt toevoegen" to "protein"), taps = listOf("Protein bar chocolate" to "Hoeveelheid"),
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY), {}, {}) },
+    ),
+    LOG_FOOD_PICKED_X2(
+        writing = true, loggedFoods = true, fontScale = 2.0f, heightDp = 900,
+        types = listOf("Add an ingredient" to "protein"), taps = listOf("Protein bar chocolate" to "Amount"),
+        content = { api, _ -> LogFoodScreen(api, LogFoodPlace(FakeBackend.TODAY), {}, {}) },
     ),
     // What the search finds for the snack, as the recipe editor's: the account's product first, "New product" last.
     SLOT_FOOD_SEARCH(
@@ -970,6 +995,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
         laterVerdicts = shot.laterVerdicts,
         writing = shot.writing,
         slotFoods = shot.slotFoods,
+        loggedFoods = shot.loggedFoods,
     )
         .also { it.profile = shot.profile }
     private val api = ApiClient(backend.settings)

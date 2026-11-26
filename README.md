@@ -929,6 +929,44 @@ foods next to it keeps its title, with the foods in its kcal and protein. That r
   or a food not in it, and for an ingredient not in the account's catalogue; 400 for an amount of 0 or less, one above
   5000 g, a unit the ingredient does not have, or more than 30 foods.
 
+## Food eaten outside the plan
+
+What was eaten besides the plan is logged on Today, under "Also eaten" (issue 362). "Add a food you ate" opens the food
+screen of a slot (see "Foods in a slot") for that day: a food of the catalogue, an ingredient or a product, is searched
+and picked in an amount of one of its units, starting in the unit it was last picked or saved in. "Add something else
+you ate" types a description with kcal and, if known, protein, as before. A logged food shows its name, its amount in
+its unit and what it counted ("1 bar · 171 kcal · 14 g protein"); a tap opens it to change its amount, its unit or the
+food, and Remove (or its cross) takes the entry away. A tap on a typed entry types it over.
+
+How a logged food counts:
+
+- The server counts it from the food's values when it is logged, as a food in a slot is counted (its label's values, or
+  else its NEVO food's), and keeps the kcal, protein and fibre it found with the entry. The day counts those in what was
+  eaten and in the forecast, and its fibre with the plan's fibre (a typed entry has none). A food that counts as nothing
+  (no values, or an amount it cannot weigh) is logged at 0 and says "not counted".
+- The numbers stay what they were: a product's values changed later do not reach a day logged before, so a day that is
+  over keeps its totals. Changing the amount (or unit, or food) counts it again from the values of that moment.
+- A food gone from the catalogue leaves its entries as they were, with its name, amount and numbers: they can no longer
+  be counted again (409), and a tap opens the typed dialog, which says so, to type its numbers over or remove it. Typed
+  over, an entry is a typed one.
+- It was eaten outside the plan, so a logged food is not on the shopping list and takes nothing from the stock.
+- Its unit counts as the one last picked for that food, as in a slot or a recipe.
+
+The log is `foodLog`; a food's columns (version 29 of the database, `28.sqm`) hold the ingredient (`ON DELETE SET NULL`),
+its name, amount and unit as picked, its fibre, whether it counted, and when it was picked. An installed app that does
+not know foods reads such an entry as a typed one: the server writes its description in English from the food and amount
+("2 bar Protein bar", "1 piece Banana", "150 g Rice"), with its kcal and protein; the app that knows foods words it
+itself from `LogEntry.food`.
+
+- `POST /api/log/foods` with `{"date": "2026-11-18", "ingredientId": 7, "amount": 2, "unit": "bar"}` logs a food (201),
+  `PUT /api/log/{id}/food` with `{"ingredientId": 7, "amount": 1, "unit": "bar"}` changes it and counts it again, `PUT
+  /api/log/{id}` with `{"description": "Apple", "kcal": 80, "proteinG": 0.5}` types any entry over, and `POST /api/log`
+  (a `LogEntry` without `food` or `fibreG`) and `DELETE /api/log/{id}` add and remove a typed entry as before; each but the
+  removal answers the day. `LogEntry.food` (`LoggedFood`: its ingredient, null once gone, name, amount, unit and whether
+  it counted) and `LogEntry.fibreG` are null for a typed entry. 404 for an entry or an ingredient not in the account; 400
+  for an amount of 0 or less, one above 5000 g or a unit the food does not have; 409 for counting again an entry whose
+  food is gone, or a typed one.
+
 ## Web client
 
 `composeApp` also builds for the browser (`./gradlew :composeApp:wasmJsBrowserDistribution`), and the
@@ -1088,7 +1126,7 @@ the test and in `git log`, not here.
 ## Screenshot tests
 
 Layout is checked without an emulator: `ScreenshotTest` (`composeApp/src/androidHostTest`) renders the
-Today (also in Dutch), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch, and with that prep kept vacuum sealed, also in Dutch and at font scale 2), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the Plan with one batch eaten as sides and as a meal (also in Dutch), the Prep dialog with meals picked both ways (also in Dutch and at font scale 2), "Add a prepped side…" with batches still to make (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch; the question also of a prep that was made, of meals and of sides, in both languages, and of a prep of meals and sides, made or not, in both languages), a week holding only a meal of last week's batch on the Plan and Shopping (Shopping also in Dutch), the recipe of a later prepped meal and cook mode on a prep day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe editor (a recipe taken from the cooking site, also in Dutch and at font scale 2; its search with "New product" last, also in Dutch), the product form (also in Dutch and at font scale 2, and new with what keeps Save off; and its lookup at AH, what it found and the form filled with the one picked, each also in Dutch and at font scale 2), the recipe picker (also with standard meals first and the line on a prep still to make, in Dutch and at font scale 2), Today with a skipped lunch and its standard-meal chips (also in Dutch), the Plan's skip sheet and a recipe's standard-meal switch with what it made staples (both also in Dutch and at font scale 2), Offers, the price verdicts on Offers (early with one opened, and later, also in Dutch and at font scale 2 in both languages) and on Shopping (later, also in Dutch, at font scale 2 in both languages down to the advice, per store and in shopping mode in Dutch; the dialog of a tapped deal, early and later, also in Dutch and at font scale 2 in both languages), "Not this ingredient" on Offers and on a deal of Shopping with its snackbar (each also in Dutch and at font scale 2), Prices, Progress, the profile (in English and Dutch),
+Today (also in Dutch; with foods logged off the plan, also in Dutch and at font scale 2, and the log's food screen with a food picked, also in Dutch and at font scale 2), Plan (also in Dutch and with an empty rotation; both with an adjusted meal; with a prep and a share in the box, also in Dutch, and with that prep kept vacuum sealed, also in Dutch and at font scale 2), the Prep dialog (also in Dutch and at font scale 2, also eaten as a side), the Plan and Today with sides next to meals (also in Dutch), the Plan with one batch eaten as sides and as a meal (also in Dutch), the Prep dialog with meals picked both ways (also in Dutch and at font scale 2), "Add a prepped side…" with batches still to make (also in Dutch and at font scale 2), the question that removes a prep and a share in the box on its last day (both also in Dutch; the question also of a prep that was made, of meals and of sides, in both languages, and of a prep of meals and sides, made or not, in both languages), a week holding only a meal of last week's batch on the Plan and Shopping (Shopping also in Dutch), the recipe of a later prepped meal and cook mode on a prep day (both also in Dutch), the Adjust screen of a meal with its quick add-ons and a later meal left short (also in Dutch), Shopping (also in shopping mode, with an empty week, per store and at one store), Pantry, Recipes (on each choice, selecting several, and in Dutch), the recipe bank, a recipe from it and the cooking-site dialog's choices, recipe detail (with its optional toppings, also in Dutch; in the rotation, out of it, no longer on the site), the recipe editor (a recipe taken from the cooking site, also in Dutch and at font scale 2; its search with "New product" last, also in Dutch), the product form (also in Dutch and at font scale 2, and new with what keeps Save off; and its lookup at AH, what it found and the form filled with the one picked, each also in Dutch and at font scale 2), the recipe picker (also with standard meals first and the line on a prep still to make, in Dutch and at font scale 2), Today with a skipped lunch and its standard-meal chips (also in Dutch), the Plan's skip sheet and a recipe's standard-meal switch with what it made staples (both also in Dutch and at font scale 2), Offers, the price verdicts on Offers (early with one opened, and later, also in Dutch and at font scale 2 in both languages) and on Shopping (later, also in Dutch, at font scale 2 in both languages down to the advice, per store and in shopping mode in Dutch; the dialog of a tapped deal, early and later, also in Dutch and at font scale 2 in both languages), "Not this ingredient" on Offers and on a deal of Shopping with its snackbar (each also in Dutch and at font scale 2), Prices, Progress, the profile (in English and Dutch),
 Settings and login screens (the login with a known server and with the address asked for, offering "Register a new account", and saying a request waits for approval, also in Dutch), the form that asks for an account (empty, after Send with every field wrong, refused by the server, and sent; each also in Dutch and at font scale 2), the owner's Requests card of Settings (also in Dutch and at font scale 2), the "Not this ingredient" list of Settings (also in Dutch and at font scale 2), the Notifications card (in English and Dutch, with notifications refused by Android, at font scale 2 in both languages, and the owner's with "Account requests"), the empty states of Recipes, Offers and Prices, and the whole app shell (with the bottom bar, logged in
 with a fake session) on the JVM with Robolectric and Roborazzi, and compares each with its picture in
 `composeApp/src/androidHostTest/screenshots`. The screens talk to `FakeBackend`, a local server with fixed
@@ -1373,7 +1411,7 @@ dinner, keeps its recipe and its place: `reroll`, `PUT` and delete answer 409, `
 `generate` keeps it; see `docs/data-sources.md`, "Un-eating"; `preps` and `preps/{id}` with `preps/{id}/spare` for prepped
 meals, `DELETE meals/{day}/{slot}/side` for a side, and `GET /api/preps/spare/{date}`, see "Prepped meals"; `GET standard-meals`
 and `PUT meals/{day}/{slot}/standard`, with `PUT /api/recipes/{id}/standard`, see "Standard meals"; `planning` with its
-suggestions, picks, `not-this-week` and `done`, and `POST meals/{day}/DINNER/move`, see "Planning the week"), `/api/days/{date}` and `/api/log` (what was eaten)
+suggestions, picks, `not-this-week` and `done`, and `POST meals/{day}/DINNER/move`, see "Planning the week"), `/api/days/{date}` and `/api/log` (what was eaten; a food of the catalogue logged with `/api/log/foods`, see "Food eaten outside the plan")
 `/api/weights` (weight log, trend and target suggestion; the newest weighing is the profile's weight, so the targets follow it:
 a weighing for an earlier day leaves the profile alone, and removing the newest one gives the profile the weight of the newest
 one left. Removing the only one keeps the profile's weight, as what it was before is not stored; plans already made keep their

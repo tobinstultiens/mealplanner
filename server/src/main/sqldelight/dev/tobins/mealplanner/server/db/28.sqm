@@ -1,0 +1,19 @@
+-- Version 28 -> 29: a food of the catalogue logged as eaten outside the plan (issue 362). Seven columns are added and an
+-- index; no table is rebuilt, so no foreign key cascades and no row goes or changes. Every entry there was stays a typed
+-- one with the description, kcal and protein it had: no fibre and no food (both NULL), counted (1).
+
+ALTER TABLE foodLog ADD COLUMN fibreG REAL;
+
+ALTER TABLE foodLog ADD COLUMN ingredientId INTEGER REFERENCES ingredient(id) ON DELETE SET NULL;
+
+ALTER TABLE foodLog ADD COLUMN foodName TEXT;
+
+ALTER TABLE foodLog ADD COLUMN amount REAL;
+
+ALTER TABLE foodLog ADD COLUMN unit TEXT;
+
+ALTER TABLE foodLog ADD COLUMN counted INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE foodLog ADD COLUMN pickedAt TEXT;
+
+CREATE INDEX foodLog_ingredient ON foodLog(ingredientId);

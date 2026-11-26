@@ -1,8 +1,12 @@
 package dev.tobins.mealplanner.server.routes
 
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LogFoodInput
+import dev.tobins.mealplanner.api.LogTextInput
+import dev.tobins.mealplanner.api.MealFoodInput
 import dev.tobins.mealplanner.server.user
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -16,10 +20,18 @@ fun Route.trackingRoutes() {
     // One day: planned meals with their status, extras, and totals against the targets.
     get("/api/days/{date}") { call.respond(call.user.tracking.day(call.parameters["date"]!!)) }
 
+    // A typed entry, as every app sends it.
     post("/api/log") { call.respond(HttpStatusCode.Created, call.user.tracking.log(call.receive<LogEntry>())) }
 
+    // A food of the catalogue in an amount (issue 362), counted now; its amount changed and recounted; any entry typed over.
+    post("/api/log/foods") { call.respond(HttpStatusCode.Created, call.user.tracking.logFood(call.receive<LogFoodInput>())) }
+
+    put("/api/log/{id}/food") { call.respond(call.user.tracking.changeFood(call.logId(), call.receive<MealFoodInput>())) }
+
+    put("/api/log/{id}") { call.respond(call.user.tracking.retype(call.logId(), call.receive<LogTextInput>())) }
+
     delete("/api/log/{id}") {
-        call.user.tracking.deleteLog(call.parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Log id must be a number"))
+        call.user.tracking.deleteLog(call.logId())
         call.respond(HttpStatusCode.NoContent)
     }
 
@@ -29,3 +41,5 @@ fun Route.trackingRoutes() {
 
     delete("/api/weights/{date}") { call.respond(call.user.tracking.deleteWeight(call.parameters["date"]!!)) }
 }
+
+private fun ApplicationCall.logId(): Long = parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Log id must be a number")

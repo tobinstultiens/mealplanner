@@ -262,6 +262,7 @@ class ReleasedAppTest {
         http.readsAWeekWithASideOf(mine.summary.id)
         http.readsAWeekWithABatchOfMealsAndSidesOf(mine.summary.id)
         http.readsAWeekWithFoods(chicken, ingredients.first { it.food?.nevoCode == 5 })
+        http.readsADayWithALoggedFood(chicken)
 
         // The day, a log entry and weights.
         val date = "2026-11-17"
@@ -413,6 +414,29 @@ class ReleasedAppTest {
         read<ShoppingList>("/api/plans/$week/shopping")
         read<NotificationFacts>("/api/notifications")
         assertTrue(delete(snack).read<WeekPlan>().days[6].meals.none { it.slot == MealSlot.SNACK })
+    }
+
+    /**
+     * A food logged as eaten outside the plan in a newer app (issue 362): 150 g of [chicken] (200 kcal and 20 g protein per
+     * 100 g) on Wednesday. The installed app reads the day with it as an entry of the server's line in English and its kcal and
+     * protein, which the day counts; adds a typed entry next to it, as it does; and removes the food's entry, leaving the typed one.
+     */
+    private suspend fun HttpClient.readsADayWithALoggedFood(chicken: Ingredient) {
+        val date = "2026-11-18"
+        val empty = read<DayView>("/api/days/$date")
+        assertTrue(empty.extras.isEmpty())
+        val logged = post("/api/log/foods") { setBody("""{"date":"$date","ingredientId":${chicken.id},"amount":150.0,"unit":"g"}""") }
+        assertTrue(logged.status.isSuccess(), logged.bodyAsText())
+        val before = read<DayView>("/api/days/$date")
+        val food = before.extras.single()
+        assertEquals(listOf<Any>("150 g ${chicken.name}", 300L, 30L), listOf(food.description, Math.round(food.kcal), Math.round(food.proteinG)))
+        assertEquals(Math.round(empty.eatenKcal + 300.0), Math.round(before.eatenKcal))
+
+        val both = post("/api/log") { setBody(LogEntry(0, date, "Apple", 80.0, 0.5)) }.read<DayView>()
+        assertEquals(listOf(food.description, "Apple"), both.extras.map { it.description })
+        assertEquals(Math.round(before.eatenKcal + 80.0), Math.round(both.eatenKcal))
+        assertTrue(delete("/api/log/${food.id}").status.isSuccess())
+        assertEquals(listOf("Apple"), read<DayView>("/api/days/$date").extras.map { it.description })
     }
 
     /**

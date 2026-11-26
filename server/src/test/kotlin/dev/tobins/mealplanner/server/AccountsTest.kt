@@ -23,6 +23,8 @@ import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LogFoodInput
+import dev.tobins.mealplanner.api.LogTextInput
 import dev.tobins.mealplanner.api.LabelNutrition
 import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MappingRequest
@@ -327,6 +329,35 @@ class AccountsTest {
         assertEquals(HttpStatusCode.OK, bob.delete("$foods/${bobFood.id}").status)
         assertEquals(listOf(aliceFood), alice.get("/api/plans/$week").body<WeekPlan>().days[0].meals.single().foods)
         assertEquals(HttpStatusCode.OK, alice.get("/api/recipes/${aliceSnack.recipeId}").status)
+    }
+
+    /** Issue 362: a food is logged as eaten from the account's own catalogue only, and an entry is changed by its account alone. */
+    @Test
+    fun anotherAccountsFoodCanNeitherBeLoggedNorItsEntryChanged() = testApplication {
+        start()
+        val date = "2026-11-16"
+        val accounts = listOf("alice", "bob").associateWith { name ->
+            val client = clientFor(name)
+            client to client.post("/api/ingredients") { setBody(IngredientInput("Banana", gramsPerPiece = 120.0)) }.body<Ingredient>()
+        }
+        val (alice, aliceBanana) = accounts.getValue("alice")
+        val (bob, bobBanana) = accounts.getValue("bob")
+        val aliceEntry = alice.post("/api/log/foods") { setBody(LogFoodInput(date, aliceBanana.id, 2.0, "piece")) }.body<DayView>().extras.single()
+
+        // Bob cannot log Alice's banana, nor turn his own entry into it.
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/log/foods") { setBody(LogFoodInput(date, aliceBanana.id, 1.0, "piece")) }.status)
+        assertEquals(emptyList(), bob.get("/api/days/$date").body<DayView>().extras)
+        val bobEntry = bob.post("/api/log/foods") { setBody(LogFoodInput(date, bobBanana.id, 1.0, "piece")) }.body<DayView>().extras.single()
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/log/${bobEntry.id}/food") { setBody(MealFoodInput(aliceBanana.id, 1.0, "piece")) }.status)
+        // Nor change, type over or remove Alice's entry.
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/log/${aliceEntry.id}/food") { setBody(MealFoodInput(bobBanana.id, 3.0, "piece")) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/log/${aliceEntry.id}") { setBody(LogTextInput("Mine now", 1.0, 0.0)) }.status)
+        bob.delete("/api/log/${aliceEntry.id}")
+
+        // Alice's day is as she logged it, and Bob's his own.
+        assertEquals(listOf(aliceEntry), alice.get("/api/days/$date").body<DayView>().extras)
+        assertEquals(listOf(bobEntry), bob.get("/api/days/$date").body<DayView>().extras)
+        assertEquals(bobBanana.id, bobEntry.food?.ingredientId)
     }
 
     /** Issue 226: a recipe's toppings and its quick add-ons are the account's own. */

@@ -32,6 +32,9 @@ import dev.tobins.mealplanner.api.LabelNutrition
 import dev.tobins.mealplanner.api.Portion
 import dev.tobins.mealplanner.api.IngredientPrice
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LogFoodInput
+import dev.tobins.mealplanner.api.LogTextInput
+import dev.tobins.mealplanner.api.LoggedFood
 import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealFood
@@ -182,6 +185,11 @@ class FakeBackend(
      * added, changed and taken out are kept in any week.
      */
     private val slotFoods: Boolean = false,
+    /**
+     * Foods logged as eaten outside the plan (issue 362): every day's log has, after the typed apple, a bar of the protein bar
+     * (in the catalogue then) and a muesli bar no longer in it. Entries logged, changed and removed are kept, on any day.
+     */
+    private val loggedFoods: Boolean = false,
 ) : AutoCloseable {
     /** Every call that changed something, as `PUT /api/recipes/7/rotation {"inRotation":false}`, for a test to read. */
     val changes: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
@@ -327,6 +335,7 @@ class FakeBackend(
         if (parts.getOrNull(1) == "recipes" && method != "GET") return changeRecipes(method, parts, sent)
         if (parts.getOrNull(1) == "registration" || parts.getOrNull(1) == "registrations") return registrationRoute(method, parts, sent)
         if (parts.getOrNull(1) == "plans" && parts.getOrNull(6) == "foods") return foodsRoute(method, path, parts, sent)
+        if (parts.getOrNull(1) == "log") return logRoute(method, path, parts, sent)
         return when {
             path == "/api/me" -> json.encodeToString(Me("anna", "Anna", approvesRequests = owner))
             path == "/api/foods/dataset" -> json.encodeToString(FoodDataset(2328, "NEVO online version 2025/9.0, RIVM, Bilthoven"))
@@ -447,7 +456,65 @@ class FakeBackend(
     )
 
     init {
-        if (slotFoods) catalogue += proteinBar
+        if (slotFoods || loggedFoods) catalogue += proteinBar
+    }
+
+    /**
+     * Every day's log (issue 362), by date, once a day is asked for: the typed apple, with [loggedFoods] a bar of the protein bar
+     * and a muesli bar whose food is gone; and what was logged, changed and removed since. A fixture's ids are its day's own.
+     */
+    private val log: MutableMap<String, List<LogEntry>> = java.util.concurrent.ConcurrentHashMap()
+
+    /** The id the next entry logged gets: above every fixture's. */
+    private val nextLogId = java.util.concurrent.atomic.AtomicLong(1_000_000)
+
+    private fun logOf(date: String): List<LogEntry> = log.getOrPut(date) {
+        val first = java.time.LocalDate.parse(date).toEpochDay() * 10
+        val apple = LogEntry(first + 1, date, "Apple and a handful of almonds", 210.0, 5.0)
+        if (!loggedFoods) return@getOrPut listOf(apple)
+        listOf(
+            apple,
+            loggedOf(first + 2, date, MealFoodInput(proteinBar.id, 1.0, "bar")),
+            LogEntry(first + 3, date, "1 bar Muesli bar", 120.0, 2.5, fibreG = 1.5, food = LoggedFood(null, "Muesli bar", 1.0, "bar")),
+        )
+    }
+
+    /** [input] logged on [date] as entry [id]: counted as [foodOf] counts a slot's food, with a line in English as the server's. */
+    private fun loggedOf(id: Long, date: String, input: MealFoodInput): LogEntry {
+        val food = foodOf(id, input)
+        return LogEntry(
+            id, date, "${formatAmount(food.amount, FormatLocale.English)} ${food.unit} ${food.name}", food.kcal, food.proteinG, food.fibreG,
+            LoggedFood(food.ingredientId, food.name, food.amount, food.unit),
+        )
+    }
+
+    /**
+     * `POST /api/log` and `/api/log/foods`, `PUT /api/log/{id}` and `/api/log/{id}/food`, `DELETE /api/log/{id}`: the log
+     * changed, and the day it is on, as the server answers (a removal answers nothing).
+     */
+    private fun logRoute(method: String, path: String, parts: List<String>, sent: String): String {
+        changes += "$method $path $sent".trim()
+        if (method == "POST") {
+            val entry = if (parts.getOrNull(2) == "foods") {
+                val input = json.decodeFromString<LogFoodInput>(sent)
+                loggedOf(nextLogId.getAndIncrement(), input.date, MealFoodInput(input.ingredientId, input.amount, input.unit))
+            } else {
+                json.decodeFromString<LogEntry>(sent).copy(id = nextLogId.getAndIncrement())
+            }
+            log[entry.date] = logOf(entry.date) + entry
+            return json.encodeToString(day(entry.date))
+        }
+        val id = parts[2].toLong()
+        val date = log.entries.firstOrNull { (_, entries) -> entries.any { it.id == id } }?.key ?: throw Refusal(404, "No log entry with id $id")
+        log[date] = when {
+            method == "DELETE" -> logOf(date).filterNot { it.id == id }
+            parts.getOrNull(3) == "food" -> logOf(date).map { if (it.id == id) loggedOf(id, date, json.decodeFromString<MealFoodInput>(sent)) else it }
+            else -> {
+                val text = json.decodeFromString<LogTextInput>(sent)
+                logOf(date).map { if (it.id == id) LogEntry(id, date, text.description, text.kcal, text.proteinG) else it }
+            }
+        }
+        return if (method == "DELETE") "" else json.encodeToString(day(date))
     }
 
     /** The foods of each slot (issue 358), by week, day and slot: those of [slotFoods] and any added since. */
@@ -779,7 +846,11 @@ class FakeBackend(
 
     private fun day(date: String): DayView {
         val planned = plan(mondayOf(date)).days.first { it.date == date }
-        val extras = listOf(LogEntry(1, date, "Apple and a handful of almonds", 210.0, 5.0))
+        val extras = logOf(date)
+        val kcal = extras.sumOf { it.kcal }
+        val protein = extras.sumOf { it.proteinG }
+        // A typed extra has no fibre; a logged food has its own.
+        val fibre = extras.sumOf { it.fibreG ?: 0.0 }
         return DayView(
             date = date,
             weekStart = mondayOf(date),
@@ -787,13 +858,13 @@ class FakeBackend(
             targets = targets,
             meals = planned.meals,
             extras = extras,
-            eatenKcal = 460.0 + 210.0,
-            eatenProteinG = 29.0,
-            expectedKcal = planned.kcal + 210.0,
-            expectedProteinG = planned.proteinG + 5.0,
-            // The breakfast was eaten; the extra has no fibre.
-            eatenFibreG = 8.2,
-            expectedFibreG = planned.fibreG,
+            // The breakfast was eaten: 460 kcal, 24 g protein and 8.2 g fibre.
+            eatenKcal = 460.0 + kcal,
+            eatenProteinG = 24.0 + protein,
+            expectedKcal = planned.kcal + kcal,
+            expectedProteinG = planned.proteinG + protein,
+            eatenFibreG = 8.2 + fibre,
+            expectedFibreG = planned.fibreG?.plus(fibre),
         )
     }
 

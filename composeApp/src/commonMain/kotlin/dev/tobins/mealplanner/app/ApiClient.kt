@@ -17,6 +17,8 @@ import dev.tobins.mealplanner.api.ManyAddedInput
 import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LogFoodInput
+import dev.tobins.mealplanner.api.LogTextInput
 import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.MealChoice
 import dev.tobins.mealplanner.api.MealFoodInput
@@ -283,6 +285,24 @@ class ApiClient(
     suspend fun deleteLog(id: Long) {
         http.delete("api/log/$id")
     }
+
+    /** Logs a food of the catalogue as eaten outside the plan (issue 362), which the server counts from its values now. */
+    suspend fun logPickedFood(input: LogFoodInput): DayView = http.post("api/log/foods") {
+        contentType(ContentType.Application.Json)
+        setBody(input)
+    }.body()
+
+    /** Logged food [id] in another amount, unit or food, recounted by the server; 409 when its food is gone. */
+    suspend fun changeLoggedFood(id: Long, food: MealFoodInput): DayView = http.put("api/log/$id/food") {
+        contentType(ContentType.Application.Json)
+        setBody(food)
+    }.body()
+
+    /** Log entry [id] typed over: a typed entry from then on. */
+    suspend fun retypeLog(id: Long, text: LogTextInput): DayView = http.put("api/log/$id") {
+        contentType(ContentType.Application.Json)
+        setBody(text)
+    }.body()
 
     suspend fun weights(): WeightLog = http.get("api/weights").body()
 
