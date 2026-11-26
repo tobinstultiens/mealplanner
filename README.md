@@ -322,8 +322,10 @@ and from the last to the search). While the editor is open the keyboard makes ro
 (Android: the window's soft input mode is "adjust resize" and the column ends above the keyboard, `imePadding`), and
 the focused amount field and what the search finds are brought wholly into view as they come and as the keyboard
 opens. Its unit is chosen from those the ingredient has
-(grams, millilitres when a millilitre's weight is known, pieces when a piece's weight is, its portions, and the unit a line of the site
-had), and another unit keeps the quantity where it can be worked out. Nothing is typed in the import format, and a
+(grams, millilitres when a millilitre's weight is known or its values are per 100 ml, pieces when a piece's weight is, its portions,
+and the unit a line of the site had), and another unit keeps the quantity where it can be worked out: a weight as a weight
+and a volume as a volume (a portion as what it holds, in g or ml, a piece by its weight), and the one into the other only
+through a known density; else the number stays. A row of a volume whose weight is not known says its millilitres. Nothing is typed in the import format, and a
 picked row is saved with its ingredient (`lines`). The bar under the title says what a serving has and what is not
 counted, worked out in the app from the catalogue and each row's ingredient with the server's own code
 (`NutritionCalculator.ofLines`, reading each line as the server stores it): the saved recipe has the same numbers.
