@@ -22,4 +22,14 @@ class ScanFrameTest {
 
     @Test
     fun theFrameFitsASmallPhoneSideways() = assertFits(640f, 320f)
+
+    @Test
+    fun theFrameFitsWhatALargeFontsHelpLineLeavesSideways() = assertFits(780f, 120f)
+
+    @Test
+    fun theFrameNeverExceedsAVeryShortSpace() {
+        val frame = scanFrameSize(780f, 40f)
+        assertTrue(frame.height <= 40f - 32f)
+        assertTrue(frame.width >= 0f)
+    }
 }

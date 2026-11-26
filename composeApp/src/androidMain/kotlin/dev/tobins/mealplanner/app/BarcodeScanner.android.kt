@@ -21,6 +21,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -70,13 +71,18 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal data class FrameSize(val width: Float, val height: Float)
 
 /**
- * The aiming frame for a preview of [screenWidth] by [screenHeight] dp: wider than tall as a barcode is, sized from the
- * smaller side so that it keeps a margin on all four edges held upright or sideways (and leaves room for the help line below).
+ * The aiming frame for the space of [availableWidth] by [availableHeight] dp that is left above the help line: wider than
+ * tall as a barcode is, sized from the smaller side so that it fits held upright or sideways, and never taller than the
+ * space less a margin above and below, whatever the help line's height (a large font makes it tall).
  */
-internal fun scanFrameSize(screenWidth: Float, screenHeight: Float): FrameSize {
-    val width = minOf(screenWidth, screenHeight) * 0.8f
-    return FrameSize(width, width / 1.6f)
+internal fun scanFrameSize(availableWidth: Float, availableHeight: Float): FrameSize {
+    val margin = 16f
+    val wanted = minOf(availableWidth, availableHeight) * 0.8f
+    val width = maxOf(0f, minOf(wanted, (availableHeight - 2 * margin) * FRAME_ASPECT))
+    return FrameSize(width, width / FRAME_ASPECT)
 }
+
+private const val FRAME_ASPECT = 1.6f
 
 /** A scanner on a phone that has a camera; null on one without (the app installs there too: its manifest does not require one). */
 @Composable
@@ -197,21 +203,26 @@ private fun ScanScreen(onResult: (ScanResult) -> Unit, onClose: () -> Unit) {
     }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
             AndroidView({ preview }, Modifier.fillMaxSize())
-            // A dark ring around a white one: the frame shows on a white pack as well as on a black one.
-            val frame = scanFrameSize(maxWidth.value, maxHeight.value)
-            Box(
-                Modifier.align(Alignment.Center).size(frame.width.dp, frame.height.dp)
-                    .border(7.dp, Color.Black.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                    .padding(2.dp).border(3.dp, Color.White, RoundedCornerShape(12.dp)),
-            )
-            Text(
-                t(Msg.SCAN_HELP),
-                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 32.dp, vertical = 16.dp)
-                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(12.dp),
-                color = Color.White,
-            )
+            // The frame is centred in what the help line leaves, so the two cannot overlap whatever the text's height.
+            Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    val frame = scanFrameSize(maxWidth.value, maxHeight.value)
+                    // A dark ring around a white one: the frame shows on a white pack as well as on a black one.
+                    Box(
+                        Modifier.size(frame.width.dp, frame.height.dp)
+                            .border(7.dp, Color.Black.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                            .padding(2.dp).border(3.dp, Color.White, RoundedCornerShape(12.dp)),
+                    )
+                }
+                Text(
+                    t(Msg.SCAN_HELP),
+                    Modifier.align(Alignment.CenterHorizontally).padding(horizontal = 32.dp, vertical = 16.dp)
+                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(12.dp),
+                    color = Color.White,
+                )
+            }
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 ScanControl(t(Msg.SCAN_CLOSE), AppIcons.Close, lit = false, onClick = onClose)
                 Box(Modifier.weight(1f))
