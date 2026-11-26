@@ -2,6 +2,9 @@ package dev.tobins.mealplanner.app
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -40,6 +43,7 @@ class ProductScanScreenTest {
     private class FakeScanner(vararg answers: ScanResult) : BarcodeScanner {
         private val left = answers.toMutableList()
         override var onResult: ((ScanResult) -> Unit)? = null
+        override var cameraAllowed by mutableStateOf(false)
         var scans = 0
         var settingsOpened = 0
 
@@ -134,6 +138,21 @@ class ProductScanScreenTest {
         // Back from the settings with the camera allowed: the next tap is a scan, and the refusal is gone.
         tap("Scan barcode")
         waitFor("Values from AH")
+        compose.onNodeWithText("Open the app's settings").assertDoesNotExist()
+    }
+
+    @Test
+    fun theRefusalGoesAwayWhenTheFormIsShownAgainWithTheCameraAllowed() {
+        val scanner = FakeScanner(ScanResult.Refused)
+        show(scanner)
+        waitFor("Values per")
+        tap("Scan barcode")
+        waitFor("The camera is not allowed")
+        // Back from the system settings, where the camera was allowed: the app resumes and reads the permission again.
+        compose.runOnUiThread { scanner.cameraAllowed = true }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithText("The camera is not allowed", substring = true).fetchSemanticsNodes().isEmpty()
+        }
         compose.onNodeWithText("Open the app's settings").assertDoesNotExist()
     }
 

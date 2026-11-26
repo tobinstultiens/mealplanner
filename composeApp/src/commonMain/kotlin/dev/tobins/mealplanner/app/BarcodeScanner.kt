@@ -25,6 +25,12 @@ interface BarcodeScanner {
      */
     var onResult: ((ScanResult) -> Unit)?
 
+    /**
+     * Whether the camera is allowed now. Read from Compose state, and read again when the app is resumed (the person may
+     * have allowed the camera in the system settings), so that a screen showing a refusal sees it is no longer true.
+     */
+    val cameraAllowed: Boolean
+
     /** Asks for the camera's permission when it is first needed, opens the scanner and gives [onResult] what it came to. */
     fun scan()
 

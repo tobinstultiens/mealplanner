@@ -21,8 +21,9 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -55,6 +56,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -64,6 +67,23 @@ import java.util.concurrent.atomic.AtomicBoolean
  * reads. Neither the preview nor a frame is stored or sent; only the digits go on.
  */
 
+/** The aiming frame's size in dp, [width] by [height]. */
+internal data class FrameSize(val width: Float, val height: Float)
+
+/**
+ * The aiming frame for the space of [availableWidth] by [availableHeight] dp that is left above the help line: wider than
+ * tall as a barcode is, sized from the smaller side so that it fits held upright or sideways, and never taller than the
+ * space less a margin above and below, whatever the help line's height (a large font makes it tall).
+ */
+internal fun scanFrameSize(availableWidth: Float, availableHeight: Float): FrameSize {
+    val margin = 16f
+    val wanted = minOf(availableWidth, availableHeight) * 0.8f
+    val width = maxOf(0f, minOf(wanted, (availableHeight - 2 * margin) * FRAME_ASPECT))
+    return FrameSize(width, width / FRAME_ASPECT)
+}
+
+private const val FRAME_ASPECT = 1.6f
+
 /** A scanner on a phone that has a camera; null on one without (the app installs there too: its manifest does not require one). */
 @Composable
 actual fun rememberBarcodeScanner(): BarcodeScanner? {
@@ -72,6 +92,13 @@ actual fun rememberBarcodeScanner(): BarcodeScanner? {
     // Saved, so that a scan open when the phone is turned stays open: the camera is bound again, and the permission, once given, is not asked again.
     var open by rememberSaveable { mutableStateOf(false) }
     val scanner = remember(context) { CameraScanner(context) }
+    val lifecycle = LocalLifecycleOwner.current
+    // Read again on every resume: the camera may have been allowed in the system settings meanwhile.
+    DisposableEffect(lifecycle, scanner) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) scanner.readPermission() }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer) }
+    }
     // The permission is asked at the first scan, not before; a refusal is said, and the next tap asks again where Android lets it.
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) open = true else scanner.onResult?.invoke(ScanResult.Refused)
@@ -79,7 +106,8 @@ actual fun rememberBarcodeScanner(): BarcodeScanner? {
     SideEffect {
         scanner.start = {
             // Read now, not remembered: the person may have allowed it in the settings since the last tap.
-            if (context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) open = true
+            scanner.readPermission()
+            if (scanner.cameraAllowed) open = true
             else permission.launch(Manifest.permission.CAMERA)
         }
     }
@@ -98,9 +126,17 @@ actual fun rememberBarcodeScanner(): BarcodeScanner? {
 /** The scanner a screen holds: [start] is set by [rememberBarcodeScanner], which owns the state of the scan. */
 private class CameraScanner(private val context: Context) : BarcodeScanner {
     override var onResult: ((ScanResult) -> Unit)? = null
+    override var cameraAllowed by mutableStateOf(allowed())
+        private set
     var start: () -> Unit = {}
 
     override fun scan() = start()
+
+    private fun allowed() = context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    fun readPermission() {
+        cameraAllowed = allowed()
+    }
 
     override fun openSettings() {
         val page = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
@@ -169,23 +205,29 @@ private fun ScanScreen(onResult: (ScanResult) -> Unit, onClose: () -> Unit) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             AndroidView({ preview }, Modifier.fillMaxSize())
-            // A dark ring around a white one: the frame shows on a white pack as well as on a black one.
-            Box(
-                Modifier.align(Alignment.Center).fillMaxWidth(0.8f).aspectRatio(1.6f)
-                    .border(7.dp, Color.Black.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                    .padding(2.dp).border(3.dp, Color.White, RoundedCornerShape(12.dp)),
-            )
-            Text(
-                t(Msg.SCAN_HELP),
-                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(32.dp)
-                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(12.dp),
-                color = Color.White,
-            )
+            // The frame is centred in what the help line leaves, so the two cannot overlap whatever the text's height.
+            Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    val frame = scanFrameSize(maxWidth.value, maxHeight.value)
+                    // A dark ring around a white one: the frame shows on a white pack as well as on a black one.
+                    Box(
+                        Modifier.size(frame.width.dp, frame.height.dp)
+                            .border(7.dp, Color.Black.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                            .padding(2.dp).border(3.dp, Color.White, RoundedCornerShape(12.dp)),
+                    )
+                }
+                Text(
+                    t(Msg.SCAN_HELP),
+                    Modifier.align(Alignment.CenterHorizontally).padding(horizontal = 32.dp, vertical = 16.dp)
+                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(12.dp),
+                    color = Color.White,
+                )
+            }
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 ScanControl(t(Msg.SCAN_CLOSE), AppIcons.Close, lit = false, onClick = onClose)
                 Box(Modifier.weight(1f))
                 if (camera?.cameraInfo?.hasFlashUnit() == true) {
-                    // On is told from off by the bolt struck through when off, and a white disc instead of a dark one, and by what a screen reader says.
+                    // On is told from off by the bolt struck through when off, an amber disc with a black ring instead of a dark one, and by what a screen reader says.
                     val state = t(if (torch) Msg.SCAN_TORCH_ON else Msg.SCAN_TORCH_OFF)
                     ScanControl(
                         t(Msg.SCAN_TORCH), if (torch) AppIcons.Torch else AppIcons.TorchOff, lit = torch,
@@ -198,16 +240,23 @@ private fun ScanScreen(onResult: (ScanResult) -> Unit, onClose: () -> Unit) {
     }
 }
 
-/** A round button of the scanner, 48 dp, on a dark translucent disc (a white one when [lit]) so that it shows on any picture. */
+/**
+ * A round button of the scanner, 48 dp, on a dark translucent disc so that it shows on any picture. When [lit] the disc is
+ * amber with a black ring, which holds on a white picture as on a black one; off has a thin pale ring instead.
+ */
 @Composable
 private fun ScanControl(description: String, icon: ImageVector, lit: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     IconButton(
         onClick = onClick,
-        modifier = modifier.size(48.dp).background(if (lit) Color.White else Color.Black.copy(alpha = 0.6f), CircleShape),
+        modifier = modifier.size(48.dp)
+            .background(if (lit) TorchLit else Color.Black.copy(alpha = 0.6f), CircleShape)
+            .border(if (lit) 3.dp else 1.dp, if (lit) Color.Black else Color.White.copy(alpha = 0.5f), CircleShape),
     ) {
         Icon(icon, description, tint = if (lit) Color.Black else Color.White)
     }
 }
+
+private val TorchLit = Color(0xFFFFC107)
 
 /** The brightness of this frame, row by row without the padding the camera adds at the end of a row. */
 private fun ImageProxy.luminance(): LuminanceImage {
