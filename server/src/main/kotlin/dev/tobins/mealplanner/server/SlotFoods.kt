@@ -81,7 +81,8 @@ class SlotFoods(private val db: Database, private val userId: Long, private val 
 
     /**
      * Deletes the recipes of foods that no meal of the plan holds any more, with their lines: every write that may take a
-     * slot's foods out (removing or replacing its meal, taking out its last food) ends with it. Across the account and
+     * slot's foods out (removing the slot, taking out its last food) ends with it; a meal that replaces another keeps the
+     * slot's foods ([PlanRepository.save]). Across the account and
      * idempotent, so a write that missed it leaves nothing for longer than the next one.
      */
     fun dropUnused() = q.deleteUnusedSlotFoods(userId)

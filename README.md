@@ -884,14 +884,18 @@ pack being that of the ingredient's regular AH price, and is wary of a recipe th
 ## Foods in a slot
 
 A slot of the plan holds a recipe, foods, or a recipe with foods next to it (issue 358): two snacks, a banana and a
-protein bar, or a dinner put together from foods, without a recipe made by hand. On the Plan, a day's empty slot
-offers "Add a food…" next to "Add a meal…", and a meal's menu offers "Add a food…" too. A food is searched and picked
+protein bar, or a dinner put together from foods, without a recipe made by hand. On the Plan, "Add a food…" under a
+day offers every slot of the day that takes foods, empty or not (next to "Add a meal…" for an empty one); a meal's menu
+offers it too, and a slot with foods has "Add another food…" under them. A food is searched and picked
 as in the recipe editor (the account's own ingredients and products first, then NEVO foods, "New product" last), in an
 amount of one of its units: grams, millilitres where its weight per millilitre is known or it counts per 100 ml,
 pieces where a piece's weight is known, or one of its portions ("bar"). It starts in the unit it was last picked or
 saved in, in a slot or a recipe, and keeps the unit it was picked in: the slot shows "2 bar · 342 kcal" and the
-amount is changed in it. Each food of the slot is listed under the meal; a tap opens it to change its amount or unit,
-or take it out with its cross.
+amount is changed in it. Foods alone are listed where a recipe's title is, foods next to a recipe under its numbers; a
+tap opens one to change its amount or unit, or take it out with its cross. Where one line names a slot of foods alone
+(the move dialog, the skip sheet), the app words it from the foods in its language ("Banana + 2 meer"). A shopping row
+names the slot a food is planned in ("snack on Mon 16 Nov"), never another food or the recipe next to it
+(`ShoppingItem.foodSlots`, `toComeFoodSlots`; the food is not in `recipes`).
 
 How it counts:
 
@@ -901,8 +905,10 @@ How it counts:
   when the meal is eaten; changing a food of an eaten meal moves the stock by the difference, taking it out gives
   back what it took.
 - The slot is eaten, skipped, moved (a dinner) and removed as any meal; a single food is taken out rather than
-  marked not eaten. Choosing a recipe for a slot of foods alone, or replacing a recipe that has foods next to it,
-  replaces the foods too. The last food taken out of a slot of foods alone takes the slot with it.
+  marked not eaten. Foods leave a slot only when they are taken out or the slot is removed from the plan: choosing a
+  recipe, "Another recipe" or a standard meal for a slot with foods puts the recipe in next to them, also in a slot of
+  foods alone. A prepped batch does not take such a slot (409: take the foods out first), and a share in the box is
+  not offered one. The last food taken out of a slot of foods alone takes the slot with it.
 - The planner leaves a slot with foods as it leaves a locked meal and never fills one with foods itself. A slot of
   foods is no recipe to the person: it is not in my recipes, the bank, the planning screen's suggestions or search,
   the recipes eaten before, the counts of "Link ingredients", or the titles a new recipe must differ from.

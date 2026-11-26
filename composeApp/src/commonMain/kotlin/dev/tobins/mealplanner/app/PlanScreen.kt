@@ -281,7 +281,7 @@ fun PlanScreen(
     }
 
     skipped?.let { (meal, choices) ->
-        SkipSheet(meal.title, choices, enabled = !busy, onDismiss = { skipped = null }) { choice ->
+        SkipSheet(meal.shownTitle(t), choices, enabled = !busy, onDismiss = { skipped = null }) { choice ->
             skipped = null
             change { api.chooseStandard(weekStart, meal.day, meal.slot, choice.recipeId, eaten = false).also(::sayRestocked).plan }
         }
@@ -585,8 +585,10 @@ private fun DayCard(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            // Foods alone are listed below, each by its name, rather than the one line their recipe is titled by.
-                            if (!meal.foodsOnly) {
+                            // Foods alone stand where a recipe's title does, each by its name and amount, each opening itself.
+                            if (meal.foodsOnly) {
+                                FoodRows(meal.foods, enabled) { onOpenFood(meal, it) }
+                            } else {
                                 Text(
                                     meal.title,
                                     maxLines = 2,
@@ -636,7 +638,7 @@ private fun DayCard(
                                 }
                                 // A food goes next to what is there (issue 358), but not in a skipped meal, which counts for nothing, nor
                                 // in a prepped one, which is bought and eaten as its batch: the server refuses both.
-                                if (meal.status != MealStatus.SKIPPED && meal.prep == null) {
+                                if (takesFoods(meal)) {
                                     DropdownMenuItem(text = { Text(t(Msg.PLAN_ADD_FOOD)) }, onClick = { menu = false; onAddFood(meal.day, meal.slot) })
                                 }
                                 // Only a dinner the server lets move: not one that keeps its recipe, of a prep, with a side, or whose leftovers can't follow.
@@ -690,16 +692,20 @@ private fun DayCard(
                         }
                     }
                     MealNumbers(meal.macrosText(t), meal.cost?.let { "≈ ${formatEuro(it, t.locale)}" }, Modifier.padding(bottom = 4.dp))
-                    if (meal.foods.isNotEmpty()) FoodRows(meal.foods, enabled) { onOpenFood(meal, it) }
+                    // Foods next to a recipe are listed under its numbers.
+                    if (!meal.foodsOnly && meal.foods.isNotEmpty()) FoodRows(meal.foods, enabled) { onOpenFood(meal, it) }
+                    // A slot with foods takes another right there (issue 358).
+                    if (meal.foods.isNotEmpty() && takesFoods(meal)) {
+                        TextButton(enabled = enabled, onClick = { onAddFood(meal.day, meal.slot) }) { Text(t(Msg.PLAN_ADD_ANOTHER_FOOD)) }
+                    }
                     meal.side?.let { side -> SideRow(meal, side, day.date, onOpen = { onOpenSide(meal, side) }, Modifier.padding(bottom = 4.dp)) }
                 }
             }
-            if (missingSlots.isNotEmpty()) {
-                // A recipe for an empty slot, or foods (issue 358); each asks which slot.
-                FlowRow {
-                    SlotChoice(t(Msg.PLAN_ADD_MEAL), missingSlots, enabled) { onChoose(dayIndex, it) }
-                    SlotChoice(t(Msg.PLAN_ADD_FOOD), missingSlots, enabled) { onAddFood(dayIndex, it) }
-                }
+            // A recipe for an empty slot; foods for any slot that takes them, empty or not (issue 358). Each asks which slot.
+            val foodSlots = MealSlot.entries.filter { slot -> takesFoods(day.meals.firstOrNull { it.slot == slot }) }
+            FlowRow {
+                if (missingSlots.isNotEmpty()) SlotChoice(t(Msg.PLAN_ADD_MEAL), missingSlots, enabled) { onChoose(dayIndex, it) }
+                if (foodSlots.isNotEmpty()) SlotChoice(t(Msg.PLAN_ADD_FOOD), foodSlots, enabled) { onAddFood(dayIndex, it) }
             }
         }
     }
@@ -761,7 +767,7 @@ private fun MoveDinnerDialog(meal: PlannedMeal, plan: WeekPlan?, today: String, 
     val t = LocalStrings.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.MOVE_TITLE, meal.title)) },
+        title = { Text(t(Msg.MOVE_TITLE, meal.shownTitle(t))) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 plan?.days?.forEachIndexed { index, day ->
@@ -772,8 +778,8 @@ private fun MoveDinnerDialog(meal: PlannedMeal, plan: WeekPlan?, today: String, 
                     val what = when {
                         day.date < today -> t(Msg.MOVE_DAY_PASSED)
                         there == null -> t(Msg.MOVE_NO_DINNER)
-                        why != null -> t(Msg.MOVE_STAYS, there.title, t(whyStaysMessage(why)))
-                        else -> t(Msg.MOVE_SWAPS, there.title)
+                        why != null -> t(Msg.MOVE_STAYS, there.shownTitle(t), t(whyStaysMessage(why)))
+                        else -> t(Msg.MOVE_SWAPS, there.shownTitle(t))
                     }
                     TextButton(enabled = !stays, onClick = { onMove(index) }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth()) {

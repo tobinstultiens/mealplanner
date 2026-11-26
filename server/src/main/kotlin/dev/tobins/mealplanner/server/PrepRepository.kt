@@ -319,11 +319,12 @@ class PrepRepository(
      * Whether a slot can take a meal of batch [batchId]: it is empty, or its meal is still to eat, not locked (the
      * owner chose it), of no batch, and may be replaced ([PlanRepository.whyKeepsItsRecipe]); and its side, if it has
      * one, is of another batch, as a batch is never both a slot's meal and the side next to it ([Batch.mealAt]). Not a
-     * slot with a skipped meal's share in the box under it (issue 265): a slot holds one share of a batch at most.
+     * slot with a skipped meal's share in the box under it (issue 265): a slot holds one share of a batch at most. Nor
+     * one with foods (issue 358), as [requireRoom] has it.
      */
     private fun hasRoom(week: LocalDate, meals: List<PlannedMeal>, day: Int, slot: MealSlot, batchId: Long): Boolean {
         val meal = meals.firstOrNull { it.day == day && it.slot == slot } ?: return true
-        return meal.prep == null && !meal.locked && meal.status == MealStatus.PLANNED && meal.side?.prep?.id != batchId &&
+        return meal.prep == null && !meal.locked && meal.foodsId == null && meal.status == MealStatus.PLANNED && meal.side?.prep?.id != batchId &&
             plans.whyKeepsItsRecipe(week, meal, meals) == null && plans.box(week, day, slot) == null
     }
 
@@ -355,12 +356,14 @@ class PrepRepository(
     /**
      * Refuses a slot for a meal of a batch unless it is empty or its meal may be replaced and is of no other batch:
      * a locked meal the owner chose may be, as making a prep there is choosing again. Not a slot with a skipped meal's
-     * share in the box under it (issue 265), as for [hasRoom].
+     * share in the box under it (issue 265), as for [hasRoom]. Nor one with foods (issue 358): they stay in their slot
+     * until taken out, and a meal of a batch, bought and taken from the stock as the batch, has none next to it.
      */
     private fun requireRoom(week: LocalDate, meals: List<PlannedMeal>, day: Int, slot: MealSlot) {
         val meal = meals.firstOrNull { it.day == day && it.slot == slot } ?: return
         val name = Batch.slotName(week.plusDays(day.toLong()), slot)
         if (meal.prep != null) throw ConflictException("$name is from another prepped batch already")
+        if (meal.foodsId != null) throw ConflictException("$name has foods: take them out first to eat a prepped meal there")
         plans.whyKeepsItsRecipe(week, meal, meals)?.let { throw ConflictException("$name: $it") }
         if (plans.box(week, day, slot) != null) throw ConflictException("$name holds the share of a skipped prepped meal in the box already")
     }

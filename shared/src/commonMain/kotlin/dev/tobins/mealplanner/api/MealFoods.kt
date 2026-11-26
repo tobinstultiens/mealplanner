@@ -26,6 +26,10 @@ data class MealFood(
     val counted: Boolean = true,
 )
 
+/** A slot of the plan on one date ([date], ISO): where foods are planned, as a shopping row names them ([ShoppingItem.foodSlots]). */
+@Serializable
+data class PlannedSlot(val date: String, val slot: MealSlot)
+
 /**
  * Body of `POST /api/plans/{weekStart}/meals/{day}/{slot}/foods` (a food added to the slot, which an empty slot becomes a
  * slot of foods by) and of `PUT .../foods/{id}` (a food replaced): the account's ingredient [ingredientId] in [amount] of

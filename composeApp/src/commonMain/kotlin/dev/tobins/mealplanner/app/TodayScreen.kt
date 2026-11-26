@@ -284,7 +284,9 @@ private fun MealCard(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (!meal.foodsOnly) {
+                    if (meal.foodsOnly) {
+                        FoodRows(meal.foods)
+                    } else {
                         Text(
                             meal.title,
                             style = MaterialTheme.typography.titleMedium,
@@ -292,7 +294,7 @@ private fun MealCard(
                         )
                     }
                     MealNumbers(meal.macrosText(t), meal.cost?.let { "≈ ${formatEuro(it, t.locale)}" })
-                    if (meal.foods.isNotEmpty()) FoodRows(meal.foods)
+                    if (!meal.foodsOnly && meal.foods.isNotEmpty()) FoodRows(meal.foods)
                 }
                 recipePicture(pictureUrl)?.let { RecipePhoto(it, Modifier.size(64.dp)) }
             }

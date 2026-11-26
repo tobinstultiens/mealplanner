@@ -14,12 +14,17 @@ import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Nutrition
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.PlannedSlot
+import dev.tobins.mealplanner.api.PrepInput
+import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.Portion
 import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.Sex
+import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.api.WeekPlan
@@ -92,9 +97,9 @@ class SlotFoodsTest {
     /**
      * An account's catalogue: a banana of 120 g a piece, rice and beef by NEVO, and a protein bar with its label's values
      * (400 kcal, 30 g protein, 5 g fibre in 100 g) and a portion "bar" of 45 g; and a stew of 2 servings of 300 g rice and
-     * 400 g beef, a dinner in the rotation.
+     * 400 g beef, and a beef bowl of one serving, dinners in the rotation.
      */
-    private class Kitchen(val banana: Ingredient, val rice: Ingredient, val beef: Ingredient, val bar: Ingredient, val stew: RecipeSummary, val userId: Long)
+    private class Kitchen(val banana: Ingredient, val rice: Ingredient, val beef: Ingredient, val bar: Ingredient, val stew: RecipeSummary, val bowl: RecipeSummary, val userId: Long)
 
     private suspend fun HttpClient.kitchen(token: String): Kitchen {
         put("/api/profile") { setBody(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000)) }
@@ -106,8 +111,10 @@ class SlotFoodsTest {
         val bar = ingredient(IngredientInput("Protein bar", label = label, portions = listOf(Portion("bar", grams = 45.0))))
         val stew = post("/api/recipes") { setBody(RecipeInput("Stew", 2, "300 | g | rice\n400 | g | beef", "Stew.", mealSlots = listOf(MealSlot.DINNER))) }
             .body<RecipeDetail>().summary
+        val bowl = post("/api/recipes") { setBody(RecipeInput("Beef bowl", 1, "120 | g | rice\n180 | g | beef", "Bowl.", mealSlots = listOf(MealSlot.DINNER))) }
+            .body<RecipeDetail>().summary
         val userId = db.userQueries.selectBySubject("sub-$token").executeAsOne().id
-        return Kitchen(banana, rice, beef, bar, stew, userId)
+        return Kitchen(banana, rice, beef, bar, stew, bowl, userId)
     }
 
     private fun foodsPath(day: Int, slot: MealSlot) = "/api/plans/$week/meals/$day/$slot/foods"
@@ -119,7 +126,9 @@ class SlotFoodsTest {
 
     private suspend fun HttpClient.meal(day: Int, slot: MealSlot): PlannedMeal = plan().days[day].meals.single { it.slot == slot }
 
-    private suspend fun HttpClient.shopping(): Map<String, Double?> = get("/api/plans/$week/shopping").body<ShoppingList>().items.associate { it.name to it.grams }
+    private suspend fun HttpClient.shopping(): Map<String, Double?> = rows().mapValues { it.value.grams }
+
+    private suspend fun HttpClient.rows(): Map<String, ShoppingItem> = get("/api/plans/$week/shopping").body<ShoppingList>().items.associateBy { it.name }
 
     private suspend fun HttpClient.ok(response: HttpResponse): HttpResponse = response.also { assertEquals(HttpStatusCode.OK, it.status, it.bodyAsText()) }
 
@@ -158,6 +167,12 @@ class SlotFoodsTest {
         assertEquals(468.0, rounded(today.expectedKcal))
         // On the week's list by their weight.
         assertEquals(90.0 to 120.0, http.shopping().let { it["Protein bar"] to it["Banana"] })
+        // Each row says the slot its food is planned in, not a recipe, and not the other food of the slot.
+        val snackSlot = PlannedSlot(week, MealSlot.SNACK)
+        assertEquals(listOf(emptyList<String>() to listOf(snackSlot), emptyList<String>() to listOf(snackSlot)), http.rows().let { rows ->
+            listOf("Protein bar", "Banana").map { rows.getValue(it).recipes to rows.getValue(it).foodSlots }
+        })
+        assertEquals(listOf(snackSlot), http.rows().getValue("Banana").toComeFoodSlots)
         // Each starts in the unit it was picked in, the next time it is picked.
         assertEquals(listOf("bar", "piece"), http.get("/api/ingredients").body<List<Ingredient>>().let { all -> listOf(k.bar, k.banana).map { i -> all.single { it.id == i.id }.lastUnit } })
 
@@ -214,6 +229,10 @@ class SlotFoodsTest {
         // On the list with the dinner of foods' banana, and eaten from the stock with the stew.
         val portions = stew.portions
         assertEquals(240.0, http.shopping()["Banana"])
+        // The banana next to the stew is named by its slot, the stew's rice by the stew.
+        val rows = http.rows()
+        assertEquals(emptyList<String>() to listOf(PlannedSlot(week, MealSlot.DINNER), PlannedSlot("2026-11-17", MealSlot.DINNER)), rows.getValue("Banana").let { it.recipes to it.foodSlots })
+        assertEquals(listOf("Stew"), rows.getValue("Rice").recipes)
         http.ok(http.put("/api/plans/$week/meals/1/DINNER/status") { setBody(MealStatus.EATEN) })
         val stock = k.stock()
         assertEquals(880.0, stock["Banana"])
@@ -259,17 +278,39 @@ class SlotFoodsTest {
         assertEquals(foods.foods, http.meal(4, MealSlot.DINNER).foods)
         assertEquals(before.first + 1 to before.second + 1, k.rows())
 
-        // Removed, replaced by a recipe, or emptied of its last food: nothing of it is left.
+        // Removed: nothing of it is left.
         http.ok(http.delete("/api/plans/$week/meals/4/DINNER"))
         assertEquals(before, k.rows(), "removed")
-        http.ok(http.addFood(5, MealSlot.LUNCH, k.rice, 100.0, "g"))
-        http.ok(http.put("/api/plans/$week/meals/5/LUNCH") { setBody(MealChoice(k.stew.id)) })
-        assertEquals(before, k.rows(), "replaced")
-        assertTrue(http.meal(5, MealSlot.LUNCH).foods.isEmpty())
+
+        // A recipe chosen for a slot of foods alone goes in with the foods next to it; another recipe keeps them too.
+        http.ok(http.delete("/api/plans/$week/meals/5/DINNER"))
+        http.ok(http.addFood(5, MealSlot.DINNER, k.banana, 1.0, "piece"))
+        val banana = http.meal(5, MealSlot.DINNER).also { assertTrue(it.foodsOnly) }.foods
+        http.ok(http.put("/api/plans/$week/meals/5/DINNER") { setBody(MealChoice(k.stew.id)) })
+        val chosen = http.meal(5, MealSlot.DINNER)
+        assertEquals(Triple(k.stew.id, "Stew", false), Triple(chosen.recipeId, chosen.title, chosen.foodsOnly))
+        assertEquals(banana, chosen.foods)
+        assertEquals(before.first + 1 to before.second + 1, k.rows(), "the foods stay")
+        http.ok(http.post("/api/plans/$week/meals/5/DINNER/reroll"))
+        val rerolled = http.meal(5, MealSlot.DINNER)
+        assertEquals(k.bowl.id to banana, rerolled.recipeId to rerolled.foods)
+        // Planning the week keeps the slot with its foods as it is.
+        http.ok(http.post("/api/plans/$week/generate"))
+        assertEquals(k.bowl.id to banana, http.meal(5, MealSlot.DINNER).let { it.recipeId to it.foods })
+        // A prepped meal does not take the place of foods, which leave a slot only when taken out.
+        http.ok(http.put("/api/recipes/${k.stew.id}/keeps") { setBody(RecipeKeeps(days = 3)) })
+        val prep = http.post("/api/plans/$week/preps") { setBody(PrepInput(k.stew.id, "2026-11-21", meals = listOf(PrepSlot("2026-11-21", MealSlot.DINNER), PrepSlot("2026-11-22", MealSlot.DINNER)))) }
+        assertEquals(HttpStatusCode.Conflict, prep.status, prep.bodyAsText())
+        // The slot removed: its recipe stays a recipe, its foods go.
+        http.ok(http.delete("/api/plans/$week/meals/5/DINNER"))
+        assertEquals(before, k.rows(), "removed with a recipe")
+
+        // Emptied of its last food, alone or next to a recipe: nothing of it is left.
         http.ok(http.addFood(6, MealSlot.SNACK, k.bar, 1.0, "bar"))
         http.ok(http.delete("${foodsPath(6, MealSlot.SNACK)}/${http.meal(6, MealSlot.SNACK).foods.single().id}"))
         assertTrue(http.plan().days[6].meals.none { it.slot == MealSlot.SNACK }, "the slot is empty again")
         assertEquals(before, k.rows(), "its last food taken out")
+        http.ok(http.put("/api/plans/$week/meals/5/LUNCH") { setBody(MealChoice(k.stew.id)) })
         http.ok(http.addFood(5, MealSlot.LUNCH, k.banana, 1.0, "piece"))
         http.ok(http.delete("${foodsPath(5, MealSlot.LUNCH)}/${http.meal(5, MealSlot.LUNCH).foods.single().id}"))
         assertEquals("Stew" to before, http.meal(5, MealSlot.LUNCH).title to k.rows(), "the last food next to a recipe")

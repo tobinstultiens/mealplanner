@@ -3,6 +3,7 @@ package dev.tobins.mealplanner.server
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.PlannedSlot
 import dev.tobins.mealplanner.api.ShoppingAdvice
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
@@ -81,9 +82,9 @@ class ShoppingListRepository(
         val meals = plans.forShopping(start)
         val sectionOf = sections()
         val lines = recipes.linesWithIngredients(meals.map { it.recipeId })
-        val week = needsOf(meals, sectionOf, lines)
+        val week = needsOf(start, meals, sectionOf, lines)
         // The stock went down for the meals eaten, so what is still needed goes by the meals still to cook.
-        val toCook = needsOf(plans.stillToCook(start, meals), sectionOf, lines).needs.associateBy { it.key }
+        val toCook = needsOf(start, plans.stillToCook(start, meals), sectionOf, lines).needs.associateBy { it.key }
         countTaken(plans.shortfallsIn(start, meals), week.needs.associateBy { it.key }, toCook)
         val ownRows = q.selectExtrasForWeek(userId, start.toString()).executeAsList()
         val own = ownNeeds(ownRows, sectionOf)
@@ -163,8 +164,8 @@ class ShoppingListRepository(
      * What [meals] need, in walking order, with the staples and to-taste names apart. [lines] are their
      * recipes' lines, which the list reads once for the week's meals and for those still to cook.
      */
-    private fun needsOf(meals: List<PlannedMeal>, sectionOf: Map<Long, ShopSection>, lines: Map<Long, RecipeLines>): ShoppingNeeds =
-        shoppingNeeds(planned(meals), lines, sectionOf)
+    private fun needsOf(start: LocalDate, meals: List<PlannedMeal>, sectionOf: Map<Long, ShopSection>, lines: Map<Long, RecipeLines>): ShoppingNeeds =
+        shoppingNeeds(planned(start, meals), lines, sectionOf)
 
     /**
      * Counts what adjusted meals took of what was at home beyond their recipes as their need (issue 226), on
@@ -198,6 +199,7 @@ class ShoppingListRepository(
             toComeGrams = toComeGrams(need, toCook),
             toComePieces = toCook?.pieces?.takeIf { forMeals && it > 0 },
             toComeRecipes = if (forMeals) toCook?.recipes?.toList().orEmpty() else null,
+            toComeFoodSlots = if (forMeals) toCook?.foodSlotsInOrder().orEmpty() else null,
         )
     }
 
@@ -297,9 +299,16 @@ class ShoppingListRepository(
         }
     }
 
-    /** Planned meals as recipes to shop for: each recipe once, with all its portions (leftovers included). */
-    private fun planned(meals: List<PlannedMeal>): List<PlannedRecipe> =
-        meals.groupBy { it.recipeId }.map { (id, ofRecipe) -> PlannedRecipe(id, ofRecipe.first().title, ofRecipe.sumOf { it.portions }) }
+    /**
+     * Planned meals of the week starting [start] as recipes to shop for: each recipe once, with all its portions (leftovers
+     * included). The foods of a slot (issue 358) are a recipe of that slot alone, named by the slot rather than a title.
+     */
+    private fun planned(start: LocalDate, meals: List<PlannedMeal>): List<PlannedRecipe> =
+        meals.groupBy { it.recipeId }.map { (id, ofRecipe) ->
+            val first = ofRecipe.first()
+            val slot = if (first.foodsOnly) PlannedSlot(start.plusDays(first.day.toLong()).toString(), first.slot) else null
+            PlannedRecipe(id, first.title, ofRecipe.sumOf { it.portions }, foodsIn = slot)
+        }
 
     /** The buy-ahead items, and whether their meals are a provisional pick rather than next week's plan. */
     private class BuyAheadAdvice(val items: List<ShoppingItem>, val provisional: Boolean)
@@ -319,7 +328,7 @@ class ShoppingListRepository(
         // Next week still has no plan of its own: the advice is empty, not about planned meals.
         if (limit == 0) return BuyAheadAdvice(emptyList(), provisional = true)
         val (meals, ratings) = if (nextWeek.isNotEmpty()) {
-            planned(nextWeek) to emptyMap()
+            planned(next, nextWeek) to emptyMap()
         } else {
             val targets = profiles.state().targets ?: return BuyAheadAdvice(emptyList(), false)
             val candidates = BuyAhead.provisional(

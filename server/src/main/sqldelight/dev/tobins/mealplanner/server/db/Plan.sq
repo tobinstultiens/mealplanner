@@ -27,6 +27,10 @@ upsertMeal:
 INSERT OR REPLACE INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- The foods of a slot (issue 358), which stay in it when its meal is replaced.
+selectMealFoods:
+SELECT foodsId FROM planMeal WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
+
 setMealFoods:
 UPDATE planMeal SET foodsId = :foodsId WHERE userId = :userId AND weekStart = :weekStart AND day = :day AND slot = :slot;
 

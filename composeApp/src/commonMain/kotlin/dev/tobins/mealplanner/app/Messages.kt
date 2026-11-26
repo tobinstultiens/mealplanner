@@ -384,8 +384,9 @@ enum class Msg(private val english: String, private val dutch: String) {
     // --- Foods in a slot (issue 358)
     PLAN_ADD_FOOD("Add a food…", "Voedingsmiddel toevoegen…"),
     PLAN_REMOVE_FOODS("Remove from the plan", "Uit het plan halen"),
-    FOOD_FOR("{0} on {1}", "{0} op {1}"),
-    FOOD_CHANGE("Change {0}", "{0} wijzigen"),
+    PLAN_ADD_ANOTHER_FOOD("Add another food…", "Nog een voedingsmiddel toevoegen…"),
+    FOOD_SOURCE("{0} on {1}", "{0} op {1}"),
+    FOODS_AND_MORE("{0} + {1} more", "{0} + {1} meer"),
     FOOD_AMOUNT("{0} · {1} kcal", "{0} · {1} kcal"),
     FOOD_UNCOUNTED("{0} · not counted", "{0} · telt niet mee"),
     FOOD_SAVE_FAILED("Could not save the food: {0}", "Het voedingsmiddel opslaan is niet gelukt: {0}"),

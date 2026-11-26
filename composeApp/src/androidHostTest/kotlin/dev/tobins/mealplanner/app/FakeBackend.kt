@@ -178,7 +178,8 @@ class FakeBackend(
     private val writing: Boolean = false,
     /**
      * Foods in slots (issue 358): Monday's snack is two foods alone (two bars of a protein bar, in its catalogue then, and an
-     * egg) and its breakfast has Greek yoghurt next to the oats. Foods added, changed and taken out are kept in any week.
+     * egg) and its breakfast has Greek yoghurt next to the oats; today's (Wednesday's) snack is yoghurt and a bar. Foods
+     * added, changed and taken out are kept in any week.
      */
     private val slotFoods: Boolean = false,
 ) : AutoCloseable {
@@ -454,6 +455,7 @@ class FakeBackend(
         if (!slotFoods) return@also
         it[Triple(WEEK_START, 0, MealSlot.SNACK)] = listOf(foodOf(1, MealFoodInput(proteinBar.id, 2.0, "bar")), foodOf(2, MealFoodInput(12, 1.0, PIECE)))
         it[Triple(WEEK_START, 0, MealSlot.BREAKFAST)] = listOf(foodOf(3, MealFoodInput(3, 150.0, "g")))
+        it[Triple(WEEK_START, 2, MealSlot.SNACK)] = listOf(foodOf(4, MealFoodInput(3, 200.0, "g")), foodOf(5, MealFoodInput(proteinBar.id, 1.0, "bar")))
     }
 
     /** [input] as the server lists a food: its ingredient's name, and its weight and numbers as the shared code counts them. */

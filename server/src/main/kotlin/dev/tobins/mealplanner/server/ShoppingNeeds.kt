@@ -2,6 +2,7 @@ package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.Offer
+import dev.tobins.mealplanner.api.PlannedSlot
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
 import dev.tobins.mealplanner.nutrition.inPortionOf
@@ -11,8 +12,11 @@ import dev.tobins.mealplanner.shopping.bestOffer
 import dev.tobins.mealplanner.units.Dimension
 import kotlin.math.ceil
 
-/** A recipe in the amount to shop for: [portions] of its servings, leftovers included. */
-data class PlannedRecipe(val recipeId: Long, val title: String, val portions: Double)
+/**
+ * A recipe in the amount to shop for: [portions] of its servings, leftovers included. [foodsIn] for the foods of that slot
+ * (issue 358), which a row names by the slot instead of [title].
+ */
+data class PlannedRecipe(val recipeId: Long, val title: String, val portions: Double, val foodsIn: PlannedSlot? = null)
 
 /** One thing to buy, summed over the recipes that use it. [key] identifies it within its list. */
 class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: String, val section: ShopSection) {
@@ -26,6 +30,12 @@ class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: 
     /** What could not be converted to grams and is not the ingredient itself, summed per unit as written, scaled. */
     private val others = linkedMapOf<String, Double>()
     val recipes = linkedSetOf<String>()
+
+    /** The slots whose foods use it (issue 358), which are in no recipe. */
+    val foodSlots = hashSetOf<PlannedSlot>()
+
+    /** [foodSlots] in the order of the week: by date, then slot. */
+    fun foodSlotsInOrder(): List<PlannedSlot> = foodSlots.sortedWith(compareBy({ it.date }, { it.slot.ordinal }))
 
     /** The total weight, when every use could be converted to grams and there is some. */
     val totalGrams: Double? get() = grams.takeIf { gramsKnown && it > 0 }
@@ -64,6 +74,7 @@ class ShoppingNeed(val key: ShoppingKey, val ingredient: Ingredient?, val name: 
         ownPieces = ownPieces.takeIf { it > 0 && otherAmounts.isNotEmpty() },
         category = section.title,
         recipes = recipes.toList(),
+        foodSlots = foodSlotsInOrder(),
         onHand = onHand,
         checked = checked,
         offers = offers,
@@ -106,7 +117,7 @@ fun shoppingNeeds(recipes: List<PlannedRecipe>, lines: Map<Long, RecipeLines>, s
                     section = ingredient?.let { sectionOf[it.id] } ?: ShopSection.OTHER,
                 )
             }
-            need.recipes += planned.title
+            if (planned.foodsIn != null) need.foodSlots += planned.foodsIn else need.recipes += planned.title
             val amount = line.amount ?: continue // "salt to taste": needed, but no quantity
             val grams = gramsOf(line, ingredient)
             if (grams != null) need.grams += grams * factor else need.gramsKnown = false

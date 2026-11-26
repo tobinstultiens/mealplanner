@@ -94,7 +94,6 @@ class PlanRepository(
         val lockedByHand = placed.filter { it.locked }.mapTo(HashSet()) { it.day to it.slot }
         planned.filter { new -> kept.none { it.day == new.day && it.slot == new.slot } }
             .forEach { save(start, it.copy(locked = (it.day to it.slot) in lockedByHand)) }
-        foods.dropUnused()
     }
 
     /**
@@ -154,7 +153,6 @@ class PlanRepository(
                 val new = planned.firstOrNull { it.day == old.day && it.slot == old.slot }
                 if (new != null) save(start, new.copy(locked = false, status = MealStatus.PLANNED)) else q.deleteMeal(userId, start.toString(), old.day.toLong(), old.slot.name)
             }
-            foods.dropUnused()
         }
         return view(start)
     }
@@ -219,7 +217,7 @@ class PlanRepository(
      * Writes [moves] (each meal as it is, or null for a new one, and as it will be) and takes the lunches of the [emptied]
      * days out, in the caller's transaction: what was in a moved meal goes with it, its foods too ([save]), and what is in a
      * slot a meal moves to goes. A meal moved to where it is changes nothing. Every old row goes before a new one is
-     * written, as two meals may swap places; so the foods of what went are deleted only once every meal is written.
+     * written, as two meals may swap places.
      */
     private fun relocate(start: LocalDate, moves: List<Pair<PlannedMeal?, PlannedMeal>>, emptied: Collection<Int>) {
         val week = start.toString()
@@ -232,7 +230,6 @@ class PlanRepository(
             save(start, meal)
             changes.forEach { (id, grams) -> q.insertMealLine(userId, week, meal.day.toLong(), meal.slot.name, id, grams) }
         }
-        foods.dropUnused()
     }
 
     /**
@@ -396,8 +393,6 @@ class PlanRepository(
                     q.deleteMeal(userId, start.toString(), nextLunch.day.toLong(), nextLunch.slot.name)
                 }
             }
-            // The foods of what was in the slot go with it (issue 358).
-            foods.dropUnused()
         }
     }
 
@@ -1203,24 +1198,21 @@ class PlanRepository(
     internal fun saveInBatch(start: LocalDate, meal: PlannedMeal, prepId: Long): Unit = db.writing {
         save(start, meal.copy(leftover = false, locked = true, prep = null))
         q.insertPrepPortion(userId, start.toString(), meal.day.toLong(), meal.slot.name, prepId)
-        foods.dropUnused()
     }
 
-    internal fun deleteMeal(start: LocalDate, day: Int, slot: MealSlot): Unit = db.writing {
-        q.deleteMeal(userId, start.toString(), day.toLong(), slot.name)
-        foods.dropUnused()
-    }
+    internal fun deleteMeal(start: LocalDate, day: Int, slot: MealSlot): Unit = db.writing { q.deleteMeal(userId, start.toString(), day.toLong(), slot.name) }
 
     /**
      * Stores [meal] in its slot, in place of the meal there. What belonged to that meal goes with it (its share of a
      * batch, what it took from the stock, what was in it); its side stays, next to the new main, with what the stock
      * gave for it: the side was added to the slot by hand, and its batch is not made smaller by a new main. So does a
      * skipped prepped meal's share in the box under the slot (issue 265), with what the stock gave for it: it is in a
-     * box in the fridge, whatever is eaten in its place. The meal has the foods it carries ([PlannedMeal.foodsId], issue
-     * 358), so a meal moved keeps its own and a new one has none; the foods of what it replaced are deleted by the caller,
-     * once it wrote everything ([SlotFoods.dropUnused]).
+     * box in the fridge, whatever is eaten in its place. So do the slot's foods (issue 358): they leave it only when taken
+     * out or when the slot is removed, so a new recipe goes in next to them, and a slot of foods alone becomes a recipe with
+     * those foods next to it. A meal moved carries its own ([PlannedMeal.foodsId]) to a slot its move emptied first.
      */
     internal fun save(start: LocalDate, meal: PlannedMeal): Unit = db.writing {
+        val foodsId = meal.foodsId ?: q.selectMealFoods(userId, start.toString(), meal.day.toLong(), meal.slot.name).executeAsOneOrNull()?.foodsId
         val side = q.selectSidePortion(userId, start.toString(), meal.day.toLong(), meal.slot.name).executeAsOneOrNull()
         val sideRef = MealRef(start, meal.day, meal.slot, side = true)
         val taken = if (side == null) emptyList() else stock.taken(sideRef)
@@ -1231,7 +1223,7 @@ class PlanRepository(
             userId, start.toString(), meal.day.toLong(), meal.slot.name, meal.recipeId, meal.title, meal.portions,
             meal.kcal, meal.proteinG, if (meal.leftover) 1 else 0, if (meal.locked) 1 else 0, meal.status.name,
         )
-        meal.foodsId?.let { q.setMealFoods(it, userId, start.toString(), meal.day.toLong(), meal.slot.name) }
+        foodsId?.let { q.setMealFoods(it, userId, start.toString(), meal.day.toLong(), meal.slot.name) }
         if (side != null) {
             q.insertSidePortion(userId, start.toString(), meal.day.toLong(), meal.slot.name, side.prepId, side.portions)
             stock.keep(sideRef, taken)

@@ -32,6 +32,8 @@ import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.MealFood
 import dev.tobins.mealplanner.api.MealFoodInput
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.WeekPlan
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -46,6 +48,20 @@ import kotlin.math.roundToLong
 /** A slot of the plan a food is picked for, with [food] when it is one planned there already, to change or take out. */
 @Serializable
 data class FoodPlace(val day: Int, val slot: MealSlot, val food: MealFood? = null)
+
+/**
+ * What a meal is called where one line names it (a dialog, the skip sheet): its recipe's title, or for foods alone their names
+ * in the app's language, one or two as they are and more as the first and how many follow ("Banana + 2 more"). The
+ * server's title of foods alone is in English, for apps that do not know foods.
+ */
+fun PlannedMeal.shownTitle(t: Strings): String = when {
+    !foodsOnly || foods.isEmpty() -> title
+    foods.size <= 2 -> foods.joinToString(", ") { it.name }
+    else -> t(Msg.FOODS_AND_MORE, foods.first().name, foods.size - 1)
+}
+
+/** Whether a food can go in [meal]'s slot, as the server lets it: not in a skipped meal, which counts for nothing, nor a prepped one. */
+fun takesFoods(meal: PlannedMeal?): Boolean = meal == null || (meal.status != MealStatus.SKIPPED && meal.prep == null)
 
 /**
  * `2 bar · 360 kcal`, `1 piece · 108 kcal`, `150 g · 525 kcal`: a food of a slot in the unit it was picked in, and what it
@@ -174,9 +190,9 @@ fun SlotFoodScreen(api: ApiClient, weekStart: String, place: FoodPlace, onBack: 
         val amount = r.amountValue ?: return@let null
         MealFoodInput(id, amount, r.unit ?: return@let null)
     }
-    val title = if (food == null) t(Msg.FOOD_FOR, t.slot(place.slot, capitalised = true), dayLabel(plusDays(weekStart, place.day), t.locale)) else t(Msg.FOOD_CHANGE, food.name)
+    // The slot alone in the bar, which has one line, and the day as the first line under it: both fit at the largest font.
     SubScreen(
-        title, onBack, snackbar,
+        t.slot(place.slot, capitalised = true), onBack, snackbar,
         actions = {
             TextButton(enabled = input != null && !busy, onClick = {
                 val sent = input ?: return@TextButton
@@ -194,6 +210,7 @@ fun SlotFoodScreen(api: ApiClient, weekStart: String, place: FoodPlace, onBack: 
                 Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
                 verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
             ) {
+                Text(dayLabel(plusDays(weekStart, place.day), t.locale), style = MaterialTheme.typography.titleMedium)
                 if (current == null) {
                     val (found, searchFailed) = rememberFound(api, ingredients, query)
                     IngredientSearch(query, { query = it }, found, searchFailed, enabled = !busy, onNewProduct = { newProduct = it }, onPick = ::pick)

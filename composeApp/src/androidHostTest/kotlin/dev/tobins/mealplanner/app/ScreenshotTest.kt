@@ -475,6 +475,9 @@ enum class Shot(
     PLAN_FOODS(slotFoods = true, heightDp = 1300, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     PLAN_FOODS_NL(slotFoods = true, dutch = true, heightDp = 1350, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     PLAN_FOODS_X2(slotFoods = true, fontScale = 2.0f, heightDp = 2600, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    // Today's snack of two foods alone: the foods where a recipe's title is, then their numbers; no Adjust.
+    TODAY_FOODS(slotFoods = true, heightDp = 1700, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
+    TODAY_FOODS_NL(slotFoods = true, dutch = true, heightDp = 1800, content = { api, _ -> TodayScreen(api, { _, _ -> }, {}) }),
     // A food picked for Tuesday's empty snack: the protein bar found among the account's own, starting in 100 g, its weight
     // and kcal under its name, its units on the button. In both languages and at the largest font.
     SLOT_FOOD_PICKED(

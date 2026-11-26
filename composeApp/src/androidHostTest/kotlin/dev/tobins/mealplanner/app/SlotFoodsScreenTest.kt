@@ -13,6 +13,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -99,7 +100,6 @@ class SlotFoodsScreenTest {
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(tuesday))
         compose.onNode(hasText("Add a food…") and inTuesday).performScrollTo().performClick()
         compose.onNode(hasText("Snack") and hasAnyAncestor(isPopup())).performClick()
-        waitFor("Snack on $tuesday")
 
         // The protein bar, found among the account's own, starts in 100 g; two of its bars instead.
         pick("protein", "Protein bar chocolate")
@@ -109,11 +109,15 @@ class SlotFoodsScreenTest {
         waitFor("Protein bar chocolate · 90 g · 342 kcal")
         compose.onNodeWithText("Add").performClick()
 
-        // Back on the Plan where it was, the snack is the bar, in its unit; a second food comes from the slot's menu.
+        // Back on the Plan where it was, the snack is the bar, in its unit; the day offers foods for every slot, filled or not.
         waitFor(unbrokenParts("2 bar · 342 kcal"))
-        compose.openSwapMenu(tuesday, "snack")
-        compose.onNode(hasText("Add a food…") and hasAnyAncestor(isPopup())).performClick()
-        waitFor("Snack on $tuesday")
+        compose.onNode(hasText("Add a food…") and inTuesday).performScrollTo().performClick()
+        for (slot in listOf("Breakfast", "Lunch", "Dinner", "Snack")) compose.onNode(hasText(slot) and hasAnyAncestor(isPopup())).assertExists()
+        compose.onNode(hasText("Breakfast") and hasAnyAncestor(isPopup())).performClick()
+        pick("yog", "Greek yoghurt")
+        compose.onNodeWithContentDescription("Back").performClick()
+        // A second food goes in the snack from the slot itself.
+        compose.onNode(hasText("Add another food…") and inTuesday).performScrollTo().performClick()
         // The egg starts in a piece, its weight per piece known.
         pick("egg", "Egg")
         waitFor("Egg · 60 g · 86 kcal")
@@ -153,7 +157,6 @@ class SlotFoodsScreenTest {
 
         // The egg of Monday's snack opened: its amount is in its own unit, changed to two pieces, then taken out.
         compose.onNode(egg).performScrollTo().performClick()
-        waitFor("Change Egg")
         val amount = hasText("Amount") and hasSetTextAction()
         compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(amount).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(amount).performTextReplacement("2")

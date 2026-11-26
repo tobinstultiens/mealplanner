@@ -346,9 +346,10 @@ internal fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, t
                     Text(toBuy, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
                 // Stock-up advice is for no meal in particular; a provisional buy-ahead meal is only an example.
-                if (item.sourceMeals.isNotEmpty()) {
+                val sources = item.sources(t)
+                if (sources.isNotEmpty()) {
                     Text(
-                        item.sourceMeals.joinToString().let { if (suggested) t(Msg.SUGGESTED_MEALS, it) else it },
+                        sources.joinToString().let { if (suggested) t(Msg.SUGGESTED_MEALS, it) else it },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
