@@ -46,7 +46,8 @@ fun Modifier.focusRing(): Modifier {
     return onFocusedBoundsChanged { focused = it?.takeIf { coordinates -> coordinates.isAttached }?.boundsInRoot() }
         // Only watching: neither a key nor a pointer event is consumed here.
         .onPreviewKeyEvent {
-            byKeyboard = true
+            // Typing on the screen's keyboard (its delete is a key event) is no moving of the focus by keyboard.
+            if (!fromOnScreenKeyboard(it)) byKeyboard = true
             false
         }
         .pointerInput(Unit) {

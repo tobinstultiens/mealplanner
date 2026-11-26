@@ -306,7 +306,10 @@ food's English or Dutch name) and, after a pause in typing, the NEVO foods it ha
 those makes it an ingredient of the account first (`POST /api/ingredients`, named after the food, " (NEVO)" added when
 the name is taken). A picked row starts at one piece when the ingredient has a weight per piece, else 100 ml of a food
 NEVO counts per 100 ml or 100 g, with its amount selected for typing (the keyboard's Next goes on to the next row's amount,
-and from the last to the search); its unit is chosen from those the ingredient has
+and from the last to the search). While the editor is open the keyboard makes room instead of sliding the screen up
+(Android: the window's soft input mode is "adjust resize" and the column ends above the keyboard, `imePadding`), and
+the focused amount field and what the search finds are brought wholly into view as they come and as the keyboard
+opens. Its unit is chosen from those the ingredient has
 (grams, millilitres when a millilitre's weight is known, pieces when a piece's weight is, and the unit a line of the site
 had), and another unit keeps the quantity where it can be worked out. Nothing is typed in the import format, and a
 picked row is saved with its ingredient (`lines`). The bar under the title says what a serving has and what is not
@@ -804,7 +807,7 @@ Home, End, Page Up and Page Down scroll the open list (`ScrollKeys.wasmJs.kt`; n
 crash page up the focus stays on its Reload button. The texts that say "tap" on a phone say "click" in the browser
 (the `_BROWSER` messages, chosen with `Strings.onWeb`).
 On a wide window a wheel turned over the empty margins scrolls the column (`MarginWheel.wasmJs.kt`: the event is
-sent on from the middle of the column). The focus ring shows only while the keyboard was the last thing used
+sent on from the middle of the column). The focus ring shows only while the keyboard was the last thing used (on Android the keys an on-screen keyboard sends, such as its delete, do not count: issue 342)
 and stays inside the window. The recipe picker's search field has the focus when it opens, in the browser only. Tab out of a text field leaves
 the page's focus on `body`, where Enter and Space reach nothing; it is given back to the app (`PageBehaviour.wasmJs.kt`).
 `<html lang>` follows the app's language.

@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
@@ -302,5 +303,34 @@ class RecipeEditorScreenTest {
         amount(1).assertIsFocused()
         amount(1).performImeAction()
         search.assertIsFocused()
+    }
+
+    /** Whether [node] lies wholly within the part of the editor's scrolling column that shows. */
+    private fun whollyShown(node: SemanticsNodeInteraction): Boolean {
+        val shown = compose.onNode(hasScrollAction()).fetchSemanticsNode().boundsInRoot
+        val bounds = node.fetchSemanticsNode().boundsInRoot
+        return bounds.top >= shown.top && bounds.bottom <= shown.bottom
+    }
+
+    /**
+     * On a phone's screen, with rows above the search: the row just picked shows its whole amount field, and what a search
+     * finds comes into view by itself while typing, without scrolling by hand. The keyboard is not drawn here; on a phone
+     * the scrolling column ends above it ([KeyboardMakesRoom], `imePadding`), so the same holds above the keyboard.
+     */
+    @Test
+    fun theRowPickedAndWhatTheSearchFindsComeIntoViewByThemselves() {
+        showEditor(null)
+        waitFor("Name")
+        for ((query, name) in listOf("chick" to "Chicken thigh fillet", "yog" to "Greek yoghurt", "spin" to "Spinach")) {
+            pick(query, name)
+            val picked = amount(amounts().fetchSemanticsNodes().size - 1)
+            picked.assertIsFocused()
+            assertTrue(whollyShown(picked), "the amount field of $name")
+        }
+        search.performTextReplacement("egg")
+        val egg = hasText("Egg") and hasText("per 100", substring = true) and hasClickAction()
+        compose.waitUntil(timeoutMillis = 10_000) { compose.onAllNodes(egg).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitForIdle()
+        assertTrue(whollyShown(compose.onNode(egg)), "what the search found")
     }
 }

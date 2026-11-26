@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,10 +8,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -48,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -137,6 +145,8 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
     val ready = ingredients != null && baseline != null
     // One that could not be loaded has nothing to lose.
     val leave = UnsavedChangesGuard(baseline != null && draft != baseline, onCancel)
+    // The keyboard makes room below the column instead of sliding the window, title and totals, up under the status bar.
+    KeyboardMakesRoom()
 
     /** The ingredient [found] is: one of the account's, or one made now for a NEVO food it did not have (null when that failed). */
     suspend fun ingredientOf(found: Found): Ingredient? = when (found) {
@@ -240,7 +250,9 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
         }
         val enabled = !saving
         Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
+            // The column ends above the keyboard (its height less the navigation bar the padding has already), so what it
+            // brings into view is not behind the keyboard.
+            Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
             verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
         ) {
             OutlinedTextField(
@@ -440,6 +452,7 @@ internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t:
 private fun AmountField(row: DraftRow, focus: FocusRequester, enabled: Boolean, modifier: Modifier, onAmount: (String) -> Unit) {
     val t = LocalStrings.current
     var field by remember(row.key) { mutableStateOf(TextFieldValue(row.amount)) }
+    var focused by remember { mutableStateOf(false) }
     // Changed elsewhere (another unit converts it): the new amount, with the cursor at its end.
     val shown = if (field.text == row.amount) field else TextFieldValue(row.amount, TextRange(row.amount.length))
     OutlinedTextField(
@@ -454,10 +467,26 @@ private fun AmountField(row: DraftRow, focus: FocusRequester, enabled: Boolean, 
         enabled = enabled,
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
-        modifier = modifier.focusRequester(focus).onFocusChanged { state ->
+        // The whole field, label and border included, not only the line the cursor is on.
+        modifier = modifier.keptInView(focused).focusRequester(focus).onFocusChanged { state ->
+            focused = state.isFocused
             if (state.isFocused) field = shown.copy(selection = TextRange(0, shown.text.length))
         },
     )
+}
+
+/**
+ * Brings what this marks wholly into view of the scrolling screen while [wanted]: when it becomes so, when [content]
+ * changes, and each time the on-screen keyboard's height changes (as it opens, the screen's column ends higher up,
+ * [KeyboardMakesRoom]), so that it ends above the keyboard rather than behind it.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Modifier.keptInView(wanted: Boolean, content: Any? = null): Modifier {
+    val requester = remember { BringIntoViewRequester() }
+    val keyboard = WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(wanted, content, keyboard) { if (wanted) requester.bringIntoView() }
+    return bringIntoViewRequester(requester)
 }
 
 /** The row's unit, a button that opens the units the ingredient has ([unitChoices]). */
@@ -544,13 +573,15 @@ internal fun IngredientSearch(
     onPick: (Found) -> Unit,
 ) {
     val t = LocalStrings.current
-    Column {
+    var typing by remember { mutableStateOf(false) }
+    // What it found shows below the field, where the keyboard would cover it on a phone: brought into view as it comes.
+    Column(Modifier.keptInView(typing && found.isNotEmpty(), found)) {
         OutlinedTextField(
             query, onQuery,
             label = { Text(t(Msg.EDITOR_ADD_INGREDIENT)) },
             supportingText = { Text(t(Msg.EDITOR_SEARCH_HINT)) },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().onFocusChanged { typing = it.isFocused },
         )
         failed?.let { Text(failureSentence(it, Msg.EDITOR_SEARCH_FAILED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         if (query.trim().length >= 2 && found.isEmpty() && failed == null) {
