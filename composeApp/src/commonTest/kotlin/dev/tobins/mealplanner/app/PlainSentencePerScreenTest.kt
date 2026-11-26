@@ -4,7 +4,9 @@ import dev.tobins.mealplanner.api.ActivityLevel
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.Profile
+import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.Store
 import io.ktor.client.engine.mock.MockEngine
@@ -36,12 +38,19 @@ class PlainSentencePerScreenTest {
     }
 
     @Test
-    fun theRecipeEditorSaysItCouldNotLoadSaveOrDelete() = runTest {
-        val input = RecipeInput("Soup", 2, "1 | pc | leek")
-        assertPlain(Msg.EDITOR_LOAD_FAILED, "Could not load the recipe: the server could not be reached.", "Het recept kon niet worden geladen: de server is niet bereikbaar.") { offline.recipe(1) }
+    fun theRecipeEditorSaysItCouldNotSaveAddAFoodOrLookLinesUp() = runTest {
+        val input = RecipeInput("Soup", 2, lines = listOf(RecipeLineInput(1.0, "piece", "leek")))
         assertPlain(Msg.SAVE_FAILED, "Could not save: the server could not be reached.", "Opslaan is niet gelukt: de server is niet bereikbaar.") { offline.updateRecipe(1, input) }
         assertPlain(Msg.SAVE_FAILED, "Could not save: the server could not be reached.", "Opslaan is niet gelukt: de server is niet bereikbaar.") { offline.createRecipe(input) }
-        assertPlain(Msg.DELETE_FAILED, "Could not delete: the server could not be reached.", "Verwijderen is niet gelukt: de server is niet bereikbaar.") { offline.deleteRecipe(1) }
+        assertPlain(Msg.EDITOR_ADD_FAILED, "Could not add the food: the server could not be reached.", "Het voedingsmiddel toevoegen is niet gelukt: de server is niet bereikbaar.") {
+            offline.createIngredient(IngredientInput("Leek", nevoCode = 1))
+        }
+        assertPlain(Msg.EDITOR_LOOKUP_FAILED, "Could not look the pasted lines up: the server could not be reached.", "De geplakte regels opzoeken is niet gelukt: de server is niet bereikbaar.") {
+            offline.readLines(input.lines!!)
+        }
+        assertPlain(Msg.EDITOR_SEARCH_FAILED, "Could not search the NEVO foods: the server could not be reached.", "Zoeken in de NEVO-voedingsmiddelen is niet gelukt: de server is niet bereikbaar.") {
+            offline.searchFoods("leek")
+        }
     }
 
     @Test

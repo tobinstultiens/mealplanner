@@ -254,7 +254,8 @@ fun RecipeDetailScreen(
         AlertDialog(
             onDismissRequest = { confirmingDelete = false },
             title = { Text(t(Msg.DELETE_RECIPE_TITLE, opened.title)) },
-            text = { Text(t(Msg.DELETE_RECIPE_TEXT)) },
+            // A copy of a cooking-site recipe goes for good too, but the site's file comes back to the bank.
+            text = { Text(t(if (opened.source == RecipeSource.COOKING_SITE) Msg.DELETE_TAKEN_RECIPE_TEXT else Msg.DELETE_RECIPE_TEXT)) },
             confirmButton = { TextButton(onClick = { confirmingDelete = false; delete() }) { Text(t(Msg.DELETE), color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text(t(Msg.CANCEL)) } },
         )
@@ -263,14 +264,14 @@ fun RecipeDetailScreen(
     KeepScreenOn(cookMode)
     // Back from cook mode goes to the recipe, back from the recipe leaves it.
     SubScreen(opened?.title ?: t(Msg.RECIPE), if (cookMode) ({ cookMode = false }) else onBack, snackbar = snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
-        val madeHere = opened?.source.let { it == RecipeSource.MANUAL || it == RecipeSource.GENERATED }
-        if (madeHere) BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
-        // What leaves a recipe: from the cooking site it goes back to the bank, one made in the app is deleted.
+        // Every one of my recipes is edited in the app (issue 342), also one taken from the cooking site; the bank's is the site's.
         if (opened != null && opened.added) {
-            if (madeHere) {
-                OverflowMenu(MenuAction(AppIcons.Close, t(Msg.DELETE)) { confirmingDelete = true })
-            } else {
+            BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
+            // What leaves a recipe: one of the cooking site not changed in the app goes back to the bank, any other is deleted.
+            if (opened.hasBank()) {
                 OverflowMenu(MenuAction(AppIcons.Close, t(Msg.REMOVE_FROM_MINE)) { putBack(opened.title, opened.inRotation) })
+            } else {
+                OverflowMenu(MenuAction(AppIcons.Close, t(Msg.DELETE)) { confirmingDelete = true })
             }
         }
     }) { padding ->
@@ -371,7 +372,7 @@ fun RecipeDetailScreen(
                         // Only a meal can be prepped, not a building block. Busy while saving, so a second choice is made on
                         // the answer to the first and does not send the other number as the screen last drew it.
                         if (recipe.summary.kind == RecipeKind.MEAL) {
-                            KeepsSettings(recipe.summary, enabled = !acting) { keeps ->
+                            KeepsSettings(RecipeKeeps(recipe.summary.keepsDays, recipe.summary.keepsVacuumDays), enabled = !acting) { keeps ->
                                 acting = true
                                 scope.launch {
                                     val result = load { api.setRecipeKeeps(recipeId, keeps) }
@@ -578,13 +579,13 @@ private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun KeepsSettings(summary: RecipeSummary, enabled: Boolean, onChange: (RecipeKeeps) -> Unit) {
+internal fun KeepsSettings(keeps: RecipeKeeps, enabled: Boolean, onChange: (RecipeKeeps) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
         Text(t(Msg.KEEPS_ONCE_MADE), style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            KeepsChoice(Msg.KEEPS_IN_A_BOX, summary.keepsDays, enabled) { onChange(RecipeKeeps(it, summary.keepsVacuumDays)) }
-            KeepsChoice(Msg.KEEPS_VACUUM, summary.keepsVacuumDays, enabled) { onChange(RecipeKeeps(summary.keepsDays, it)) }
+            KeepsChoice(Msg.KEEPS_IN_A_BOX, keeps.days, enabled) { onChange(keeps.copy(days = it)) }
+            KeepsChoice(Msg.KEEPS_VACUUM, keeps.vacuumDays, enabled) { onChange(keeps.copy(vacuumDays = it)) }
         }
     }
 }

@@ -40,6 +40,22 @@ expect fun systemColorScheme(dark: Boolean): ColorScheme?
 expect fun KeepScreenOn(enabled: Boolean)
 
 /**
+ * While this call is part of the composition, the on-screen keyboard makes room instead of sliding the window up: on
+ * Android the window's soft input mode is "adjust resize", so the keyboard's height comes to the screen as
+ * `WindowInsets.ime` (for `imePadding`) and the top bar stays where it is; leaving restores the mode it had. For a
+ * screen of many fields (the recipe editor), where the window sliding up hides its top under the status bar and still
+ * leaves a field half behind the keyboard. The browser does nothing.
+ */
+@Composable
+expect fun KeyboardMakesRoom()
+
+/**
+ * Whether [event] came from an on-screen keyboard (Android sends some keys of it, such as delete, as key events), which
+ * is typing in a field, not moving the focus with a keyboard. The browser has none.
+ */
+internal expect fun fromOnScreenKeyboard(event: androidx.compose.ui.input.key.KeyEvent): Boolean
+
+/**
  * Whether the app is in front: on screen, not behind another app (Android) or in a hidden browser
  * tab. The shopping list keeps itself current only then, and is fetched again when it comes back.
  * The platform keeps the [AppFront] current for as long as this call is part of the composition.

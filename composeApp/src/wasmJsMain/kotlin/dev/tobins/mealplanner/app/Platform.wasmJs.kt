@@ -103,6 +103,12 @@ actual fun KeepScreenOn(enabled: Boolean) {
     }
 }
 
+/** The page has no window of its own to resize for a keyboard; a phone's browser makes room itself. */
+@Composable
+actual fun KeyboardMakesRoom() = Unit
+
+internal actual fun fromOnScreenKeyboard(event: androidx.compose.ui.input.key.KeyEvent): Boolean = false
+
 @JsFun("() => document.visibilityState === 'visible'")
 private external fun pageVisible(): Boolean
 

@@ -10,7 +10,9 @@ import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.AddOn
 import dev.tobins.mealplanner.api.AddedInput
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.IngredientSection
+import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.ManyAddedInput
 import dev.tobins.mealplanner.api.ManyRotationInput
 import dev.tobins.mealplanner.api.MappingRequest
@@ -33,6 +35,7 @@ import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.Routines
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.PrepInput
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKeeps
@@ -288,6 +291,12 @@ class ApiClient(
 
     suspend fun ingredients(): List<Ingredient> = http.get("api/ingredients").body()
 
+    /** Adds an ingredient to the account's catalogue, such as one for a NEVO food picked in the recipe editor. */
+    suspend fun createIngredient(input: IngredientInput): Ingredient = http.post("api/ingredients") {
+        contentType(ContentType.Application.Json)
+        setBody(input)
+    }.body()
+
     suspend fun setStaple(ingredientId: Long, staple: Boolean): Pantry =
         (if (staple) http.put("api/pantry/staples/$ingredientId") else http.delete("api/pantry/staples/$ingredientId")).body()
 
@@ -418,6 +427,15 @@ class ApiClient(
     suspend fun updateRecipe(id: Long, input: RecipeInput): RecipeDetail = http.put("api/recipes/$id") {
         contentType(ContentType.Application.Json)
         setBody(input)
+    }.body()
+
+    /**
+     * [lines] as a recipe saved with them would have them, each with the ingredient it means for the account, without
+     * saving anything (issue 342): how the editor looks pasted lines up.
+     */
+    suspend fun readLines(lines: List<RecipeLineInput>): List<MappedLine> = http.post("api/recipes/lines") {
+        contentType(ContentType.Application.Json)
+        setBody(lines)
     }.body()
 
     suspend fun deleteRecipe(id: Long) {

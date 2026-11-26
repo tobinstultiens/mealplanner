@@ -22,6 +22,8 @@ import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.MappedLine
+import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.Me
 import dev.tobins.mealplanner.api.MealAdjustment
 import dev.tobins.mealplanner.api.NotificationFacts
@@ -342,6 +344,28 @@ class AccountsTest {
         assertEquals(HttpStatusCode.NotFound, bob.delete("/api/recipes/${alicesStew.summary.id}").status)
         assertEquals(alicesStew, alice.get("/api/recipes/${alicesStew.summary.id}").body<RecipeDetail>())
         assertEquals(listOf(alicesBeef.id), alicesStew.ingredients.map { it.ingredientId })
+    }
+
+    /**
+     * Lines read as a save would read them (`POST /api/recipes/lines`, issue 342) are read with the asking account's
+     * catalogue and links of texts alone: Bob's text that Alice linked means nothing to him, and Alice's ingredient on a
+     * line of his is refused as one that does not exist. Nothing is saved for either.
+     */
+    @Test
+    fun linesAreLookedUpInTheAskingAccountsCatalogueAlone() = testApplication {
+        start()
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val alicesBeef = alice.post("/api/ingredients") { setBody(IngredientInput("Beef")) }.body<Ingredient>()
+        alice.put("/api/mappings") { setBody(MappingRequest("rundvlees", ingredientId = alicesBeef.id)) }
+        val pasted = listOf(RecipeLineInput(400.0, "g", "rundvlees"))
+
+        assertEquals(listOf(alicesBeef.id), alice.post("/api/recipes/lines") { setBody(pasted) }.body<List<MappedLine>>().map { it.ingredientId })
+        assertEquals(listOf(null), bob.post("/api/recipes/lines") { setBody(pasted) }.body<List<MappedLine>>().map { it.ingredientId })
+        val withHers = bob.post("/api/recipes/lines") { setBody(listOf(RecipeLineInput(400.0, "g", "beef", alicesBeef.id))) }
+        assertEquals(HttpStatusCode.NotFound, withHers.status)
+        assertEquals(emptyList(), bob.get("/api/recipes").body<List<RecipeSummary>>())
+        assertEquals(emptyList(), alice.get("/api/recipes").body<List<RecipeSummary>>())
     }
 
     @Test

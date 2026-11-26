@@ -50,6 +50,21 @@ actual fun KeepScreenOn(enabled: Boolean) {
     }
 }
 
+@Composable
+actual fun KeyboardMakesRoom() {
+    val window = androidx.activity.compose.LocalActivity.current?.window ?: return
+    androidx.compose.runtime.DisposableEffect(window) {
+        val before = window.attributes.softInputMode
+        val adjust = android.view.WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST
+        window.setSoftInputMode((before and adjust.inv()) or android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        onDispose { window.setSoftInputMode(before) }
+    }
+}
+
+/** An input method marks the keys it sends so (Gboard's delete, for one); a hardware keyboard's never are. */
+internal actual fun fromOnScreenKeyboard(event: androidx.compose.ui.input.key.KeyEvent): Boolean =
+    event.nativeKeyEvent.flags and android.view.KeyEvent.FLAG_SOFT_KEYBOARD != 0
+
 /**
  * Started means visible, also in split screen or behind a dialog; stopped means behind another app or
  * the screen is off. Read through the composition as before: Android recomposes on a lifecycle change.

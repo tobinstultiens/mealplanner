@@ -628,6 +628,29 @@ class ReleasedAppTest {
     }
 
     /**
+     * A line a newer app saved with a `|` or a line break in its text, unit or group (issue 342) is stored in the form the
+     * installed app's editor reads back: a line break as a space, a `|` in a text as it is, which the import format reads as
+     * part of the text after the second `|`. The installed app shows the lines as that text, one per line and without the
+     * headings (it never showed them), and saves them as they were.
+     */
+    @Test
+    fun theInstalledAppSavesAgainALineWhoseTextHadABarOrALineBreak() = testApplication {
+        val http = start()
+        val lines = """[{"amount":500.0,"unit":"g","text":"chicken | skin on"},{"amount":2.0,"unit":"tbsp\n","text":"soy\nsauce","group":"Sauce\r\nand dip"},""" +
+            """{"text":"salt\nto taste | or not","group":"Sauce\r\nand dip"}]"""
+        val made = http.post("/api/recipes") { setBody("""{"title":"Bowl","servings":2,"lines":$lines}""") }.read<RecipeDetail>()
+        assertEquals(listOf("chicken | skin on", "soy sauce", "salt to taste | or not"), made.ingredients.map { it.line.item })
+        assertEquals(listOf(null, "Sauce and dip", "Sauce and dip"), made.ingredients.map { it.line.group })
+
+        // As the installed editor writes a line: `amount | unit | item`, the amount in English, an empty part for none.
+        val text = made.ingredients.joinToString("\n") { mapped ->
+            with(mapped.line) { "${amount?.let { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() }.orEmpty()} | ${unit.orEmpty()} | $item" }
+        }
+        val saved = http.put("/api/recipes/${made.summary.id}") { setBody(RecipeInput("Bowl", 2, text)) }.read<RecipeDetail>()
+        assertEquals(made.ingredients.map { it.line.copy(group = null) }, saved.ingredients.map { it.line })
+    }
+
+    /**
      * No enum of the frozen types may have a value the current one lacks: an installed app fails to
      * read a response with a value it does not know, whatever else the response holds. The check
      * covers every enum under `released/` by itself, so a new frozen enum is covered after a freeze.

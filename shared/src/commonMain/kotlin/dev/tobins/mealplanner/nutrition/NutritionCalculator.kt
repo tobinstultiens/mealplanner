@@ -3,8 +3,10 @@ package dev.tobins.mealplanner.nutrition
 import dev.tobins.mealplanner.api.FoodBasis
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.Nutrition
+import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.recipes.IngredientLine
+import dev.tobins.mealplanner.recipes.toIngredientLine
 import dev.tobins.mealplanner.units.Dimension
 
 /** How much of an ingredient a line stands for. */
@@ -80,6 +82,18 @@ object NutritionCalculator {
             uncounted = uncounted,
             unquantified = unquantified.distinct(),
         )
+    }
+
+    /**
+     * What a recipe saved with [lines], each with the ingredient it means, has per serving of [servings]; null when no
+     * line has an amount, as a saved recipe has none then. Each line is read as the server stores it
+     * ([toIngredientLine]) and summed by [perServing], as the saved recipe is: so the totals the editor shows while a
+     * recipe is written are the saved recipe's (issue 342).
+     */
+    fun ofLines(lines: List<Pair<RecipeLineInput, Ingredient?>>, servings: Int): RecipeNutrition? {
+        val read = lines.mapNotNull { (input, ingredient) -> input.toIngredientLine()?.let { it to ingredient } }
+        if (read.none { (line, _) -> line.amount != null }) return null
+        return perServing(read, servings)
     }
 
     /** Words that mark a line without an amount as seasoning, garnish or optional: fine to leave out. */
