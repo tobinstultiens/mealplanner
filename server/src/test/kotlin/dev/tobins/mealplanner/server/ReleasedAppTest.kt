@@ -32,6 +32,7 @@ import dev.tobins.mealplanner.released.api.ProfileState
 import dev.tobins.mealplanner.released.api.RatingInput
 import dev.tobins.mealplanner.released.api.RecipeDetail
 import dev.tobins.mealplanner.released.api.RecipeInput
+import dev.tobins.mealplanner.released.api.RecipeLineInput
 import dev.tobins.mealplanner.released.api.RecipeSettings
 import dev.tobins.mealplanner.released.api.RecipeKind
 import dev.tobins.mealplanner.released.api.RecipeSummary
@@ -625,6 +626,42 @@ class ReleasedAppTest {
         // Its text changed: no ingredient of its own any more, and nothing the account linked that text to.
         val renamed = http.put("/api/recipes/$id") { setBody(RecipeInput("Bowl", 2, "500 | g | mystery meat, diced\n200 | g | rice")) }.read<RecipeDetail>()
         assertEquals(listOf(null, rice), renamed.ingredients.map { it.ingredientId })
+    }
+
+    /**
+     * A recipe with a line in a named portion of a product (issue 351), made in a newer app: "2 bar" of a protein bar whose
+     * portion "bar" is 45 g. The installed app reads the recipe, the line in it and the product, which it knows as an
+     * ingredient without a food. Its row editor (v0.1.12) sends the row back through `lines` with the unit it read, the
+     * portion's name; an app before it sends the text of the import format. Either way the line keeps its ingredient and
+     * still counts by the portion, as it did.
+     */
+    @Test
+    fun theInstalledAppReadsAndSavesARecipeWithALineInANamedPortion() = testApplication {
+        val http = start()
+        val product = """{"name":"Protein bar","label":{"basis":"PER_100_G","per100":{"kcal":400.0,"proteinG":30.0,"fatG":null,"saturatedFatG":null,""" +
+            """"carbsG":null,"sugarG":null,"fibreG":null,"sodiumMg":null}},"portions":[{"name":"bar","grams":45.0}]}"""
+        val bar = http.post("/api/ingredients") { setBody(product) }.read<Ingredient>()
+        val lines = """[{"amount":2.0,"unit":"bar","text":"Protein bar","ingredientId":${bar.id}}]"""
+        val made = http.post("/api/recipes") { setBody("""{"title":"Snack","servings":1,"mealSlots":["SNACK"],"lines":$lines}""") }.read<RecipeDetail>()
+        val id = made.summary.id
+        fun RecipeDetail.counted() = Triple(ingredients.single().ingredientId, ingredients.single().grams, summary.nutrition?.perServing?.kcal)
+        assertEquals(Triple(bar.id, 90.0, 360.0), made.counted())
+        assertEquals(made, http.read<RecipeDetail>("/api/recipes/$id"))
+        assertEquals(bar.id, http.read<List<Ingredient>>("/api/ingredients").single { it.name == "Protein bar" }.id)
+        assertTrue(http.read<List<RecipeSummary>>("/api/recipes").single { it.id == id }.nutrition!!.complete)
+
+        // v0.1.12's editor: each row as it read it, the amount changed to 3; it sends no text.
+        val rows = made.ingredients.map { with(it.line) { RecipeLineInput(3.0, unit, item, it.ingredientId, group) } }
+        val body = releasedJson.encodeToString(RecipeInput("Snack", 1, mealSlots = listOf(MealSlot.SNACK), lines = rows))
+        assertTrue(""""unit":"bar"""" in body && """"ingredients":""""" in body, body)
+        val edited = http.put("/api/recipes/$id") { setBody(body) }.read<RecipeDetail>()
+        assertEquals(Triple(bar.id, 135.0, 540.0), edited.counted())
+        assertEquals("bar", edited.ingredients.single().line.unit)
+
+        // An app before it: the text of the import format, as its editor writes a line.
+        val text = http.put("/api/recipes/$id") { setBody(RecipeInput("Snack", 1, "2 | bar | Protein bar", mealSlots = listOf(MealSlot.SNACK))) }.read<RecipeDetail>()
+        assertEquals(Triple(bar.id, 90.0, 360.0), text.counted())
+        assertEquals(made.ingredients, text.ingredients)
     }
 
     /**

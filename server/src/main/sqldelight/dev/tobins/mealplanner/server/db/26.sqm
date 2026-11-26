@@ -1,0 +1,26 @@
+-- Version 26 -> 27: an ingredient's own nutrition and its named portions (issue 351). Ten columns are added, each NULL,
+-- and a table of its own; no table is rebuilt and no row is touched, so no foreign key cascades. Every ingredient starts
+-- without values of its own, so it counts by its NEVO food as before, and without portions, so every line, one in a
+-- unit such as "bar" too, weighs what it weighed.
+
+ALTER TABLE ingredient ADD COLUMN labelBasis TEXT;
+ALTER TABLE ingredient ADD COLUMN labelKcal REAL;
+ALTER TABLE ingredient ADD COLUMN labelProteinG REAL;
+ALTER TABLE ingredient ADD COLUMN labelFatG REAL;
+ALTER TABLE ingredient ADD COLUMN labelSaturatedFatG REAL;
+ALTER TABLE ingredient ADD COLUMN labelCarbsG REAL;
+ALTER TABLE ingredient ADD COLUMN labelSugarG REAL;
+ALTER TABLE ingredient ADD COLUMN labelFibreG REAL;
+ALTER TABLE ingredient ADD COLUMN labelSodiumMg REAL;
+ALTER TABLE ingredient ADD COLUMN labelSource TEXT;
+
+CREATE TABLE ingredientPortion (
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    nameKey TEXT NOT NULL,
+    name TEXT NOT NULL,
+    grams REAL,
+    ml REAL,
+    position INTEGER NOT NULL,
+    removed INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (ingredientId, nameKey)
+);

@@ -13,7 +13,31 @@ CREATE TABLE ingredient (
     negligible INTEGER NOT NULL DEFAULT 0,  -- herbs, spices, leaveners: left out of nutrition
     section TEXT,                      -- shop section set by hand (a ShopSection key); NULL: automatic
     keeps INTEGER,                     -- keeps until next week, set by hand: 1 or 0; NULL: by its shop section
+    labelBasis TEXT,                   -- PER_100_G or PER_100_ML: its label's values count, not the NEVO food's; NULL: none
+    labelKcal REAL,                    -- the label's values per 100 of labelBasis; NULL: the label does not give it
+    labelProteinG REAL,
+    labelFatG REAL,
+    labelSaturatedFatG REAL,
+    labelCarbsG REAL,
+    labelSugarG REAL,
+    labelFibreG REAL,
+    labelSodiumMg REAL,                -- the label's salt / 2.5, as NEVO gives sodium
+    labelSource TEXT,                  -- where the values came from; NULL: typed from the label
     UNIQUE (userId, name)
+);
+
+-- An ingredient's named portions (issue 351): "bar" of 45 g, "glass" of 250 ml. A recipe line in one has the portion's
+-- name as its unit and is weighed by it when counted. A portion taken away stays as removed, so that a line in it is
+-- counted as nothing rather than as pieces; given again, it is the same row. Its account is its ingredient's.
+CREATE TABLE ingredientPortion (
+    ingredientId INTEGER NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    nameKey TEXT NOT NULL,             -- the name trimmed and in lower case: names are told apart without regard to case
+    name TEXT NOT NULL,
+    grams REAL,                        -- its weight, or
+    ml REAL,                           -- its volume; exactly one of the two
+    position INTEGER NOT NULL,
+    removed INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (ingredientId, nameKey)
 );
 
 -- Remembers which ingredient a recipe line's text means. Keyed by the normalised
@@ -48,6 +72,39 @@ updateIngredient:
 UPDATE ingredient
 SET name = ?, nevoCode = ?, gramsPerPiece = ?, gramsPerMl = ?, category = ?, pricePerKg = ?, isStaple = ?, negligible = ?
 WHERE userId = ? AND id = ?;
+
+-- The values of an ingredient's own label; every one NULL for none.
+setLabel:
+UPDATE ingredient
+SET labelBasis = ?, labelKcal = ?, labelProteinG = ?, labelFatG = ?, labelSaturatedFatG = ?, labelCarbsG = ?, labelSugarG = ?,
+    labelFibreG = ?, labelSodiumMg = ?, labelSource = ?
+WHERE userId = ? AND id = ?;
+
+-- The portions of the account's ingredients, those removed too, in their order.
+selectPortions:
+SELECT p.* FROM ingredientPortion p JOIN ingredient i ON i.id = p.ingredientId
+WHERE i.userId = ?
+ORDER BY p.ingredientId, p.removed, p.position;
+
+selectPortionsOf:
+SELECT p.* FROM ingredientPortion p JOIN ingredient i ON i.id = p.ingredientId
+WHERE i.userId = ? AND p.ingredientId = ?
+ORDER BY p.removed, p.position;
+
+-- Every portion of the ingredient as removed, before those it keeps are put back (insertPortion, keepPortion).
+removePortions:
+UPDATE ingredientPortion SET removed = 1
+WHERE ingredientId = (SELECT id FROM ingredient WHERE userId = ? AND id = ?);
+
+-- A portion new to the ingredient; only for an ingredient of the account.
+insertPortion:
+INSERT OR IGNORE INTO ingredientPortion (ingredientId, nameKey, name, grams, ml, position, removed)
+SELECT id, ?, ?, ?, ?, ?, 0 FROM ingredient WHERE userId = ? AND id = ?;
+
+-- A portion given again, or with another name's case, weight or place: kept, and no longer removed.
+keepPortion:
+UPDATE ingredientPortion SET name = ?, grams = ?, ml = ?, position = ?, removed = 0
+WHERE ingredientId = (SELECT id FROM ingredient WHERE userId = ? AND id = ?) AND nameKey = ?;
 
 -- Shop sections the account set by hand.
 selectSectionsByHand:

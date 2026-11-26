@@ -127,6 +127,7 @@ private val HANGS_OFF = mapOf(
     "recipeIngredient" to "a recipe's lines, of the account through recipe.userId",
     "onHand" to "put on hand by hand, of the account through ingredient.userId",
     "stock" to "what the shopping list put at home, of the account through ingredient.userId",
+    "ingredientPortion" to "an ingredient's named portions (issue 351), of the account through ingredient.userId",
 )
 
 /**

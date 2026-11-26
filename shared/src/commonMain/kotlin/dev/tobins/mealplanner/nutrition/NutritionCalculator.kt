@@ -19,10 +19,17 @@ data class LineQuantity(
 object NutritionCalculator {
 
     /**
-     * Weight of [line] in grams, or null when it cannot be known: no amount, or a
-     * count ("2 onions") without a weight per piece.
+     * Weight of [line] in grams, or null when it cannot be known: no amount, a count ("2 onions") without a weight per
+     * piece, or a count in a portion the ingredient no longer has. A line in one of its portions weighs what the portion
+     * does ([measured]), now: so a portion corrected corrects every line in it.
      */
     fun quantityOf(line: IngredientLine, ingredient: Ingredient): LineQuantity? {
+        val measured = measured(line, ingredient) ?: return null
+        return weightOf(measured, ingredient)
+    }
+
+    /** [quantityOf] a line that is no count in a portion. */
+    private fun weightOf(line: IngredientLine, ingredient: Ingredient): LineQuantity? {
         val amount = line.amount ?: return null
         return when (line.dimension) {
             Dimension.WEIGHT -> line.baseAmount?.let { LineQuantity(it, assumedDensity = false) }
@@ -38,7 +45,8 @@ object NutritionCalculator {
      * Nutrition of one of [servings] servings. Negligible ingredients are ignored. Lines
      * without an amount cannot be counted: seasoning ("salt to taste") is ignored, anything
      * else is reported in [RecipeNutrition.unquantified]. Lines with an amount that cannot be counted (unmapped,
-     * no linked food, or no weight per piece) make the result incomplete.
+     * no values, no weight per piece, or a portion that is gone) make the result incomplete. An ingredient counts by
+     * the values of its own label when it has them, else by its NEVO food ([values], issue 351).
      */
     fun perServing(lines: List<Pair<IngredientLine, Ingredient?>>, servings: Int): RecipeNutrition {
         require(servings > 0) { "servings must be positive" }
@@ -53,27 +61,28 @@ object NutritionCalculator {
                 if (!isSeasoning(line.ingredientText, ingredient)) unquantified += line.ingredientText
                 continue
             }
-            val food = ingredient?.food
-            val quantity = ingredient?.let { quantityOf(line, it) }
-            if (food == null || quantity == null) {
+            val values = ingredient?.values
+            val measured = ingredient?.let { measured(line, it) }
+            val quantity = measured?.let { weightOf(it, ingredient) }
+            if (ingredient == null || values == null || measured == null || quantity == null) {
                 uncounted += line.ingredientText
                 continue
             }
-            // NEVO lists most drinks per 100 ml, so those need the volume, not the weight.
-            val hundreds = when (food.basis) {
+            // NEVO and labels give most drinks per 100 ml, so those need the volume, not the weight.
+            val hundreds = when (values.basis) {
                 FoodBasis.PER_100_G -> quantity.grams / 100
-                FoodBasis.PER_100_ML -> when (line.dimension) {
-                    Dimension.VOLUME -> line.baseAmount!! / 100
+                FoodBasis.PER_100_ML -> when (measured.dimension) {
+                    Dimension.VOLUME -> measured.baseAmount!! / 100
                     else -> {
                         if (ingredient.gramsPerMl == null) approximate = true
                         quantity.grams / (ingredient.gramsPerMl ?: 1.0) / 100
                     }
                 }
             }
-            if (quantity.assumedDensity && !(food.basis == FoodBasis.PER_100_ML && line.dimension == Dimension.VOLUME)) {
+            if (quantity.assumedDensity && !(values.basis == FoodBasis.PER_100_ML && measured.dimension == Dimension.VOLUME)) {
                 approximate = true
             }
-            total = total + food.per100 * hundreds
+            total = total + values.per100 * hundreds
         }
         return RecipeNutrition(
             perServing = total * (1.0 / servings),

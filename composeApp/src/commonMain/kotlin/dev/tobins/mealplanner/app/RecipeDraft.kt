@@ -11,6 +11,9 @@ import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.nutrition.NutritionCalculator
+import dev.tobins.mealplanner.nutrition.inPortionOf
+import dev.tobins.mealplanner.nutrition.portionNamed
+import dev.tobins.mealplanner.nutrition.values
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.recipes.parseAmount
@@ -174,28 +177,33 @@ const val PIECE = "piece"
 
 /**
  * The units a row of [ingredient] can be in (issue 342): grams always, millilitres when a millilitre's weight is known
- * (its density, or a food counted per 100 ml), pieces when a piece's weight is; and the row's [current] unit, whatever
- * it is, so that a line of the cooking site keeps the unit it had (`tbsp`, `clove`).
+ * (its density, or values counted per 100 ml), pieces when a piece's weight is, then its named portions (issue 351);
+ * and the row's [current] unit, whatever it is, so that a line of the cooking site keeps the unit it had (`tbsp`,
+ * `clove`), and one in a portion removed since still says so.
  */
 fun unitChoices(ingredient: Ingredient?, current: String?): List<String> = buildList {
     add("g")
-    if (ingredient == null || ingredient.gramsPerMl != null || ingredient.food?.basis == FoodBasis.PER_100_ML) add("ml")
+    if (ingredient == null || ingredient.gramsPerMl != null || ingredient.values?.basis == FoodBasis.PER_100_ML) add("ml")
     if (ingredient == null || ingredient.gramsPerPiece != null) add(PIECE)
-    if (current != null && current !in this) add(current)
+    ingredient?.portions?.forEach { add(it.name) }
+    if (current != null && current !in this && ingredient?.portionNamed(current) == null) add(current)
 }
 
 /**
- * What a picked [ingredient]'s row starts with (issue 346): one piece, 100 ml or 100 g of the unit the account last saved
- * it in ([Ingredient.lastUnit]) when the ingredient still has that unit ([unitChoices]); else, as for one never used, one
- * piece when a piece's weight is known, else 100 ml of a drink or 100 g.
+ * What a picked [ingredient]'s row starts with (issue 346): one piece or one portion, 100 ml or 100 g of the unit the
+ * account last saved it in ([Ingredient.lastUnit]) when the ingredient still has that unit ([unitChoices]; a portion
+ * removed since it has not); else, as for one never used, one piece when a piece's weight is known, else 100 ml of a
+ * drink or 100 g.
  */
 fun startingAmount(ingredient: Ingredient): Pair<Double, String> {
+    val portion = ingredient.portionNamed(ingredient.lastUnit)
     val last = ingredient.lastUnit?.takeIf { it in unitChoices(ingredient, null) }
     return when {
+        portion != null -> 1.0 to portion.name
         last == PIECE -> 1.0 to PIECE
         last != null -> 100.0 to last
         ingredient.gramsPerPiece != null -> 1.0 to PIECE
-        ingredient.food?.basis == FoodBasis.PER_100_ML -> 100.0 to "ml"
+        ingredient.values?.basis == FoodBasis.PER_100_ML -> 100.0 to "ml"
         else -> 100.0 to "g"
     }
 }
@@ -231,16 +239,20 @@ private fun rounded(amount: Double, unit: String): Double = when (unit) {
 }
 
 /** How a row counts in the totals, for the line under it. */
-enum class RowCount { COUNTED, NO_INGREDIENT, NEGLIGIBLE, NO_AMOUNT, NO_NUTRITION, WEIGHT_UNKNOWN }
+enum class RowCount { COUNTED, NO_INGREDIENT, NEGLIGIBLE, NO_AMOUNT, NO_NUTRITION, PORTION_GONE, WEIGHT_UNKNOWN }
 
-/** How [this] row counts with [ingredient], the one it means; as [NutritionCalculator.perServing] counts its line. */
+/**
+ * How [this] row counts with [ingredient], the one it means; as [NutritionCalculator.perServing] counts its line: by the
+ * values of its own label or else of its NEVO food, and a row in a portion the ingredient no longer has not at all.
+ */
 fun DraftRow.count(ingredient: Ingredient?): RowCount {
     val line = line()
     return when {
         ingredient == null -> RowCount.NO_INGREDIENT
         ingredient.negligible -> RowCount.NEGLIGIBLE
         line?.amount == null -> RowCount.NO_AMOUNT
-        ingredient.food == null -> RowCount.NO_NUTRITION
+        ingredient.values == null -> RowCount.NO_NUTRITION
+        line.inPortionOf(ingredient) && ingredient.portionNamed(line.unit) == null -> RowCount.PORTION_GONE
         NutritionCalculator.quantityOf(line, ingredient) == null -> RowCount.WEIGHT_UNKNOWN
         else -> RowCount.COUNTED
     }

@@ -17,11 +17,13 @@ import dev.tobins.mealplanner.api.CookingSyncStatus
 import dev.tobins.mealplanner.api.DayView
 import dev.tobins.mealplanner.api.DinnerMove
 import dev.tobins.mealplanner.api.DinnerSuggestions
+import dev.tobins.mealplanner.api.FoodBasis
 import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientInput
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.KeepsChoice
 import dev.tobins.mealplanner.api.LogEntry
+import dev.tobins.mealplanner.api.LabelNutrition
 import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.Me
@@ -44,6 +46,8 @@ import dev.tobins.mealplanner.api.Profile
 import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.RatingInput
 import dev.tobins.mealplanner.api.RecipeInput
+import dev.tobins.mealplanner.api.Nutrition
+import dev.tobins.mealplanner.api.Portion
 import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeDetail
@@ -344,6 +348,40 @@ class AccountsTest {
         assertEquals(HttpStatusCode.NotFound, bob.delete("/api/recipes/${alicesStew.summary.id}").status)
         assertEquals(alicesStew, alice.get("/api/recipes/${alicesStew.summary.id}").body<RecipeDetail>())
         assertEquals(listOf(alicesBeef.id), alicesStew.ingredients.map { it.ingredientId })
+    }
+
+    /**
+     * A product's own values and portions (issue 351) are its account's: Bob sees none of them, cannot change them (404, as
+     * for an ingredient that does not exist), and a line of his in a portion of hers is refused; his own ingredient of the
+     * same name has portions of its own.
+     */
+    @Test
+    fun aProductsValuesAndPortionsAreItsAccountsAlone() = testApplication {
+        start()
+        val alice = clientFor("alice")
+        val bob = clientFor("bob")
+        val label = LabelNutrition(FoodBasis.PER_100_G, Nutrition(400.0, 30.0, null, null, null, null, null, null))
+        val hers = IngredientInput("Protein bar", label = label, portions = listOf(Portion("bar", grams = 45.0)))
+        val bar = alice.post("/api/ingredients") { setBody(hers) }.body<Ingredient>()
+        val snack = alice.post("/api/recipes") { setBody(RecipeInput("Snack", 1, lines = listOf(RecipeLineInput(2.0, "bar", "Protein bar", bar.id)))) }.body<RecipeDetail>()
+
+        assertTrue(bob.get("/api/ingredients").body<List<Ingredient>>().none { it.label != null || it.portions.isNotEmpty() })
+        val changed = IngredientInput("Protein bar", label = label.copy(per100 = label.per100.copy(kcal = 1.0)), portions = listOf(Portion("bar", grams = 1.0)))
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/ingredients/${bar.id}") { setBody(changed) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.put("/api/ingredients/${bar.id}") { setBody(IngredientInput("Protein bar", portions = emptyList())) }.status)
+        val lines = listOf(RecipeLineInput(2.0, "bar", "Protein bar", bar.id))
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/recipes") { setBody(RecipeInput("Snack", 1, lines = lines)) }.status)
+        assertEquals(HttpStatusCode.NotFound, bob.post("/api/recipes/lines") { setBody(lines) }.status)
+
+        val his = bob.post("/api/ingredients") { setBody(IngredientInput("Protein bar", portions = listOf(Portion("bar", grams = 60.0)))) }.body<Ingredient>()
+        val hisSnack = bob.post("/api/recipes") { setBody(RecipeInput("Snack", 1, lines = listOf(RecipeLineInput(2.0, "bar", "Protein bar", his.id)))) }.body<RecipeDetail>()
+        assertEquals(120.0, hisSnack.ingredients.single().grams)
+        bob.put("/api/ingredients/${his.id}") { setBody(IngredientInput("Protein bar", portions = emptyList())) }
+
+        val hersNow = alice.get("/api/ingredients").body<List<Ingredient>>().single { it.id == bar.id }
+        assertEquals(Triple(label, listOf(Portion("bar", grams = 45.0)), emptyList<String>()), Triple(hersNow.label, hersNow.portions, hersNow.removedPortions))
+        assertEquals(snack, alice.get("/api/recipes/${snack.summary.id}").body<RecipeDetail>(), "her snack counts as it did")
+        assertEquals(90.0, snack.ingredients.single().grams)
     }
 
     /** The unit an ingredient was last saved in (issue 346) is the account's own: Bob saving the same food in another unit changes nothing for Alice. */

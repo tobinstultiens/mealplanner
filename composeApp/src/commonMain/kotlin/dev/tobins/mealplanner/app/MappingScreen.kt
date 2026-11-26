@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,9 +42,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodBasis
+import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.IngredientSection
 import dev.tobins.mealplanner.api.MappingRequest
 import dev.tobins.mealplanner.api.UnmappedText
+import dev.tobins.mealplanner.nutrition.values
 import dev.tobins.mealplanner.shopping.ShopSection
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -66,10 +69,23 @@ internal fun sectionsToShow(all: List<IngredientSection>, query: String): List<I
     return if (text.isEmpty()) all.filter { it.section == ShopSection.OTHER.name } else all.filter { it.name.contains(text, ignoreCase = true) }
 }
 
+/** The products of [catalogue]: its ingredients with values of their own or named portions (issue 351), by name. */
+internal fun productsOf(catalogue: List<Ingredient>): List<Ingredient> = catalogue.filter { it.label != null || it.portions.isNotEmpty() }
+
+/** `400 kcal per 100 g · portions: bar, half`, or what it counts by when it has portions only. */
+private fun Ingredient.productSummary(t: Strings): String = listOfNotNull(
+    values?.let { t(Msg.PRODUCT_SUMMARY, (it.per100.kcal ?: 0.0).roundToLong(), per100(it.basis)) } ?: t(Msg.FOUND_NO_NUTRITION),
+    portions.takeIf { it.isNotEmpty() }?.let { list -> t(Msg.PRODUCT_PORTIONS, list.joinToString { it.name }) },
+).joinToString(" · ")
+
+/** [MappingScreen]'s [product] for a new one. */
+private const val NEW_PRODUCT = -1L
+
 /**
  * Lists recipe ingredient texts that are not linked to a catalogue ingredient yet
- * and lets the user link each one to a NEVO food. Below them, each ingredient's shop
- * section, which orders the shopping list, can be corrected.
+ * and lets the user link each one to a NEVO food. Below them the account's products
+ * (issue 351), made and changed in [ProductScreen], and each ingredient's shop section,
+ * which orders the shopping list and can be corrected.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,6 +96,9 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
     var reload by remember { mutableIntStateOf(0) }
     var choosing by remember { mutableStateOf<Pair<UnmappedText, Food?>?>(null) }
     var sections by remember { mutableStateOf<List<IngredientSection>?>(null) }
+    var catalogue by remember { mutableStateOf<List<Ingredient>?>(null) }
+    // The product open in its form: an ingredient's id, or NEW_PRODUCT; kept over a re-created activity.
+    var product by rememberSaveable { mutableStateOf<Long?>(null) }
     var sectionQuery by remember { mutableStateOf("") }
     var placing by remember { mutableStateOf<IngredientSection?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -88,9 +107,27 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
     LaunchedEffect(reload) {
         if (state !is Load.Ready) state = Load.Loading
         state = load { api.unmapped() }
-        // Linking can add ingredients, so the sections are loaded again with the texts.
+        // Linking can add ingredients, so the sections and products are loaded again with the texts.
         sections = (load { api.ingredientSections() } as? Load.Ready)?.value
+        catalogue = (load { api.ingredients() } as? Load.Ready)?.value
         if (reference == null) reference = (load { api.foodDataset() } as? Load.Ready)?.value?.reference
+    }
+
+    product?.let { id ->
+        // In place of the list, with a back handler of its own that is the innermost one; saved, the list loads again.
+        val editing = catalogue?.firstOrNull { it.id == id }
+        if (id == NEW_PRODUCT || editing != null) {
+            ProductScreen(
+                api, editing,
+                onDone = { saved ->
+                    product = null
+                    reload++
+                    scope.launch { snackbar.showSnackbar(t(Msg.PRODUCT_SAVED, saved.name)) }
+                },
+                onCancel = { product = null },
+            )
+            return
+        }
     }
 
     SubScreen(t(Msg.LINK_INGREDIENTS), onBack, snackbar) { padding ->
@@ -112,6 +149,12 @@ fun MappingScreen(api: ApiClient, onBack: () -> Unit) {
                 }
                 items(current.value, key = { it.text }) { unmapped ->
                     UnmappedCard(unmapped, onPick = { food -> choosing = unmapped to food })
+                }
+                catalogue?.let { all ->
+                    item(key = "h:products") { ProductsIntro(onNew = { product = NEW_PRODUCT }) }
+                    items(productsOf(all), key = { "p:${it.id}" }) { entry ->
+                        ProductRow(entry, onClick = { product = entry.id })
+                    }
                 }
                 sections?.let { all ->
                     item(key = "h:sections") {
@@ -279,6 +322,27 @@ private fun LinkDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
     )
+}
+
+/** The products' heading, what one is, and the way to make one. */
+@Composable
+private fun ProductsIntro(onNew: () -> Unit) {
+    val t = LocalStrings.current
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
+        SectionHeader(t(Msg.PRODUCTS), Modifier.padding(top = Spacing.InsideCard))
+        Text(t(Msg.PRODUCTS_INTRO), style = MaterialTheme.typography.bodyMedium)
+        TextButton(onClick = onNew) { Text(t(Msg.NEW_PRODUCT)) }
+    }
+}
+
+/** A product, with what 100 g or 100 ml of it has and its portions; a tap opens its form. */
+@Composable
+private fun ProductRow(product: Ingredient, onClick: () -> Unit) {
+    val t = LocalStrings.current
+    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp)) {
+        Text(product.name, style = MaterialTheme.typography.bodyLarge)
+        Text(product.productSummary(t), style = MaterialTheme.typography.bodySmall.numeric(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable

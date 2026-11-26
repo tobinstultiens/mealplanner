@@ -34,6 +34,7 @@ import java.time.LocalDate
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.createTempFile
 import kotlin.math.abs
+import kotlin.math.roundToLong
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -215,6 +216,7 @@ class MigrationTest {
      * no column with a foreign key, so the lines' table, empty here, is made again as it was.
      */
     private fun dropLineIngredients(statement: Statement) {
+        dropProducts(statement)
         statement.execute("DROP INDEX recipeIngredient_ingredient")
         statement.execute("DROP INDEX recipeIngredient_recipe")
         statement.execute("DROP TABLE recipeIngredient")
@@ -225,6 +227,17 @@ class MigrationTest {
         statement.execute("CREATE INDEX recipeIngredient_recipe ON recipeIngredient(recipeId, position)")
         statement.execute("ALTER TABLE recipe DROP COLUMN editedAt")
     }
+
+    /** Version 27 added an ingredient's own values and its portions (26.sqm, issue 351): ten columns and a table. */
+    private fun dropProducts(statement: Statement) {
+        statement.execute("DROP TABLE ingredientPortion")
+        for (column in labelColumns) statement.execute("ALTER TABLE ingredient DROP COLUMN $column")
+    }
+
+    private val labelColumns = listOf(
+        "labelBasis", "labelKcal", "labelProteinG", "labelFatG", "labelSaturatedFatG", "labelCarbsG", "labelSugarG",
+        "labelFibreG", "labelSodiumMg", "labelSource",
+    )
 
     @Test
     fun aVersionOneDatabaseIsMigratedToTheCurrentSchema() {
@@ -1304,7 +1317,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        assertEquals(before, Triple(counts(), recipes(), everythingBut(url, "recipe", "recipeIngredient", "planPick", "offerExclusion", "accountRequest")), "every row as it was, in every table")
+        assertEquals(before, Triple(counts(), recipes(), everythingBut(url, "recipe", "recipeIngredient", "planPick", "offerExclusion", "accountRequest", "ingredientPortion")), "every row as it was, in every table")
         assertEquals(lines, rowsOf(url, "recipeIngredient", lineColumns))
         assertEquals("0", single(url, "SELECT group_concat(DISTINCT standardMeal) FROM recipe"), "no recipe is a standard meal")
 
@@ -1367,7 +1380,7 @@ class MigrationTest {
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
         assertEquals(
             before,
-            Triple(counts(), recipes(), everythingBut(url, "planPick", "recipe", "recipeIngredient", "offerExclusion", "accountRequest")),
+            Triple(counts(), recipes(), everythingBut(url, "planPick", "recipe", "recipeIngredient", "offerExclusion", "accountRequest", "ingredientPortion")),
             "every row as it was, in every table",
         )
         assertEquals("0", single(url, "SELECT count(*) FROM planPick"), "no dinner chosen, no recipe hidden")
@@ -1415,7 +1428,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        assertEquals(before, counts() to everythingBut(url, "offerExclusion", "accountRequest"), "every row as it was, in every table")
+        assertEquals(before, counts() to everythingBut(url, "offerExclusion", "accountRequest", "ingredientPortion"), "every row as it was, in every table")
         assertEquals("0", single(url, "SELECT count(*) FROM offerExclusion"), "no exclusion yet")
 
         // Alice says Jumbo's Hela curry is no curry powder; Bob's match stays.
@@ -1454,7 +1467,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        assertEquals(before, counts() to everythingBut(url, "accountRequest"), "every row as it was, in every table")
+        assertEquals(before, counts() to everythingBut(url, "accountRequest", "ingredientPortion"), "every row as it was, in every table")
         assertEquals("0", single(url, "SELECT count(*) FROM accountRequest"), "nobody asked yet")
         // The user names of the accounts there are, in any case, are not to be had.
         assertEquals(listOf(1L, 1L, 0L), listOf("ALICE", "bob", "carl").map { db.registrationQueries.countAccountsNamed(it).executeAsOne() })
@@ -1527,7 +1540,7 @@ class MigrationTest {
         openDatabase(fresh).first.close()
         assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
         assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
-        val after = listOf(counts(), rows(), everythingBut(url, "recipe", "recipeIngredient"))
+        val after = listOf(counts(), rows(), everythingBut(url, "recipe", "recipeIngredient", "ingredientPortion"))
         assertEquals(before, after, "every row as it was, in every table")
         assertEquals("1:0,2:0,3:0,4:1,5:0,6:0", removed(), "the taken soup is no longer marked; the bank's curry whose file left still is")
         assertEquals("", single(url, "SELECT group_concat(id) FROM recipeIngredient WHERE ingredientId IS NOT NULL"), "no line has an ingredient of its own")
@@ -1570,13 +1583,91 @@ class MigrationTest {
         driver.close()
     }
 
+    /**
+     * Version 26 is the schema of 25.sqm, which servers before an ingredient's own values and portions (issue 351) run.
+     * Every row stays as it was, no ingredient has values of its own or a portion, and every recipe counts as it did:
+     * by its NEVO foods, a drink by its volume, and a line in a unit such as "bar" by the weight per piece.
+     */
+    @Test
+    fun aVersionTwentySixDatabaseKeepsEveryRowAndEveryRecipeCountsAsItDid() {
+        val file = createTempFile("v26", ".db").toFile().apply { delete() }
+        val url = "jdbc:sqlite:${file.path}"
+        openDatabase(url).first.close()
+        val week = "2026-11-16"
+        DriverManager.getConnection(url).use { connection ->
+            connection.createStatement().use { statement ->
+                dropProducts(statement)
+                statement.execute("INSERT INTO appUser (id, subject, createdAt) VALUES (1, 'alice', '2026-01-01T00:00:00Z'), (2, 'bob', '2026-01-01T00:00:00Z')")
+                statement.execute(
+                    "INSERT INTO food (nevoCode, nameNl, nameEn, synonym, groupNl, groupEn, basis, kcal, protein, fat, saturatedFat, carbs, sugar, fibre, sodiumMg) VALUES " +
+                        "(10, 'Rundvlees', 'Beef raw', NULL, 'Vlees', 'Meat', 'PER_100_G', 150, 20, 4, 2, 0, 0, 0, 50), " +
+                        "(20, 'Mueslireep', 'Muesli bar', NULL, 'Snacks', 'Snacks', 'PER_100_G', 450, 7, 18, 8, 60, 30, 4, 100), " +
+                        "(305, 'Melk halfvol', 'Milk semi-skimmed', NULL, 'Zuivel', 'Dairy', 'PER_100_ML', 46, 3, 2, 1, 5, 5, 0, 40)",
+                )
+                statement.execute(
+                    "INSERT INTO ingredient (id, userId, name, nevoCode, gramsPerPiece, gramsPerMl, isStaple) VALUES " +
+                        "(1, 1, 'Beef', 10, NULL, NULL, 0), (2, 1, 'Muesli bar', 20, 40, NULL, 0), (3, 1, 'Milk', 305, NULL, NULL, 0), (4, 2, 'Beef', 10, NULL, NULL, 0)",
+                )
+                statement.execute("INSERT INTO ingredientAlias (userId, text, ingredientId) VALUES (1, 'beef', 1)")
+                statement.execute(
+                    "INSERT INTO recipe (id, userId, source, section, title, tagsJson, servings, instructions, hasIngredientsBlock, problemsJson, kind, " +
+                        "mealSlotsJson, addedAt, inRotation) VALUES " +
+                        "(1, 1, 'MANUAL', 'own', 'Stew', '[]', 2, '', 1, '[]', 'MEAL', '[\"DINNER\"]', '2026-02-01T00:00:00Z', 1), " +
+                        "(2, 1, 'MANUAL', 'own', 'Snack', '[]', 1, '', 1, '[]', 'MEAL', '[\"SNACK\"]', '2026-02-01T00:00:00Z', 1), " +
+                        "(3, 2, 'MANUAL', 'own', 'Stew', '[]', 1, '', 1, '[]', 'MEAL', '[\"DINNER\"]', '2026-02-01T00:00:00Z', 1)",
+                )
+                statement.execute(
+                    "INSERT INTO recipeIngredient (recipeId, position, amount, unit, dimension, baseAmount, item, groupName, ingredientId) VALUES " +
+                        "(1, 0, 400, 'g', 'WEIGHT', 400, 'beef', NULL, NULL), (1, 1, 250, 'ml', 'VOLUME', 250, 'milk', NULL, 3), " +
+                        "(2, 0, 2, 'bar', 'COUNT', NULL, 'muesli bar', NULL, 2), (3, 0, 400, 'g', 'WEIGHT', 400, 'beef', NULL, 4)",
+                )
+                statement.execute(
+                    "INSERT INTO planMeal (userId, weekStart, day, slot, recipeId, title, portions, kcal, proteinG, leftover, locked, status) VALUES " +
+                        "(1, '$week', 1, 'DINNER', 1, 'Stew', 1.0, 357.5, 43.75, 0, 1, 'EATEN'), (1, '$week', 1, 'SNACK', 2, 'Snack', 1.0, 360.0, 5.6, 0, 0, 'PLANNED')",
+                )
+                statement.execute("PRAGMA user_version = 26")
+            }
+        }
+        val tables = single(url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split(",")
+        fun counts() = tables.associateWith { single(url, "SELECT count(*) FROM \"$it\"") }
+        val ingredientColumns = columns(url, "ingredient")
+        val before = listOf(counts(), rowsOf(url, "ingredient", ingredientColumns), everythingBut(url, "ingredient", "ingredientPortion"))
+
+        val (driver, db) = openDatabase(url)
+
+        assertEquals(Database.Schema.version.toInt(), version(url))
+        val fresh = "jdbc:sqlite:${createTempFile("fresh", ".db").toFile().apply { delete() }.path}"
+        openDatabase(fresh).first.close()
+        assertEquals(shapes(fresh), shapes(url), "every table as a fresh database has it")
+        assertEquals("ok" to "", single(url, "PRAGMA integrity_check") to single(url, "PRAGMA foreign_key_check"))
+        assertEquals(before, listOf(counts(), rowsOf(url, "ingredient", ingredientColumns), everythingBut(url, "ingredient", "ingredientPortion")), "every row as it was")
+        assertEquals("0", single(url, "SELECT count(*) FROM ingredient WHERE " + labelColumns.joinToString(" OR ") { "$it IS NOT NULL" }), "no values of its own")
+        assertEquals("0", single(url, "SELECT count(*) FROM ingredientPortion"), "no portions")
+
+        val foods = FoodRepository(db)
+        val offers = OfferRepository(db, emptyList())
+        fun scope(id: Long) = UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(week) })
+        assertTrue(listOf(1L, 2L).flatMap { scope(it).ingredients.list() }.all { it.label == null && it.portions.isEmpty() && it.removedPortions.isEmpty() })
+        fun counted(account: Long, recipe: Long) = scope(account).recipes.find(recipe)!!.let { detail ->
+            val nutrition = detail.summary.nutrition!!
+            listOf(detail.ingredients.map { it.grams }, listOf(nutrition.perServing.kcal, nutrition.perServing.proteinG).map { (it!! * 1000).roundToLong() / 1000.0 }, listOf(nutrition.complete, nutrition.approximate))
+        }
+        // 400 g of beef and 250 ml of milk counted per 100 ml (weighed at 1 g/ml), in two servings.
+        assertEquals(listOf(listOf(400.0, 250.0), listOf(357.5, 43.75), listOf(true, false)), counted(1, 1))
+        // Two bars counted in pieces of 40 g, as before: "bar" is no portion of it.
+        assertEquals(listOf(listOf(80.0), listOf(360.0, 5.6), listOf(true, false)), counted(1, 2))
+        assertEquals(listOf(listOf(400.0), listOf(600.0, 80.0), listOf(true, false)), counted(2, 3))
+        driver.close()
+    }
+
     /** The rows of [table] in [columns] only, by id: a table compared by the columns it had before a migration added one. */
     private fun rowsOf(url: String, table: String, columns: List<String>): String =
         single(url, "SELECT ${columns.joinToString(" || '|' || ") { "coalesce($it, 'NULL')" }} FROM \"$table\" ORDER BY id")
 
     /**
      * Every row of every table of the file but [tables], to compare before and after a migration that adds a column to one
-     * of them; a table a later migration adds is one of them too.
+     * of them; a table a later migration adds is one of them too. The ingredients' label columns, which 26.sqm adds, are
+     * left out, so that a migration before it is compared by what it changed.
      */
     private fun everythingBut(url: String, vararg tables: String): List<String> = DriverManager.getConnection(url).use { connection ->
         fun query(sql: String): List<String> = connection.createStatement().executeQuery(sql).use { rows ->
@@ -1585,7 +1676,10 @@ class MigrationTest {
         }
         query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
             .filter { it !in tables }
-            .flatMap { name -> listOf(name) + query("SELECT * FROM \"$name\"") }
+            .flatMap { name ->
+                val columns = columns(url, name).filterNot { name == "ingredient" && it in labelColumns }
+                listOf(name) + query("SELECT ${columns.joinToString { "\"$it\"" }} FROM \"$name\"")
+            }
     }
 
     /** Everything the file holds: its schema, its version and every row of every table, to compare before and after. */

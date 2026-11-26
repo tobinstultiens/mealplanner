@@ -3,9 +3,11 @@ package dev.tobins.mealplanner.app
 import dev.tobins.mealplanner.api.Food
 import dev.tobins.mealplanner.api.FoodBasis
 import dev.tobins.mealplanner.api.Ingredient
+import dev.tobins.mealplanner.api.LabelNutrition
 import dev.tobins.mealplanner.api.MappedLine
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Nutrition
+import dev.tobins.mealplanner.api.Portion
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKeeps
 import dev.tobins.mealplanner.api.RecipeKind
@@ -92,6 +94,45 @@ class RecipeDraftTest {
         assertEquals(1.0 to PIECE, row(chicken.copy(lastUnit = "ml")))
         assertEquals(100.0 to "g", row(oil.copy(lastUnit = PIECE)))
         assertEquals(100.0 to "g", row(oil.copy(lastUnit = "tbsp")))
+    }
+
+    /** A product with the values of its label and two portions (issue 351). */
+    private val bar = Ingredient(
+        6, "Protein bar", null, null, null, null, null, false,
+        label = LabelNutrition(FoodBasis.PER_100_G, Nutrition(400.0, 30.0, null, null, null, null, null, null)),
+        portions = listOf(Portion("bar", grams = 45.0), Portion("half", grams = 22.5)),
+    )
+
+    @Test
+    fun aProductsPortionsAreUnitsOfItsRowAfterTheOthers() {
+        assertEquals(listOf("g", "bar", "half"), unitChoices(bar, "g"))
+        assertEquals(listOf("g", "bar", "half"), unitChoices(bar, "Bar"), "the row's unit is the portion, in any case")
+        assertEquals(listOf("g", PIECE, "bar", "half"), unitChoices(bar.copy(gramsPerPiece = 45.0), null))
+        val drink = bar.copy(label = bar.label!!.copy(basis = FoodBasis.PER_100_ML))
+        assertEquals(listOf("g", "ml", "bar", "half"), unitChoices(drink, null), "a drink's label is counted per volume")
+        // One removed since stays the row's unit, as any unit the row had.
+        assertEquals(listOf("g", "half", "bar"), unitChoices(bar.copy(portions = bar.portions.drop(1), removedPortions = listOf("bar")), "bar"))
+    }
+
+    @Test
+    fun aProductStartsInThePortionLastSavedForItWhileItHasIt() {
+        val row = { ingredient: Ingredient -> RecipeDraft().adding(ingredient).rows.single().input().let { it.amount to it.unit } }
+        assertEquals(1.0 to "half", row(bar.copy(lastUnit = "half")))
+        assertEquals(1.0 to "bar", row(bar.copy(lastUnit = "BAR")))
+        assertEquals(100.0 to "g", row(bar.copy(lastUnit = "scoop")), "a portion that is gone is as no history")
+        assertEquals(100.0 to "g", row(bar))
+    }
+
+    @Test
+    fun aRowInAPortionCountsItsWeightAndOneWhosePortionIsGoneIsNotCounted() {
+        val draft = RecipeDraft().adding(bar).let { it.changing(0) { row -> row.inUnit("bar", bar) } }.changing(0) { it.copy(amount = "2") }
+        assertEquals(RowCount.COUNTED, draft.rows.single().count(bar))
+        assertEquals(listOf(360.0, 27.0), draft.nutrition(mapOf(bar.id to bar))!!.perServing.let { listOf(it.kcal, it.proteinG) })
+        assertEquals("2.25", RecipeDraft().adding(bar).rows.single().inUnit("bar", bar).amount, "100 g is about two and a quarter bars")
+        val gone = bar.copy(portions = emptyList(), removedPortions = listOf("bar"), gramsPerPiece = 40.0)
+        assertEquals(RowCount.PORTION_GONE, draft.rows.single().count(gone))
+        assertFalse(draft.nutrition(mapOf(bar.id to gone))!!.complete)
+        assertEquals(RowCount.NO_NUTRITION, draft.rows.single().count(bar.copy(label = null)))
     }
 
     @Test

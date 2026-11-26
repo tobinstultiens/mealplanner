@@ -1377,3 +1377,13 @@ after accepting the conditions of use, so the download is a manual step.
 The main file `NEVO2025_v9.0.csv` is UTF-8, `|`-separated, with decimal commas and one row per
 food (2,328 foods). Values are per 100 g, except for foods marked `per 100ml` (mostly drinks).
 An empty cell means "no value", not zero.
+
+## Nutrition: a product's label
+
+A product NEVO does not have (a protein bar of a brand) gets the values of its own label (issue 351), typed in the app
+from the packaging today: energy in kcal, fat, saturated fat, carbohydrates, sugars, fibre, protein and salt, per 100 g
+or per 100 ml. They are the account's own and are not shared. Salt is typed as the label gives it and kept as sodium,
+as NEVO has it: a label's salt is its sodium times 2.5 (EU regulation 1169/2011), so 1 g of salt is 400 mg of sodium
+(`Salt` in `shared/.../nutrition/Portions.kt`). A value the label does not give stays empty, which is unknown, as in
+NEVO. `LabelNutrition.source` says where the values came from; it is empty for values typed from the label, and is
+there for a lookup (by search or barcode) to fill.
