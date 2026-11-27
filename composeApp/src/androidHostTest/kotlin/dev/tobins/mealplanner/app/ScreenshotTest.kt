@@ -423,6 +423,8 @@ enum class Shot(
     val mixed: Boolean = false,
     /** The fake backend's week holding only a lunch of last week's batch (issue 263). */
     val tailOnly: Boolean = false,
+    /** The fake backend's week naming these slots empty although it has meals (issue 374). */
+    val emptySlots: List<MealSlot> = emptyList(),
     /** The fake backend's week leaving five fresh ingredients over (issue 244). */
     val weekRest: Boolean = false,
     /** The prep of [prepped] kept vacuum sealed (issue 263). */
@@ -603,6 +605,9 @@ enum class Shot(
     ADJUST_MEAL(heightDp = 1400, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
     ADJUST_MEAL_NL(dutch = true, heightDp = 1400, content = { api, _ -> AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), {}) }),
     // No recipe of mine is in the rotation, so the week stays empty and says why, with a way to the Recipes tab.
+    // Dinner and lunch have recipes, so only breakfast and snack are said to lack them (issue 374).
+    PLAN_SLOTS_WITHOUT_RECIPES(emptySlots = listOf(MealSlot.BREAKFAST, MealSlot.DINNER, MealSlot.SNACK), heightDp = 900, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
+    PLAN_SLOTS_WITHOUT_RECIPES_NL(emptySlots = listOf(MealSlot.BREAKFAST, MealSlot.DINNER, MealSlot.SNACK), dutch = true, heightDp = 900, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     PLAN_EMPTY_ROTATION(emptyWeek = true, emptyRecipes = true, content = { api, _ -> PlanScreen(api, { _, _ -> }, {}, {}, {}) }),
     RECIPE_PICKER(heightDp = 1300, content = { api, _ -> recipePicker(api) }),
     // Standard meals (issue 265): Today with a skipped lunch and its chips, the Plan's skip sheet, the recipe's switch and the
@@ -1008,7 +1013,7 @@ class ScreenshotTest(private val shot: Shot, private val look: Look) {
     val compose = createEmptyComposeRule()
 
     private val backend = FakeBackend(
-        shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, mixed = shot.mixed, tailOnly = shot.tailOnly, weekRest = shot.weekRest,
+        shot.emptyWeek, shot.emptyOffers, shot.emptyPrices, shot.emptyRecipes, prepped = shot.prepped, sides = shot.sides, mixed = shot.mixed, tailOnly = shot.tailOnly, weekRest = shot.weekRest, emptySlots = shot.emptySlots,
         vacuum = shot.vacuum,
         standardMeals = shot.standardMeals,
         planning = shot.planning,

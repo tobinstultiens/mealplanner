@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.Nutrition
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeNutrition
@@ -19,11 +20,13 @@ class RecipeListsTest {
         source: RecipeSource = RecipeSource.COOKING_SITE,
         section: String = "Dinner",
         tags: List<String> = emptyList(),
+        slots: List<MealSlot> = emptyList(),
         uncounted: List<String>? = null,
     ) = RecipeSummary(
         id, title, section, tags, 2, source, kind, plannable = true,
         nutrition = uncounted?.let { RecipeNutrition(Nutrition(500.0, 30.0, 20.0, 5.0, 50.0, 6.0, 8.0, 600.0), complete = it.isEmpty(), approximate = false, uncounted = it) },
         inRotation = inRotation,
+        mealSlots = slots,
     )
 
     private val mine = listOf(
@@ -118,6 +121,19 @@ class RecipeListsTest {
         assertTrue(rotationIsEmpty(emptyList()))
         // A sauce in the rotation is never picked, and a meal outside it neither.
         assertTrue(rotationIsEmpty(mine.filter { it.id in setOf(3L, 4L) }))
+    }
+
+    @Test
+    fun aSlotIsOnlyLackingRecipesWhenNoMealOfMineIsMadeForIt() {
+        val recipes = listOf(
+            recipe(1, "Stew", slots = listOf(MealSlot.LUNCH, MealSlot.DINNER)),
+            recipe(2, "Oats", inRotation = false, slots = listOf(MealSlot.BREAKFAST)),
+            recipe(3, "Peanut sauce", kind = RecipeKind.COMPONENT, slots = listOf(MealSlot.SNACK)),
+        )
+        val empty = listOf(MealSlot.BREAKFAST, MealSlot.DINNER, MealSlot.SNACK)
+        // Dinner has a recipe, breakfast one outside the rotation (the planner's choice, not a lack); only the snack has none.
+        assertEquals(listOf(MealSlot.SNACK), slotsWithoutRecipes(empty, recipes))
+        assertEquals(empty, slotsWithoutRecipes(empty, emptyList()))
     }
 
     @Test

@@ -380,6 +380,8 @@ fun PlanScreen(
                 val hasMeals = plan.days.any { it.meals.isNotEmpty() }
                 // Meals of prepped batches alone, made this week or last, do not plan the week: its slots are not missing recipes yet.
                 val planned = plan.hasOwnMeals
+                // Only the slots no recipe of mine is for: a slot left empty by hand has recipes, and the sentence would be false.
+                val lacking = myRecipes?.let { slotsWithoutRecipes(plan.emptySlots, it) }.orEmpty()
                 LazyColumn(
                     Modifier.padding(padding).fillMaxSize(),
                     state = listState,
@@ -423,9 +425,9 @@ fun PlanScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 TextButton(onClick = onOpenRecipes) { Text(t(Msg.OPEN_RECIPES)) }
-                            } else if (planned && plan.emptySlots.isNotEmpty()) {
+                            } else if (planned && lacking.isNotEmpty()) {
                                 Text(
-                                    t(Msg.NO_RECIPES_FOR, plan.emptySlots.joinToString { t.slot(it) }),
+                                    t(Msg.NO_RECIPES_FOR, lacking.joinToString { t.slot(it) }),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
