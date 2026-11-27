@@ -49,7 +49,7 @@ class ShoppingListRepository(
     private val db: Database,
     private val userId: Long,
     private val weekMeals: WeekMeals,
-    private val shortfalls: WeekShortfalls,
+    private val weekShortfalls: WeekShortfalls,
     private val costs: WeekCosts,
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
@@ -103,7 +103,7 @@ class ShoppingListRepository(
         val week = needsOf(start, meals, sectionOf, lines)
         // The stock went down for the meals eaten, so what is still needed goes by the meals still to cook.
         val toCook = needsOf(start, weekMeals.stillToCook(start, meals), sectionOf, lines).needs.associateBy { it.key }
-        countTaken(shortfalls.shortfallsIn(start, meals), week.needs.associateBy { it.key }, toCook)
+        countTaken(weekShortfalls.shortfallsIn(start, meals), week.needs.associateBy { it.key }, toCook)
         val ownRows = q.selectExtrasForWeek(userId, start.toString()).executeAsList()
         val own = ownNeeds(ownRows, sectionOf)
         val ticks = ticks(start)
