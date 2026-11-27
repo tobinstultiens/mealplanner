@@ -258,13 +258,21 @@ How the plan screen's is made:
 A screen's state class is added to a feature the same way: the calls it needs in a `<Screen>Server` interface
 next to the state, the state in `<Screen>State.kt`, its test in `commonTest` with a fake server.
 
+The recipe page's (`recipes/RecipeState.kt`, `RecipeServer.kt`) follows it, with these differences: nothing is
+kept for a re-created activity (the page held nothing the plan's `Place` is for), so it is made with plain
+`remember`; the snackbars go through a small `RecipeVoice` (say a sentence, announce an adding with "Undo", offer
+"Undo"), because two of them have an action to wait for; and what stays with the composable and is handed in as a
+callback (`onPutBack`, `onEaten`, `onDeleted`) is what the page keeps for itself across rotation (cook mode, the
+choice to let the planner pick an added recipe). The toppings' own composable keeps its busy state and gets the
+save as a function, so it calls no server either; the ingredient picker it opens still does (see below).
+
 ### Not done yet
 
 Targets of #381, step by step; the code does not do these yet:
 
 - Many screens still call the server themselves, among them the screens the plan screen opens (planning,
   another dinner, a slot's foods, picking a recipe).
-- The recipe page's state class (#389).
+- The recipe page opens the ingredient picker (`plan/IngredientPicker`) for a topping, which searches the server itself.
 
 ## Why
 
