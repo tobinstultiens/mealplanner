@@ -27,7 +27,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.ui.MdBlock
 import dev.tobins.mealplanner.app.ui.SectionHeader
 import dev.tobins.mealplanner.app.ui.Spacing
@@ -120,7 +119,7 @@ fun CookMode(
     ) {
         top()
         if (recipe.ingredients.isNotEmpty()) {
-            Text(ingredientsTitle ?: t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleLarge)
+            Text(ingredientsTitle ?: t(RecipesMsg.INGREDIENTS), style = MaterialTheme.typography.titleLarge)
             var group: String? = null
             recipe.ingredients.forEachIndexed { index, mapped ->
                 val line = factor?.let { mapped.line.scaled(it) } ?: mapped.line
@@ -132,11 +131,11 @@ fun CookMode(
             }
         }
         if (steps.isEmpty()) {
-            if (recipe.ingredients.isEmpty()) Text(t(Msg.COOK_NO_INSTRUCTIONS), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (recipe.ingredients.isEmpty()) Text(t(RecipesMsg.COOK_NO_INSTRUCTIONS), color = MaterialTheme.colorScheme.onSurfaceVariant)
             // Nothing to step through: the meal can be marked eaten from the end of the ingredients.
-            else if (onMarkEaten != null) Button(onClick = onMarkEaten, Modifier.fillMaxWidth()) { Text(t(Msg.COOK_MARK_EATEN)) }
+            else if (onMarkEaten != null) Button(onClick = onMarkEaten, Modifier.fillMaxWidth()) { Text(t(RecipesMsg.COOK_MARK_EATEN)) }
         } else {
-            Text(t(Msg.COOK_STEPS), style = MaterialTheme.typography.titleLarge)
+            Text(t(RecipesMsg.COOK_STEPS), style = MaterialTheme.typography.titleLarge)
             val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
             steps.forEachIndexed { index, step ->
                 val done = index in progress.steps
@@ -149,7 +148,7 @@ fun CookMode(
                 ) {
                     Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
                         Text(
-                            t(Msg.COOK_STEP_NUMBER, index + 1) + if (highlighted) " · " + t(Msg.COOK_CURRENT_STEP) else "",
+                            t(RecipesMsg.COOK_STEP_NUMBER, index + 1) + if (highlighted) " · " + t(RecipesMsg.COOK_CURRENT_STEP) else "",
                             style = MaterialTheme.typography.labelLarge,
                         )
                         Text(
@@ -161,8 +160,8 @@ fun CookMode(
                 }
             }
             if (current == null) {
-                Text(t(Msg.COOK_ALL_DONE), style = MaterialTheme.typography.titleMedium)
-                if (onMarkEaten != null) Button(onClick = onMarkEaten, Modifier.fillMaxWidth()) { Text(t(Msg.COOK_MARK_EATEN)) }
+                Text(t(RecipesMsg.COOK_ALL_DONE), style = MaterialTheme.typography.titleMedium)
+                if (onMarkEaten != null) Button(onClick = onMarkEaten, Modifier.fillMaxWidth()) { Text(t(RecipesMsg.COOK_MARK_EATEN)) }
             }
         }
     }

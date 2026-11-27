@@ -3,7 +3,6 @@ package dev.tobins.mealplanner.app.accounts
 import dev.tobins.mealplanner.api.LoginRefusal
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.MemorySettingsStorage
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.NotificationKind
 import dev.tobins.mealplanner.app.NotificationPlanner
 import dev.tobins.mealplanner.app.ServerSettings
@@ -15,6 +14,7 @@ import dev.tobins.mealplanner.app.askWhatIsDueIfWanted
 import dev.tobins.mealplanner.app.logOut
 import dev.tobins.mealplanner.app.saveApprovesRequests
 import dev.tobins.mealplanner.app.saveNotificationOn
+import dev.tobins.mealplanner.app.shopping.ShoppingMsg
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.load
 import dev.tobins.mealplanner.app.ui.sentence
@@ -232,7 +232,7 @@ class LoginTest {
         val newAnswer = "dev.tobins.mealplanner://login?code=new-code&state=${startedLogin(login)}"
         // While the new login waits, the old answer is another login's: refused, and nothing is ended by it.
         val refused = deliver(login, oldAnswer)!!
-        assertEquals(Strings.current(Msg.LOGIN_ANSWER_MISMATCH), refused.exceptionOrNull()?.message)
+        assertEquals(Strings.current(AccountsMsg.LOGIN_ANSWER_MISMATCH), refused.exceptionOrNull()?.message)
         assertEquals(first, storage.session(), "a refused answer does not log out")
 
         val second = deliver(login, newAnswer)!!.getOrThrow()
@@ -250,7 +250,7 @@ class LoginTest {
 
         // An error with another login's state is not the provider's word on ours: its text is not shown, and ours still waits.
         val foreign = deliver(login, "https://meals.example.nl/app/login?error=access_denied&error_description=Pay+here&state=forged")!!
-        assertEquals(Strings.current(Msg.LOGIN_ANSWER_MISMATCH), foreign.exceptionOrNull()?.message)
+        assertEquals(Strings.current(AccountsMsg.LOGIN_ANSWER_MISMATCH), foreign.exceptionOrNull()?.message)
 
         val refusal = "https://meals.example.nl/app/login?error=access_denied&error_description=The+user+said+no&state=$state"
         assertEquals("The user said no", deliver(login, refusal)!!.exceptionOrNull()?.message)
@@ -369,7 +369,7 @@ class LoginTest {
         val state = startedLogin(logins)
 
         logins.deliver("https://meals.example.nl/app/login?code=stolen&state=forged")
-        assertEquals(LoginProgress.Failed(sentence(Strings.current(Msg.LOGIN_ANSWER_MISMATCH))), logins.outcome())
+        assertEquals(LoginProgress.Failed(sentence(Strings.current(AccountsMsg.LOGIN_ANSWER_MISMATCH))), logins.outcome())
         assertEquals(null, storage.session())
         assertTrue(forms.isEmpty(), "a foreign code never reaches the provider")
 
@@ -490,7 +490,7 @@ class LoginTest {
         val logins = exchange(storage, fakeProvider(mutableListOf(), exchangeFailure = failure, dispatcher = StandardTestDispatcher(testScheduler)))
         logins.deliver("https://meals.example.nl/app/login?code=the-code&state=${startedLogin(logins)}")
         runCurrent()
-        assertEquals(LoginProgress.Failed(sentence(Strings.current(Msg.WENT_WRONG))), logins.progress.value, "a failure, in a plain sentence")
+        assertEquals(LoginProgress.Failed(sentence(Strings.current(ShoppingMsg.WENT_WRONG))), logins.progress.value, "a failure, in a plain sentence")
         assertEquals(null, storage.session())
     }
 

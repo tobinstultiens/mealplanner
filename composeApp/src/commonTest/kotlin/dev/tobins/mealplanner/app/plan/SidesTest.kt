@@ -19,7 +19,6 @@ import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.WeekPlan
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ui.sentence
 import kotlin.test.Test
@@ -129,7 +128,7 @@ class SidesTest {
         // Over by more than the side adds: over without it too, which the sentence does not lay on the side.
         val over = assertNotNull(day(2400.0, meal(1, DINNER, side(1.0))).overWithSides(targets))
         assertEquals(400 to 225, over)
-        assertEquals("This day is 400 kcal over the target; its sides add 225 kcal.", Strings.English(Msg.DAY_OVER_WITH_SIDES, over.first, over.second))
+        assertEquals("This day is 400 kcal over the target; its sides add 225 kcal.", Strings.English(PlanMsg.DAY_OVER_WITH_SIDES, over.first, over.second))
         assertEquals(150 to 225, day(2150.0, meal(1, DINNER, side(1.0))).overWithSides(targets))
         assertNull(day(1950.0, meal(1, DINNER, side(1.0))).overWithSides(targets), "under the target")
         assertNull(day(2150.0, meal(1, DINNER)).overWithSides(targets), "over without a side: as the planner made it")
@@ -139,8 +138,8 @@ class SidesTest {
     @Test
     fun aSideForOneMealOnlySaysWhyItNeedsASecond() {
         val choice = PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-17").toggled("2026-11-17", DINNER)
-        assertEquals(Msg.PREP_TWO_SIDES, PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-17").eatenAs(0.5).toggled("2026-11-17", DINNER).problem)
-        assertEquals(Msg.PREP_TWO_MEALS, choice.problem, "as the meal, as before")
+        assertEquals(PlanMsg.PREP_TWO_SIDES, PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-17").eatenAs(0.5).toggled("2026-11-17", DINNER).problem)
+        assertEquals(PlanMsg.PREP_TWO_MEALS, choice.problem, "as the meal, as before")
     }
 
     /** Issue 269: the salad made on Tuesday's dinner as the meal, with half a serving next to Wednesday's lunch, until Friday. */

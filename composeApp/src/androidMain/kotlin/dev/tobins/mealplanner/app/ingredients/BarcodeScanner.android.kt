@@ -60,7 +60,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.ui.AppIcons
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -220,20 +219,20 @@ private fun ScanScreen(onResult: (ScanResult) -> Unit, onClose: () -> Unit) {
                     )
                 }
                 Text(
-                    t(Msg.SCAN_HELP),
+                    t(IngredientsMsg.SCAN_HELP),
                     Modifier.align(Alignment.CenterHorizontally).padding(horizontal = 32.dp, vertical = 16.dp)
                         .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(12.dp),
                     color = Color.White,
                 )
             }
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                ScanControl(t(Msg.SCAN_CLOSE), AppIcons.Close, lit = false, onClick = onClose)
+                ScanControl(t(IngredientsMsg.SCAN_CLOSE), AppIcons.Close, lit = false, onClick = onClose)
                 Box(Modifier.weight(1f))
                 if (camera?.cameraInfo?.hasFlashUnit() == true) {
                     // On is told from off by the bolt struck through when off, an amber disc with a black ring instead of a dark one, and by what a screen reader says.
-                    val state = t(if (torch) Msg.SCAN_TORCH_ON else Msg.SCAN_TORCH_OFF)
+                    val state = t(if (torch) IngredientsMsg.SCAN_TORCH_ON else IngredientsMsg.SCAN_TORCH_OFF)
                     ScanControl(
-                        t(Msg.SCAN_TORCH), if (torch) AppIcons.Torch else AppIcons.TorchOff, lit = torch,
+                        t(IngredientsMsg.SCAN_TORCH), if (torch) AppIcons.Torch else AppIcons.TorchOff, lit = torch,
                         onClick = { torch = !torch },
                         modifier = Modifier.semantics { stateDescription = state },
                     )

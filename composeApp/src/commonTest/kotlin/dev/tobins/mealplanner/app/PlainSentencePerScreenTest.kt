@@ -10,8 +10,11 @@ import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.app.accounts.AccountShops
+import dev.tobins.mealplanner.app.recipes.RecipesMsg
 import dev.tobins.mealplanner.app.recipes.syncCookingSite
+import dev.tobins.mealplanner.app.shopping.ShoppingMsg
 import dev.tobins.mealplanner.app.ui.AppError
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.failureOf
 import dev.tobins.mealplanner.app.ui.failureSentence
@@ -48,30 +51,30 @@ class PlainSentencePerScreenTest {
     @Test
     fun theRecipeEditorSaysItCouldNotSaveAddAFoodOrLookLinesUp() = runTest {
         val input = RecipeInput("Soup", 2, lines = listOf(RecipeLineInput(1.0, "piece", "leek")))
-        assertPlain(Msg.SAVE_FAILED, "Could not save: the server could not be reached.", "Opslaan is niet gelukt: de server is niet bereikbaar.") { offline.updateRecipe(1, input) }
-        assertPlain(Msg.SAVE_FAILED, "Could not save: the server could not be reached.", "Opslaan is niet gelukt: de server is niet bereikbaar.") { offline.createRecipe(input) }
-        assertPlain(Msg.EDITOR_ADD_FAILED, "Could not add the food: the server could not be reached.", "Het voedingsmiddel toevoegen is niet gelukt: de server is niet bereikbaar.") {
+        assertPlain(CommonMsg.SAVE_FAILED, "Could not save: the server could not be reached.", "Opslaan is niet gelukt: de server is niet bereikbaar.") { offline.updateRecipe(1, input) }
+        assertPlain(CommonMsg.SAVE_FAILED, "Could not save: the server could not be reached.", "Opslaan is niet gelukt: de server is niet bereikbaar.") { offline.createRecipe(input) }
+        assertPlain(CommonMsg.EDITOR_ADD_FAILED, "Could not add the food: the server could not be reached.", "Het voedingsmiddel toevoegen is niet gelukt: de server is niet bereikbaar.") {
             offline.createIngredient(IngredientInput("Leek", nevoCode = 1))
         }
-        assertPlain(Msg.EDITOR_LOOKUP_FAILED, "Could not look the pasted lines up: the server could not be reached.", "De geplakte regels opzoeken is niet gelukt: de server is niet bereikbaar.") {
+        assertPlain(RecipesMsg.EDITOR_LOOKUP_FAILED, "Could not look the pasted lines up: the server could not be reached.", "De geplakte regels opzoeken is niet gelukt: de server is niet bereikbaar.") {
             offline.readLines(input.lines!!)
         }
-        assertPlain(Msg.EDITOR_SEARCH_FAILED, "Could not search the NEVO foods: the server could not be reached.", "Zoeken in de NEVO-voedingsmiddelen is niet gelukt: de server is niet bereikbaar.") {
+        assertPlain(RecipesMsg.EDITOR_SEARCH_FAILED, "Could not search the NEVO foods: the server could not be reached.", "Zoeken in de NEVO-voedingsmiddelen is niet gelukt: de server is niet bereikbaar.") {
             offline.searchFoods("leek")
         }
     }
 
     @Test
     fun theRecipeDetailSaysItCouldNotMarkTheMealEatenOrDelete() = runTest {
-        assertPlain(Msg.COOK_MARK_EATEN_FAILED, "Could not mark the meal as eaten: the server could not be reached.", "Het gerecht markeren als gegeten is niet gelukt: de server is niet bereikbaar.") {
+        assertPlain(RecipesMsg.COOK_MARK_EATEN_FAILED, "Could not mark the meal as eaten: the server could not be reached.", "Het gerecht markeren als gegeten is niet gelukt: de server is niet bereikbaar.") {
             offline.setMealStatus("2026-11-16", 0, MealSlot.DINNER, MealStatus.EATEN)
         }
-        assertPlain(Msg.DELETE_FAILED, "Could not delete: the server could not be reached.", "Verwijderen is niet gelukt: de server is niet bereikbaar.") { offline.deleteRecipe(1) }
+        assertPlain(RecipesMsg.DELETE_FAILED, "Could not delete: the server could not be reached.", "Verwijderen is niet gelukt: de server is niet bereikbaar.") { offline.deleteRecipe(1) }
     }
 
     @Test
     fun theProfileSaysItCouldNotSave() = runTest {
-        assertPlain(Msg.SAVE_FAILED, "Could not save: the server could not be reached.", "Opslaan is niet gelukt: de server is niet bereikbaar.") {
+        assertPlain(CommonMsg.SAVE_FAILED, "Could not save: the server could not be reached.", "Opslaan is niet gelukt: de server is niet bereikbaar.") {
             offline.saveProfile(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT))
         }
     }
@@ -79,7 +82,7 @@ class PlainSentencePerScreenTest {
     @Test
     fun theShoppingStoresSayTheyCouldNotBeSaved() = runTest {
         val shops = AccountShops(MemorySettingsStorage(), offline::shops, offline::saveShops)
-        assertPlain(Msg.SHOPS_SAVE_FAILED, "Could not save the stores: the server could not be reached.", "Winkels opslaan is niet gelukt: de server is niet bereikbaar.") { shops.choose(setOf(Store.AH)) }
+        assertPlain(ShoppingMsg.SHOPS_SAVE_FAILED, "Could not save the stores: the server could not be reached.", "Winkels opslaan is niet gelukt: de server is niet bereikbaar.") { shops.choose(setOf(Store.AH)) }
         // The settings screen shows the same failure without a lead-in.
         assertPlain(null, "The server could not be reached.", "De server is niet bereikbaar.") { shops.choose(setOf(Store.AH)) }
     }

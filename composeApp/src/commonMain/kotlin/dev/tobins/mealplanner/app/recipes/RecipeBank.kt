@@ -45,8 +45,6 @@ import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.BackHandler
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.RefreshNotice
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ingredients.RadioOption
@@ -54,6 +52,8 @@ import dev.tobins.mealplanner.app.rememberFrontReturns
 import dev.tobins.mealplanner.app.rememberLoad
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
+import dev.tobins.mealplanner.app.ui.CommonPlural
 import dev.tobins.mealplanner.app.ui.ErrorBanner
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
@@ -96,12 +96,12 @@ internal suspend fun syncCookingSite(api: ApiClient, t: Strings, bank: Boolean, 
     when (val result = load { api.syncCookingSite() }) {
         is Load.Ready -> with(result.value) {
             when {
-                !bank -> SyncOutcome(t(if (imported) Msg.IMPORTED else Msg.SYNCED, added, updated, removed), 0)
-                added > 0 -> SyncOutcome(t.plural(Plural.NEW_IN_BANK, added), added)
-                else -> SyncOutcome(t(if (imported) Msg.IMPORTED_BANK else Msg.SYNCED_BANK, added, updated, removed), 0)
+                !bank -> SyncOutcome(t(if (imported) RecipesMsg.IMPORTED else RecipesMsg.SYNCED, added, updated, removed), 0)
+                added > 0 -> SyncOutcome(t.plural(RecipesPlural.NEW_IN_BANK, added), added)
+                else -> SyncOutcome(t(if (imported) RecipesMsg.IMPORTED_BANK else RecipesMsg.SYNCED_BANK, added, updated, removed), 0)
             }
         }
-        is Load.Failed -> SyncOutcome(failureSentence(result, if (imported) Msg.IMPORT_FAILED else Msg.SYNC_FAILED), 0)
+        is Load.Failed -> SyncOutcome(failureSentence(result, if (imported) RecipesMsg.IMPORT_FAILED else RecipesMsg.SYNC_FAILED), 0)
         Load.Loading -> SyncOutcome("", 0)
     }
 
@@ -142,9 +142,9 @@ internal fun siteSetting(choice: SiteChoice, url: String, serverSite: Boolean): 
  * snackbar is gone.
  */
 internal suspend fun SnackbarHostState.announceAdded(t: Strings, message: String, unlinked: Int, onLink: () -> Unit, onUndo: suspend () -> Unit) {
-    val undo = t(Msg.UNDO)
+    val undo = t(CommonMsg.UNDO)
     val result = if (unlinked > 0) {
-        showSnackbar(TwoActionSnackbar("$message. " + t.plural(Plural.INGREDIENTS_TO_LINK, unlinked) + ".", undo, t(Msg.LINK_SHORT), onLink))
+        showSnackbar(TwoActionSnackbar("$message. " + t.plural(CommonPlural.INGREDIENTS_TO_LINK, unlinked) + ".", undo, t(RecipesMsg.LINK_SHORT), onLink))
     } else {
         showSnackbar(message, actionLabel = undo, duration = SnackbarDuration.Long)
     }
@@ -163,14 +163,14 @@ internal suspend fun ApiClient.setAdded(ids: List<Long>, added: Boolean): List<R
 internal fun SyncLine(status: CookingSyncStatus, onEdit: () -> Unit) {
     val t = LocalStrings.current
     val text = when {
-        status.siteChoice() == SiteChoice.NONE && status.syncedAt == null -> t.onWeb(Msg.SYNC_NONE, Msg.SYNC_NONE_BROWSER)
-        status.syncedAt == null -> t(Msg.SYNC_NOT_YET)
-        status.shared -> t(Msg.SYNC_SERVER_AT, instantLabel(status.syncedAt!!, t))
-        else -> t(Msg.SYNC_AT, instantLabel(status.syncedAt!!, t))
+        status.siteChoice() == SiteChoice.NONE && status.syncedAt == null -> t.onWeb(RecipesMsg.SYNC_NONE, RecipesMsg.SYNC_NONE_BROWSER)
+        status.syncedAt == null -> t(RecipesMsg.SYNC_NOT_YET)
+        status.shared -> t(RecipesMsg.SYNC_SERVER_AT, instantLabel(status.syncedAt!!, t))
+        else -> t(RecipesMsg.SYNC_AT, instantLabel(status.syncedAt!!, t))
     }
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onEdit).padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.Center) {
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        status.error?.let { ErrorBanner(t(Msg.LAST_SYNC_FAILED), it) }
+        status.error?.let { ErrorBanner(t(RecipesMsg.LAST_SYNC_FAILED), it) }
     }
 }
 
@@ -196,7 +196,7 @@ internal fun CookingRepoDialog(status: CookingSyncStatus?, onDismiss: () -> Unit
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.COOKING_SITE)) },
+        title = { Text(t(RecipesMsg.COOKING_SITE)) },
         text = {
             CookingSiteChoices(
                 serverSite = serverSite || choice == SiteChoice.SERVER, serverUrl = status?.serverRepoUrl,
@@ -207,10 +207,10 @@ internal fun CookingRepoDialog(status: CookingSyncStatus?, onDismiss: () -> Unit
         },
         confirmButton = {
             TextButton(enabled = !saving && (choice != SiteChoice.OWN || url.isNotBlank()), onClick = ::save) {
-                Text(if (saving && choice != SiteChoice.NONE) t(Msg.IMPORTING) else t(Msg.SAVE))
+                Text(if (saving && choice != SiteChoice.NONE) t(RecipesMsg.IMPORTING) else t(CommonMsg.SAVE))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -230,19 +230,19 @@ internal fun CookingSiteChoices(
 ) {
     val t = LocalStrings.current
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-        Text(t(Msg.COOKING_SITE_CHOOSE))
-        if (serverSite) RadioOption(t(Msg.SITE_OF_SERVER), serverUrl, selected = choice == SiteChoice.SERVER) { onChoice(SiteChoice.SERVER) }
-        RadioOption(t(Msg.SITE_OWN), t(Msg.COOKING_SITE_EXPLAIN), selected = choice == SiteChoice.OWN) { onChoice(SiteChoice.OWN) }
+        Text(t(RecipesMsg.COOKING_SITE_CHOOSE))
+        if (serverSite) RadioOption(t(RecipesMsg.SITE_OF_SERVER), serverUrl, selected = choice == SiteChoice.SERVER) { onChoice(SiteChoice.SERVER) }
+        RadioOption(t(RecipesMsg.SITE_OWN), t(RecipesMsg.COOKING_SITE_EXPLAIN), selected = choice == SiteChoice.OWN) { onChoice(SiteChoice.OWN) }
         if (choice == SiteChoice.OWN) {
             OutlinedTextField(
                 url, onUrl,
-                label = { Text(t(Msg.REPO_URL)) },
-                placeholder = { Text(t(Msg.REPO_URL_EXAMPLE)) },
+                label = { Text(t(RecipesMsg.REPO_URL)) },
+                placeholder = { Text(t(RecipesMsg.REPO_URL_EXAMPLE)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        RadioOption(t(Msg.SITE_NONE), t(Msg.SITE_NONE_EXPLAIN), selected = choice == SiteChoice.NONE) { onChoice(SiteChoice.NONE) }
+        RadioOption(t(RecipesMsg.SITE_NONE), t(RecipesMsg.SITE_NONE_EXPLAIN), selected = choice == SiteChoice.NONE) { onChoice(SiteChoice.NONE) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     }
 }
@@ -290,13 +290,13 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
                 is Load.Ready -> {
                     (state as? Load.Ready)?.let { state = Load.Ready(it.value.filter { recipe -> recipe.id !in ids }) }
                     selection.stop()
-                    val message = if (recipes.size == 1) t(Msg.ADDED_ONE, recipes.single().title) else t.plural(Plural.ADDED_MANY, recipes.size)
+                    val message = if (recipes.size == 1) t(RecipesMsg.ADDED_ONE, recipes.single().title) else t.plural(RecipesPlural.ADDED_MANY, recipes.size)
                     snackbar.announceAdded(t, message, unlinkedIngredients(result.value.filter { it.id in ids }), onOpenMapping) {
-                        (load { api.setAdded(ids, added = false) } as? Load.Failed)?.let { snackbar.showSnackbar(failureSentence(it, Msg.REMOVE_FAILED)) }
+                        (load { api.setAdded(ids, added = false) } as? Load.Failed)?.let { snackbar.showSnackbar(failureSentence(it, RecipesMsg.REMOVE_FAILED)) }
                         reload++
                     }
                 }
-                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.ADDED_FAILED))
+                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, RecipesMsg.ADDED_FAILED))
                 Load.Loading -> Unit
             }
         }
@@ -305,7 +305,7 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
     // Back leaves selecting first, and only then the screen (whose own handler is in App).
     BackHandler(enabled = selection.selecting, onBack = selection::stop)
     SubScreen(
-        title = if (selection.selecting) t(Msg.SELECT_RECIPES) else t(Msg.BANK_TITLE),
+        title = if (selection.selecting) t(RecipesMsg.SELECT_RECIPES) else t(RecipesMsg.BANK_TITLE),
         onBack = { if (selection.selecting) selection.stop() else onBack() },
         snackbar = snackbar,
         notice = {
@@ -317,7 +317,7 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
                         onSelectAll = { selection.selectAll(shown.map { it.id }) },
                         aboveSystemBar = false,
                     ) {
-                        SelectionAction(t(Msg.ADD_TO_MY_RECIPES), enabled = !acting && selection.ids.orEmpty().isNotEmpty()) {
+                        SelectionAction(t(RecipesMsg.ADD_TO_MY_RECIPES), enabled = !acting && selection.ids.orEmpty().isNotEmpty()) {
                             add(((state as? Load.Ready)?.value).orEmpty().filter { selection.contains(it.id) })
                         }
                     }
@@ -328,7 +328,7 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
         actions = {
             BarAction(
                 AppIcons.Sync,
-                if (syncing) t(Msg.SYNCING) else t(Msg.SYNC),
+                if (syncing) t(RecipesMsg.SYNCING) else t(RecipesMsg.SYNC),
                 busy = syncing,
                 onClick = {
                     syncing = true
@@ -340,7 +340,7 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
                     }
                 },
             )
-            OverflowMenu(MenuAction(AppIcons.Check, t(Msg.SELECT_RECIPES)) { selection.start() })
+            OverflowMenu(MenuAction(AppIcons.Check, t(RecipesMsg.SELECT_RECIPES)) { selection.start() })
         },
     ) { padding ->
         val bank = (state as? Load.Ready)?.value.orEmpty()
@@ -351,7 +351,7 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text(t(Msg.SEARCH_RECIPES)) },
+                    label = { Text(t(RecipesMsg.SEARCH_RECIPES)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge),
                 )
@@ -361,7 +361,7 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
                         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Spacing.ScreenEdge),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
                     ) {
-                        FilterChip(selected = section.isEmpty(), onClick = { section = "" }, label = { Text(t(Msg.BANK_ALL_SECTIONS)) })
+                        FilterChip(selected = section.isEmpty(), onClick = { section = "" }, label = { Text(t(RecipesMsg.BANK_ALL_SECTIONS)) })
                         sections.forEach { name ->
                             FilterChip(selected = section == name, onClick = { section = name }, label = { Text(name) })
                         }
@@ -388,16 +388,16 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
             Load.Loading -> Column(Modifier.padding(padding).fillMaxSize()) { header(); LoadingState() }
             is Load.Failed -> Column(Modifier.padding(padding).fillMaxSize()) {
                 header()
-                ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current) { reload++ }
+                ErrorMessage(t(RecipesMsg.RECIPES_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val shown = bankShown(current.value, section.ifEmpty { null }, query)
                 LazyColumn(Modifier.padding(padding).fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
                     item(key = "header") { header() }
                     if (current.value.isEmpty()) {
-                        item(key = "empty") { Text(t(Msg.BANK_EMPTY), Modifier.padding(Spacing.ScreenEdge)) }
+                        item(key = "empty") { Text(t(RecipesMsg.BANK_EMPTY), Modifier.padding(Spacing.ScreenEdge)) }
                     } else if (shown.isEmpty()) {
-                        item(key = "none") { Text(t(Msg.NO_RECIPES_MATCH), Modifier.padding(Spacing.ScreenEdge)) }
+                        item(key = "none") { Text(t(RecipesMsg.NO_RECIPES_MATCH), Modifier.padding(Spacing.ScreenEdge)) }
                     }
                     items(shown, key = { it.id }) { recipe ->
                         val selecting = selection.selecting
@@ -410,8 +410,8 @@ fun RecipeBankScreen(api: ApiClient, onBack: () -> Unit, onOpen: (Long) -> Unit,
                                 FilledTonalButton(
                                     onClick = { add(listOf(recipe)) },
                                     enabled = !acting,
-                                    modifier = Modifier.semantics { contentDescription = t(Msg.ADD_RECIPE, recipe.title) },
-                                ) { Text(t(Msg.ADD)) }
+                                    modifier = Modifier.semantics { contentDescription = t(RecipesMsg.ADD_RECIPE, recipe.title) },
+                                ) { Text(t(CommonMsg.ADD)) }
                             }),
                         )
                         HorizontalDivider()

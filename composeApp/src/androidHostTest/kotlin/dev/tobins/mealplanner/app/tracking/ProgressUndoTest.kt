@@ -16,7 +16,6 @@ import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.FakeBackend
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import org.junit.After
 import org.junit.Rule
@@ -96,7 +95,7 @@ class ProgressUndoTest {
         waitFor("Remove")
 
         compose.onNodeWithText("Remove").performClick()
-        waitFor(Strings.English(Msg.WEIGHT_KEPT))
+        waitFor(Strings.English(TrackingMsg.WEIGHT_KEPT))
         assertEquals(170.0, backend.profile!!.weightKg)
         compose.onNodeWithText("Open profile").performClick()
         assertEquals(1, openedProfile)
@@ -104,7 +103,7 @@ class ProgressUndoTest {
         // Undoing brings the weigh-in back and the note goes.
         compose.onNodeWithText("Undo").performClick()
         waitFor("Remove")
-        assertEquals(0, compose.onAllNodesWithText(Strings.English(Msg.WEIGHT_KEPT)).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodesWithText(Strings.English(TrackingMsg.WEIGHT_KEPT)).fetchSemanticsNodes().size)
     }
 
     @Test
@@ -114,6 +113,6 @@ class ProgressUndoTest {
         waitFor("Remove")
         compose.onAllNodesWithText("Remove").onFirst().performScrollTo().performClick()
         waitFor("Undo")
-        assertEquals(0, compose.onAllNodesWithText(Strings.English(Msg.WEIGHT_KEPT)).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodesWithText(Strings.English(TrackingMsg.WEIGHT_KEPT)).fetchSemanticsNodes().size)
     }
 }

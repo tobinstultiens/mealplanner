@@ -17,9 +17,9 @@ import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.WeekPlan
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.recipes.MealToCook
+import dev.tobins.mealplanner.app.recipes.RecipesMsg
 import dev.tobins.mealplanner.app.shopping.nothingToBuyText
 import dev.tobins.mealplanner.app.ui.plusDays
 import dev.tobins.mealplanner.app.ui.sentence
@@ -60,16 +60,16 @@ class PrepTest {
     @Test
     fun aPrepNeedsARecipeTwoMealsAndItsFirstOnTheDayItIsMade() {
         val choice = PrepChoice(null, madeOn = "2026-11-17", firstDay = "2026-11-17")
-        assertEquals(Msg.PREP_PICK_RECIPE, choice.problem)
-        assertEquals(Msg.PREP_FIRST_ON_MADE_DAY, choice.with(recipe = salad).toggled("2026-11-18", LUNCH).problem)
-        assertEquals(Msg.PREP_TWO_MEALS, choice.with(recipe = salad).toggled("2026-11-17", DINNER).problem)
+        assertEquals(PlanMsg.PREP_PICK_RECIPE, choice.problem)
+        assertEquals(PlanMsg.PREP_FIRST_ON_MADE_DAY, choice.with(recipe = salad).toggled("2026-11-18", LUNCH).problem)
+        assertEquals(PlanMsg.PREP_TWO_MEALS, choice.with(recipe = salad).toggled("2026-11-17", DINNER).problem)
         val ready = choice.with(recipe = salad).toggled("2026-11-18", LUNCH).toggled("2026-11-17", DINNER)
         assertNull(ready.problem)
         assertEquals(
             PrepInput(1, "2026-11-17", false, listOf(PrepSlot("2026-11-17", DINNER), PrepSlot("2026-11-18", LUNCH))),
             ready.input(), "in eating order",
         )
-        assertEquals(Msg.PREP_TWO_MEALS, ready.toggled("2026-11-18", LUNCH).problem, "a second tap takes a meal out")
+        assertEquals(PlanMsg.PREP_TWO_MEALS, ready.toggled("2026-11-18", LUNCH).problem, "a second tap takes a meal out")
     }
 
     @Test
@@ -80,7 +80,7 @@ class PrepTest {
         assertEquals(emptyList(), prepDays("2026-11-09", "2026-11-18"))
         // A meal of Tuesday offered from its menu on Wednesday: it can't be made.
         val tuesday = PrepChoice(salad, madeOn = "2026-11-17", firstDay = "2026-11-18").toggled("2026-11-17", DINNER).toggled("2026-11-18", LUNCH)
-        assertEquals(Msg.PREP_MADE_ON_PAST, tuesday.problem)
+        assertEquals(PlanMsg.PREP_MADE_ON_PAST, tuesday.problem)
         assertNull(tuesday.with(madeOn = "2026-11-18").toggled("2026-11-19", LUNCH).problem)
     }
 
@@ -90,7 +90,7 @@ class PrepTest {
         val opened = newPrep(listOf(vacuumOnly), listOf("2026-11-18", "2026-11-19"), today = "2026-11-18")
         assertEquals(true to "2026-11-18", opened.vacuum to opened.madeOn)
         assertEquals(7, opened.days.size, "made Wednesday, six days vacuum sealed")
-        assertEquals(Msg.PREP_FIRST_ON_MADE_DAY, opened.problem)
+        assertEquals(PlanMsg.PREP_FIRST_ON_MADE_DAY, opened.problem)
         assertEquals(false, newPrep(listOf(salad), listOf("2026-11-18"), "2026-11-18").vacuum, "in a box when it keeps that way")
         assertNull(newPrep(listOf(salad, vacuumOnly), listOf("2026-11-18"), "2026-11-18").recipe, "several: the user picks")
     }
@@ -218,7 +218,7 @@ class PrepTest {
         assertEquals(2.75 / 4, MealToCook(1, 1.5, 2.75, skipped = false, prepMadeOn = "2026-11-17").amountsFactor(4, asWritten = false))
         assertEquals(false, later.copy(skipped = true).fromBatch, "a skipped one holds nothing")
         assertNull(MealToCook(1, 0.75, 0.0, skipped = false).amountsFactor(4, asWritten = false), "yesterday's leftovers stay as written, as before")
-        assertEquals("In this meal: 1.25 servings", Strings.English(Msg.IN_THIS_MEAL, servingsText(1.25, Strings.English)))
+        assertEquals("In this meal: 1.25 servings", Strings.English(RecipesMsg.IN_THIS_MEAL, servingsText(1.25, Strings.English)))
     }
 
     @Test

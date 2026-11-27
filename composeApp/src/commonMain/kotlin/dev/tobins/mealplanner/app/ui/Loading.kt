@@ -72,10 +72,10 @@ internal suspend fun failedFrom(e: Throwable): Load.Failed {
         val body = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(e.response.bodyAsText()) as? kotlinx.serialization.json.JsonObject }.getOrNull()
         fun field(name: String) = (body?.get(name) as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
         val status = e.response.status
-        return Load.Failed(field("error") ?: Strings.current(Msg.SERVER_ANSWERED, status.value, status.description), status.value, reason = field("reason"), detail = field("detail"))
+        return Load.Failed(field("error") ?: Strings.current(CommonMsg.SERVER_ANSWERED, status.value, status.description), status.value, reason = field("reason"), detail = field("detail"))
     }
     return Load.Failed(
-        e.message ?: Strings.current(Msg.UNKNOWN_ERROR),
+        e.message ?: Strings.current(CommonMsg.UNKNOWN_ERROR),
         technical = e.message != null,
         unreadable = e is SerializationException || e is ContentConvertException,
         lostConnection = e is IOException || e is HttpRequestTimeoutException,
@@ -131,8 +131,8 @@ internal fun ErrorMessage(title: String, failed: Load.Failed, onRetry: () -> Uni
             ErrorBanner(summary = detail.lineSequence().first().take(100) + "…", details = detail, modifier = Modifier.fillMaxWidth())
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Button(onClick = onRetry) { Text(t(Msg.TRY_AGAIN)) }
-            if (openServer != null) TextButton(onClick = openServer) { Text(t(Msg.SERVER_SETTINGS)) }
+            Button(onClick = onRetry) { Text(t(CommonMsg.TRY_AGAIN)) }
+            if (openServer != null) TextButton(onClick = openServer) { Text(t(CommonMsg.SERVER_SETTINGS)) }
         }
     }
 }

@@ -40,8 +40,6 @@ import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.app.KeepScreenOn
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.SettingsStorage
 import dev.tobins.mealplanner.app.ShoppingView
 import dev.tobins.mealplanner.app.Strings
@@ -58,6 +56,7 @@ import dev.tobins.mealplanner.app.shoppingStore
 import dev.tobins.mealplanner.app.shoppingView
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.DetailsDialog
 import dev.tobins.mealplanner.app.ui.EmptyState
 import dev.tobins.mealplanner.app.ui.ErrorMessage
@@ -131,13 +130,13 @@ internal fun ShoppingScreen(
         if (notice == null) return@LaunchedEffect
         val answer = snackbar.showSnackbar(
             t(notice.msg, notice.detail),
-            actionLabel = notice.technical?.let { t(Msg.DETAILS) },
+            actionLabel = notice.technical?.let { t(CommonMsg.DETAILS) },
             duration = if (notice.technical != null) SnackbarDuration.Long else SnackbarDuration.Short,
         )
         if (answer == SnackbarResult.ActionPerformed) technicalDetails = notice.technical
         session.shown(notice)
     }
-    technicalDetails?.let { DetailsDialog(t(Msg.DETAILS), it) { technicalDetails = null } }
+    technicalDetails?.let { DetailsDialog(t(CommonMsg.DETAILS), it) { technicalDetails = null } }
     // The row whose deals are open, from a tap on its chip. "Not this ingredient" closes them: the snackbar says what it did.
     var dealsOf by remember { mutableStateOf<ShoppingItem?>(null) }
     dealsOf?.let { item ->
@@ -165,8 +164,8 @@ internal fun ShoppingScreen(
         scope.launch {
             snackbar.currentSnackbarData?.dismiss()
             val answer = snackbar.showSnackbar(
-                if (item.checked) t(Msg.BACK_ON_LIST, item.name) else t(Msg.TICKED_OFF, item.name),
-                actionLabel = t(Msg.UNDO),
+                if (item.checked) t(ShoppingMsg.BACK_ON_LIST, item.name) else t(ShoppingMsg.TICKED_OFF, item.name),
+                actionLabel = t(CommonMsg.UNDO),
                 duration = SnackbarDuration.Short,
             )
             if (answer == SnackbarResult.ActionPerformed) tick(item.key, item.checked)
@@ -238,7 +237,7 @@ internal fun ShoppingScreen(
         if (byStore) {
             storeOverview(shown, shops, today).stores.forEach { group ->
                 item(key = "$id${group.store.name}") {
-                    GroupHeader(group.title(t), group.saving?.let { t(Msg.ADVICE_SAVING, formatEuro(it, t.locale)) }.orEmpty(), onClick = null)
+                    GroupHeader(group.title(t), group.saving?.let { t(ShoppingMsg.ADVICE_SAVING, formatEuro(it, t.locale)) }.orEmpty(), onClick = null)
                 }
                 groupItems(id + group.store.name, group.items, row)
             }
@@ -253,7 +252,7 @@ internal fun ShoppingScreen(
     /** Shown at once; when the server can't be told, the chips go back and say why. */
     fun chooseShops(chosen: Set<Store>) {
         scope.launch {
-            (load { accountShops.choose(chosen) } as? Load.Failed)?.let { snackbar.showSnackbar(failureSentence(it, Msg.SHOPS_SAVE_FAILED)) }
+            (load { accountShops.choose(chosen) } as? Load.Failed)?.let { snackbar.showSnackbar(failureSentence(it, ShoppingMsg.SHOPS_SAVE_FAILED)) }
         }
     }
 
@@ -268,16 +267,16 @@ internal fun ShoppingScreen(
             TopAppBar(
                 title = {
                     PeriodStepper(
-                        label = t(Msg.WEEK_OF, dayMonthLabel(weekStart, t.locale)),
-                        previous = t(Msg.PREVIOUS_WEEK),
-                        next = t(Msg.NEXT_WEEK),
+                        label = t(CommonMsg.WEEK_OF, dayMonthLabel(weekStart, t.locale)),
+                        previous = t(CommonMsg.PREVIOUS_WEEK),
+                        next = t(CommonMsg.NEXT_WEEK),
                         onPrevious = { session.open(plusDays(weekStart, -7)) },
                         onNext = { session.open(plusDays(weekStart, 7)) },
                     )
                 },
                 actions = {
-                    BarAction(AppIcons.Offer, t(Msg.OFFERS), onOpenOffers)
-                    BarAction(AppIcons.Pantry, t(Msg.PANTRY), onOpenPantry)
+                    BarAction(AppIcons.Offer, t(CommonMsg.OFFERS), onOpenOffers)
+                    BarAction(AppIcons.Pantry, t(CommonMsg.PANTRY), onOpenPantry)
                 },
             )
         },
@@ -286,7 +285,7 @@ internal fun ShoppingScreen(
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.SHOPPING_LOAD_FAILED), current) { retry() }
+                ErrorMessage(t(ShoppingMsg.SHOPPING_LOAD_FAILED), current) { retry() }
             }
             is Load.Ready -> {
                 val list = current.value
@@ -327,19 +326,19 @@ internal fun ShoppingScreen(
                             Row(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     // Lists saved by older versions hold the time as text, not as an instant.
-                                    t(Msg.OFFLINE_LIST, runCatching { instantLabel(since, t) }.getOrDefault(since)),
+                                    t(ShoppingMsg.OFFLINE_LIST, runCatching { instantLabel(since, t) }.getOrDefault(since)),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.weight(1f),
                                 )
-                                TextButton(onClick = { retry() }) { Text(t(Msg.RETRY)) }
+                                TextButton(onClick = { retry() }) { Text(t(ShoppingMsg.RETRY)) }
                             }
                         }
                     }
                     if (session.stuckTicks > 0) {
                         item(key = "stuck-ticks") {
                             Text(
-                                t.plural(Plural.TICKS_NOT_SENT, session.stuckTicks),
+                                t.plural(ShoppingPlural.TICKS_NOT_SENT, session.stuckTicks),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
@@ -348,7 +347,7 @@ internal fun ShoppingScreen(
                     }
                     val store = chosenStore?.takeIf { view == ShoppingView.STORE && it in shops }
                     // With advice below, the count sits under "For this week": it counts that part only, not the buy-ahead rows.
-                    if (list.hasAdvice(store, shops, today)) item(key = "this-week") { PartTitle(t(Msg.FOR_THIS_WEEK)) }
+                    if (list.hasAdvice(store, shops, today)) item(key = "this-week") { PartTitle(t(ShoppingMsg.FOR_THIS_WEEK)) }
                     item {
                         Text(
                             shoppingProgress(list, t),
@@ -364,8 +363,8 @@ internal fun ShoppingScreen(
                             overview.stores.forEach { group ->
                                 item(key = "s:${group.store.name}") {
                                     val browser = runsInBrowser()
-                                    val hint = group.saving?.let { t(if (browser) Msg.STORE_SAVING_HINT_BROWSER else Msg.STORE_SAVING_HINT, formatEuro(it, t.locale)) }
-                                        ?: t(if (browser) Msg.TAP_TO_SHOP_BROWSER else Msg.TAP_TO_SHOP)
+                                    val hint = group.saving?.let { t(if (browser) ShoppingMsg.STORE_SAVING_HINT_BROWSER else ShoppingMsg.STORE_SAVING_HINT, formatEuro(it, t.locale)) }
+                                        ?: t(if (browser) ShoppingMsg.TAP_TO_SHOP_BROWSER else ShoppingMsg.TAP_TO_SHOP)
                                     GroupHeader(group.title(t), hint, onClick = { chooseStore(group.store) })
                                 }
                                 groupItems(group.store.name, group.items) { row(it, it.chipOffer(shops, today)) }
@@ -373,8 +372,8 @@ internal fun ShoppingScreen(
                             if (overview.anyStore.isNotEmpty()) {
                                 item(key = "s:any") {
                                     GroupHeader(
-                                        t.plural(Plural.ANY_STORE_ITEMS, overview.anyStore.size),
-                                        t(Msg.FREE_TO_BUY),
+                                        t.plural(ShoppingPlural.ANY_STORE_ITEMS, overview.anyStore.size),
+                                        t(ShoppingMsg.FREE_TO_BUY),
                                         onClick = null,
                                     )
                                 }
@@ -383,7 +382,7 @@ internal fun ShoppingScreen(
                             // Last, under a count of their own: the headers above count what the progress line counts.
                             if (overview.covered.isNotEmpty()) {
                                 item(key = "s:covered") {
-                                    GroupHeader(t.plural(Plural.NOTHING_LEFT_ITEMS, overview.covered.size), t(Msg.NOTHING_LEFT_HINT), onClick = null)
+                                    GroupHeader(t.plural(ShoppingPlural.NOTHING_LEFT_ITEMS, overview.covered.size), t(ShoppingMsg.NOTHING_LEFT_HINT), onClick = null)
                                 }
                                 groupItems("covered", overview.covered) { row(it, it.chipOffer(shops, today)) }
                             }
@@ -395,7 +394,7 @@ internal fun ShoppingScreen(
                             if (visit.elsewhere.isNotEmpty()) {
                                 val open = "elsewhere" in expanded
                                 item(key = "elsewhere") {
-                                    ToggleHeader(t(Msg.CHEAPER_ELSEWHERE, visit.elsewhere.size), open) { session.toggle("elsewhere") }
+                                    ToggleHeader(t(ShoppingMsg.CHEAPER_ELSEWHERE, visit.elsewhere.size), open) { session.toggle("elsewhere") }
                                 }
                                 if (open) items(visit.elsewhere, key = { it.item.key }) { row(it.item, it.offer) }
                             }
@@ -404,7 +403,7 @@ internal fun ShoppingScreen(
                     if (list.toTaste.isNotEmpty()) {
                         item {
                             Text(
-                                t(Msg.TO_TASTE, list.toTaste.joinToString()),
+                                t(ShoppingMsg.TO_TASTE, list.toTaste.joinToString()),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
@@ -414,7 +413,7 @@ internal fun ShoppingScreen(
                     if (list.staples.isNotEmpty()) {
                         item {
                             Text(
-                                t(Msg.STAPLES_NOTE, list.staples.joinToString()),
+                                t(ShoppingMsg.STAPLES_NOTE, list.staples.joinToString()),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(Spacing.InsideCard),
@@ -443,4 +442,4 @@ internal fun ShoppingScreen(
  * which that week's list bought ([ShoppingList.preppedBoughtIn], issue 263), while the Plan shows them in this week.
  */
 fun nothingToBuyText(list: ShoppingList, t: Strings): String =
-    list.preppedBoughtIn?.let { t(Msg.NOTHING_TO_BUY_PREPPED, dayMonthLabel(it, t.locale)) } ?: t(Msg.NOTHING_TO_BUY)
+    list.preppedBoughtIn?.let { t(ShoppingMsg.NOTHING_TO_BUY_PREPPED, dayMonthLabel(it, t.locale)) } ?: t(ShoppingMsg.NOTHING_TO_BUY)

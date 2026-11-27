@@ -9,8 +9,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.widget.Toast
+import dev.tobins.mealplanner.app.AppMsg
 import dev.tobins.mealplanner.app.AppUpdate
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.UpdateInstaller
 import java.io.File
@@ -37,7 +37,7 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
                 .setDestinationInExternalFilesDir(app, Environment.DIRECTORY_DOWNLOADS, name)
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE),
         )
-        Toast.makeText(app, Strings.current(Msg.DOWNLOADING_VERSION, update.version), Toast.LENGTH_SHORT).show()
+        Toast.makeText(app, Strings.current(AppMsg.DOWNLOADING_VERSION, update.version), Toast.LENGTH_SHORT).show()
 
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -45,7 +45,7 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
                 app.unregisterReceiver(this)
                 val uri = downloads.getUriForDownloadedFile(id)
                 if (uri == null) {
-                    Toast.makeText(app, Strings.current(Msg.DOWNLOAD_FAILED), Toast.LENGTH_LONG).show()
+                    Toast.makeText(app, Strings.current(AppMsg.DOWNLOAD_FAILED), Toast.LENGTH_LONG).show()
                     return
                 }
                 app.startActivity(

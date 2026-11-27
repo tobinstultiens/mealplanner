@@ -43,7 +43,6 @@ import dev.tobins.mealplanner.app.AppLanguage
 import dev.tobins.mealplanner.app.AppUpdate
 import dev.tobins.mealplanner.app.AppUpdates
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.NotificationKind
 import dev.tobins.mealplanner.app.NotificationSettings
 import dev.tobins.mealplanner.app.ServerSettings
@@ -60,6 +59,7 @@ import dev.tobins.mealplanner.app.saveNotificationOn
 import dev.tobins.mealplanner.app.shopping.ShopsInUse
 import dev.tobins.mealplanner.app.shopping.shortName
 import dev.tobins.mealplanner.app.systemColorsAvailable
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorBanner
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.Spacing
@@ -121,14 +121,14 @@ internal fun ServerSettingsScreen(
     val draft = ServerSettings(url.trim().trimEnd('/'))
     val urlValid = draft.url.startsWith("http://") || draft.url.startsWith("https://")
 
-    SubScreen(t(Msg.SETTINGS), onBack, snackbar) { padding ->
+    SubScreen(t(CommonMsg.SETTINGS), onBack, snackbar) { padding ->
         // Without an account the server comes first: nothing else works until it is set.
         val server: @Composable () -> Unit = {
-            SettingsCard(t(Msg.CARD_SERVER)) {
+            SettingsCard(t(AccountsMsg.CARD_SERVER)) {
                 OutlinedTextField(
                     url, { url = it; result = null },
-                    label = { Text(t(Msg.SERVER_ADDRESS)) },
-                    supportingText = { Text(t(Msg.SERVER_ADDRESS_HINT)) },
+                    label = { Text(t(AccountsMsg.SERVER_ADDRESS)) },
+                    supportingText = { Text(t(AccountsMsg.SERVER_ADDRESS_HINT)) },
                     isError = url.isNotBlank() && !urlValid,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -143,19 +143,19 @@ internal fun ServerSettingsScreen(
                                 val client = ApiClient(draft)
                                 result = when (val health = load { client.health() }) {
                                     is Load.Failed -> ConnectionResult(false, failureSentence(health))
-                                    is Load.Ready -> ConnectionResult(true, t(Msg.CONNECTED, health.value.version))
+                                    is Load.Ready -> ConnectionResult(true, t(AccountsMsg.CONNECTED, health.value.version))
                                     Load.Loading -> null
                                 }
                                 client.close()
                                 testing = false
                             }
                         },
-                    ) { Text(if (testing) t(Msg.TESTING) else t(Msg.TEST_CONNECTION)) }
-                    Button(enabled = urlValid && draft != current, onClick = { onSave(draft) }) { Text(t(Msg.SAVE)) }
+                    ) { Text(if (testing) t(AccountsMsg.TESTING) else t(AccountsMsg.TEST_CONNECTION)) }
+                    Button(enabled = urlValid && draft != current, onClick = { onSave(draft) }) { Text(t(CommonMsg.SAVE)) }
                 }
                 result?.let {
                     if (it.ok) Text(it.text, style = MaterialTheme.typography.bodyMedium)
-                    else ErrorBanner(t(Msg.CANNOT_REACH), it.text)
+                    else ErrorBanner(t(AccountsMsg.CANNOT_REACH), it.text)
                 }
             }
         }
@@ -165,43 +165,43 @@ internal fun ServerSettingsScreen(
         ) {
             // Opened from the login screen to change the server: that comes first.
             if (!loggedIn) server()
-            SettingsCard(t(Msg.CARD_ACCOUNT)) {
+            SettingsCard(t(AccountsMsg.CARD_ACCOUNT)) {
                 if (loggedIn) {
-                    Text(if (account != null) t(Msg.LOGGED_IN_AS, account) else t(Msg.LOGGED_IN), style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(onClick = onLogout) { Text(t(Msg.LOG_OUT)) }
+                    Text(if (account != null) t(AccountsMsg.LOGGED_IN_AS, account) else t(AccountsMsg.LOGGED_IN), style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = onLogout) { Text(t(AccountsMsg.LOG_OUT)) }
                 } else {
                     Text(
-                        t(Msg.LOGIN_EXPLAIN),
+                        t(AccountsMsg.LOGIN_EXPLAIN),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Button(enabled = urlValid && !loggingIn, onClick = { onLogin(draft) }) {
-                        Text(if (loggingIn) t(Msg.LOGGING_IN) else t(Msg.LOG_IN))
+                        Text(if (loggingIn) t(AccountsMsg.LOGGING_IN) else t(AccountsMsg.LOG_IN))
                     }
                 }
-                loginError?.let { ErrorBanner(t(Msg.COULD_NOT_LOG_IN), it) }
+                loginError?.let { ErrorBanner(t(AccountsMsg.COULD_NOT_LOG_IN), it) }
             }
             // Near the top: the "Account requests" notification opens Settings for this card.
             if (loggedIn && accountRequests != null) AccountRequestsCard(accountRequests, snackbar)
-            SettingsCard(t(Msg.CARD_APPEARANCE)) {
+            SettingsCard(t(AccountsMsg.CARD_APPEARANCE)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     ThemeMode.entries.forEach { mode ->
                         FilterChip(selected = theme == mode, onClick = { onTheme(mode) }, label = { Text(t(mode.msg())) })
                     }
                 }
-                Text(t(Msg.LANGUAGE), style = MaterialTheme.typography.labelLarge)
+                Text(t(AccountsMsg.LANGUAGE), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     AppLanguage.entries.forEach { option ->
                         FilterChip(selected = language == option, onClick = { onLanguage(option) }, label = { Text(t(option.msg())) })
                     }
                 }
                 if (systemColorsAvailable()) {
-                    SwitchRow(t(Msg.SYSTEM_COLORS), t(Msg.SYSTEM_COLORS_HINT), systemColors, onSystemColors)
+                    SwitchRow(t(AccountsMsg.SYSTEM_COLORS), t(AccountsMsg.SYSTEM_COLORS_HINT), systemColors, onSystemColors)
                 }
-                SwitchRow(t(Msg.PRODUCT_PICTURES), t(if (runsInBrowser()) Msg.PRODUCT_PICTURES_HINT_BROWSER else Msg.PRODUCT_PICTURES_HINT), productPictures, onProductPictures)
+                SwitchRow(t(AccountsMsg.PRODUCT_PICTURES), t(if (runsInBrowser()) AccountsMsg.PRODUCT_PICTURES_HINT_BROWSER else AccountsMsg.PRODUCT_PICTURES_HINT), productPictures, onProductPictures)
             }
             if (loggedIn) {
                 var shopsError by remember { mutableStateOf<String?>(null) }
-                SettingsCard(t(Msg.CARD_SHOPPING)) {
+                SettingsCard(t(AccountsMsg.CARD_SHOPPING)) {
                     ShopsInUse(
                         accountShops.stores,
                         onChange = { chosen ->
@@ -209,7 +209,7 @@ internal fun ServerSettingsScreen(
                         },
                         modifier = Modifier,
                     )
-                    shopsError?.let { ErrorBanner(t(Msg.SHOPS_SAVE_FAILED_TITLE), it) }
+                    shopsError?.let { ErrorBanner(t(AccountsMsg.SHOPS_SAVE_FAILED_TITLE), it) }
                     ShoppingAdviceSwitches(loadShoppingAdvice, saveShoppingAdvice)
                     exclusions?.let { ExcludedOffers(it, snackbar) }
                 }
@@ -252,9 +252,9 @@ private fun ShoppingAdviceSwitches(read: suspend () -> ShoppingAdvice, save: sus
     }
 
     val current = advice ?: return
-    SwitchRow(t(Msg.BUY_AHEAD_SETTING), t(Msg.BUY_AHEAD_SETTING_HINT), current.buyAhead) { change(current.copy(buyAhead = it)) }
-    SwitchRow(t(Msg.STOCK_UP_SETTING), t(Msg.STOCK_UP_SETTING_HINT), current.stockUp) { change(current.copy(stockUp = it)) }
-    error?.let { ErrorBanner(t(Msg.ADVICE_SAVE_FAILED_TITLE), it) }
+    SwitchRow(t(AccountsMsg.BUY_AHEAD_SETTING), t(AccountsMsg.BUY_AHEAD_SETTING_HINT), current.buyAhead) { change(current.copy(buyAhead = it)) }
+    SwitchRow(t(AccountsMsg.STOCK_UP_SETTING), t(AccountsMsg.STOCK_UP_SETTING_HINT), current.stockUp) { change(current.copy(stockUp = it)) }
+    error?.let { ErrorBanner(t(AccountsMsg.ADVICE_SAVE_FAILED_TITLE), it) }
 }
 
 /**
@@ -269,9 +269,9 @@ internal fun ExcludedOffers(exclusions: OfferExclusionQueue, snackbar: SnackbarH
     LaunchedEffect(exclusions) { exclusions.refresh() }
     val shown = exclusions.inEffect
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Text(t(Msg.NOT_THIS_INGREDIENT), style = MaterialTheme.typography.labelLarge)
+        Text(t(CommonMsg.NOT_THIS_INGREDIENT), style = MaterialTheme.typography.labelLarge)
         Text(
-            t(if (shown.isEmpty()) Msg.EXCLUSIONS_NONE else Msg.EXCLUSIONS_HINT),
+            t(if (shown.isEmpty()) AccountsMsg.EXCLUSIONS_NONE else AccountsMsg.EXCLUSIONS_HINT),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -279,16 +279,16 @@ internal fun ExcludedOffers(exclusions: OfferExclusionQueue, snackbar: SnackbarH
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(exclusion.title, style = MaterialTheme.typography.bodyMedium)
-                    val counted = t(Msg.EXCLUDED_FROM, exclusion.store.shortName(), exclusion.ingredientName)
+                    val counted = t(AccountsMsg.EXCLUDED_FROM, exclusion.store.shortName(), exclusion.ingredientName)
                     Text(
-                        if (exclusions.isWaiting(exclusion)) "$counted · ${t(Msg.EXCLUSION_WAITING)}" else counted,
+                        if (exclusions.isWaiting(exclusion)) "$counted · ${t(AccountsMsg.EXCLUSION_WAITING)}" else counted,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 TextButton(onClick = {
                     exclusions.chooseWithUndo(scope, snackbar, t, exclusion.store, exclusion.title, exclusion.ingredientId, exclusion.ingredientName, excluded = false)
-                }) { Text(t(Msg.TAKE_BACK)) }
+                }) { Text(t(AccountsMsg.TAKE_BACK)) }
             }
         }
     }
@@ -306,11 +306,11 @@ internal fun NotificationsCard(settings: NotificationSettings, approvesRequests:
     val kinds = NotificationKind.shown(approvesRequests)
     var on by remember(kinds) { mutableStateOf(kinds.associateWith(settings.storage::notificationOn)) }
     val allowed by settings.access.allowed.collectAsState()
-    SettingsCard(t(Msg.CARD_NOTIFICATIONS)) {
-        Text(t(Msg.NOTIFICATIONS_INTRO), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    SettingsCard(t(AccountsMsg.CARD_NOTIFICATIONS)) {
+        Text(t(AccountsMsg.NOTIFICATIONS_INTRO), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (!allowed && on.values.any { it }) {
-            Text(t(Msg.NOTIFICATIONS_BLOCKED), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.warning)
-            OutlinedButton(onClick = settings.access::openSettings) { Text(t(Msg.NOTIFICATIONS_OPEN_SETTINGS)) }
+            Text(t(AccountsMsg.NOTIFICATIONS_BLOCKED), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.warning)
+            OutlinedButton(onClick = settings.access::openSettings) { Text(t(AccountsMsg.NOTIFICATIONS_OPEN_SETTINGS)) }
         }
         kinds.forEach { kind ->
             SwitchRow(t(kind.title), t(kind.hint), on.getValue(kind)) { checked ->
@@ -360,18 +360,18 @@ private fun AppVersionSection(updater: UpdateInstaller) {
     var message by remember { mutableStateOf<String?>(null) }
     var found by remember { mutableStateOf<AppUpdate?>(null) }
     val scope = rememberCoroutineScope()
-    SettingsCard(t(Msg.CARD_APP)) {
-        Text(t(Msg.VERSION, updater.currentVersion), style = MaterialTheme.typography.bodyMedium)
+    SettingsCard(t(AccountsMsg.CARD_APP)) {
+        Text(t(AccountsMsg.VERSION, updater.currentVersion), style = MaterialTheme.typography.bodyMedium)
         OutlinedButton(enabled = !checking, onClick = {
             checking = true
             message = null
             scope.launch {
                 runCatching { AppUpdates.check(updater.currentVersion) }
-                    .onSuccess { if (it == null) message = t(Msg.LATEST_VERSION) else found = it }
+                    .onSuccess { if (it == null) message = t(AccountsMsg.LATEST_VERSION) else found = it }
                     .onFailure { message = updateCheckFailure(t, it) }
                 checking = false
             }
-        }) { Text(if (checking) t(Msg.CHECKING) else t(Msg.CHECK_UPDATES)) }
+        }) { Text(if (checking) t(AccountsMsg.CHECKING) else t(AccountsMsg.CHECK_UPDATES)) }
         message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
     found?.let { update ->

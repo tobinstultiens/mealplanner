@@ -26,8 +26,8 @@ import dev.tobins.mealplanner.api.GenerateRequest
 import dev.tobins.mealplanner.api.GenerationMode
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorBanner
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.Spacing
@@ -57,15 +57,15 @@ fun GenerateDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(title ?: t(Msg.GENERATE_RECIPE)) },
+        title = { Text(title ?: t(RecipesMsg.GENERATE_RECIPE)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                    FilterChip(selected = mode == GenerationMode.PREFERENCE, onClick = { mode = GenerationMode.PREFERENCE }, label = { Text(t(Msg.TO_MY_WISH)) })
-                    FilterChip(selected = mode == GenerationMode.TASTE_BREAKER, onClick = { mode = GenerationMode.TASTE_BREAKER }, label = { Text(t(Msg.SURPRISE_ME)) })
+                    FilterChip(selected = mode == GenerationMode.PREFERENCE, onClick = { mode = GenerationMode.PREFERENCE }, label = { Text(t(RecipesMsg.TO_MY_WISH)) })
+                    FilterChip(selected = mode == GenerationMode.TASTE_BREAKER, onClick = { mode = GenerationMode.TASTE_BREAKER }, label = { Text(t(RecipesMsg.SURPRISE_ME)) })
                 }
                 Text(
-                    if (mode == GenerationMode.PREFERENCE) t(Msg.GEN_HINT_WISH) else t(Msg.GEN_HINT_SURPRISE),
+                    if (mode == GenerationMode.PREFERENCE) t(RecipesMsg.GEN_HINT_WISH) else t(RecipesMsg.GEN_HINT_SURPRISE),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -76,13 +76,13 @@ fun GenerateDialog(
                 }
                 OutlinedTextField(
                     wish, { wish = it },
-                    label = { Text(if (mode == GenerationMode.PREFERENCE) t(Msg.WISH_EXAMPLE) else t(Msg.WISH_OPTIONAL)) },
+                    label = { Text(if (mode == GenerationMode.PREFERENCE) t(RecipesMsg.WISH_EXAMPLE) else t(RecipesMsg.WISH_OPTIONAL)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (busy) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.BetweenCards), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator()
-                        Text(t(Msg.WRITING_RECIPE))
+                        Text(t(RecipesMsg.WRITING_RECIPE))
                     }
                 }
                 error?.let { shown ->
@@ -105,9 +105,9 @@ fun GenerateDialog(
                         Load.Loading -> Unit
                     }
                 }
-            }) { Text(t(Msg.GENERATE)) }
+            }) { Text(t(RecipesMsg.GENERATE)) }
         },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -120,9 +120,9 @@ internal class GenerationError(val summary: String, val details: String? = null)
  * failure shows the server's own sentence. The setting's name stays behind "Details": the user cannot act on it.
  */
 internal fun generationError(t: Strings, failed: Load.Failed): GenerationError = when {
-    failed.status == 503 && failed.reason == GENERATION_OFF -> GenerationError(t(Msg.GEN_OFF), failed.message)
-    failed.status == 409 -> GenerationError(t(Msg.GEN_NEEDS_PROFILE))
-    else -> GenerationError(failureSentence(failed, Msg.GEN_FAILED))
+    failed.status == 503 && failed.reason == GENERATION_OFF -> GenerationError(t(RecipesMsg.GEN_OFF), failed.message)
+    failed.status == 409 -> GenerationError(t(RecipesMsg.GEN_NEEDS_PROFILE))
+    else -> GenerationError(failureSentence(failed, RecipesMsg.GEN_FAILED))
 }
 
 /** The `reason` of the server's 503 for a server that has no recipe generation. */

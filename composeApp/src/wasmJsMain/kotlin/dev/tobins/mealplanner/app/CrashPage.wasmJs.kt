@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.Load
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
@@ -65,18 +66,18 @@ internal fun showCrashPage(details: String, language: Language) {
     card.style.cssText = "max-width:480px;width:100%;"
     val title = element("h1")
     title.style.cssText = "font-size:1.5rem;margin:0 0 8px;"
-    title.textContent = Msg.CRASH_TITLE.text(language)
+    title.textContent = AppMsg.CRASH_TITLE.text(language)
     val text = element("p")
     text.style.cssText = "margin:0 0 16px;line-height:1.4;"
-    text.textContent = Msg.CRASH_TEXT.text(language)
+    text.textContent = AppMsg.CRASH_TEXT.text(language)
     val reload = element("button")
     reload.style.cssText = "font:inherit;padding:10px 24px;border:0;border-radius:20px;background:#3b6a2a;color:#fff;cursor:pointer;"
-    reload.textContent = Msg.CRASH_RELOAD.text(language)
+    reload.textContent = AppMsg.CRASH_RELOAD.text(language)
     reload.addEventListener("click") { window.location.reload() }
     val more = element("details")
     more.style.cssText = "margin-top:24px;"
     val summary = element("summary")
-    summary.textContent = Msg.DETAILS.text(language)
+    summary.textContent = CommonMsg.DETAILS.text(language)
     val pre = element("pre")
     pre.style.cssText = "white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto;font-size:0.75rem;"
     pre.textContent = details

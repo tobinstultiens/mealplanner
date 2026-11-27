@@ -40,8 +40,9 @@ import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.ui.CommonMsg
+import dev.tobins.mealplanner.app.ui.CommonPlural
 import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.dayLabel
 import dev.tobins.mealplanner.app.ui.formatAmount
@@ -95,12 +96,12 @@ data class PrepChoice(
     /** Why it can't be made yet, or null when it can. */
     val problem: Msg?
         get() = when {
-            madeOn < firstDay -> Msg.PREP_MADE_ON_PAST
-            recipe == null -> Msg.PREP_PICK_RECIPE
-            keeps == null -> Msg.PREP_NOT_THIS_WAY
-            meals.none { it.date == madeOn } -> Msg.PREP_FIRST_ON_MADE_DAY
+            madeOn < firstDay -> PlanMsg.PREP_MADE_ON_PAST
+            recipe == null -> PlanMsg.PREP_PICK_RECIPE
+            keeps == null -> PlanMsg.PREP_NOT_THIS_WAY
+            meals.none { it.date == madeOn } -> PlanMsg.PREP_FIRST_ON_MADE_DAY
             // A batch is made once for several meals; as a side that may be one meal short, so say why.
-            meals.size < 2 -> if (meals.any { it.side == null }) Msg.PREP_TWO_MEALS else Msg.PREP_TWO_SIDES
+            meals.size < 2 -> if (meals.any { it.side == null }) PlanMsg.PREP_TWO_MEALS else PlanMsg.PREP_TWO_SIDES
             else -> null
         }
 
@@ -173,11 +174,11 @@ private fun prepMealsText(meals: List<PrepMeal>, t: Strings, noteSides: Boolean)
     meals.joinToString(", ") { meal ->
         val name = "${dayLabel(meal.date, t.locale)} ${t.slot(meal.slot)}"
         val notes = listOfNotNull(
-            Msg.PREP_NOTE_SIDE.takeIf { noteSides && meal.side },
-            Msg.PREP_NOTE_EATEN.takeIf { meal.status == MealStatus.EATEN },
-            Msg.PREP_NOTE_SKIPPED.takeIf { meal.status == MealStatus.SKIPPED },
+            PlanMsg.PREP_NOTE_SIDE.takeIf { noteSides && meal.side },
+            PlanMsg.PREP_NOTE_EATEN.takeIf { meal.status == MealStatus.EATEN },
+            PlanMsg.PREP_NOTE_SKIPPED.takeIf { meal.status == MealStatus.SKIPPED },
         )
-        if (notes.isEmpty()) name else t(Msg.PREP_MEAL_NOTES, name, notes.joinToString(", ") { t(it) })
+        if (notes.isEmpty()) name else t(PlanMsg.PREP_MEAL_NOTES, name, notes.joinToString(", ") { t(it) })
     }
 
 /**
@@ -199,15 +200,15 @@ fun sparesShown(spares: List<SparePortion>, weekStart: String, today: String): L
 fun slotLabel(slot: PrepSlot, t: Strings): String = "${dayLabel(slot.date, t.locale)} · ${t.slot(slot.slot)}"
 
 /** What the card of [this] share in the box is titled: a portion of the recipe, or a side. */
-fun SparePortion.titleText(t: Strings): String = t(if (side) Msg.SPARE_SIDE_TITLE else Msg.SPARE_TITLE, title)
+fun SparePortion.titleText(t: Strings): String = t(if (side) PlanMsg.SPARE_SIDE_TITLE else PlanMsg.SPARE_TITLE, title)
 
 /**
  * What the card of [this] share in the box says under its title on [today]: when it was skipped and until when it keeps,
  * or on its last day that it is to eat today or throw away.
  */
 fun SparePortion.whenText(today: String, t: Strings): String =
-    if (lastDay == today) t(Msg.SPARE_LAST_DAY)
-    else t(Msg.SPARE_KEEPS, "${dayLabel(skipped.date, t.locale)} ${t.slot(skipped.slot)}", dayLabel(lastDay, t.locale))
+    if (lastDay == today) t(PlanMsg.SPARE_LAST_DAY)
+    else t(PlanMsg.SPARE_KEEPS, "${dayLabel(skipped.date, t.locale)} ${t.slot(skipped.slot)}", dayLabel(lastDay, t.locale))
 
 /**
  * The Prep dialog: [start] as the choice it opens with, [weekDays] the days the batch may be made on ([prepDays]),
@@ -230,7 +231,7 @@ fun PrepDialog(
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.PREP_TITLE)) },
+        title = { Text(t(PlanMsg.PREP_TITLE)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 PrepChoices(choice, weekDays, recipes, hosts) { choice = it; error = null }
@@ -247,9 +248,9 @@ fun PrepDialog(
                         saving = false
                     }
                 },
-            ) { Text(t(Msg.PREP_SAVE)) }
+            ) { Text(t(PlanMsg.PREP_SAVE)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -266,18 +267,18 @@ fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<Recipe
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         if (recipes.isEmpty()) {
-            Text(t(Msg.PREP_NO_RECIPES), style = MaterialTheme.typography.bodyMedium)
+            Text(t(PlanMsg.PREP_NO_RECIPES), style = MaterialTheme.typography.bodyMedium)
             return@Column
         }
         // What a prep needs and what it does to the slots, before anything is picked: an empty week says nothing else.
         if (choice.side == null) {
-            Text(t(Msg.PREP_MEAL_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(t(PlanMsg.PREP_MEAL_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(t(Msg.PREP_RECIPE), style = MaterialTheme.typography.labelLarge)
+        Text(t(PlanMsg.PREP_RECIPE), style = MaterialTheme.typography.labelLarge)
         Box {
             var open by remember { mutableStateOf(false) }
             OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(choice.recipe?.title ?: t(Msg.PREP_PICK_RECIPE))
+                Text(choice.recipe?.title ?: t(PlanMsg.PREP_PICK_RECIPE))
             }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 for (recipe in recipes) {
@@ -285,13 +286,13 @@ fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<Recipe
                 }
             }
         }
-        Text(t(Msg.PREP_MADE_ON), style = MaterialTheme.typography.labelLarge)
+        Text(t(PlanMsg.PREP_MADE_ON), style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             for (day in weekDays) {
                 FilterChip(selected = day == choice.madeOn, onClick = { onChange(choice.with(madeOn = day)) }, label = { Text(dayLabel(day, t.locale)) })
             }
         }
-        Text(t(Msg.PREP_WAY), style = MaterialTheme.typography.labelLarge)
+        Text(t(PlanMsg.PREP_WAY), style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             for (vacuum in listOf(false, true)) {
                 val days = choice.recipe?.keeps(vacuum)
@@ -300,27 +301,27 @@ fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<Recipe
                     enabled = days != null,
                     onClick = { onChange(choice.with(vacuum = vacuum)) },
                     label = {
-                        val length = days?.let { t.plural(Plural.DAYS, it) } ?: t(Msg.KEEPS_NOT)
-                        Text(t(if (vacuum) Msg.PREP_VACUUM else Msg.PREP_IN_A_BOX, length))
+                        val length = days?.let { t.plural(CommonPlural.DAYS, it) } ?: t(CommonMsg.KEEPS_NOT)
+                        Text(t(if (vacuum) PlanMsg.PREP_VACUUM else PlanMsg.PREP_IN_A_BOX, length))
                     },
                 )
             }
         }
-        Text(t(Msg.PREP_EATEN_AS), style = MaterialTheme.typography.labelLarge)
+        Text(t(PlanMsg.PREP_EATEN_AS), style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             for (side in listOf(null) + SIDE_PORTIONS) {
                 FilterChip(
                     selected = choice.side == side,
                     onClick = { onChange(choice.eatenAs(side)) },
-                    label = { Text(side?.let { t(Msg.PREP_AS_SIDE, servingsText(it, t)) } ?: t(Msg.PREP_AS_MEAL)) },
+                    label = { Text(side?.let { t(PlanMsg.PREP_AS_SIDE, servingsText(it, t)) } ?: t(PlanMsg.PREP_AS_MEAL)) },
                 )
             }
         }
-        Text(t(Msg.PREP_EATEN_AS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(PlanMsg.PREP_EATEN_AS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (choice.side != null) {
-            Text(t(Msg.PREP_SIDE_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(t(PlanMsg.PREP_SIDE_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (choice.days.isNotEmpty()) Text(t(Msg.PREP_EATEN_ON), style = MaterialTheme.typography.labelLarge)
+        if (choice.days.isNotEmpty()) Text(t(PlanMsg.PREP_EATEN_ON), style = MaterialTheme.typography.labelLarge)
         for (day in choice.days) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 Text(dayLabel(day, t.locale), modifier = Modifier.padding(top = Spacing.Related))
@@ -342,7 +343,7 @@ fun PrepChoices(choice: PrepChoice, weekDays: List<String>, recipes: List<Recipe
 /** A lunch or dinner of the Prep dialog as it is eaten: `Dinner`, or as a side `Dinner · side 0.5`. */
 fun prepSlotText(slot: MealSlot, side: Double?, t: Strings): String {
     val name = t.slot(slot, capitalised = true)
-    return side?.let { t(Msg.PREP_SLOT_SIDE, name, formatAmount(it, t.locale)) } ?: name
+    return side?.let { t(PlanMsg.PREP_SLOT_SIDE, name, formatAmount(it, t.locale)) } ?: name
 }
 
 /**
@@ -354,12 +355,12 @@ fun RemovePrepDialog(title: String, prep: MealPrep, onDismiss: () -> Unit, onRem
     val t = LocalStrings.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(if (prep.made) Msg.REMOVE_PREP_MADE_TITLE else Msg.REMOVE_PREP_TITLE, title)) },
+        title = { Text(t(if (prep.made) PlanMsg.REMOVE_PREP_MADE_TITLE else PlanMsg.REMOVE_PREP_TITLE, title)) },
         text = { RemovePrepText(prep) },
         confirmButton = {
-            if (prep.made) TextButton(onClick = onDismiss) { Text(t(Msg.CLOSE)) } else TextButton(onClick = onRemove) { Text(t(Msg.REMOVE)) }
+            if (prep.made) TextButton(onClick = onDismiss) { Text(t(CommonMsg.CLOSE)) } else TextButton(onClick = onRemove) { Text(t(CommonMsg.REMOVE)) }
         },
-        dismissButton = { if (!prep.made) TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { if (!prep.made) TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -379,15 +380,15 @@ fun RemovePrepText(prep: MealPrep) {
 fun removePrepText(prep: MealPrep, t: Strings): String {
     if (prep.made) {
         val planned = prep.meals.filter { it.status == MealStatus.PLANNED }
-        if (planned.isEmpty()) return t(Msg.REMOVE_PREP_MADE_NOTHING_LEFT)
+        if (planned.isEmpty()) return t(PlanMsg.REMOVE_PREP_MADE_NOTHING_LEFT)
         return t(madeText(prep), prepMealsText(planned, t, noteSides = true))
     }
     val text = when {
-        prep.meals.all { it.side } -> Msg.REMOVE_PREP_SIDES_TEXT
-        prep.meals.none { it.side } -> Msg.REMOVE_PREP_TEXT
+        prep.meals.all { it.side } -> PlanMsg.REMOVE_PREP_SIDES_TEXT
+        prep.meals.none { it.side } -> PlanMsg.REMOVE_PREP_TEXT
         else -> {
             val (sides, meals) = prep.meals.partition { it.side }
-            return t(Msg.REMOVE_PREP_MIXED_TEXT, prepMealsText(meals, t, noteSides = false), prepMealsText(sides, t, noteSides = false))
+            return t(PlanMsg.REMOVE_PREP_MIXED_TEXT, prepMealsText(meals, t, noteSides = false), prepMealsText(sides, t, noteSides = false))
         }
     }
     return t(text, prepMealsText(prep, t))
@@ -395,9 +396,9 @@ fun removePrepText(prep: MealPrep, t: Strings): String {
 
 /** The sentence about a prep that was made, in the words of how it is eaten. */
 private fun madeText(prep: MealPrep): Msg = when {
-    prep.meals.all { it.side } -> Msg.REMOVE_PREP_SIDES_MADE_TEXT
-    prep.meals.none { it.side } -> Msg.REMOVE_PREP_MADE_TEXT
-    else -> Msg.REMOVE_PREP_MIXED_MADE_TEXT
+    prep.meals.all { it.side } -> PlanMsg.REMOVE_PREP_SIDES_MADE_TEXT
+    prep.meals.none { it.side } -> PlanMsg.REMOVE_PREP_MADE_TEXT
+    else -> PlanMsg.REMOVE_PREP_MIXED_MADE_TEXT
 }
 
 /**
@@ -416,15 +417,15 @@ fun SpareCard(spare: SparePortion, today: String, enabled: Boolean, onEat: (Prep
             Text(spare.titleText(t), style = MaterialTheme.typography.titleMedium)
             Text(spare.whenText(today, t), style = MaterialTheme.typography.bodyMedium)
             if (spare.room.isEmpty()) {
-                Text(t(Msg.SPARE_NO_ROOM), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t(PlanMsg.SPARE_NO_ROOM), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                    proposal?.let { slot -> Button(enabled = enabled, onClick = { onEat(slot) }) { Text(t(Msg.SPARE_EAT_PROPOSED, slotLabel(slot, t))) } }
+                    proposal?.let { slot -> Button(enabled = enabled, onClick = { onEat(slot) }) { Text(t(PlanMsg.SPARE_EAT_PROPOSED, slotLabel(slot, t))) } }
                     val others = spare.room - setOfNotNull(proposal)
                     if (others.isNotEmpty()) {
                         Box {
                             var open by remember { mutableStateOf(false) }
-                            OutlinedButton(enabled = enabled, onClick = { open = true }) { Text(t(Msg.SPARE_EAT_ON)) }
+                            OutlinedButton(enabled = enabled, onClick = { open = true }) { Text(t(PlanMsg.SPARE_EAT_ON)) }
                             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                                 for (slot in others) {
                                     DropdownMenuItem(text = { Text(slotLabel(slot, t)) }, onClick = { open = false; onEat(slot) })

@@ -4,8 +4,8 @@ import dev.tobins.mealplanner.api.PastOffer
 import dev.tobins.mealplanner.api.PriceVerdict
 import dev.tobins.mealplanner.api.VerdictKind
 import dev.tobins.mealplanner.api.VerdictMeasure
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.dayMonthLabel
 import dev.tobins.mealplanner.app.ui.formatEuro
 import kotlinx.datetime.LocalDate
@@ -31,10 +31,10 @@ val PriceVerdict.tone: VerdictTone get() = if (verdict == VerdictKind.REAL_DEAL)
  * them in the detail.
  */
 fun PriceVerdict.chipText(t: Strings): String? = when (verdict) {
-    VerdictKind.REAL_DEAL -> t(Msg.VERDICT_CHIP_REAL)
-    VerdictKind.CHEAPER_ANOTHER_WAY -> t(Msg.VERDICT_CHIP_CHEAPER)
-    VerdictKind.NOT_A_DEAL -> t(Msg.VERDICT_CHIP_NOT_A_DEAL)
-    VerdictKind.WORSE_THAN_USUAL -> t(Msg.VERDICT_CHIP_WORSE)
+    VerdictKind.REAL_DEAL -> t(PricesMsg.VERDICT_CHIP_REAL)
+    VerdictKind.CHEAPER_ANOTHER_WAY -> t(PricesMsg.VERDICT_CHIP_CHEAPER)
+    VerdictKind.NOT_A_DEAL -> t(PricesMsg.VERDICT_CHIP_NOT_A_DEAL)
+    VerdictKind.WORSE_THAN_USUAL -> t(PricesMsg.VERDICT_CHIP_WORSE)
     VerdictKind.USUAL_DEAL, VerdictKind.ALWAYS_ON_OFFER, VerdictKind.NOT_COMPARABLE, VerdictKind.NOT_ENOUGH_HISTORY -> null
 }
 
@@ -51,36 +51,36 @@ fun PriceVerdict.line(t: Strings): String {
     val last = lastAsCheap
     return when (verdict) {
         VerdictKind.REAL_DEAL -> when {
-            last != null -> t(Msg.VERDICT_REAL_AS_LOW, period(last.from, last.until, t))
-            now == null -> t(Msg.VERDICT_CHIP_REAL)
-            else -> t(if (thisPack) Msg.VERDICT_REAL_LOWEST_PACK else Msg.VERDICT_REAL_LOWEST, now)
+            last != null -> t(PricesMsg.VERDICT_REAL_AS_LOW, period(last.from, last.until, t))
+            now == null -> t(PricesMsg.VERDICT_CHIP_REAL)
+            else -> t(if (thisPack) PricesMsg.VERDICT_REAL_LOWEST_PACK else PricesMsg.VERDICT_REAL_LOWEST, now)
         }
         VerdictKind.USUAL_DEAL -> {
             val was = last?.let { earlier -> earlier.value?.let { amount(it, measure, t) to period(earlier.from, earlier.until, t) } }
             when {
-                betterThanUsual && was != null && now != null -> t(Msg.VERDICT_BETTER, now, was.first, was.second)
-                usually != null -> t(Msg.VERDICT_USUAL, usually)
-                else -> t(Msg.VERDICT_USUAL_ONLY)
+                betterThanUsual && was != null && now != null -> t(PricesMsg.VERDICT_BETTER, now, was.first, was.second)
+                usually != null -> t(PricesMsg.VERDICT_USUAL, usually)
+                else -> t(PricesMsg.VERDICT_USUAL_ONLY)
             }
         }
         VerdictKind.WORSE_THAN_USUAL ->
-            if (usually != null && now != null && last != null) t(Msg.VERDICT_WORSE, usually, now, date(last.until, t)) else t(Msg.VERDICT_CHIP_WORSE)
-        VerdictKind.ALWAYS_ON_OFFER -> t(Msg.VERDICT_ALWAYS)
-        VerdictKind.NOT_A_DEAL -> raise?.let { t(Msg.VERDICT_NOT_A_DEAL, euros(it.before, t), euros(it.now, t)) } ?: t(Msg.VERDICT_CHIP_NOT_A_DEAL)
+            if (usually != null && now != null && last != null) t(PricesMsg.VERDICT_WORSE, usually, now, date(last.until, t)) else t(PricesMsg.VERDICT_CHIP_WORSE)
+        VerdictKind.ALWAYS_ON_OFFER -> t(PricesMsg.VERDICT_ALWAYS)
+        VerdictKind.NOT_A_DEAL -> raise?.let { t(PricesMsg.VERDICT_NOT_A_DEAL, euros(it.before, t), euros(it.now, t)) } ?: t(PricesMsg.VERDICT_CHIP_NOT_A_DEAL)
         VerdictKind.CHEAPER_ANOTHER_WAY -> {
             val deal = cheaperNow?.deal
             val price = cheaperNow?.price
             val worth = cheaperNow?.value?.let { amount(it, measure, t) }
             when {
-                deal != null && worth != null -> t(Msg.VERDICT_CHEAPER_DEAL, "\"$deal\"", worth)
-                deal != null -> t(Msg.VERDICT_CHEAPER_DEAL_ONLY, "\"$deal\"")
-                price != null -> t(Msg.VERDICT_CHEAPER_PRICE, euros(price, t))
-                else -> t(Msg.VERDICT_CHIP_CHEAPER)
+                deal != null && worth != null -> t(PricesMsg.VERDICT_CHEAPER_DEAL, "\"$deal\"", worth)
+                deal != null -> t(PricesMsg.VERDICT_CHEAPER_DEAL_ONLY, "\"$deal\"")
+                price != null -> t(PricesMsg.VERDICT_CHEAPER_PRICE, euros(price, t))
+                else -> t(PricesMsg.VERDICT_CHIP_CHEAPER)
             }
         }
-        VerdictKind.NOT_COMPARABLE -> t(Msg.VERDICT_NOT_COMPARABLE)
+        VerdictKind.NOT_COMPARABLE -> t(PricesMsg.VERDICT_NOT_COMPARABLE)
         VerdictKind.NOT_ENOUGH_HISTORY ->
-            if (daysRead < daysNeeded) t(Msg.VERDICT_TOO_NEW, daysRead, daysNeeded) else t(Msg.VERDICT_TOO_FEW)
+            if (daysRead < daysNeeded) t(PricesMsg.VERDICT_TOO_NEW, daysRead, daysNeeded) else t(PricesMsg.VERDICT_TOO_FEW)
     }
 }
 
@@ -93,17 +93,17 @@ fun PriceVerdict.notes(t: Strings): List<String> {
     val pack = cheaperPack?.let { other ->
         val measure = other.measure ?: return@let null
         val value = other.offer.value ?: return@let null
-        val unit = t(if (measure == VerdictMeasure.PER_LITRE) Msg.VERDICT_UNIT_LITRE else Msg.VERDICT_UNIT_KG)
+        val unit = t(if (measure == VerdictMeasure.PER_LITRE) PricesMsg.VERDICT_UNIT_LITRE else PricesMsg.VERDICT_UNIT_KG)
         val price = amount(value, measure, t)
         val name = other.offer.packName
         when {
-            other.now && name != null -> t(Msg.VERDICT_PACK_NOW, unit, name, price)
-            other.now -> t(Msg.VERDICT_OTHER_PACK_NOW, unit, price)
-            else -> t(Msg.VERDICT_PACK_BEFORE, unit, name?.let { t(Msg.VERDICT_PACK_NAMED, it) } ?: t(Msg.VERDICT_PACK_OTHER), price, period(other.offer.from, other.offer.until, t))
+            other.now && name != null -> t(PricesMsg.VERDICT_PACK_NOW, unit, name, price)
+            other.now -> t(PricesMsg.VERDICT_OTHER_PACK_NOW, unit, price)
+            else -> t(PricesMsg.VERDICT_PACK_BEFORE, unit, name?.let { t(PricesMsg.VERDICT_PACK_NAMED, it) } ?: t(PricesMsg.VERDICT_PACK_OTHER), price, period(other.offer.from, other.offer.until, t))
         }
     }
-    val raised = raise?.takeIf { verdict != VerdictKind.NOT_A_DEAL }?.let { t(Msg.VERDICT_RAISED, euros(it.before, t), euros(it.now, t)) }
-    val also = alongside.map { t(Msg.VERDICT_ALSO, it.named(t)) }
+    val raised = raise?.takeIf { verdict != VerdictKind.NOT_A_DEAL }?.let { t(PricesMsg.VERDICT_RAISED, euros(it.before, t), euros(it.now, t)) }
+    val also = alongside.map { t(PricesMsg.VERDICT_ALSO, it.named(t)) }
     return listOfNotNull(pack, raised) + also
 }
 
@@ -116,12 +116,12 @@ fun PastOffer.historyLine(measure: VerdictMeasure?, t: Strings): String =
         period(from, until, t),
         named(t),
         value?.let { amount(it, measure, t) },
-        t(Msg.VERDICT_ENDED_EARLY).takeIf { endedEarly },
+        t(PricesMsg.VERDICT_ENDED_EARLY).takeIf { endedEarly },
     ).joinToString(" · ")
 
 /** An offer by its deal as the store wrote it (`"2 voor 5,50"`), or without one by its price, with its pack when it is another one. */
 private fun PastOffer.named(t: Strings): String {
-    val what = deal?.let { "\"$it\"" } ?: price?.let { euros(it, t) } ?: t(Msg.ON_OFFER)
+    val what = deal?.let { "\"$it\"" } ?: price?.let { euros(it, t) } ?: t(CommonMsg.ON_OFFER)
     return packName?.let { "$what ($it)" } ?: what
 }
 
@@ -129,8 +129,8 @@ private fun PastOffer.named(t: Strings): String {
 private fun amount(value: Double, measure: VerdictMeasure?, t: Strings): String = when (measure) {
     VerdictMeasure.PER_KG -> "${euros(value, t)}/kg"
     VerdictMeasure.PER_LITRE -> "${euros(value, t)}/l"
-    VerdictMeasure.PER_PIECE -> t(Msg.VERDICT_EACH, euros(value, t))
-    VerdictMeasure.PAID_SHARE -> t(Msg.VERDICT_SHARE, "${(value * 100).roundToInt()}%")
+    VerdictMeasure.PER_PIECE -> t(PricesMsg.VERDICT_EACH, euros(value, t))
+    VerdictMeasure.PAID_SHARE -> t(PricesMsg.VERDICT_SHARE, "${(value * 100).roundToInt()}%")
     VerdictMeasure.PER_PACK, null -> euros(value, t)
 }
 

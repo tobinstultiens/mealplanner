@@ -5,8 +5,6 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.WeekRest
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.recipes.MealToCook
 import dev.tobins.mealplanner.app.shopping.shortName
@@ -66,8 +64,8 @@ fun unbrokenParts(text: String): String = text.split(" · ").joinToString(" · "
 
 /** `512 kcal · 38 g protein · 9 g fibre` in whole numbers ([unbrokenParts]); without the fibre when it is not known (null). */
 fun macrosText(kcal: Double, proteinG: Double, fibreG: Double?, strings: Strings): String = unbrokenParts(
-    if (fibreG == null) strings(Msg.KCAL_PROTEIN, kcal.roundToLong(), proteinG.roundToLong())
-    else strings(Msg.KCAL_PROTEIN_FIBRE, kcal.roundToLong(), proteinG.roundToLong(), fibreG.roundToLong()),
+    if (fibreG == null) strings(CommonMsg.KCAL_PROTEIN, kcal.roundToLong(), proteinG.roundToLong())
+    else strings(CommonMsg.KCAL_PROTEIN_FIBRE, kcal.roundToLong(), proteinG.roundToLong(), fibreG.roundToLong()),
 )
 
 /**
@@ -105,18 +103,18 @@ const val REST_NAMED = 3
 fun restLine(rest: List<WeekRest>, strings: Strings): String? {
     if (rest.isEmpty()) return null
     val named = rest.take(REST_NAMED).joinToString(", ") { formatGrams(it.grams, strings.locale) + " " + it.ingredient.replaceFirstChar { c -> c.lowercase() } }
-    val list = if (rest.size > REST_NAMED) strings(Msg.WEEK_REST_MORE, named, rest.size - REST_NAMED) else named
-    return strings(Msg.WEEK_REST, formatEuro(rest.sumOf { it.euros }, strings.locale), list)
+    val list = if (rest.size > REST_NAMED) strings(CommonMsg.WEEK_REST_MORE, named, rest.size - REST_NAMED) else named
+    return strings(CommonMsg.WEEK_REST, formatEuro(rest.sumOf { it.euros }, strings.locale), list)
 }
 
 /** `AH: voor 3.49`, `Lidl: €4.29 (was €5.49)`: the deal in a few words. */
 fun Offer.shortText(strings: Strings): String {
     val locale = strings.locale
-    val price = price?.let { p -> formatEuro(p, locale) + (originalPrice?.takeIf { it > p }?.let { " " + strings(Msg.OFFER_WAS, formatEuro(it, locale)) } ?: "") }
+    val price = price?.let { p -> formatEuro(p, locale) + (originalPrice?.takeIf { it > p }?.let { " " + strings(CommonMsg.OFFER_WAS, formatEuro(it, locale)) } ?: "") }
     // A deal part that only restates the price ("Voor 1,09") is dropped when the price is shown.
     val dealParts = deal?.split(" · ")?.map { it.trim() }?.filter { it.isNotEmpty() && !(price != null && singlePriceDeal(it)) }.orEmpty()
     val what = (dealParts.map { it.lowercase().replaceFirstChar { c -> c.uppercase() } } + listOfNotNull(price)).joinToString(", ").ifEmpty { null }
-    return "${store.shortName()}: ${what ?: strings(Msg.ON_OFFER)}"
+    return "${store.shortName()}: ${what ?: strings(CommonMsg.ON_OFFER)}"
 }
 
 /** True for deals that only restate the price, such as "Voor 3.49". */
@@ -124,7 +122,7 @@ private fun singlePriceDeal(deal: String): Boolean = Regex("(?i)^voor\\s+\\d+[.,
 
 /** `1 serving`, `1.75 servings`. */
 fun servingsText(portions: Double, strings: Strings): String =
-    strings.plural(Plural.SERVINGS_AMOUNT, if (portions == 1.0) 1 else 2, formatAmount(portions, strings.locale))
+    strings.plural(CommonPlural.SERVINGS_AMOUNT, if (portions == 1.0) 1 else 2, formatAmount(portions, strings.locale))
 
 /**
  * What a planned meal gives, e.g. `1.75 servings · 461 kcal · 46 g protein · 8 g fibre`; its cost is
@@ -144,17 +142,17 @@ fun MealToCook.sentence(strings: Strings): String {
     val locale = strings.locale
     return when {
         prepMadeOn != null && cookPortions > 0.0 -> strings(
-            Msg.COOK_PREP, servingsText(cookPortions, strings),
+            CommonMsg.COOK_PREP, servingsText(cookPortions, strings),
             formatAmount(if (skipped) 0.0 else portions, locale), formatAmount(cookPortions - if (skipped) 0.0 else portions, locale),
         )
-        prepMadeOn != null && !skipped -> strings(Msg.NOTHING_TO_COOK_PREPPED, dayLabel(prepMadeOn, locale))
-        skipped -> strings(Msg.NOTHING_TO_COOK_SKIPPED)
-        cookPortions <= 0.0 -> strings(Msg.NOTHING_TO_COOK_LEFTOVERS)
+        prepMadeOn != null && !skipped -> strings(CommonMsg.NOTHING_TO_COOK_PREPPED, dayLabel(prepMadeOn, locale))
+        skipped -> strings(CommonMsg.NOTHING_TO_COOK_SKIPPED)
+        cookPortions <= 0.0 -> strings(CommonMsg.NOTHING_TO_COOK_LEFTOVERS)
         cookPortions > portions + 1e-9 -> strings(
-            Msg.COOK_WITH_LEFTOVERS, servingsText(cookPortions, strings),
+            CommonMsg.COOK_WITH_LEFTOVERS, servingsText(cookPortions, strings),
             formatAmount(portions, locale), formatAmount(cookPortions - portions, locale),
         )
-        else -> strings(Msg.COOK_SERVINGS, servingsText(cookPortions, strings))
+        else -> strings(CommonMsg.COOK_SERVINGS, servingsText(cookPortions, strings))
     }
 }
 
@@ -173,14 +171,14 @@ fun RecipeSummary.rowText(strings: Strings): RecipeRowText {
         nutrition = nutrition?.takeIf { plannable && it.complete }?.headline(strings, withFibre = true),
         cost = cost?.let { "≈ ${formatEuro(it.perServingWithOffers, locale)}" },
         details = listOfNotNull(
-            servings?.let { strings.plural(Plural.SERVINGS, it) },
+            servings?.let { strings.plural(CommonPlural.SERVINGS, it) },
             rating?.let { "★".repeat(it) },
             tags.takeIf { it.isNotEmpty() }?.joinToString(" · "),
         ).joinToString(" · ").ifEmpty { null },
         warning = when {
-            !plannable || nutrition == null -> strings(Msg.NO_AMOUNTS_YET)
-            !nutrition.complete -> strings.plural(Plural.INGREDIENTS_TO_LINK, nutrition.uncounted.size)
-            nutrition.unquantified.isNotEmpty() -> strings(Msg.MISSING_AMOUNTS)
+            !plannable || nutrition == null -> strings(CommonMsg.NO_AMOUNTS_YET)
+            !nutrition.complete -> strings.plural(CommonPlural.INGREDIENTS_TO_LINK, nutrition.uncounted.size)
+            nutrition.unquantified.isNotEmpty() -> strings(CommonMsg.MISSING_AMOUNTS)
             else -> null
         },
     )

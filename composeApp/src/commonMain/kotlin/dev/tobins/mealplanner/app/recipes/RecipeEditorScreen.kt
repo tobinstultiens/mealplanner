@@ -74,8 +74,6 @@ import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.KeyboardMakesRoom
 import dev.tobins.mealplanner.app.Language
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ingredients.ProductScreen
 import dev.tobins.mealplanner.app.ingredients.fromOpenFoodFacts
@@ -83,6 +81,7 @@ import dev.tobins.mealplanner.app.plan.jsonSaver
 import dev.tobins.mealplanner.app.runsInBrowser
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.LoadingState
@@ -183,7 +182,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
             val all = (catalogue as? Load.Ready)?.value.orEmpty()
             when (val made = load { api.createIngredient(IngredientInput(nameFor(found.food, all), nevoCode = found.food.nevoCode)) }) {
                 is Load.Ready -> made.value.also { catalogue = Load.Ready(all + it) }
-                is Load.Failed -> null.also { snackbar.showSnackbar(failureSentence(made, Msg.EDITOR_ADD_FAILED)) }
+                is Load.Failed -> null.also { snackbar.showSnackbar(failureSentence(made, CommonMsg.EDITOR_ADD_FAILED)) }
                 Load.Loading -> null
             }
         }
@@ -211,7 +210,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
             // Without an answer every row is one to choose the ingredient of, which each says.
             val meanings = when (val read = load { api.readLines(lines) }) {
                 is Load.Ready -> read.value.map { it.ingredientId }
-                is Load.Failed -> emptyList<Long?>().also { snackbar.showSnackbar(failureSentence(read, Msg.EDITOR_LOOKUP_FAILED)) }
+                is Load.Failed -> emptyList<Long?>().also { snackbar.showSnackbar(failureSentence(read, RecipesMsg.EDITOR_LOOKUP_FAILED)) }
                 Load.Loading -> emptyList()
             }
             draft = draft.pasting(lines, meanings)
@@ -236,14 +235,14 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                         // The recipe is saved; only how long it keeps is not, which the screen still shows.
                         baseline = sent.copy(keeps = keptBefore)
                         saving = false
-                        snackbar.showSnackbar(t(Msg.KEEPS_FAILED))
+                        snackbar.showSnackbar(t(RecipesMsg.KEEPS_FAILED))
                         return@launch
                     }
                     onDone(saved.id)
                 }
                 is Load.Failed -> {
                     saving = false
-                    snackbar.showSnackbar(failureSentence(result, Msg.SAVE_FAILED))
+                    snackbar.showSnackbar(failureSentence(result, CommonMsg.SAVE_FAILED))
                 }
                 Load.Loading -> Unit
             }
@@ -274,10 +273,10 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text(if (recipeId == null) t(Msg.NEW_RECIPE) else t(Msg.EDIT_RECIPE)) },
-                    navigationIcon = { BarAction(AppIcons.Close, t(Msg.CANCEL), leave) },
+                    title = { Text(if (recipeId == null) t(RecipesMsg.NEW_RECIPE) else t(RecipesMsg.EDIT_RECIPE)) },
+                    navigationIcon = { BarAction(AppIcons.Close, t(CommonMsg.CANCEL), leave) },
                     actions = {
-                        TextButton(onClick = ::save, enabled = ready && draft.canSave && !saving && !busy) { Text(t(Msg.SAVE)) }
+                        TextButton(onClick = ::save, enabled = ready && draft.canSave && !saving && !busy) { Text(t(CommonMsg.SAVE)) }
                     },
                 )
                 if (ready) Totals(draft.nutrition(byId), draft.servingCount != null)
@@ -288,7 +287,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
         val failed = recipeFailed ?: catalogue as? Load.Failed
         if (failed != null) {
             Box(Modifier.padding(padding)) {
-                ErrorMessage(t(if (recipeFailed != null) Msg.RECIPE_LOAD_FAILED else Msg.INGREDIENTS_LOAD_FAILED), failed) { reload++ }
+                ErrorMessage(t(if (recipeFailed != null) RecipesMsg.RECIPE_LOAD_FAILED else CommonMsg.INGREDIENTS_LOAD_FAILED), failed) { reload++ }
             }
             return@Scaffold
         }
@@ -305,20 +304,20 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
         ) {
             OutlinedTextField(
                 draft.title, { draft = draft.copy(title = it) },
-                label = { Text(t(Msg.NAME)) },
+                label = { Text(t(CommonMsg.NAME)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 draft.servings, { draft = draft.copy(servings = it) },
-                label = { Text(t(Msg.SERVINGS)) },
+                label = { Text(t(RecipesMsg.SERVINGS)) },
                 isError = draft.servingCount == null,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(t(Msg.PLAN_AS), style = MaterialTheme.typography.labelLarge)
+            Text(t(RecipesMsg.PLAN_AS), style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 MealSlot.entries.forEach { slot ->
                     FilterChip(
@@ -329,7 +328,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                 }
             }
 
-            Text(t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
+            Text(t(RecipesMsg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
             if (draft.unread.isNotEmpty()) {
                 UnreadLines(draft.unread, enabled = !busy) {
                     paste(draft.unread.joinToString("\n"))
@@ -337,7 +336,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                 }
             }
             if (draft.rows.isEmpty()) {
-                Text(t(Msg.EDITOR_NO_ROWS), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t(RecipesMsg.EDITOR_NO_ROWS), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             draft.rows.forEachIndexed { index, row ->
                 key(row.key) {
@@ -365,7 +364,7 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
             }
             draft.addingTo?.takeIf { it != draft.rows.lastOrNull()?.group }?.let { next ->
                 GroupHeading(next, enabled) { opening { renaming = next } }
-                Text(t(Msg.EDITOR_NEXT_GROUP), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t(RecipesMsg.EDITOR_NEXT_GROUP), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             val (found, searchFailed) = rememberFound(api, ingredients.orEmpty(), query)
             IngredientSearch(
@@ -374,14 +373,14 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
                 onPick = ::add,
             )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                TextButton(onClick = { opening { pasting = true } }, enabled = enabled && !busy) { Text(t(Msg.EDITOR_PASTE)) }
-                TextButton(onClick = { opening { newGroup = true } }, enabled = enabled) { Text(t(Msg.EDITOR_NEW_GROUP)) }
+                TextButton(onClick = { opening { pasting = true } }, enabled = enabled && !busy) { Text(t(RecipesMsg.EDITOR_PASTE)) }
+                TextButton(onClick = { opening { newGroup = true } }, enabled = enabled) { Text(t(RecipesMsg.EDITOR_NEW_GROUP)) }
             }
 
             // The recipe's Markdown as it is; untouched, it is saved as it was, whatever more than steps it holds.
             OutlinedTextField(
                 draft.instructions, { draft = draft.copy(instructions = it) },
-                label = { Text(t(Msg.STEPS_OPTIONAL)) },
+                label = { Text(t(RecipesMsg.STEPS_OPTIONAL)) },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -409,13 +408,13 @@ fun RecipeEditorScreen(api: ApiClient, recipeId: Long?, onDone: (Long?) -> Unit,
         }
     }
     renaming?.let { from ->
-        GroupDialog(t(Msg.EDITOR_RENAME_GROUP, from), from, onDismiss = { renaming = null }) {
+        GroupDialog(t(RecipesMsg.EDITOR_RENAME_GROUP, from), from, onDismiss = { renaming = null }) {
             draft = draft.renaming(from, it)
             renaming = null
         }
     }
     if (newGroup) {
-        GroupDialog(t(Msg.EDITOR_NEW_GROUP), "", onDismiss = { newGroup = false }) {
+        GroupDialog(t(RecipesMsg.EDITOR_NEW_GROUP), "", onDismiss = { newGroup = false }) {
             draft = draft.copy(addingTo = it?.oneLine()?.ifEmpty { null })
             newGroup = false
         }
@@ -429,13 +428,13 @@ private fun Totals(nutrition: RecipeNutrition?, servingsKnown: Boolean) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = Spacing.ScreenEdge, vertical = Spacing.Related)) {
             when {
-                !servingsKnown -> Text(t(Msg.EDITOR_NO_SERVINGS), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                nutrition == null -> Text(t(Msg.EDITOR_NO_TOTALS), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                !servingsKnown -> Text(t(RecipesMsg.EDITOR_NO_SERVINGS), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                nutrition == null -> Text(t(RecipesMsg.EDITOR_NO_TOTALS), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> {
-                    Text(t(Msg.EDITOR_PER_SERVING, nutrition.headline(t)), style = MaterialTheme.typography.titleMedium.numeric())
+                    Text(t(RecipesMsg.EDITOR_PER_SERVING, nutrition.headline(t)), style = MaterialTheme.typography.titleMedium.numeric())
                     if (!nutrition.complete) {
                         Text(
-                            t.plural(Plural.INCOMPLETE, nutrition.uncounted.size, nutrition.uncounted.joinToString("; ")),
+                            t.plural(RecipesPlural.INCOMPLETE, nutrition.uncounted.size, nutrition.uncounted.joinToString("; ")),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -475,7 +474,7 @@ internal fun DraftRowItem(
                     color = if (row.countsAsWritten(ingredient, count)) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 )
             }
-            BarAction(AppIcons.Close, t(Msg.EDITOR_REMOVE_ROW, label), onRemove, enabled = enabled)
+            BarAction(AppIcons.Close, t(RecipesMsg.EDITOR_REMOVE_ROW, label), onRemove, enabled = enabled)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalAlignment = Alignment.CenterVertically) {
             AmountField(row, focus, enabled, Modifier.weight(1f)) { onChange(row.copy(amount = it)) }
@@ -503,18 +502,18 @@ private fun DraftRow.countsAsWritten(ingredient: Ingredient?, count: RowCount): 
 internal fun rowNote(row: DraftRow, ingredient: Ingredient?, count: RowCount, t: Strings, keptKcal: Double? = null): String {
     val name = ingredient?.name.orEmpty()
     return when (count) {
-        RowCount.NO_INGREDIENT -> t.onWeb(Msg.ROW_NO_INGREDIENT, Msg.ROW_NO_INGREDIENT_BROWSER)
-        RowCount.NEGLIGIBLE -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.NOT_COUNTED))
-        RowCount.NO_AMOUNT -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_NO_AMOUNT))
-        RowCount.NO_NUTRITION -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_NO_NUTRITION))
-        RowCount.PORTION_GONE -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_PORTION_GONE, row.unit.orEmpty()))
-        RowCount.WEIGHT_UNKNOWN -> t(Msg.ROW_NOT_COUNTED, name, t(Msg.ROW_WEIGHT_UNKNOWN))
+        RowCount.NO_INGREDIENT -> t.onWeb(RecipesMsg.ROW_NO_INGREDIENT, RecipesMsg.ROW_NO_INGREDIENT_BROWSER)
+        RowCount.NEGLIGIBLE -> t(RecipesMsg.ROW_NOT_COUNTED, name, t(RecipesMsg.NOT_COUNTED))
+        RowCount.NO_AMOUNT -> t(RecipesMsg.ROW_NOT_COUNTED, name, t(RecipesMsg.ROW_NO_AMOUNT))
+        RowCount.NO_NUTRITION -> t(RecipesMsg.ROW_NOT_COUNTED, name, t(RecipesMsg.ROW_NO_NUTRITION))
+        RowCount.PORTION_GONE -> t(RecipesMsg.ROW_NOT_COUNTED, name, t(RecipesMsg.ROW_PORTION_GONE, row.unit.orEmpty()))
+        RowCount.WEIGHT_UNKNOWN -> t(RecipesMsg.ROW_NOT_COUNTED, name, t(RecipesMsg.ROW_WEIGHT_UNKNOWN))
         RowCount.COUNTED -> {
             val line = row.line()!!
             val volume = measured(line, ingredient!!)?.takeIf { it.dimension == Dimension.VOLUME && ingredient.gramsPerMl == null }?.baseAmount
             val quantity = volume?.let { formatMillilitres(it, t.locale) } ?: formatGrams(NutritionCalculator.quantityOf(line, ingredient)!!.grams, t.locale)
             val kcal = keptKcal ?: NutritionCalculator.ofLines(listOf(row.input() to ingredient), servings = 1)?.perServing?.kcal ?: 0.0
-            t(Msg.ROW_COUNTED, name, quantity, kcal.roundToLong())
+            t(RecipesMsg.ROW_COUNTED, name, quantity, kcal.roundToLong())
         }
     }
 }
@@ -536,9 +535,9 @@ private fun AmountField(row: DraftRow, focus: FocusRequester, enabled: Boolean, 
             field = it
             if (it.text != row.amount) onAmount(it.text)
         },
-        label = { Text(t(Msg.EDITOR_AMOUNT)) },
+        label = { Text(t(RecipesMsg.EDITOR_AMOUNT)) },
         isError = !row.amountValid,
-        supportingText = if (row.amountValid) null else ({ Text(t(Msg.EDITOR_AMOUNT_UNREADABLE)) }),
+        supportingText = if (row.amountValid) null else ({ Text(t(RecipesMsg.EDITOR_AMOUNT_UNREADABLE)) }),
         enabled = enabled,
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
@@ -570,7 +569,7 @@ private fun UnitChoice(unit: String?, choices: List<String>, enabled: Boolean, o
     val t = LocalStrings.current
     Box {
         var open by remember { mutableStateOf(false) }
-        OutlinedButton(onClick = { open = true }, enabled = enabled) { Text(unit?.let { unitLabel(it, t) } ?: t(Msg.EDITOR_UNIT)) }
+        OutlinedButton(onClick = { open = true }, enabled = enabled) { Text(unit?.let { unitLabel(it, t) } ?: t(RecipesMsg.EDITOR_UNIT)) }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             choices.forEach { choice ->
                 DropdownMenuItem(text = { Text(unitLabel(choice, t)) }, onClick = { open = false; if (choice != unit) onChoose(choice) })
@@ -581,11 +580,11 @@ private fun UnitChoice(unit: String?, choices: List<String>, enabled: Boolean, o
 
 /** A unit as the app's language writes it: the table's keys that differ in Dutch (`el` for `tbsp`), any other as it is. */
 internal fun unitLabel(unit: String, t: Strings): String = when (unit) {
-    PIECE -> t(Msg.UNIT_PIECE)
-    "tbsp" -> t(Msg.UNIT_TBSP)
-    "tsp" -> t(Msg.UNIT_TSP)
-    "clove" -> t(Msg.UNIT_CLOVE)
-    "cup" -> t(Msg.UNIT_CUP)
+    PIECE -> t(RecipesMsg.UNIT_PIECE)
+    "tbsp" -> t(RecipesMsg.UNIT_TBSP)
+    "tsp" -> t(RecipesMsg.UNIT_TSP)
+    "clove" -> t(RecipesMsg.UNIT_CLOVE)
+    "cup" -> t(RecipesMsg.UNIT_CUP)
     else -> unit
 }
 
@@ -595,7 +594,7 @@ private fun GroupHeading(name: String, enabled: Boolean, onRename: () -> Unit) {
     val t = LocalStrings.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         SectionHeader(name, Modifier.weight(1f))
-        BarAction(AppIcons.Edit, t(Msg.EDITOR_RENAME_GROUP, name), onRename, enabled = enabled)
+        BarAction(AppIcons.Edit, t(RecipesMsg.EDITOR_RENAME_GROUP, name), onRename, enabled = enabled)
     }
 }
 
@@ -604,8 +603,8 @@ private fun GroupHeading(name: String, enabled: Boolean, onRename: () -> Unit) {
 private fun UnreadLines(lines: List<String>, enabled: Boolean, onAdd: () -> Unit) {
     val t = LocalStrings.current
     Column {
-        Text(t(Msg.EDITOR_UNREAD, lines.joinToString(" / ") { "“$it”" }), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-        TextButton(onClick = onAdd, enabled = enabled) { Text(t(Msg.EDITOR_ADD_ROWS)) }
+        Text(t(RecipesMsg.EDITOR_UNREAD, lines.joinToString(" / ") { "“$it”" }), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = onAdd, enabled = enabled) { Text(t(RecipesMsg.EDITOR_ADD_ROWS)) }
     }
 }
 
@@ -657,14 +656,14 @@ internal fun IngredientSearch(
     Column(Modifier.keptInView(typing && found.isNotEmpty(), found)) {
         OutlinedTextField(
             query, onQuery,
-            label = { Text(t(Msg.EDITOR_ADD_INGREDIENT)) },
-            supportingText = { Text(t(Msg.EDITOR_SEARCH_HINT)) },
+            label = { Text(t(RecipesMsg.EDITOR_ADD_INGREDIENT)) },
+            supportingText = { Text(t(RecipesMsg.EDITOR_SEARCH_HINT)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().onFocusChanged { typing = it.isFocused },
         )
-        failed?.let { Text(failureSentence(it, Msg.EDITOR_SEARCH_FAILED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        failed?.let { Text(failureSentence(it, RecipesMsg.EDITOR_SEARCH_FAILED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         if (query.trim().length >= 2 && found.isEmpty() && failed == null) {
-            Text(t(Msg.EDITOR_NOTHING_FOUND), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(t(RecipesMsg.EDITOR_NOTHING_FOUND), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         found.forEach { FoundRow(it, enabled) { onPick(it) } }
         val name = query.trim()
@@ -674,7 +673,7 @@ internal fun IngredientSearch(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
             ) {
-                Text(t(Msg.NEW_PRODUCT_NAMED, name), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                Text(t(RecipesMsg.NEW_PRODUCT_NAMED, name), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                 Icon(AppIcons.Add, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
             }
         }
@@ -691,7 +690,7 @@ private fun FoundRow(found: Found, enabled: Boolean, onPick: () -> Unit) {
     }
     // Open Food Facts' values are credited wherever they are shown, as its licence asks.
     val credit = "Open Food Facts".takeIf { found is Found.Mine && fromOpenFoodFacts(found.ingredient.label?.source) }
-    val values = listOfNotNull(counted?.let { per100Text(it, t) } ?: t(Msg.FOUND_NO_NUTRITION), credit).joinToString(" · ")
+    val values = listOfNotNull(counted?.let { per100Text(it, t) } ?: t(CommonMsg.FOUND_NO_NUTRITION), credit).joinToString(" · ")
     Row(
         Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onPick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -700,7 +699,7 @@ private fun FoundRow(found: Found, enabled: Boolean, onPick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.bodyLarge)
             Text(
-                if (found is Found.NewFood) "${t(Msg.FOUND_NEW)} · $values" else values,
+                if (found is Found.NewFood) "${t(RecipesMsg.FOUND_NEW)} · $values" else values,
                 style = MaterialTheme.typography.bodySmall.numeric(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -711,7 +710,7 @@ private fun FoundRow(found: Found, enabled: Boolean, onPick: () -> Unit) {
 
 /** `165 kcal · 31 g protein per 100 g`, or per 100 ml for what is counted so: the values of a label or of a NEVO food. */
 private fun per100Text(values: Values, t: Strings): String =
-    t(Msg.FOUND_PER_100, (values.per100.kcal ?: 0.0).roundToLong(), (values.per100.proteinG ?: 0.0).roundToLong(), per100(values.basis))
+    t(RecipesMsg.FOUND_PER_100, (values.per100.kcal ?: 0.0).roundToLong(), (values.per100.proteinG ?: 0.0).roundToLong(), per100(values.basis))
 
 /** `100 g`, or `100 ml` for what is counted per volume. */
 internal fun per100(basis: FoodBasis): String = if (basis == FoodBasis.PER_100_ML) "100 ml" else "100 g"
@@ -744,10 +743,10 @@ private fun RowDialog(
     val (found, failed) = rememberFound(api, catalogue, query)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.EDITOR_CHOOSE_INGREDIENT)) },
+        title = { Text(t(RecipesMsg.EDITOR_CHOOSE_INGREDIENT)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                Text(chosenName?.let { t(Msg.EDITOR_CHOSEN, it) } ?: t(Msg.EDITOR_NONE_CHOSEN), style = MaterialTheme.typography.bodyMedium)
+                Text(chosenName?.let { t(RecipesMsg.EDITOR_CHOSEN, it) } ?: t(RecipesMsg.EDITOR_NONE_CHOSEN), style = MaterialTheme.typography.bodyMedium)
                 IngredientSearch(query, { query = it }, found, failed, enabled = !picking) { picked ->
                     // A row named after its ingredient is named after the new one; a text of the recipe's own stays.
                     val name = when (picked) {
@@ -759,11 +758,11 @@ private fun RowDialog(
                     chosenFood = picked as? Found.NewFood
                     query = ""
                 }
-                OutlinedTextField(text, { text = it }, label = { Text(t(Msg.EDITOR_ROW_TEXT)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(text, { text = it }, label = { Text(t(RecipesMsg.EDITOR_ROW_TEXT)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     group, { group = it },
-                    label = { Text(t(Msg.EDITOR_GROUP)) },
-                    supportingText = { Text(t(Msg.EDITOR_GROUP_HINT)) },
+                    label = { Text(t(RecipesMsg.EDITOR_GROUP)) },
+                    supportingText = { Text(t(RecipesMsg.EDITOR_GROUP_HINT)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -783,9 +782,9 @@ private fun RowDialog(
                         picking = false
                     }
                 }
-            }) { Text(t(Msg.SAVE)) }
+            }) { Text(t(CommonMsg.SAVE)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -801,18 +800,18 @@ private fun PasteDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
     if (runsInBrowser()) LaunchedEffect(Unit) { field.requestFocus() }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.EDITOR_PASTE_TITLE)) },
+        title = { Text(t(RecipesMsg.EDITOR_PASTE_TITLE)) },
         text = {
             OutlinedTextField(
                 text, { text = it },
-                label = { Text(t(Msg.EDITOR_PASTE_LINES)) },
-                supportingText = { Text(t(Msg.EDITOR_PASTE_HINT)) },
+                label = { Text(t(RecipesMsg.EDITOR_PASTE_LINES)) },
+                supportingText = { Text(t(RecipesMsg.EDITOR_PASTE_HINT)) },
                 minLines = 5,
                 modifier = Modifier.fillMaxWidth().focusRequester(field),
             )
         },
-        confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onAdd(text) }) { Text(t(Msg.EDITOR_ADD_ROWS)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onAdd(text) }) { Text(t(RecipesMsg.EDITOR_ADD_ROWS)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -827,16 +826,16 @@ private fun GroupDialog(title: String, initial: String, onDismiss: () -> Unit, o
         text = {
             OutlinedTextField(
                 name, { name = it },
-                label = { Text(t(Msg.EDITOR_GROUP)) },
-                supportingText = { Text(t(Msg.EDITOR_GROUP_HINT)) },
+                label = { Text(t(RecipesMsg.EDITOR_GROUP)) },
+                supportingText = { Text(t(RecipesMsg.EDITOR_GROUP_HINT)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onSave(name.oneLine().ifEmpty { null }) }),
                 modifier = Modifier.fillMaxWidth(),
             )
         },
-        confirmButton = { TextButton(onClick = { onSave(name.oneLine().ifEmpty { null }) }) { Text(t(Msg.SAVE)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        confirmButton = { TextButton(onClick = { onSave(name.oneLine().ifEmpty { null }) }) { Text(t(CommonMsg.SAVE)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -852,7 +851,7 @@ private fun TagsEditor(tags: List<String>, enabled: Boolean, onChange: (List<Str
         text = ""
     }
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Text(t(Msg.EDITOR_TAGS), style = MaterialTheme.typography.labelLarge)
+        Text(t(RecipesMsg.EDITOR_TAGS), style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             tags.forEach { tag ->
                 InputChip(
@@ -860,21 +859,21 @@ private fun TagsEditor(tags: List<String>, enabled: Boolean, onChange: (List<Str
                     onClick = { onChange(tags - tag) },
                     enabled = enabled,
                     label = { Text(tag) },
-                    trailingIcon = { Icon(AppIcons.Close, t(Msg.EDITOR_REMOVE_TAG, tag), Modifier.size(18.dp)) },
+                    trailingIcon = { Icon(AppIcons.Close, t(RecipesMsg.EDITOR_REMOVE_TAG, tag), Modifier.size(18.dp)) },
                 )
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 text, { text = it },
-                label = { Text(t(Msg.EDITOR_ADD_TAG)) },
+                label = { Text(t(RecipesMsg.EDITOR_ADD_TAG)) },
                 enabled = enabled,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { add() }),
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = ::add, enabled = enabled && text.isNotBlank()) { Icon(AppIcons.Add, t(Msg.EDITOR_ADD_TAG)) }
+            IconButton(onClick = ::add, enabled = enabled && text.isNotBlank()) { Icon(AppIcons.Add, t(RecipesMsg.EDITOR_ADD_TAG)) }
         }
     }
 }

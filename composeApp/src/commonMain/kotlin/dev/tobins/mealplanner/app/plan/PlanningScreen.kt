@@ -45,13 +45,13 @@ import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.api.WeekPlanning
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.recipes.RecipePhoto
 import dev.tobins.mealplanner.app.recipes.pictureUrls
 import dev.tobins.mealplanner.app.recipes.recipePicture
 import dev.tobins.mealplanner.app.recipes.rememberMyRecipes
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.EmptyState
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
@@ -105,8 +105,8 @@ fun PlanningScreen(
 @Composable
 private fun WeekOver(onBack: () -> Unit) {
     val t = LocalStrings.current
-    SubScreen(title = t(Msg.PLAN_THE_WEEK), onBack = onBack) { padding ->
-        EmptyState(Spot.NothingPlanned, t(Msg.PLANNING_WEEK_OVER), Modifier.padding(padding))
+    SubScreen(title = t(PlanMsg.PLAN_THE_WEEK), onBack = onBack) { padding ->
+        EmptyState(Spot.NothingPlanned, t(PlanMsg.PLANNING_WEEK_OVER), Modifier.padding(padding))
     }
 }
 
@@ -174,7 +174,7 @@ private fun PlanningWeek(
     val ready = (planning as? Load.Ready)?.value
     SubScreen(
         // Short enough for the top bar at the largest font; the week's date is the screen's first line.
-        title = t(Msg.PLAN_THE_WEEK),
+        title = t(PlanMsg.PLAN_THE_WEEK),
         onBack = onBack,
         snackbar = snackbar,
         notice = {
@@ -184,20 +184,20 @@ private fun PlanningWeek(
                         enabled = !busy,
                         onClick = { finish { api.planningDone(weekStart) } },
                         modifier = Modifier.fillMaxWidth().padding(Spacing.ScreenEdge),
-                    ) { Text(if (ready.complete) t(Msg.PLANNING_DONE) else t(Msg.PLANNING_FILL_REST)) }
+                    ) { Text(if (ready.complete) t(PlanMsg.PLANNING_DONE) else t(PlanMsg.PLANNING_FILL_REST)) }
                 }
             }
         },
     ) { padding ->
         when (val current = planning) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
-            is Load.Failed -> Column(Modifier.padding(padding)) { ErrorMessage(t(Msg.PLANNING_LOAD_FAILED), current) { reload++ } }
+            is Load.Failed -> Column(Modifier.padding(padding)) { ErrorMessage(t(PlanMsg.PLANNING_LOAD_FAILED), current) { reload++ } }
             is Load.Ready -> {
                 val week = current.value
                 if (week == null) {
                     EmptyState(
-                        Spot.NothingPlanned, t(Msg.PLANNING_OLD_SERVER), Modifier.padding(padding),
-                        actionLabel = t(Msg.PLAN_THE_WEEK), onAction = { finish { api.generatePlan(weekStart) } },
+                        Spot.NothingPlanned, t(PlanMsg.PLANNING_OLD_SERVER), Modifier.padding(padding),
+                        actionLabel = t(PlanMsg.PLAN_THE_WEEK), onAction = { finish { api.generatePlan(weekStart) } },
                     )
                 } else {
                     LazyColumn(
@@ -207,7 +207,7 @@ private fun PlanningWeek(
                     ) {
                         item(key = "toChoose") {
                             Column {
-                                Text(t(Msg.WEEK_OF, dayMonthLabel(weekStart, t.locale)), style = MaterialTheme.typography.titleMedium)
+                                Text(t(CommonMsg.WEEK_OF, dayMonthLabel(weekStart, t.locale)), style = MaterialTheme.typography.titleMedium)
                                 Text(week.toChooseText(t), style = MaterialTheme.typography.bodyLarge)
                             }
                         }
@@ -228,7 +228,7 @@ private fun PlanningWeek(
                         ) { suggestion ->
                             // A search finds the dinners chosen too: marked so, as they are added already.
                             SuggestionCard(
-                                suggestion, pictures[suggestion.recipeId], t(Msg.ADD), enabled = !busy,
+                                suggestion, pictures[suggestion.recipeId], t(CommonMsg.ADD), enabled = !busy,
                                 chosen = week.picks.any { it.recipeId == suggestion.recipeId },
                                 onAction = { change { api.chooseDinner(weekStart, suggestion.recipeId, chosen = true) } },
                                 onNotThisWeek = { change { api.hideForWeek(weekStart, suggestion.recipeId, hidden = true) } },
@@ -240,7 +240,7 @@ private fun PlanningWeek(
                         // Under the suggestions, not in the strip: on a phone the strip would push them off the screen.
                         if (week.totals.meals > 0) {
                             item(key = "stripNote") {
-                                Text(t(Msg.PLANNING_STRIP_NOTE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(t(PlanMsg.PLANNING_STRIP_NOTE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -290,7 +290,7 @@ fun AnotherDinnerScreen(api: ApiClient, weekStart: String, meal: PlannedMeal, on
         busy = true
         scope.launch {
             when (val result = load(action)) {
-                is Load.Ready -> result.value?.let(onChanged) ?: snackbar.showSnackbar(t(Msg.PLAN_CHOOSE_UNSUPPORTED))
+                is Load.Ready -> result.value?.let(onChanged) ?: snackbar.showSnackbar(t(PlanMsg.PLAN_CHOOSE_UNSUPPORTED))
                 is Load.Failed -> snackbar.showSnackbar(failureSentence(result))
                 Load.Loading -> Unit
             }
@@ -298,7 +298,7 @@ fun AnotherDinnerScreen(api: ApiClient, weekStart: String, meal: PlannedMeal, on
         }
     }
 
-    SubScreen(title = t(Msg.ANOTHER_DINNER_TITLE, dayLabel(plusDays(weekStart, meal.day), t.locale)), onBack = onBack, snackbar = snackbar) { padding ->
+    SubScreen(title = t(PlanMsg.ANOTHER_DINNER_TITLE, dayLabel(plusDays(weekStart, meal.day), t.locale)), onBack = onBack, snackbar = snackbar) { padding ->
         LazyColumn(
             Modifier.padding(padding).fillMaxSize(),
             contentPadding = PaddingValues(Spacing.ScreenEdge),
@@ -306,11 +306,11 @@ fun AnotherDinnerScreen(api: ApiClient, weekStart: String, meal: PlannedMeal, on
         ) {
             if (!meal.locked) {
                 item(key = "planner") {
-                    TextButton(enabled = !busy, onClick = { change { api.rerollMeal(weekStart, meal.day, meal.slot) } }) { Text(t(Msg.PLANNERS_CHOICE)) }
+                    TextButton(enabled = !busy, onClick = { change { api.rerollMeal(weekStart, meal.day, meal.slot) } }) { Text(t(PlanMsg.PLANNERS_CHOICE)) }
                 }
             }
             if (oldServer) {
-                item(key = "oldServer") { Text(t(Msg.PLANNING_OLD_SERVER), style = MaterialTheme.typography.bodyLarge) }
+                item(key = "oldServer") { Text(t(PlanMsg.PLANNING_OLD_SERVER), style = MaterialTheme.typography.bodyLarge) }
                 return@LazyColumn
             }
             suggestionItems(
@@ -322,7 +322,7 @@ fun AnotherDinnerScreen(api: ApiClient, weekStart: String, meal: PlannedMeal, on
                 onRetry = { rescored++ },
             ) { suggestion ->
                 SuggestionCard(
-                    suggestion, pictures[suggestion.recipeId], t(Msg.PLANNING_CHOOSE), enabled = !busy,
+                    suggestion, pictures[suggestion.recipeId], t(PlanMsg.PLANNING_CHOOSE), enabled = !busy,
                     onAction = { change { api.chooseRecipe(weekStart, meal.day, meal.slot, suggestion.recipeId) } },
                     onNotThisWeek = {
                         scope.launch {
@@ -359,34 +359,34 @@ internal fun LazyListScope.suggestionItems(
     item(key = "suggestionsHeader") {
         val t = LocalStrings.current
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionHeader(t(Msg.PLANNING_SUGGESTIONS), Modifier.weight(1f))
-            if (query == null) TextButton(onClick = { onQuery("") }) { Text(t(Msg.PLANNING_SOMETHING_ELSE)) }
-            else TextButton(onClick = { onQuery(null) }) { Text(t(Msg.PLANNING_BACK_TO_SUGGESTIONS)) }
+            SectionHeader(t(PlanMsg.PLANNING_SUGGESTIONS), Modifier.weight(1f))
+            if (query == null) TextButton(onClick = { onQuery("") }) { Text(t(PlanMsg.PLANNING_SOMETHING_ELSE)) }
+            else TextButton(onClick = { onQuery(null) }) { Text(t(PlanMsg.PLANNING_BACK_TO_SUGGESTIONS)) }
         }
     }
     if (query != null) {
         item(key = "search") {
-            OutlinedTextField(query, onValueChange = onQuery, label = { Text(LocalStrings.current(Msg.PLANNING_SEARCH)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(query, onValueChange = onQuery, label = { Text(LocalStrings.current(PlanMsg.PLANNING_SEARCH)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
     }
     when (page) {
         Load.Loading -> item(key = "suggestionsLoading") { LoadingState(Modifier.height(160.dp)) }
-        is Load.Failed -> item(key = "suggestionsFailed") { ErrorMessage(LocalStrings.current(Msg.PLANNING_LOAD_FAILED), page, onRetry) }
+        is Load.Failed -> item(key = "suggestionsFailed") { ErrorMessage(LocalStrings.current(PlanMsg.PLANNING_LOAD_FAILED), page, onRetry) }
         is Load.Ready -> {
             val suggestions = page.value.suggestions
             items(suggestions, key = { "suggestion:${it.recipeId}" }) { card(it) }
             item(key = "suggestionsFooter") {
                 val t = LocalStrings.current
                 when {
-                    page.value.more -> TextButton(onClick = { onShowOthers(suggestions) }) { Text(t(Msg.PLANNING_SHOW_OTHERS)) }
-                    query != null -> if (suggestions.isEmpty()) Text(t(Msg.PLANNING_SEARCH_NONE), style = MaterialTheme.typography.bodyMedium)
+                    page.value.more -> TextButton(onClick = { onShowOthers(suggestions) }) { Text(t(PlanMsg.PLANNING_SHOW_OTHERS)) }
+                    query != null -> if (suggestions.isEmpty()) Text(t(PlanMsg.PLANNING_SEARCH_NONE), style = MaterialTheme.typography.bodyMedium)
                     suggestions.isEmpty() && !canStartAgain -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                        Text(t(Msg.PLANNING_NONE), style = MaterialTheme.typography.bodyMedium)
-                        onOpenRecipes?.let { TextButton(onClick = it) { Text(t(Msg.OPEN_RECIPES)) } }
+                        Text(t(PlanMsg.PLANNING_NONE), style = MaterialTheme.typography.bodyMedium)
+                        onOpenRecipes?.let { TextButton(onClick = it) { Text(t(PlanMsg.OPEN_RECIPES)) } }
                     }
                     else -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                        Text(t(Msg.PLANNING_NO_MORE), style = MaterialTheme.typography.bodyMedium)
-                        if (canStartAgain) TextButton(onClick = onStartAgain) { Text(t(Msg.PLANNING_START_AGAIN)) }
+                        Text(t(PlanMsg.PLANNING_NO_MORE), style = MaterialTheme.typography.bodyMedium)
+                        if (canStartAgain) TextButton(onClick = onStartAgain) { Text(t(PlanMsg.PLANNING_START_AGAIN)) }
                     }
                 }
             }
@@ -400,10 +400,10 @@ private fun PlanningStrip(week: WeekPlanning) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Text(t(Msg.PLANNING_STRIP_TITLE), style = MaterialTheme.typography.titleSmall)
+            Text(t(PlanMsg.PLANNING_STRIP_TITLE), style = MaterialTheme.typography.titleSmall)
             val lines = week.totals.lines(t)
             if (lines.isEmpty()) {
-                Text(t(Msg.PLANNING_STRIP_EMPTY), style = MaterialTheme.typography.bodyMedium)
+                Text(t(PlanMsg.PLANNING_STRIP_EMPTY), style = MaterialTheme.typography.bodyMedium)
             } else {
                 for (line in lines) Text(line, style = MaterialTheme.typography.bodyMedium.numeric())
             }
@@ -428,10 +428,10 @@ private fun ChosenDinners(picks: List<DinnerPick>, enabled: Boolean, onTakeOut: 
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                SectionHeader(t(Msg.PLANNING_CHOSEN_COUNT, picks.size))
+                SectionHeader(t(PlanMsg.PLANNING_CHOSEN_COUNT, picks.size))
                 if (!shown) Text(picks.joinToString(", ") { it.title }, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (!mustOpen) TextButton(onClick = { open = !open }) { Text(if (shown) t(Msg.PLANNING_CHOSEN_HIDE) else t(Msg.PLANNING_CHOSEN_SHOW)) }
+            if (!mustOpen) TextButton(onClick = { open = !open }) { Text(if (shown) t(PlanMsg.PLANNING_CHOSEN_HIDE) else t(PlanMsg.PLANNING_CHOSEN_SHOW)) }
         }
         if (shown) for (pick in picks) ChosenDinner(pick, enabled) { onTakeOut(pick) }
     }
@@ -450,10 +450,10 @@ private fun ChosenDinner(pick: DinnerPick, enabled: Boolean, onTakeOut: () -> Un
                     pick.cost?.let { "≈ ${formatEuro(it, t.locale)}" },
                 )
             } else {
-                Text(t(Msg.PLANNING_NOT_PLANNABLE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Text(t(PlanMsg.PLANNING_NOT_PLANNABLE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
         }
-        BarAction(AppIcons.Close, t(Msg.PLANNING_TAKE_OUT, pick.title), onClick = onTakeOut, enabled = enabled)
+        BarAction(AppIcons.Close, t(PlanMsg.PLANNING_TAKE_OUT, pick.title), onClick = onTakeOut, enabled = enabled)
     }
 }
 
@@ -486,11 +486,11 @@ internal fun SuggestionCard(
             MealNumbers(suggestion.numbersText(t), null)
             suggestion.priceText(t)?.let { Text(it, style = MaterialTheme.typography.bodySmall.numeric()) }
             if (chosen) {
-                Text(t(Msg.PLANNING_ALREADY_CHOSEN), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text(t(PlanMsg.PLANNING_ALREADY_CHOSEN), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             } else {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     Button(enabled = enabled, onClick = onAction) { Text(actionLabel) }
-                    TextButton(enabled = enabled, onClick = onNotThisWeek) { Text(t(Msg.PLANNING_NOT_THIS_WEEK)) }
+                    TextButton(enabled = enabled, onClick = onNotThisWeek) { Text(t(PlanMsg.PLANNING_NOT_THIS_WEEK)) }
                 }
             }
         }
@@ -502,12 +502,12 @@ internal fun SuggestionCard(
 private fun HiddenRecipes(week: WeekPlanning, enabled: Boolean, onShowAgain: (Long) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-        SectionHeader(t(Msg.PLANNING_NOT_THIS_WEEK))
+        SectionHeader(t(PlanMsg.PLANNING_NOT_THIS_WEEK))
         for (hidden in week.notThisWeek) {
             // One row to a screen reader: the recipe, then its button.
             Row(Modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
                 Text(hidden.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                TextButton(enabled = enabled, onClick = { onShowAgain(hidden.recipeId) }) { Text(t(Msg.PLANNING_SHOW_AGAIN)) }
+                TextButton(enabled = enabled, onClick = { onShowAgain(hidden.recipeId) }) { Text(t(PlanMsg.PLANNING_SHOW_AGAIN)) }
             }
         }
     }

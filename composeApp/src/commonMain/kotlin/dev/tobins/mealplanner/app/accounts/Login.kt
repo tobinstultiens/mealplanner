@@ -2,7 +2,6 @@ package dev.tobins.mealplanner.app.accounts
 
 import dev.tobins.mealplanner.api.AuthConfig
 import dev.tobins.mealplanner.api.LoginRefusal
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.SettingsStorage
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.logOut
@@ -213,13 +212,13 @@ class Login(
      * the code for tokens. An answer that belongs to it is used up, whatever it says, so it works once.
      */
     suspend fun finish(url: String): Session {
-        val pending = pending() ?: throw AppError(Strings.current(Msg.LOGIN_NOT_STARTED))
+        val pending = pending() ?: throw AppError(Strings.current(AccountsMsg.LOGIN_NOT_STARTED))
         val params = Url(url).parameters
         // Checked first, so that a foreign answer can neither end our login nor put its own text on screen.
-        if (params["state"] != pending.state) throw AppError(Strings.current(Msg.LOGIN_ANSWER_MISMATCH))
+        if (params["state"] != pending.state) throw AppError(Strings.current(AccountsMsg.LOGIN_ANSWER_MISMATCH))
         abandon()
         params["error"]?.let { throw AppError(params["error_description"] ?: it) }
-        val code = params["code"] ?: throw AppError(Strings.current(Msg.LOGIN_NO_CODE))
+        val code = params["code"] ?: throw AppError(Strings.current(AccountsMsg.LOGIN_NO_CODE))
         val response = http.submitForm(
             pending.tokenEndpoint,
             parameters {
@@ -230,7 +229,7 @@ class Login(
                 append("code_verifier", pending.verifier)
             },
         )
-        if (!response.status.isSuccess()) throw AppError(Strings.current(Msg.LOGIN_FAILED_STATUS, response.status.value))
+        if (!response.status.isSuccess()) throw AppError(Strings.current(AccountsMsg.LOGIN_FAILED_STATUS, response.status.value))
         val tokens = json.decodeFromString<TokenResponse>(response.bodyAsText())
         // Called off while the provider answered (a log-out, another server: LoginExchange.logOut): nothing is kept.
         currentCoroutineContext().ensureActive()
@@ -321,7 +320,7 @@ class Login(
         if (!response.status.isSuccess()) {
             // The server explains itself as {"error": "..."}.
             val reason = runCatching { json.decodeFromString<Map<String, String>>(body)["error"] }.getOrNull()
-            throw AppError(reason ?: Strings.current(Msg.LOGIN_SETTINGS_STATUS, response.status.value))
+            throw AppError(reason ?: Strings.current(AccountsMsg.LOGIN_SETTINGS_STATUS, response.status.value))
         }
         return json.decodeFromString(body)
     }

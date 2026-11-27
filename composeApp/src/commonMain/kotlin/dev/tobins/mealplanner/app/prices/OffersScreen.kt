@@ -38,8 +38,6 @@ import dev.tobins.mealplanner.api.OffersState
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.RefreshNotice
 import dev.tobins.mealplanner.app.ingredients.ProductPicture
 import dev.tobins.mealplanner.app.rememberFrontReturns
@@ -47,6 +45,7 @@ import dev.tobins.mealplanner.app.rememberLoad
 import dev.tobins.mealplanner.app.rememberToday
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.EmptyState
 import dev.tobins.mealplanner.app.ui.ErrorBanner
 import dev.tobins.mealplanner.app.ui.ErrorMessage
@@ -96,21 +95,21 @@ internal fun OffersScreen(
     // Fetched again once the server has an exclusion made here: it may match the offer to another ingredient.
     LaunchedEffect(loaded, reload, frontReturns, today, exclusions.known) { loaded.refresh { api.offers(today) } }
 
-    SubScreen(t(Msg.OFFERS), onBack, snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
-        BarAction(AppIcons.Refresh, if (refreshing) t(Msg.FETCHING_OFFERS) else t(Msg.REFRESH_OFFERS), busy = refreshing, onClick = {
+    SubScreen(t(CommonMsg.OFFERS), onBack, snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
+        BarAction(AppIcons.Refresh, if (refreshing) t(PricesMsg.FETCHING_OFFERS) else t(PricesMsg.REFRESH_OFFERS), busy = refreshing, onClick = {
             refreshing = true
             scope.launch {
-                (load { api.refreshOffers() } as? Load.Failed)?.let { snackbar.showSnackbar(failureSentence(it, Msg.REFRESH_FAILED)) }
+                (load { api.refreshOffers() } as? Load.Failed)?.let { snackbar.showSnackbar(failureSentence(it, PricesMsg.REFRESH_FAILED)) }
                 refreshing = false
                 reload++
             }
         })
-        OverflowMenu(MenuAction(AppIcons.Price, t(Msg.REGULAR_PRICES), onOpenPrices))
+        OverflowMenu(MenuAction(AppIcons.Price, t(PricesMsg.REGULAR_PRICES), onOpenPrices))
     }) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.OFFERS_LOAD_FAILED), current) { reload++ }
+                ErrorMessage(t(PricesMsg.OFFERS_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val all = current.value.withoutExcluded(exclusions.inEffect).offers
@@ -126,7 +125,7 @@ internal fun OffersScreen(
                                 FilterChip(
                                     selected = onlyMatched,
                                     onClick = { onlyMatched = !onlyMatched },
-                                    label = { Text(t(Msg.MY_INGREDIENTS, all.count { it.ingredientName != null })) },
+                                    label = { Text(t(PricesMsg.MY_INGREDIENTS, all.count { it.ingredientName != null })) },
                                 )
                                 Store.entries.forEach { s ->
                                     FilterChip(
@@ -140,8 +139,8 @@ internal fun OffersScreen(
                     }
                     if (shown.isEmpty()) {
                         item {
-                            if (all.isEmpty()) EmptyState(Spot.NoOffers, t.onWeb(Msg.NO_OFFERS_YET, Msg.NO_OFFERS_YET_BROWSER))
-                            else EmptyState(AppIcons.Offer, t(Msg.NO_OFFERS_MATCH))
+                            if (all.isEmpty()) EmptyState(Spot.NoOffers, t.onWeb(PricesMsg.NO_OFFERS_YET, PricesMsg.NO_OFFERS_YET_BROWSER))
+                            else EmptyState(AppIcons.Offer, t(PricesMsg.NO_OFFERS_MATCH))
                         }
                     }
                     items(shown, key = { "${it.store}|${it.url ?: it.title}|${it.validFrom}" }) { offer ->
@@ -164,21 +163,21 @@ private fun SourceLine(status: OfferSourceStatus) {
     Column {
         when {
             error != null -> ErrorBanner(
-                if (fetched == null) t(Msg.SOURCE_COULD_NOT_FETCH, status.store.label) else t(Msg.SOURCE_LAST_FAILED, status.store.label, fetched),
+                if (fetched == null) t(PricesMsg.SOURCE_COULD_NOT_FETCH, status.store.label) else t(PricesMsg.SOURCE_LAST_FAILED, status.store.label, fetched),
                 error,
             )
             fetched != null -> Text(
-                t.plural(Plural.SOURCE_FETCHED, status.offerCount, status.store.label, fetched),
+                t.plural(PricesPlural.SOURCE_FETCHED, status.offerCount, status.store.label, fetched),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             else -> Text(
-                t(Msg.SOURCE_NOT_FETCHED, status.store.label),
+                t(PricesMsg.SOURCE_NOT_FETCHED, status.store.label),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        status.warning?.let { WarningBanner(t(Msg.SOURCE_WARNING, status.store.label), it) }
+        status.warning?.let { WarningBanner(t(PricesMsg.SOURCE_WARNING, status.store.label), it) }
     }
 }
 
@@ -194,7 +193,7 @@ private fun OfferRow(offer: Offer, initiallyOpen: Boolean, onExclude: (Long, Str
     val ingredientName = offer.ingredientName
     val canOpen = verdict != null || ingredientId != null
     var open by rememberSaveable { mutableStateOf(initiallyOpen) }
-    val opens = if (!canOpen) Modifier else Modifier.clickable(onClickLabel = t(if (open) Msg.OFFER_HIDE else Msg.OFFER_SHOW)) { open = !open }
+    val opens = if (!canOpen) Modifier else Modifier.clickable(onClickLabel = t(if (open) PricesMsg.OFFER_HIDE else PricesMsg.OFFER_SHOW)) { open = !open }
     Column(opens.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp)) {
         OfferLine(offer)
         if (open && canOpen) {
@@ -218,7 +217,7 @@ private fun OfferLine(offer: Offer) {
             }
             Text(offer.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(
-                listOfNotNull(offer.shortText(t), offer.packSize, t(Msg.UNTIL, dayMonthLabel(offer.validUntil, t.locale))).joinToString(" · "),
+                listOfNotNull(offer.shortText(t), offer.packSize, t(PricesMsg.UNTIL, dayMonthLabel(offer.validUntil, t.locale))).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

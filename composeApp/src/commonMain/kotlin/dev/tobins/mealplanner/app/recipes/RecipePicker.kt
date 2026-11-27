@@ -31,8 +31,8 @@ import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.runsInBrowser
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.LoadingState
@@ -104,7 +104,7 @@ fun RecipePicker(
         text = {
             when (val current = state) {
                 Load.Loading -> LoadingState()
-                is Load.Failed -> ErrorMessage(t(Msg.RECIPES_LOAD_FAILED), current) { reload++ }
+                is Load.Failed -> ErrorMessage(t(RecipesMsg.RECIPES_LOAD_FAILED), current) { reload++ }
                 is Load.Ready -> Column {
                     RecipePickerBody(current.value, slot, standard, note, onBrowseBank = onBrowseBank.takeIf { bank != null }) { recipe ->
                         scope.launch {
@@ -116,7 +116,7 @@ fun RecipePicker(
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -148,32 +148,32 @@ fun RecipePickerBody(
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            label = { Text(t(Msg.SEARCH_RECIPES)) },
+            label = { Text(t(RecipesMsg.SEARCH_RECIPES)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().focusRequester(searchField),
         )
         if (shown.all.isEmpty()) {
-            Text(t(Msg.NO_RECIPES_MATCH), Modifier.padding(top = 16.dp))
+            Text(t(RecipesMsg.NO_RECIPES_MATCH), Modifier.padding(top = 16.dp))
         }
         LazyColumn(Modifier.heightIn(max = 480.dp), state = list) {
-            if (headings && shown.standard.isNotEmpty()) item(key = "heading:standard") { SectionHeader(t(Msg.PICKER_STANDARD), Modifier.padding(top = 12.dp, bottom = 4.dp)) }
+            if (headings && shown.standard.isNotEmpty()) item(key = "heading:standard") { SectionHeader(t(RecipesMsg.PICKER_STANDARD), Modifier.padding(top = 12.dp, bottom = 4.dp)) }
             items(shown.standard, key = { "standard:${it.id}" }) { recipe ->
                 RecipeRow(recipe, onClick = { onPick(recipe) })
                 HorizontalDivider()
             }
-            if (headings && shown.rotation.isNotEmpty()) item(key = "heading:rotation") { SectionHeader(t(Msg.PICKER_IN_ROTATION), Modifier.padding(top = 12.dp, bottom = 4.dp)) }
+            if (headings && shown.rotation.isNotEmpty()) item(key = "heading:rotation") { SectionHeader(t(RecipesMsg.PICKER_IN_ROTATION), Modifier.padding(top = 12.dp, bottom = 4.dp)) }
             items(shown.rotation, key = { it.id }) { recipe ->
                 RecipeRow(recipe, onClick = { onPick(recipe) })
                 HorizontalDivider()
             }
-            if (headings && shown.others.isNotEmpty()) item(key = "heading:others") { SectionHeader(t(Msg.PICKER_OTHERS), Modifier.padding(top = 12.dp, bottom = 4.dp)) }
+            if (headings && shown.others.isNotEmpty()) item(key = "heading:others") { SectionHeader(t(RecipesMsg.PICKER_OTHERS), Modifier.padding(top = 12.dp, bottom = 4.dp)) }
             items(shown.others, key = { it.id }) { recipe ->
                 RecipeRow(recipe, onClick = { onPick(recipe) })
                 HorizontalDivider()
             }
         }
         // Under the list, not in it: the way to the bank is there however many recipes are above it.
-        onBrowseBank?.let { TextButton(onClick = it) { Text(t(Msg.BROWSE_BANK_MORE)) } }
+        onBrowseBank?.let { TextButton(onClick = it) { Text(t(RecipesMsg.BROWSE_BANK_MORE)) } }
     }
 }
 

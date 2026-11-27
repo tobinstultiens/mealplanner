@@ -6,8 +6,6 @@ import dev.tobins.mealplanner.api.RegistrationReceipt
 import dev.tobins.mealplanner.api.RegistrationRefusal
 import dev.tobins.mealplanner.api.RegistrationRequest
 import dev.tobins.mealplanner.app.ApiClient
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ui.failedFrom
 import dev.tobins.mealplanner.app.ui.failureSentence
@@ -62,11 +60,11 @@ fun registrationProblems(draft: RegistrationDraft, t: Strings): Map<FormField, S
 
 /** What [field] must hold, as the form says it when it does not. */
 fun problemOf(field: FormField, t: Strings): String = when (field) {
-    FormField.DISPLAY_NAME -> t(Msg.PROBLEM_DISPLAY_NAME, RegistrationRules.DISPLAY_NAME_MAX)
-    FormField.USERNAME -> t(Msg.PROBLEM_USERNAME, RegistrationRules.USERNAME_MIN, RegistrationRules.USERNAME_MAX)
-    FormField.EMAIL -> t(Msg.PROBLEM_EMAIL)
-    FormField.PASSWORD -> t(Msg.PROBLEM_PASSWORD, RegistrationRules.PASSWORD_MIN, RegistrationRules.PASSWORD_MAX)
-    FormField.PASSWORD_AGAIN -> t(Msg.PROBLEM_PASSWORD_AGAIN)
+    FormField.DISPLAY_NAME -> t(AccountsMsg.PROBLEM_DISPLAY_NAME, RegistrationRules.DISPLAY_NAME_MAX)
+    FormField.USERNAME -> t(AccountsMsg.PROBLEM_USERNAME, RegistrationRules.USERNAME_MIN, RegistrationRules.USERNAME_MAX)
+    FormField.EMAIL -> t(AccountsMsg.PROBLEM_EMAIL)
+    FormField.PASSWORD -> t(AccountsMsg.PROBLEM_PASSWORD, RegistrationRules.PASSWORD_MIN, RegistrationRules.PASSWORD_MAX)
+    FormField.PASSWORD_AGAIN -> t(AccountsMsg.PROBLEM_PASSWORD_AGAIN)
 }
 
 /** What came of sending a request for an account. */
@@ -95,17 +93,17 @@ private suspend fun refusalOf(e: Exception, t: Strings): RegistrationOutcome.Ref
     val failed = failedFrom(e)
     if (e !is ResponseException) return RegistrationOutcome.Refused(failureSentence(failed))
     val message = when (failed.reason) {
-        RegistrationRefusal.OFF -> t(Msg.REFUSED_OFF)
+        RegistrationRefusal.OFF -> t(AccountsMsg.REFUSED_OFF)
         RegistrationRefusal.INVALID -> {
             val field = fieldOf(e)
-            return if (field == null) RegistrationOutcome.Refused(t(Msg.REFUSED_INVALID)) else RegistrationOutcome.Refused(t(Msg.REGISTER_FIX_FIELDS), field)
+            return if (field == null) RegistrationOutcome.Refused(t(AccountsMsg.REFUSED_INVALID)) else RegistrationOutcome.Refused(t(AccountsMsg.REGISTER_FIX_FIELDS), field)
         }
-        RegistrationRefusal.UNAVAILABLE -> t(Msg.REFUSED_UNAVAILABLE)
-        RegistrationRefusal.TOO_MANY -> minutesToWait(e)?.let { t.plural(Plural.REFUSED_TOO_MANY, it) } ?: t(Msg.REFUSED_TOO_MANY_LATER)
-        RegistrationRefusal.FULL -> t(Msg.REFUSED_FULL)
-        RegistrationRefusal.DIRECTORY_DOWN -> t(Msg.REFUSED_DIRECTORY_DOWN)
+        RegistrationRefusal.UNAVAILABLE -> t(AccountsMsg.REFUSED_UNAVAILABLE)
+        RegistrationRefusal.TOO_MANY -> minutesToWait(e)?.let { t.plural(AccountsPlural.REFUSED_TOO_MANY, it) } ?: t(AccountsMsg.REFUSED_TOO_MANY_LATER)
+        RegistrationRefusal.FULL -> t(AccountsMsg.REFUSED_FULL)
+        RegistrationRefusal.DIRECTORY_DOWN -> t(AccountsMsg.REFUSED_DIRECTORY_DOWN)
         // A server from before the route answers 404 without a reason: it takes no requests either.
-        else -> if (failed.reason == null && failed.status == 404) t(Msg.REFUSED_OFF) else failureSentence(failed)
+        else -> if (failed.reason == null && failed.status == 404) t(AccountsMsg.REFUSED_OFF) else failureSentence(failed)
     }
     return RegistrationOutcome.Refused(message)
 }

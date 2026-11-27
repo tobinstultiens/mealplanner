@@ -3,8 +3,6 @@ package dev.tobins.mealplanner.app.shopping
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ui.dayMonthLabel
 import dev.tobins.mealplanner.app.ui.daysBetween
@@ -61,8 +59,8 @@ val ShoppingItem.nothingLeftToBuy: Boolean get() = done || covered
 
 /** `600 g more (600 g bought)` or `2 more (3 bought)`. */
 fun MoreNeeded.text(strings: Strings): String =
-    if (grams != null) strings(Msg.MORE_NEEDED, weightText(grams, strings.locale), weightText(boughtGrams ?: 0.0, strings.locale))
-    else strings(Msg.MORE_NEEDED, pieces ?: 0, boughtPieces ?: 0)
+    if (grams != null) strings(ShoppingMsg.MORE_NEEDED, weightText(grams, strings.locale), weightText(boughtGrams ?: 0.0, strings.locale))
+    else strings(ShoppingMsg.MORE_NEEDED, pieces ?: 0, boughtPieces ?: 0)
 
 /**
  * One shop section of the list as the screen shows it. With shopping mode on, the items with
@@ -102,11 +100,11 @@ fun shoppingProgress(list: ShoppingList, strings: Strings): String = shoppingPro
  */
 fun shoppingProgress(items: List<ShoppingItem>, strings: Strings): String {
     val toBuy = items.filterNot { it.covered }
-    if (toBuy.isEmpty()) return strings(Msg.NOTHING_LEFT_TO_BUY)
+    if (toBuy.isEmpty()) return strings(ShoppingMsg.NOTHING_LEFT_TO_BUY)
     val ticked = toBuy.count { it.done }
-    if (ticked == toBuy.size) return strings(Msg.ALL_TICKED_OFF, toBuy.size)
+    if (ticked == toBuy.size) return strings(ShoppingMsg.ALL_TICKED_OFF, toBuy.size)
     val sectionsToGo = toBuy.filter { !it.done }.map { it.category }.toSet().size
-    return strings.plural(Plural.SECTIONS_TO_GO, sectionsToGo, ticked, toBuy.size)
+    return strings.plural(ShoppingPlural.SECTIONS_TO_GO, sectionsToGo, ticked, toBuy.size)
 }
 
 /**
@@ -116,7 +114,7 @@ fun shoppingProgress(items: List<ShoppingItem>, strings: Strings): String {
  */
 fun Offer.badgeText(strings: Strings, today: String): String {
     // Some stores shout their deals in capitals; in a badge that is too loud.
-    val text = "${store.shortName()} ${price?.let { formatEuro(it, strings.locale) } ?: deal?.takeIf { it.isNotBlank() }?.lowercase() ?: strings(Msg.BADGE_OFFER)}"
+    val text = "${store.shortName()} ${price?.let { formatEuro(it, strings.locale) } ?: deal?.takeIf { it.isNotBlank() }?.lowercase() ?: strings(ShoppingMsg.BADGE_OFFER)}"
     return if (startsAfter(today)) "$text\n${startLabel(today, strings)}" else text
 }
 
@@ -125,7 +123,7 @@ private fun dayLabelFor(date: String, today: String, strings: Strings): String =
     if (daysBetween(today, date) < 7) strings.locale.dayNames[LocalDate.parse(date).dayOfWeek.isoDayNumber - 1] else dayMonthLabel(date, strings.locale)
 
 /** `from Thu` for a start within the coming week, else `from 23 Nov`: the day an offer can first be had. */
-fun Offer.startLabel(today: String, strings: Strings): String = strings(Msg.OFFER_FROM, dayLabelFor(validFrom, today, strings))
+fun Offer.startLabel(today: String, strings: Strings): String = strings(ShoppingMsg.OFFER_FROM, dayLabelFor(validFrom, today, strings))
 
 /** `until Sun`, or `until 30 Nov`: the last day an offer can be had, the way [startLabel] names its first. */
-fun Offer.endLabel(today: String, strings: Strings): String = strings(Msg.OFFER_UNTIL, dayLabelFor(validUntil, today, strings))
+fun Offer.endLabel(today: String, strings: Strings): String = strings(ShoppingMsg.OFFER_UNTIL, dayLabelFor(validUntil, today, strings))

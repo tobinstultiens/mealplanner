@@ -14,9 +14,9 @@ import dev.tobins.mealplanner.app.Msg
 
 /** The choice above the list of my recipes: all of them, those the planner picks from, or those it leaves alone. */
 enum class RotationChoice(val label: Msg) {
-    ALL(Msg.FILTER_ALL),
-    IN_ROTATION(Msg.FILTER_IN_ROTATION),
-    OUT_OF_ROTATION(Msg.FILTER_OUT_OF_ROTATION),
+    ALL(RecipesMsg.FILTER_ALL),
+    IN_ROTATION(RecipesMsg.FILTER_IN_ROTATION),
+    OUT_OF_ROTATION(RecipesMsg.FILTER_OUT_OF_ROTATION),
     ;
 
     /** Whether [recipe] is one this choice shows. */

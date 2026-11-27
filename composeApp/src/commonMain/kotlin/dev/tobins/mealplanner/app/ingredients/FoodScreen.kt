@@ -41,6 +41,7 @@ import dev.tobins.mealplanner.app.recipes.amountText
 import dev.tobins.mealplanner.app.recipes.nameFor
 import dev.tobins.mealplanner.app.recipes.rememberFound
 import dev.tobins.mealplanner.app.recipes.startingAmount
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.LoadingState
@@ -157,7 +158,7 @@ fun <T> FoodScreen(
                             catalogue = Load.Ready(all + made.value)
                             picked(made.value)
                         }
-                        is Load.Failed -> snackbar.showSnackbar(failureSentence(made, Msg.EDITOR_ADD_FAILED))
+                        is Load.Failed -> snackbar.showSnackbar(failureSentence(made, CommonMsg.EDITOR_ADD_FAILED))
                         Load.Loading -> Unit
                     }
                     busy = false
@@ -195,13 +196,13 @@ fun <T> FoodScreen(
         actions = {
             TextButton(enabled = input != null && !busy, onClick = {
                 val sent = input ?: return@TextButton
-                if (asChosen) onBack() else send(Msg.FOOD_SAVE_FAILED) { save(sent) }
-            }) { Text(t(if (food == null) Msg.ADD else Msg.SAVE)) }
+                if (asChosen) onBack() else send(IngredientsMsg.FOOD_SAVE_FAILED) { save(sent) }
+            }) { Text(t(if (food == null) CommonMsg.ADD else CommonMsg.SAVE)) }
         },
     ) { padding ->
         val failed = catalogue as? Load.Failed
         when {
-            failed != null -> Box(Modifier.padding(padding)) { ErrorMessage(t(Msg.INGREDIENTS_LOAD_FAILED), failed) { reload++ } }
+            failed != null -> Box(Modifier.padding(padding)) { ErrorMessage(t(CommonMsg.INGREDIENTS_LOAD_FAILED), failed) { reload++ } }
             ingredients == null -> LoadingState(Modifier.padding(padding))
             else -> Column(
                 Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
@@ -220,12 +221,12 @@ fun <T> FoodScreen(
                         current, ingredient, focus, enabled = !busy,
                         onChange = { row = it },
                         onOpen = { row = null },
-                        onRemove = { if (food == null) row = null else send(Msg.FOOD_REMOVE_FAILED) { remove() } },
+                        onRemove = { if (food == null) row = null else send(IngredientsMsg.FOOD_REMOVE_FAILED) { remove() } },
                         keptKcal = food?.kcal?.takeIf { asChosen },
                     )
                     if (food != null && ingredient?.id == food.ingredientId && food.countsOtherwiseNow(ingredient)) {
                         Text(
-                            t(Msg.LOG_FOOD_VALUES_CHANGED, food.name),
+                            t(IngredientsMsg.LOG_FOOD_VALUES_CHANGED, food.name),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

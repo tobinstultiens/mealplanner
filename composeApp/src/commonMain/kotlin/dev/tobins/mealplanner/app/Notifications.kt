@@ -41,18 +41,18 @@ import kotlin.time.Instant
  * [fromHour] is when on the device's clock the kind's window opens; all close at [QUIET_FROM].
  */
 enum class NotificationKind(val key: String, val channel: String, val defaultOn: Boolean, val fromHour: Int, val title: Msg, val hint: Msg) {
-    UPDATE("update", "updates", true, 8, Msg.NOTIFY_UPDATE, Msg.NOTIFY_UPDATE_HINT),
-    OFFERS_ENDING("offersEnding", "offersEnding", true, 8, Msg.NOTIFY_OFFERS_ENDING, Msg.NOTIFY_OFFERS_ENDING_HINT),
-    PLAN_NEXT_WEEK("planNextWeek", "planNextWeek", true, 8, Msg.NOTIFY_PLAN_NEXT_WEEK, Msg.NOTIFY_PLAN_NEXT_WEEK_HINT),
-    WEIGH_IN("weighIn", "weighIn", false, 8, Msg.NOTIFY_WEIGH_IN, Msg.NOTIFY_WEIGH_IN_HINT),
-    DINNER_TODAY("dinnerToday", "dinnerToday", false, 15, Msg.NOTIFY_DINNER_TODAY, Msg.NOTIFY_DINNER_TODAY_HINT),
-    MEALS_TO_MARK("mealsToMark", "mealsToMark", false, 20, Msg.NOTIFY_MEALS_TO_MARK, Msg.NOTIFY_MEALS_TO_MARK_HINT),
+    UPDATE("update", "updates", true, 8, AppMsg.NOTIFY_UPDATE, AppMsg.NOTIFY_UPDATE_HINT),
+    OFFERS_ENDING("offersEnding", "offersEnding", true, 8, AppMsg.NOTIFY_OFFERS_ENDING, AppMsg.NOTIFY_OFFERS_ENDING_HINT),
+    PLAN_NEXT_WEEK("planNextWeek", "planNextWeek", true, 8, AppMsg.NOTIFY_PLAN_NEXT_WEEK, AppMsg.NOTIFY_PLAN_NEXT_WEEK_HINT),
+    WEIGH_IN("weighIn", "weighIn", false, 8, AppMsg.NOTIFY_WEIGH_IN, AppMsg.NOTIFY_WEIGH_IN_HINT),
+    DINNER_TODAY("dinnerToday", "dinnerToday", false, 15, AppMsg.NOTIFY_DINNER_TODAY, AppMsg.NOTIFY_DINNER_TODAY_HINT),
+    MEALS_TO_MARK("mealsToMark", "mealsToMark", false, 20, AppMsg.NOTIFY_MEALS_TO_MARK, AppMsg.NOTIFY_MEALS_TO_MARK_HINT),
 
     // On: an account that never made a prep has no batch to tell of, so in effect it is on for those that have (issue 264).
-    THROW_AWAY("throwAway", "throwAway", true, 8, Msg.NOTIFY_THROW_AWAY, Msg.NOTIFY_THROW_AWAY_HINT),
+    THROW_AWAY("throwAway", "throwAway", true, 8, AppMsg.NOTIFY_THROW_AWAY, AppMsg.NOTIFY_THROW_AWAY_HINT),
 
     // On: only the owner's account is told of requests for an account (issue 314), and its switch shows to no other.
-    ACCOUNT_REQUESTS("accountRequests", "accountRequests", true, 8, Msg.NOTIFY_ACCOUNT_REQUESTS, Msg.NOTIFY_ACCOUNT_REQUESTS_HINT),
+    ACCOUNT_REQUESTS("accountRequests", "accountRequests", true, 8, AppMsg.NOTIFY_ACCOUNT_REQUESTS, AppMsg.NOTIFY_ACCOUNT_REQUESTS_HINT),
     ;
 
     companion object {
@@ -219,7 +219,7 @@ class NotificationPlanner(
 }
 
 private fun updateNotification(update: AppUpdate, t: Strings) =
-    DueNotification(NotificationKind.UPDATE, t(Msg.UPDATE_NOTIFICATION_TITLE, update.version), t(Msg.UPDATE_NOTIFICATION_TEXT), null, update.version)
+    DueNotification(NotificationKind.UPDATE, t(AppMsg.UPDATE_NOTIFICATION_TITLE, update.version), t(AppMsg.UPDATE_NOTIFICATION_TEXT), null, update.version)
 
 /**
  * The server's [facts] as notifications, one for each kind that is due, leaving out the batches past their last day
@@ -229,21 +229,21 @@ private fun updateNotification(update: AppUpdate, t: Strings) =
 private fun dueNotifications(facts: NotificationFacts, told: Set<Long>, toldRequests: Set<String>, t: Strings): List<DueNotification> = listOfNotNull(
     facts.offersEnding.takeIf { it.isNotEmpty() }?.let { offers ->
         val ending = when {
-            offers.all { it.endsOn == facts.date } -> Plural.OFFERS_END_TODAY
-            offers.none { it.endsOn == facts.date } -> Plural.OFFERS_END_TOMORROW
-            else -> Plural.OFFERS_END_TODAY_OR_TOMORROW
+            offers.all { it.endsOn == facts.date } -> AppPlural.OFFERS_END_TODAY
+            offers.none { it.endsOn == facts.date } -> AppPlural.OFFERS_END_TOMORROW
+            else -> AppPlural.OFFERS_END_TODAY_OR_TOMORROW
         }
         DueNotification(NotificationKind.OFFERS_ENDING, t.plural(ending, offers.size), offers.joinToString(", ") { it.name }, Opening(Route.TabRoute(Tab.SHOPPING)), facts.date)
     },
     facts.planNextWeek?.let { week ->
-        DueNotification(NotificationKind.PLAN_NEXT_WEEK, t(Msg.PLAN_NOTIFICATION_TITLE), t(Msg.PLAN_NOTIFICATION_TEXT), Opening(Route.TabRoute(Tab.PLAN), week = week, planning = true), week)
+        DueNotification(NotificationKind.PLAN_NEXT_WEEK, t(AppMsg.PLAN_NOTIFICATION_TITLE), t(AppMsg.PLAN_NOTIFICATION_TEXT), Opening(Route.TabRoute(Tab.PLAN), week = week, planning = true), week)
     },
     facts.weighIn?.let { due ->
-        DueNotification(NotificationKind.WEIGH_IN, t(Msg.WEIGH_IN_NOTIFICATION_TITLE), t.plural(Plural.LAST_WEIGH_IN, due.daysAgo), Opening(Route.TabRoute(Tab.PROGRESS)), facts.date)
+        DueNotification(NotificationKind.WEIGH_IN, t(AppMsg.WEIGH_IN_NOTIFICATION_TITLE), t.plural(AppPlural.LAST_WEIGH_IN, due.daysAgo), Opening(Route.TabRoute(Tab.PROGRESS)), facts.date)
     },
     facts.dinner?.let { dinner -> dinnerNotification(dinner, facts.date, t) },
     facts.mealsToMark.takeIf { it > 0 }?.let { count ->
-        DueNotification(NotificationKind.MEALS_TO_MARK, t.plural(Plural.MEALS_TO_MARK, count), t(Msg.MEALS_TO_MARK_NOTIFICATION_TEXT), Opening(Route.TabRoute(Tab.TODAY)), facts.date)
+        DueNotification(NotificationKind.MEALS_TO_MARK, t.plural(AppPlural.MEALS_TO_MARK, count), t(AppMsg.MEALS_TO_MARK_NOTIFICATION_TEXT), Opening(Route.TabRoute(Tab.TODAY)), facts.date)
     },
     throwAwayNotification(facts, told, t),
     accountRequestsNotification(facts.accountRequests, toldRequests, t),
@@ -258,8 +258,8 @@ private fun accountRequestsNotification(waiting: List<String>, told: Set<String>
     val new = waiting.filter { it !in told }.takeIf { it.isNotEmpty() } ?: return null
     return DueNotification(
         NotificationKind.ACCOUNT_REQUESTS,
-        t.plural(Plural.ACCOUNT_REQUESTS_TITLE, waiting.size),
-        t(Msg.ACCOUNT_REQUESTS_NOTIFICATION_TEXT, new.joinToString(", ")),
+        t.plural(AppPlural.ACCOUNT_REQUESTS_TITLE, waiting.size),
+        t(AppMsg.ACCOUNT_REQUESTS_NOTIFICATION_TEXT, new.joinToString(", ")),
         Opening(Route.Settings),
         waiting.joinToString(","),
     )
@@ -278,8 +278,8 @@ private fun dinnerNotification(dinner: DinnerToday, date: String, t: Strings): D
         dinner.recipeId, dinner.portions, dinner.cookPortions, skipped = false, MealPlace(dinner.weekStart, dinner.day, MealSlot.DINNER), planned = true,
         prepMadeOn = date.takeIf { dinner.prep },
     )
-    val title = t(if (dinner.side) Msg.DINNER_NOTIFICATION_SIDE_TITLE else Msg.DINNER_NOTIFICATION_TITLE, dinner.title)
-    val text = t(if (dinner.prep) Msg.DINNER_NOTIFICATION_PREP_TEXT else Msg.DINNER_NOTIFICATION_TEXT, servingsText(dinner.cookPortions, t))
+    val title = t(if (dinner.side) AppMsg.DINNER_NOTIFICATION_SIDE_TITLE else AppMsg.DINNER_NOTIFICATION_TITLE, dinner.title)
+    val text = t(if (dinner.prep) AppMsg.DINNER_NOTIFICATION_PREP_TEXT else AppMsg.DINNER_NOTIFICATION_TEXT, servingsText(dinner.cookPortions, t))
     return DueNotification(NotificationKind.DINNER_TODAY, title, text, Opening(Route.Recipe(dinner.recipeId), meal), date)
 }
 
@@ -295,13 +295,13 @@ private fun dinnerNotification(dinner: DinnerToday, date: String, t: Strings): D
 private fun throwAwayNotification(facts: NotificationFacts, told: Set<Long>, t: Strings): DueNotification? {
     val batches = facts.prepsPastLastDay.filter { it.prepId !in told && daysBetween(it.lastDay, facts.date) == 1 }
     val first = batches.firstOrNull() ?: return null
-    val kept = t.plural(Plural.KEPT_UNTIL, batches.size, dayLabel(first.lastDay, t.locale))
+    val kept = t.plural(AppPlural.KEPT_UNTIL, batches.size, dayLabel(first.lastDay, t.locale))
     val throwAway = first.throwAwayText(t)
     val (title, text) = if (batches.size == 1 && throwAway != null) {
         throwAway to listOfNotNull(kept, first.unmarkedText(t)).joinToString(" ")
     } else {
         val sentences = batches.flatMap { listOfNotNull(it.throwAwayText(t)?.let { line -> "$line." }, it.unmarkedText(t)) }
-        t(Msg.NOTIFY_THROW_AWAY) to (sentences + kept).joinToString(" ")
+        t(AppMsg.NOTIFY_THROW_AWAY) to (sentences + kept).joinToString(" ")
     }
     val day = batches.firstNotNullOfOrNull { it.firstUnmarked } ?: batches.firstNotNullOfOrNull { it.firstLeft } ?: first.madeOn
     val toldAs = facts.date + ":" + (told + batches.map { it.prepId }).sorted().joinToString(",")
@@ -314,11 +314,11 @@ private fun throwAwayNotification(facts: NotificationFacts, told: Set<Long>, t: 
  * ways (issue 269); null when nothing of the batch was left in the box.
  */
 private fun PrepPastLastDay.throwAwayText(t: Strings): String? =
-    sharesText(left, leftSides, Plural.THROW_AWAY_PORTIONS, Plural.THROW_AWAY_SIDES, Msg.THROW_AWAY_MIXED, t)
+    sharesText(left, leftSides, AppPlural.THROW_AWAY_PORTIONS, AppPlural.THROW_AWAY_SIDES, AppMsg.THROW_AWAY_MIXED, t)
 
 /** `1 portion of Chili con carne was not marked: eaten, or to throw away?`, or of sides, or both; null when every meal of it was marked. */
 private fun PrepPastLastDay.unmarkedText(t: Strings): String? =
-    sharesText(unmarked, unmarkedSides, Plural.UNMARKED_PORTIONS, Plural.UNMARKED_SIDES, Msg.UNMARKED_MIXED, t)
+    sharesText(unmarked, unmarkedSides, AppPlural.UNMARKED_PORTIONS, AppPlural.UNMARKED_SIDES, AppMsg.UNMARKED_MIXED, t)
 
 /**
  * [shares] of [this] batch, [sides] of them sides, in the words of [portions] when none is a side, of [ofSides] when all
@@ -329,7 +329,7 @@ private fun PrepPastLastDay.sharesText(shares: Int, sides: Int, portions: Plural
     shares <= 0 -> null
     sides == 0 -> t.plural(portions, shares, title)
     sides == shares -> t.plural(ofSides, shares, title)
-    else -> t(both, t.plural(Plural.PORTIONS, shares - sides), t.plural(Plural.SIDES, sides), title)
+    else -> t(both, t.plural(AppPlural.PORTIONS, shares - sides), t.plural(AppPlural.SIDES, sides), title)
 }
 
 /**

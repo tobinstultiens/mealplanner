@@ -23,11 +23,11 @@ import dev.tobins.mealplanner.api.AccountRequest
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.SettingsStorage
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.forgetRequestsNotWaiting
 import dev.tobins.mealplanner.app.rememberAppFront
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorBanner
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.Spacing
@@ -72,10 +72,10 @@ fun AccountDecisions(api: ApiClient, storage: SettingsStorage): AccountDecisions
  * by hand. The directory unreachable (503) leaves the request waiting, to try again.
  */
 internal fun decisionFailure(failed: Load.Failed, t: Strings): Pair<String, Boolean> = when (failed.status) {
-    404 -> t(Msg.REQUEST_GONE) to true
-    409 -> t(Msg.REQUEST_DECIDED_ELSEWHERE) to true
-    503 -> t(Msg.REQUEST_DIRECTORY_DOWN) to false
-    else -> failureSentence(failed, Msg.DECIDE_FAILED) to false
+    404 -> t(AccountsMsg.REQUEST_GONE) to true
+    409 -> t(AccountsMsg.REQUEST_DECIDED_ELSEWHERE) to true
+    503 -> t(AccountsMsg.REQUEST_DIRECTORY_DOWN) to false
+    else -> failureSentence(failed, AccountsMsg.DECIDE_FAILED) to false
 }
 
 /**
@@ -117,17 +117,17 @@ internal fun AccountRequestsCard(decisions: AccountDecisions, snackbar: Snackbar
         }
     }
 
-    SettingsCard(t(Msg.CARD_REQUESTS)) {
+    SettingsCard(t(AccountsMsg.CARD_REQUESTS)) {
         when (val shown = requests) {
-            Load.Loading -> Text(t(Msg.LOADING), style = MaterialTheme.typography.bodyMedium)
+            Load.Loading -> Text(t(CommonMsg.LOADING), style = MaterialTheme.typography.bodyMedium)
             is Load.Failed -> {
-                ErrorBanner(t(Msg.REQUESTS_LOAD_FAILED), failureSentence(shown))
-                TextButton(onClick = { scope.launch { requests = Load.Loading; requests = load { decisions.waiting() } } }) { Text(t(Msg.TRY_AGAIN)) }
+                ErrorBanner(t(AccountsMsg.REQUESTS_LOAD_FAILED), failureSentence(shown))
+                TextButton(onClick = { scope.launch { requests = Load.Loading; requests = load { decisions.waiting() } } }) { Text(t(CommonMsg.TRY_AGAIN)) }
             }
             is Load.Ready -> {
                 val list = shown.value
                 Text(
-                    if (list.isEmpty()) t(Msg.REQUESTS_NONE) else t.plural(Plural.REQUESTS_WAITING, list.size),
+                    if (list.isEmpty()) t(AccountsMsg.REQUESTS_NONE) else t.plural(AccountsPlural.REQUESTS_WAITING, list.size),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 list.forEach { request ->
@@ -135,7 +135,7 @@ internal fun AccountRequestsCard(decisions: AccountDecisions, snackbar: Snackbar
                     RequestRow(
                         request,
                         enabled = deciding == null,
-                        onApprove = { decide(request, decisions.approve, Msg.REQUEST_APPROVED) },
+                        onApprove = { decide(request, decisions.approve, AccountsMsg.REQUEST_APPROVED) },
                         onReject = { rejecting = request },
                     )
                 }
@@ -146,15 +146,15 @@ internal fun AccountRequestsCard(decisions: AccountDecisions, snackbar: Snackbar
     rejecting?.let { request ->
         AlertDialog(
             onDismissRequest = { rejecting = null },
-            title = { Text(t(Msg.REJECT_QUESTION_TITLE, request.displayName)) },
-            text = { Text(t(Msg.REJECT_QUESTION_TEXT, request.username)) },
+            title = { Text(t(AccountsMsg.REJECT_QUESTION_TITLE, request.displayName)) },
+            text = { Text(t(AccountsMsg.REJECT_QUESTION_TEXT, request.username)) },
             confirmButton = {
                 TextButton(onClick = {
                     rejecting = null
-                    decide(request, decisions.reject, Msg.REQUEST_REJECTED)
-                }) { Text(t(Msg.REJECT)) }
+                    decide(request, decisions.reject, AccountsMsg.REQUEST_REJECTED)
+                }) { Text(t(AccountsMsg.REJECT)) }
             },
-            dismissButton = { TextButton(onClick = { rejecting = null }) { Text(t(Msg.CANCEL)) } },
+            dismissButton = { TextButton(onClick = { rejecting = null }) { Text(t(CommonMsg.CANCEL)) } },
         )
     }
 }
@@ -168,13 +168,13 @@ private fun RequestRow(request: AccountRequest, enabled: Boolean, onApprove: () 
         Text(request.displayName, style = MaterialTheme.typography.titleSmall)
         Text(unbrokenParts("${request.username} · ${request.email}"), style = MaterialTheme.typography.bodySmall)
         Text(
-            t(Msg.REQUEST_DATES, instantLabel(request.requestedAt, t), dayLabel(localDate(request.expiresAt), t.locale)),
+            t(AccountsMsg.REQUEST_DATES, instantLabel(request.requestedAt, t), dayLabel(localDate(request.expiresAt), t.locale)),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Button(enabled = enabled, onClick = onApprove) { Text(t(Msg.APPROVE)) }
-            OutlinedButton(enabled = enabled, onClick = onReject) { Text(t(Msg.REJECT)) }
+            Button(enabled = enabled, onClick = onApprove) { Text(t(AccountsMsg.APPROVE)) }
+            OutlinedButton(enabled = enabled, onClick = onReject) { Text(t(AccountsMsg.REJECT)) }
         }
     }
 }

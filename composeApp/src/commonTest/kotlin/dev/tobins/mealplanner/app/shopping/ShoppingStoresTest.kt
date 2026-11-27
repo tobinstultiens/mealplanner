@@ -3,7 +3,6 @@ package dev.tobins.mealplanner.app.shopping
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.Store
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ui.FormatLocale
 import dev.tobins.mealplanner.shopping.bestOffer
@@ -454,8 +453,8 @@ class ShoppingStoresTest {
         assertEquals("0 of 2 · 2 sections to go", shoppingProgress(items, Strings.English))
         assertEquals(2, overview.stores.sumOf { it.items.size } + overview.anyStore.size)
         // Not the progress line's own words, which sit right above it when everything is covered.
-        assertEquals("Covered · 2 items", Strings.English.plural(Plural.NOTHING_LEFT_ITEMS, 2))
-        assertEquals("Gedekt · 2 producten", Strings.Dutch.plural(Plural.NOTHING_LEFT_ITEMS, 2))
+        assertEquals("Covered · 2 items", Strings.English.plural(ShoppingPlural.NOTHING_LEFT_ITEMS, 2))
+        assertEquals("Gedekt · 2 producten", Strings.Dutch.plural(ShoppingPlural.NOTHING_LEFT_ITEMS, 2))
         assertNull(savingOf(listOf(covered), all, today))
         assertEquals(0.0, covered.saving(lidl))
         // At another store it is not "cheaper elsewhere": there is nothing to buy of it.

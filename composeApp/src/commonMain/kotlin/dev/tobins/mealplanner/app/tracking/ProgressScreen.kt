@@ -53,7 +53,6 @@ import dev.tobins.mealplanner.api.WeightEntry
 import dev.tobins.mealplanner.api.WeightLog
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.RefreshNotice
 import dev.tobins.mealplanner.app.plan.SuggestionCard
 import dev.tobins.mealplanner.app.rememberFrontReturns
@@ -61,6 +60,7 @@ import dev.tobins.mealplanner.app.rememberLoad
 import dev.tobins.mealplanner.app.rememberToday
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.FormatLocale
 import dev.tobins.mealplanner.app.ui.Load
@@ -135,8 +135,8 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
             keptProfileWeight = (state as? Load.Ready)?.value?.entries?.isEmpty() == true
             snackbar.currentSnackbarData?.dismiss()
             val answer = snackbar.showSnackbar(
-                t(Msg.WEIGHING_REMOVED, dayLabel(entry.date, t.locale)),
-                actionLabel = t(Msg.UNDO),
+                t(TrackingMsg.WEIGHING_REMOVED, dayLabel(entry.date, t.locale)),
+                actionLabel = t(CommonMsg.UNDO),
                 duration = SnackbarDuration.Short,
             )
             if (answer == SnackbarResult.ActionPerformed) apply { api.setWeight(entry.date, entry.kg) }
@@ -146,10 +146,10 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(t(Msg.TAB_PROGRESS)) },
+                title = { Text(t(TrackingMsg.TAB_PROGRESS)) },
                 actions = {
-                    BarAction(AppIcons.Person, t(Msg.PROFILE_AND_TARGETS), onOpenProfile)
-                    BarAction(AppIcons.Settings, t(Msg.SETTINGS), onOpenServer)
+                    BarAction(AppIcons.Person, t(CommonMsg.PROFILE_AND_TARGETS), onOpenProfile)
+                    BarAction(AppIcons.Settings, t(CommonMsg.SETTINGS), onOpenServer)
                 },
             )
         },
@@ -160,7 +160,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.WEIGHT_LOAD_FAILED), current) { reload++ }
+                ErrorMessage(t(TrackingMsg.WEIGHT_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val log = current.value
@@ -172,7 +172,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                         val value = weightText.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it in 30.0..300.0 }
                         OutlinedTextField(
                             weightText, { weightText = it },
-                            label = { Text(t(Msg.TODAYS_WEIGHT)) },
+                            label = { Text(t(TrackingMsg.TODAYS_WEIGHT)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f),
@@ -183,13 +183,13 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                             // The number pad would stay up over the tab bar once the weigh-in is saved.
                             focus.clearFocus()
                             keyboard?.hide()
-                        }) { Text(t(Msg.SAVE)) }
+                        }) { Text(t(CommonMsg.SAVE)) }
                     }
 
                     if (log.entries.isEmpty()) {
                         if (keptProfileWeight) KeptWeightNote(onOpenProfile)
                         Text(
-                            t(Msg.WEIGH_HINT),
+                            t(TrackingMsg.WEIGH_HINT),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
@@ -207,7 +207,7 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                                         api.saveProfile(profile.copy(kcalOverride = suggestion.suggestedKcal))
                                     }
                                     snackbar.showSnackbar(
-                                        if (result is Load.Ready) t(Msg.TARGET_NOW, suggestion.suggestedKcal) else t(Msg.TARGET_CHANGE_FAILED),
+                                        if (result is Load.Ready) t(TrackingMsg.TARGET_NOW, suggestion.suggestedKcal) else t(TrackingMsg.TARGET_CHANGE_FAILED),
                                     )
                                     reload++
                                 }
@@ -216,15 +216,15 @@ fun ProgressScreen(api: ApiClient, onOpenProfile: () -> Unit, onOpenServer: () -
                         )
                     }
 
-                    if (log.entries.isNotEmpty()) SectionHeader(t(Msg.WEIGHINGS))
+                    if (log.entries.isNotEmpty()) SectionHeader(t(TrackingMsg.WEIGHINGS))
                     for (entry in log.entries.asReversed().take(30)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             // The day above the reading: side by side the day was squeezed to one word a line at large fonts.
                             Column(Modifier.weight(1f)) {
                                 Text(dayLabel(entry.date, t.locale))
-                                Text(t(Msg.WEIGHING_ROW, kg(entry.kg, t.locale), kg(entry.trendKg, t.locale)), style = MaterialTheme.typography.bodyMedium.numeric())
+                                Text(t(TrackingMsg.WEIGHING_ROW, kg(entry.kg, t.locale), kg(entry.trendKg, t.locale)), style = MaterialTheme.typography.bodyMedium.numeric())
                             }
-                            TextButton(onClick = { remove(entry) }) { Text(t(Msg.REMOVE)) }
+                            TextButton(onClick = { remove(entry) }) { Text(t(CommonMsg.REMOVE)) }
                         }
                     }
                 }
@@ -242,8 +242,8 @@ internal fun KeptWeightNote(onOpenProfile: () -> Unit) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Text(t(Msg.WEIGHT_KEPT))
-            TextButton(onClick = onOpenProfile) { Text(t(Msg.OPEN_PROFILE)) }
+            Text(t(TrackingMsg.WEIGHT_KEPT))
+            TextButton(onClick = onOpenProfile) { Text(t(CommonMsg.OPEN_PROFILE)) }
         }
     }
 }
@@ -255,20 +255,20 @@ private fun TrendSummary(log: WeightLog) {
     val first = log.entries.first()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-            Text(t(Msg.TREND_WEIGHT), style = MaterialTheme.typography.labelLarge)
+            Text(t(TrackingMsg.TREND_WEIGHT), style = MaterialTheme.typography.labelLarge)
             Text(kg(last.trendKg, t.locale), style = MaterialTheme.typography.headlineMedium)
             val change = last.trendKg - first.trendKg
             if (log.entries.size >= 2) {
                 Text(
-                    t(if (change <= 0) Msg.DOWN_SINCE else Msg.UP_SINCE, kg(abs(change), t.locale), dayMonthLabel(first.date, t.locale)),
+                    t(if (change <= 0) TrackingMsg.DOWN_SINCE else TrackingMsg.UP_SINCE, kg(abs(change), t.locale), dayMonthLabel(first.date, t.locale)),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             Text(
                 log.actualKgPerWeek?.let {
-                    if (it >= 0) t(Msg.LOSING, formatAmount((it * 100).roundToInt() / 100.0, t.locale))
-                    else t(Msg.GAINING, formatAmount((-it * 100).roundToInt() / 100.0, t.locale))
-                } ?: t(Msg.RATE_LATER),
+                    if (it >= 0) t(TrackingMsg.LOSING, formatAmount((it * 100).roundToInt() / 100.0, t.locale))
+                    else t(TrackingMsg.GAINING, formatAmount((-it * 100).roundToInt() / 100.0, t.locale))
+                } ?: t(TrackingMsg.RATE_LATER),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -281,17 +281,17 @@ private fun SuggestionCard(suggestion: TargetSuggestion, onAccept: () -> Unit, o
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            Text(t(Msg.ADJUST_TARGET), style = MaterialTheme.typography.titleMedium)
+            Text(t(TrackingMsg.ADJUST_TARGET), style = MaterialTheme.typography.titleMedium)
             val rate = formatAmount((abs(suggestion.actualKgPerWeek) * 100).roundToInt() / 100.0, t.locale)
             Text(
                 t(
-                    if (suggestion.actualKgPerWeek >= 0) Msg.SUGGESTION_LOSS else Msg.SUGGESTION_GAIN,
+                    if (suggestion.actualKgPerWeek >= 0) TrackingMsg.SUGGESTION_LOSS else TrackingMsg.SUGGESTION_GAIN,
                     formatAmount(suggestion.goalKgPerWeek, t.locale), rate, suggestion.currentKcal, suggestion.suggestedKcal,
                 ),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                Button(onClick = onAccept) { Text(t(Msg.USE_KCAL, suggestion.suggestedKcal)) }
-                TextButton(onClick = onDismiss) { Text(t(Msg.NOT_NOW)) }
+                Button(onClick = onAccept) { Text(t(TrackingMsg.USE_KCAL, suggestion.suggestedKcal)) }
+                TextButton(onClick = onDismiss) { Text(t(TrackingMsg.NOT_NOW)) }
             }
         }
     }
@@ -327,10 +327,10 @@ private fun WeightChart(entries: List<WeightEntry>) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        SectionHeader(t(Msg.WEIGHT_TREND_CHART))
+        SectionHeader(t(TrackingMsg.WEIGHT_TREND_CHART))
         Text(
-            selected?.let { entries[it] }?.let { t(Msg.CHART_SELECTED, dayLabel(it.date, t.locale), kg(it.kg, t.locale), kg(it.trendKg, t.locale)) }
-                ?: t.onWeb(Msg.CHART_HINT, Msg.CHART_HINT_BROWSER),
+            selected?.let { entries[it] }?.let { t(TrackingMsg.CHART_SELECTED, dayLabel(it.date, t.locale), kg(it.kg, t.locale), kg(it.trendKg, t.locale)) }
+                ?: t.onWeb(TrackingMsg.CHART_HINT, TrackingMsg.CHART_HINT_BROWSER),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

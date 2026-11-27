@@ -17,9 +17,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.PriceVerdict
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.shopping.dealHeading
 import dev.tobins.mealplanner.app.shopping.productText
+import dev.tobins.mealplanner.app.ui.CommonMsg
 
 /**
  * The verdict's few words ([chipText]) under an offer's deal, or nothing while there is nothing to say. A real deal
@@ -52,7 +52,7 @@ internal fun DealDialog(title: String, offers: List<Offer>, today: String, onExc
         onDismissRequest = onClose,
         title = { Text(title) },
         text = { DealDetail(offers, today, onExclude, Modifier.verticalScroll(rememberScrollState())) },
-        confirmButton = { TextButton(onClick = onClose) { Text(LocalStrings.current(Msg.CLOSE)) } },
+        confirmButton = { TextButton(onClick = onClose) { Text(LocalStrings.current(CommonMsg.CLOSE)) } },
     )
 }
 
@@ -75,7 +75,7 @@ internal fun DealDetail(offers: List<Offer>, today: String, onExclude: ((Offer) 
 /** "Not this ingredient" under an offer (issue 316): one tap and no question, as the snackbar that follows has Undo. */
 @Composable
 internal fun NotThisIngredientButton(onClick: () -> Unit) {
-    TextButton(onClick = onClick) { Text(LocalStrings.current(Msg.NOT_THIS_INGREDIENT)) }
+    TextButton(onClick = onClick) { Text(LocalStrings.current(CommonMsg.NOT_THIS_INGREDIENT)) }
 }
 
 /**
@@ -91,7 +91,7 @@ internal fun VerdictDetail(verdict: PriceVerdict, modifier: Modifier = Modifier)
         Text(verdict.line(t), style = MaterialTheme.typography.bodyMedium)
         verdict.notes(t).forEach { Text(it, style = small, color = quiet) }
         if (verdict.earlier.isNotEmpty()) {
-            Text(t(Msg.VERDICT_EARLIER), Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelMedium, color = quiet)
+            Text(t(PricesMsg.VERDICT_EARLIER), Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelMedium, color = quiet)
             verdict.earlier.forEach { Text(it.historyLine(verdict.measure, t), style = small, color = quiet) }
         }
     }

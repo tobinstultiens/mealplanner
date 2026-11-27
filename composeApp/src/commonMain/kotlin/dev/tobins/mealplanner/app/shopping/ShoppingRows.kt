@@ -49,13 +49,13 @@ import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.ShoppingView
 import dev.tobins.mealplanner.app.ingredients.ProductPicture
 import dev.tobins.mealplanner.app.ingredients.pictureUrl
 import dev.tobins.mealplanner.app.msg
 import dev.tobins.mealplanner.app.prices.VerdictLabel
 import dev.tobins.mealplanner.app.ui.AppIcons
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.SectionHeader
 import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.formatEuro
@@ -86,8 +86,8 @@ internal fun AddItemRow(session: ShoppingSession) {
         OutlinedTextField(
             text,
             { text = it.take(ShoppingExtraInput.MAX_NAME_LENGTH) },
-            label = { Text(t(Msg.EXTRA_FIELD)) },
-            supportingText = if (enabled) null else ({ Text(t(Msg.EXTRA_NEEDS_CONNECTION, "")) }),
+            label = { Text(t(ShoppingMsg.EXTRA_FIELD)) },
+            supportingText = if (enabled) null else ({ Text(t(ShoppingMsg.EXTRA_NEEDS_CONNECTION, "")) }),
             enabled = enabled,
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -96,7 +96,7 @@ internal fun AddItemRow(session: ShoppingSession) {
         )
         // Level with the field, not with its supporting text.
         IconButton(onClick = ::add, enabled = enabled && text.isNotBlank() && !session.adding, modifier = Modifier.padding(top = 4.dp)) {
-            Icon(AppIcons.Add, t(Msg.EXTRA_ADD))
+            Icon(AppIcons.Add, t(ShoppingMsg.EXTRA_ADD))
         }
     }
 }
@@ -116,9 +116,9 @@ internal fun PartTitle(title: String, modifier: Modifier = Modifier) {
 internal fun NoLongerNeededHeader() {
     val t = LocalStrings.current
     Column(Modifier.fillMaxWidth().padding(top = Spacing.InsideCard)) {
-        PartTitle(t(Msg.NO_LONGER_NEEDED_TITLE))
+        PartTitle(t(ShoppingMsg.NO_LONGER_NEEDED_TITLE))
         Text(
-            t(Msg.NO_LONGER_NEEDED_HINT),
+            t(ShoppingMsg.NO_LONGER_NEEDED_HINT),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
@@ -139,8 +139,8 @@ internal fun NoLongerNeededRow(item: ShoppingItem, onUseUp: () -> Unit, onRemove
             Text(item.boughtText(t.locale), style = MaterialTheme.typography.bodyMedium.numeric(), textAlign = TextAlign.End)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (!item.onHand && item.key.startsWith("i")) TextButton(onClick = onUseUp) { Text(t(Msg.USE_IT_UP)) }
-            TextButton(onClick = onRemove) { Text(t(Msg.REMOVE)) }
+            if (!item.onHand && item.key.startsWith("i")) TextButton(onClick = onUseUp) { Text(t(ShoppingMsg.USE_IT_UP)) }
+            TextButton(onClick = onRemove) { Text(t(CommonMsg.REMOVE)) }
         }
     }
 }
@@ -152,7 +152,7 @@ internal fun AdviceHeader(title: String, hint: String, onHide: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = Spacing.InsideCard)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PartTitle(title, Modifier.weight(1f))
-            TextButton(onClick = onHide, modifier = Modifier.padding(end = 4.dp, top = Spacing.Tight)) { Text(t(Msg.HIDE_ADVICE)) }
+            TextButton(onClick = onHide, modifier = Modifier.padding(end = 4.dp, top = Spacing.Tight)) { Text(t(ShoppingMsg.HIDE_ADVICE)) }
         }
         Text(
             hint,
@@ -169,7 +169,7 @@ internal fun HiddenAdvice(text: String, onShow: () -> Unit) {
     val t = LocalStrings.current
     Row(Modifier.fillMaxWidth().padding(start = Spacing.ScreenEdge, end = 4.dp, top = Spacing.Tight), verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        TextButton(onClick = onShow) { Text(t(Msg.SHOW_ADVICE)) }
+        TextButton(onClick = onShow) { Text(t(ShoppingMsg.SHOW_ADVICE)) }
     }
 }
 
@@ -181,9 +181,9 @@ internal fun ShoppingModeSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(t(Msg.SHOPPING_MODE), style = MaterialTheme.typography.titleSmall)
+            Text(t(ShoppingMsg.SHOPPING_MODE), style = MaterialTheme.typography.titleSmall)
             Text(
-                t(Msg.SHOPPING_MODE_HINT),
+                t(ShoppingMsg.SHOPPING_MODE_HINT),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -209,7 +209,7 @@ internal fun SectionHeaderRow(title: String, section: ShoppingSectionView, open:
         if (section.finished) {
             Text(
                 // Done, not ticked: a row with nothing left to buy is done without a tick.
-                t(Msg.SECTION_DONE, section.done.size),
+                t(ShoppingMsg.SECTION_DONE, section.done.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -232,7 +232,7 @@ internal fun DoneGroupHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
             Modifier.size(20.dp).rotate(if (open) 90f else 0f),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(t(Msg.DONE_COUNT, count), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(ShoppingMsg.DONE_COUNT, count), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -259,7 +259,7 @@ fun ShopsInUse(
 ) {
     val t = LocalStrings.current
     Column(modifier) {
-        Text(t(Msg.STORES_I_SHOP_AT), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(ShoppingMsg.STORES_I_SHOP_AT), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Store.entries.forEach { store ->
                 FilterChip(
@@ -269,7 +269,7 @@ fun ShopsInUse(
                 )
             }
         }
-        Text(t(Msg.SHOPS_NOTE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(ShoppingMsg.SHOPS_NOTE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -297,21 +297,21 @@ internal fun ShopIAmIn(store: Store, saving: Double?, onAllStores: () -> Unit) {
     val t = LocalStrings.current
     Row(Modifier.fillMaxWidth().padding(start = Spacing.ScreenEdge, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(t(Msg.SHOPPING_AT, store.shortName()), style = MaterialTheme.typography.titleSmall)
+            Text(t(ShoppingMsg.SHOPPING_AT, store.shortName()), style = MaterialTheme.typography.titleSmall)
             Text(
-                t(Msg.ITS_OFFERS),
+                t(ShoppingMsg.ITS_OFFERS),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (saving != null) {
                 Text(
-                    t(Msg.VISIT_SAVING, formatEuro(saving, t.locale)),
+                    t(ShoppingMsg.VISIT_SAVING, formatEuro(saving, t.locale)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        TextButton(onClick = onAllStores) { Text(t(Msg.ALL_STORES)) }
+        TextButton(onClick = onAllStores) { Text(t(ShoppingMsg.ALL_STORES)) }
     }
 }
 
@@ -362,7 +362,7 @@ internal fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, t
                 val sources = item.sources(t)
                 if (sources.isNotEmpty()) {
                     Text(
-                        sources.joinToString().let { if (suggested) t(Msg.SUGGESTED_MEALS, it) else it },
+                        sources.joinToString().let { if (suggested) t(ShoppingMsg.SUGGESTED_MEALS, it) else it },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -373,7 +373,7 @@ internal fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, t
             // An own item has no amount and no offer; in shopping mode its row has the one tap target.
             if (onRemove != null) {
                 if (!shoppingMode) {
-                    IconButton(onClick = onRemove) { Icon(AppIcons.Close, t(Msg.EXTRA_REMOVE, item.name)) }
+                    IconButton(onClick = onRemove) { Icon(AppIcons.Close, t(ShoppingMsg.EXTRA_REMOVE, item.name)) }
                 }
                 return@Row
             }
@@ -394,7 +394,7 @@ internal fun ShoppingRow(item: ShoppingItem, offer: Offer?, shops: Set<Store>, t
                     // looks small but its touch area is 48 dp, as Material asks.
                     Box(
                         Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                            .clickable(role = Role.Button, onClickLabel = t(Msg.SHOW_DEAL), onClick = onOfferClick),
+                            .clickable(role = Role.Button, onClickLabel = t(ShoppingMsg.SHOW_DEAL), onClick = onOfferClick),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(

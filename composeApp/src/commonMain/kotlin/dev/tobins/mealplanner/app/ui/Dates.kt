@@ -1,6 +1,5 @@
 package dev.tobins.mealplanner.app.ui
 
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.DayOfWeek
@@ -57,8 +56,8 @@ fun dayMonthLabel(isoDate: String, locale: FormatLocale): String {
  */
 fun whenLabel(isoDate: String, time: String, today: String, strings: Strings): String =
     when (daysBetween(isoDate, today)) {
-        0 -> strings(Msg.WHEN_TODAY, time)
-        1 -> strings(Msg.WHEN_YESTERDAY, time)
+        0 -> strings(CommonMsg.WHEN_TODAY, time)
+        1 -> strings(CommonMsg.WHEN_YESTERDAY, time)
         else -> "${dayLabel(isoDate, strings.locale)} $time"
     }
 

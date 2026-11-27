@@ -5,6 +5,7 @@ import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSide
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.app.accounts.AccountsMsg
 import dev.tobins.mealplanner.app.plan.isPrepDay
 import dev.tobins.mealplanner.app.ui.FormatLocale
 import dev.tobins.mealplanner.app.ui.dayLabel
@@ -53,54 +54,54 @@ class Strings private constructor(val language: Language, val locale: FormatLoca
             .let { name ->
                 val prep = meal.prep
                 when {
-                    prep != null && meal.leftover -> this(Msg.MEAL_PREPPED, name, dayLabel(prep.madeOn, locale))
-                    prep != null -> this(Msg.MEAL_PREP_DAY, name)
-                    meal.leftover -> this(Msg.MEAL_LEFTOVERS, name)
+                    prep != null && meal.leftover -> this(AppMsg.MEAL_PREPPED, name, dayLabel(prep.madeOn, locale))
+                    prep != null -> this(AppMsg.MEAL_PREP_DAY, name)
+                    meal.leftover -> this(AppMsg.MEAL_LEFTOVERS, name)
                     else -> name
                 }
             }
             .let { sealed(it, meal.prep) }
-            .let { if (meal.adjusted) this(Msg.MEAL_ADJUSTED, it) else it }
+            .let { if (meal.adjusted) this(AppMsg.MEAL_ADJUSTED, it) else it }
 
     /**
      * How the side next to the meal at [date]'s [slot] is labelled: "Side · prep day" where its batch is made, "Side · prepped
      * Mon 16 Nov" after, with `· vacuum sealed` for a batch kept so ([sealed]).
      */
     fun sideLabel(side: MealSide, date: String, slot: MealSlot): String =
-        sealed(if (side.isPrepDay(date, slot)) this(Msg.SIDE_PREP_DAY) else this(Msg.SIDE_PREPPED, dayLabel(side.prep.madeOn, locale)), side.prep)
+        sealed(if (side.isPrepDay(date, slot)) this(AppMsg.SIDE_PREP_DAY) else this(AppMsg.SIDE_PREPPED, dayLabel(side.prep.madeOn, locale)), side.prep)
 
     /**
      * [label] with `· vacuum sealed` when [prep] is kept so (issue 263): on the day it is made, how to keep it; after, which
      * of the boxes it is, as a sealed batch keeps longer than one in a box.
      */
-    private fun sealed(label: String, prep: MealPrep?): String = if (prep?.vacuum == true) this(Msg.PREP_LABEL_VACUUM, label) else label
+    private fun sealed(label: String, prep: MealPrep?): String = if (prep?.vacuum == true) this(AppMsg.PREP_LABEL_VACUUM, label) else label
 
     /**
      * What is wrong with a profile, as the shared calculator words it (`weightKg must be between 30 and 300`),
      * in this language. A problem in another form is shown as it came.
      */
     fun profileProblem(problem: String): String {
-        if (problem == "minPortions must not be more than maxPortions") return this(Msg.PROBLEM_PORTIONS_ORDER)
+        if (problem == "minPortions must not be more than maxPortions") return this(AppMsg.PROBLEM_PORTIONS_ORDER)
         Regex("""^(\w+) must be in quarter servings$""").matchEntire(problem)?.let { quarters ->
-            return profileField(quarters.groupValues[1])?.let { this(Msg.PROBLEM_QUARTERS, this(it)) } ?: problem
+            return profileField(quarters.groupValues[1])?.let { this(AppMsg.PROBLEM_QUARTERS, this(it)) } ?: problem
         }
         val match = Regex("""^(\w+) must be between ([\d.]+) and ([\d.]+)$""").matchEntire(problem) ?: return problem
         val (field, low, high) = match.destructured
         val name = profileField(field) ?: return problem
-        return this(Msg.PROBLEM_RANGE, this(name), formatAmount(low.toDouble(), locale), formatAmount(high.toDouble(), locale))
+        return this(AppMsg.PROBLEM_RANGE, this(name), formatAmount(low.toDouble(), locale), formatAmount(high.toDouble(), locale))
     }
 
     /** The name the profile form gives the field the shared calculator calls [field]; null for one it does not know. */
     private fun profileField(field: String): Msg? = when (field) {
-        "weightKg" -> Msg.WEIGHT
-        "heightCm" -> Msg.HEIGHT
-        "ageYears" -> Msg.AGE
-        "goalKgPerWeek" -> Msg.GOAL
-        "kcalOverride" -> Msg.CALORIES_PER_DAY
-        "proteinOverrideG" -> Msg.PROTEIN_PER_DAY
-        "fibreOverrideG" -> Msg.FIBRE_PER_DAY
-        "minPortions" -> Msg.SMALLEST_PORTION
-        "maxPortions" -> Msg.LARGEST_PORTION
+        "weightKg" -> AppMsg.WEIGHT
+        "heightCm" -> AppMsg.HEIGHT
+        "ageYears" -> AccountsMsg.AGE
+        "goalKgPerWeek" -> AppMsg.GOAL
+        "kcalOverride" -> AccountsMsg.CALORIES_PER_DAY
+        "proteinOverrideG" -> AccountsMsg.PROTEIN_PER_DAY
+        "fibreOverrideG" -> AccountsMsg.FIBRE_PER_DAY
+        "minPortions" -> AppMsg.SMALLEST_PORTION
+        "maxPortions" -> AppMsg.LARGEST_PORTION
         else -> null
     }
 
@@ -164,49 +165,49 @@ internal fun fill(template: String, args: Array<out Any?>): String {
 
 /** The label of a language choice. */
 internal fun AppLanguage.msg() = when (this) {
-    AppLanguage.SYSTEM -> Msg.LANGUAGE_SYSTEM
-    AppLanguage.ENGLISH -> Msg.LANGUAGE_ENGLISH
-    AppLanguage.DUTCH -> Msg.LANGUAGE_DUTCH
+    AppLanguage.SYSTEM -> AppMsg.LANGUAGE_SYSTEM
+    AppLanguage.ENGLISH -> AppMsg.LANGUAGE_ENGLISH
+    AppLanguage.DUTCH -> AppMsg.LANGUAGE_DUTCH
 }
 
 /** The label of a theme choice. */
 internal fun ThemeMode.msg() = when (this) {
-    ThemeMode.SYSTEM -> Msg.THEME_SYSTEM
-    ThemeMode.LIGHT -> Msg.THEME_LIGHT
-    ThemeMode.DARK -> Msg.THEME_DARK
+    ThemeMode.SYSTEM -> AppMsg.THEME_SYSTEM
+    ThemeMode.LIGHT -> AppMsg.THEME_LIGHT
+    ThemeMode.DARK -> AppMsg.THEME_DARK
 }
 
 /** The label of a shopping view choice. */
 internal fun ShoppingView.msg() = when (this) {
-    ShoppingView.SECTION -> Msg.VIEW_SECTION
-    ShoppingView.STORE -> Msg.VIEW_STORE
+    ShoppingView.SECTION -> AppMsg.VIEW_SECTION
+    ShoppingView.STORE -> AppMsg.VIEW_STORE
 }
 
 private fun MealSlot.msg() = when (this) {
-    MealSlot.BREAKFAST -> Msg.SLOT_BREAKFAST
-    MealSlot.LUNCH -> Msg.SLOT_LUNCH
-    MealSlot.DINNER -> Msg.SLOT_DINNER
-    MealSlot.SNACK -> Msg.SLOT_SNACK
+    MealSlot.BREAKFAST -> AppMsg.SLOT_BREAKFAST
+    MealSlot.LUNCH -> AppMsg.SLOT_LUNCH
+    MealSlot.DINNER -> AppMsg.SLOT_DINNER
+    MealSlot.SNACK -> AppMsg.SLOT_SNACK
 }
 
 /** The message of a section's title; every section has one, which the compiler checks. */
 internal fun ShopSection.msg() = when (this) {
-    ShopSection.FRUIT_VEG -> Msg.SECTION_FRUIT_VEG
-    ShopSection.BREAD -> Msg.SECTION_BREAD
-    ShopSection.DELI -> Msg.SECTION_DELI
-    ShopSection.SAUCES -> Msg.SECTION_SAUCES
-    ShopSection.MEAT -> Msg.SECTION_MEAT
-    ShopSection.FISH -> Msg.SECTION_FISH
-    ShopSection.VEGETARIAN -> Msg.SECTION_VEGETARIAN
-    ShopSection.DAIRY -> Msg.SECTION_DAIRY
-    ShopSection.READY_MEALS -> Msg.SECTION_READY_MEALS
-    ShopSection.WORLD -> Msg.SECTION_WORLD
-    ShopSection.TINS -> Msg.SECTION_TINS
-    ShopSection.BREAKFAST -> Msg.SECTION_BREAKFAST
-    ShopSection.BAKING -> Msg.SECTION_BAKING
-    ShopSection.SNACKS -> Msg.SECTION_SNACKS
-    ShopSection.DRINKS -> Msg.SECTION_DRINKS
-    ShopSection.FROZEN -> Msg.SECTION_FROZEN
-    ShopSection.NON_FOOD -> Msg.SECTION_NON_FOOD
-    ShopSection.OTHER -> Msg.SECTION_OTHER
+    ShopSection.FRUIT_VEG -> AppMsg.SECTION_FRUIT_VEG
+    ShopSection.BREAD -> AppMsg.SECTION_BREAD
+    ShopSection.DELI -> AppMsg.SECTION_DELI
+    ShopSection.SAUCES -> AppMsg.SECTION_SAUCES
+    ShopSection.MEAT -> AppMsg.SECTION_MEAT
+    ShopSection.FISH -> AppMsg.SECTION_FISH
+    ShopSection.VEGETARIAN -> AppMsg.SECTION_VEGETARIAN
+    ShopSection.DAIRY -> AppMsg.SECTION_DAIRY
+    ShopSection.READY_MEALS -> AppMsg.SECTION_READY_MEALS
+    ShopSection.WORLD -> AppMsg.SECTION_WORLD
+    ShopSection.TINS -> AppMsg.SECTION_TINS
+    ShopSection.BREAKFAST -> AppMsg.SECTION_BREAKFAST
+    ShopSection.BAKING -> AppMsg.SECTION_BAKING
+    ShopSection.SNACKS -> AppMsg.SECTION_SNACKS
+    ShopSection.DRINKS -> AppMsg.SECTION_DRINKS
+    ShopSection.FROZEN -> AppMsg.SECTION_FROZEN
+    ShopSection.NON_FOOD -> AppMsg.SECTION_NON_FOOD
+    ShopSection.OTHER -> AppMsg.SECTION_OTHER
 }

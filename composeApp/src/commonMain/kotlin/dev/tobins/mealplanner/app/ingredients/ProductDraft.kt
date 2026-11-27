@@ -27,14 +27,14 @@ import kotlin.math.roundToLong
 
 /** The values of a label, in the order a Dutch label lists them, each with its unit and its text on the form. */
 enum class LabelValue(val unit: String, val msg: Msg) {
-    ENERGY("kcal", Msg.LABEL_ENERGY),
-    FAT("g", Msg.LABEL_FAT),
-    SATURATED_FAT("g", Msg.LABEL_SATURATED_FAT),
-    CARBS("g", Msg.LABEL_CARBS),
-    SUGARS("g", Msg.LABEL_SUGARS),
-    FIBRE("g", Msg.LABEL_FIBRE),
-    PROTEIN("g", Msg.LABEL_PROTEIN),
-    SALT("g", Msg.LABEL_SALT),
+    ENERGY("kcal", IngredientsMsg.LABEL_ENERGY),
+    FAT("g", IngredientsMsg.LABEL_FAT),
+    SATURATED_FAT("g", IngredientsMsg.LABEL_SATURATED_FAT),
+    CARBS("g", IngredientsMsg.LABEL_CARBS),
+    SUGARS("g", IngredientsMsg.LABEL_SUGARS),
+    FIBRE("g", IngredientsMsg.LABEL_FIBRE),
+    PROTEIN("g", IngredientsMsg.LABEL_PROTEIN),
+    SALT("g", IngredientsMsg.LABEL_SALT),
 }
 
 /** A number as the form was filled with it: the [text] it showed, and the [number] it stands for, unrounded. */

@@ -23,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.app.BackHandler
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 
 /**
  * Makes leaving a form safe: while [dirty] (the form differs from what was loaded or saved), going
@@ -66,11 +65,11 @@ private fun DiscardDialog(onKeep: () -> Unit, onDiscard: () -> Unit) {
 internal fun DiscardQuestion(onKeep: () -> Unit, onDiscard: () -> Unit) {
     val t = LocalStrings.current
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(t(Msg.DISCARD_CHANGES_TITLE), style = MaterialTheme.typography.headlineSmall)
-        Text(t(Msg.DISCARD_CHANGES_TEXT), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(CommonMsg.DISCARD_CHANGES_TITLE), style = MaterialTheme.typography.headlineSmall)
+        Text(t(CommonMsg.DISCARD_CHANGES_TEXT), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, androidx.compose.ui.Alignment.End)) {
-            TextButton(onClick = onKeep) { Text(t(Msg.KEEP_EDITING)) }
-            TextButton(onClick = onDiscard) { Text(t(Msg.DISCARD)) }
+            TextButton(onClick = onKeep) { Text(t(CommonMsg.KEEP_EDITING)) }
+            TextButton(onClick = onDiscard) { Text(t(CommonMsg.DISCARD)) }
         }
     }
 }
