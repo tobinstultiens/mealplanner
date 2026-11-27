@@ -1,7 +1,6 @@
 # How the code is ordered
 
-The server is ordered by feature; the app is to be ordered with the same names (see "The app", which says
-what is true now). Someone who looks for the shopping list's code finds a `shopping` folder in the server; what
+The server and the app are ordered by feature, with the same names. Someone who looks for the shopping list's code finds a `shopping` folder in the server; what
 a change to it touches is in one place, and what several features share is in a place of its own.
 
 | Feature | What it holds |
@@ -84,19 +83,79 @@ split, its repository still holds both, and a new class in it should not add to 
 
 ## The app
 
-Today the app's code (`composeApp/src/commonMain/kotlin/dev/tobins/mealplanner/`) is one package; its
-screens call the server themselves, and its texts and server calls are two files every feature shares.
-The agreed target (#381), step by step:
+`composeApp/src/commonMain/kotlin/dev/tobins/mealplanner/app/` has the root package, one package per
+feature (`plan`, `shopping`, `recipes`, `ingredients`, `prices`, `tracking`, `accounts`) and `ui`, what every
+screen uses to draw. A feature's screens, the classes they read (`ShoppingSession`, `RecipeDraft`,
+`ProductDraft`) and its text helpers are in its package. The Android and web source sets (`androidMain`,
+`wasmJsMain`) and the tests use the package of the code they belong to: an `actual` is in the package of its
+`expect`, so the web `rememberBarcodeScanner` is `ingredients/BarcodeScanner.wasmJs.kt`, apart from
+`Platform.wasmJs.kt`. `androidApp` imports from these packages. The Android namespace in
+`composeApp/build.gradle.kts` stays `dev.tobins.mealplanner.app`.
 
-- Feature packages with the server's names, and a package (`ui`) for what every screen uses to draw;
-  only what starts the app or is shared stays in the root, and a test holds the allowed uses between
-  features (#383).
-- A feature's texts and server calls in its package, the shared ones in one place (#384).
+| Package | What it holds |
+|---|---|
+| `ui` | Theme, icons, illustrations, the bars and chrome, loading and failure sentences, formatting and dates, the focus ring, unsaved changes, markdown |
+| `plan` | The plan, planning and today screens, adjusting a meal, preps, standard meals, a slot's foods, meal changes, sides |
+| `shopping` | Every `Shopping*` file: the list, its rows, ticks, cache, server calls, advice, shops and mode |
+| `recipes` | The recipe bank, lists, picker, editor and draft, pictures, cook mode, generation, toppings |
+| `ingredients` | The ingredient mapping, the pantry, products and their lookups and pictures, the barcode scanner, foods |
+| `prices` | Offers, prices, deal verdicts, the queue of excluded offers, "not this ingredient" |
+| `tracking` | The progress screen and the logged foods |
+| `accounts` | Login, registration, account requests and shops, the profile, the server settings |
+
+### What stays in the root package
+
+Only what starts the app, or what several features share:
+
+| File | Why it is in the root |
+|---|---|
+| `App.kt`, `Routes.kt` | Start the app and put the screens together, so they name every feature |
+| `ApiClient.kt` | Every feature's server calls; to be split per feature (#384) |
+| `Messages.kt`, `Strings.kt` | Every feature's texts, and the language; to be split per feature (#384) |
+| `Platform.kt` | The `expect`s every screen needs (back, system bars, keyboard, locale, the browser or not); the `actual`s are in the root of `androidMain` and `wasmJsMain` |
+| `SettingsStorage.kt`, `ScreenMemory.kt` | What the app keeps on the device, and where each screen was left |
+| `Notifications.kt` | What is due and when to notify, which the Android app posts |
+| `AppUpdates.kt`, `StayCurrent.kt` | Checking for a newer app; they belong to the app, not to a feature |
+
+The root may use every feature, and every feature may use the root. Test helpers that tests of several
+features share (`FakeBackend`, `FakeImageLoader`, `UnreachableServer`), the screenshot test, and tests of
+root files stay in the root test package, like the web client's files in `wasmJsMain`.
+
+### Which feature may use which
+
+`FeatureUsesTest` (`composeApp/src/androidHostTest`) holds the allowed uses between feature packages
+(`ui` counts as one) and reads the imports of the main source sets. It fails for a file that uses a feature
+the list does not allow, for an entry no file uses any more, and for a file whose package is not its folder.
+The list records what the code has; it is not a design. What looks wrong in it is recorded here, as later
+work, not as a rule:
+
+- `ui` uses `recipes` (`MealToCook` in `Formatting`) and `shopping` (`plainReason` in `Loading`, `shortName`
+  in `Formatting`); the building blocks should use no feature.
+- These pairs use each other: `plan` and `ingredients`, `plan` and `recipes`, `plan` and `tracking`,
+  `recipes` and `ingredients`, `shopping` and `prices`, `shopping` and `ingredients`, `shopping` and
+  `accounts`.
+- `accounts` (`ServerSettingsScreen`) uses `prices`, `recipes` (`SwitchRow`) and `shopping`, and `prices`
+  uses `ShoppingSession`, `ShoppingServer` and `ShoppingCache` of `shopping`.
+
+Adding a use is a reason to ask where the thing belongs instead.
+
+### Where a new file goes
+
+- Into the package of the feature it is about; a file several features use goes to the feature with most
+  of its users, and what every screen draws with goes to `ui`. In the root only when it starts the app or
+  is shared by features as the table above shows.
+- A test is in the package of what it tests, with the same name plus `Test`; an `actual` or a platform file
+  is in the package of the code it belongs to.
+
+### Not done yet
+
+Targets of #381, step by step; the code does not do these yet:
+
+- A feature's texts and server calls in its package, the shared ones in one place (#384). Until then
+  `Messages.kt`, `Strings.kt` and `ApiClient.kt` are in the root, and many screens call the server themselves.
 - A screen's loading and saving in a class of its own, tested without drawing, which the composable
   reads (the plan screen first, #388; the recipe page, #389). `ShoppingSession`, `RecipeDraft` and
   `ProductDraft` are such classes already.
-
-This part is rewritten as each step lands.
 
 ## Why
 

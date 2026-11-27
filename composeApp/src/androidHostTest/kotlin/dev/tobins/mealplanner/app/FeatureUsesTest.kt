@@ -51,21 +51,33 @@ class FeatureUsesTest {
         assertEquals(emptyList(), wrong.map { it.path }, "a file's package line names its folder")
     }
 
-    @Test
-    fun noFileUsesAFeatureThatItsOwnIsNotAllowedTo() {
-        val forbidden = mutableListOf<String>()
+    /** Each feature's uses of other features, as its files' imports show them, with the first import that shows each. */
+    private fun uses(): Map<String, Map<String, String>> {
+        val found = mutableMapOf<String, MutableMap<String, String>>()
         for (file in sources()) {
             val lines = file.readLines()
             val own = featureOf(lines.first { it.startsWith("package ") }.removePrefix("package "))
             if (own == "root") continue
-            val permitted = allowed[own] ?: emptySet()
             for (line in lines.filter { it.startsWith("import $base.") }) {
                 val used = line.removePrefix("import $base.").substringBefore('.', missingDelimiterValue = "")
-                if (used.isNotEmpty() && used != own && used !in permitted) {
-                    forbidden += "${file.name} (in $own) uses $used: $line"
-                }
+                if (used.isNotEmpty() && used != own) found.getOrPut(own) { mutableMapOf() }.putIfAbsent(used, "${file.name}: $line")
             }
         }
+        return found
+    }
+
+    @Test
+    fun noFileUsesAFeatureThatItsOwnIsNotAllowedTo() {
+        val forbidden = uses().flatMap { (own, used) ->
+            used.filterKeys { it !in (allowed[own] ?: emptySet()) }.map { (feature, example) -> "$own uses $feature ($example)" }
+        }
         assertEquals(emptyList(), forbidden, "uses between features outside the list in FeatureUsesTest.allowed")
+    }
+
+    @Test
+    fun noUseInTheListIsUnusedAnymore() {
+        val found = uses()
+        val stale = allowed.flatMap { (own, permitted) -> permitted.filter { it !in (found[own]?.keys ?: emptySet()) }.map { "$own -> $it" } }
+        assertEquals(emptyList(), stale, "uses in FeatureUsesTest.allowed that no file has any more: remove them")
     }
 }
