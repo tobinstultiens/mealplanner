@@ -984,7 +984,7 @@ both (tested for each, and after eating), and the app rounds it the same way, so
 already, it asks for that and the card's amount. A ticked row says "… more" only from the usual step (5 % and at
 least 25 g); a smaller amount is on the card alone.
 
-On the list (`ShoppingListRepository.countTaken`), only for an ingredient that leaves a later meal short, the
+On the list (`WeekNeeds.countTaken`), only for an ingredient that leaves a later meal short, the
 grams each adjusted meal took of what was at home beyond its recipe count as part of that meal's need: in the
 row's `grams` (the week's need), and while that meal is still to cook in `toComeGrams`, with the meal among the
 row's `recipes`. The row is then read as any row whose need grew: a ticked row needs more than it remembers

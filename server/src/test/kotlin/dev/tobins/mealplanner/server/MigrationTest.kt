@@ -624,7 +624,7 @@ class MigrationTest {
         val scope = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
         val stew = scope.recipes.edits.create(RecipeInput("Stew", 2, "400 | g | beef")).summary
         db.planQueries.upsertMeal(1, week, 0, "DINNER", stew.id, stew.title, 2.0, 800.0, 40.0, 0, 0, "PLANNED")
-        val list = scope.shopping.get(week)
+        val list = scope.shopping.view.get(week)
         // Still ticked as before, without an amount bought: never "more needed", never "no longer needed".
         val beef = list.items.single()
         assertEquals("t:beef" to true, beef.key to beef.checked)
@@ -946,7 +946,7 @@ class MigrationTest {
         val scope = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
         val chicken = scope.recipes.edits.create(RecipeInput("Chicken", 1, "1000 | g | kipfilet")).summary
         db.planQueries.upsertMeal(1, week, 0, "DINNER", chicken.id, chicken.title, 1.0, 800.0, 40.0, 0, 0, "PLANNED")
-        val row = scope.shopping.get(week).items.single()
+        val row = scope.shopping.view.get(week).items.single()
         assertEquals(listOf("i1", true, 1000.0, null, null), listOf(row.key, row.checked, row.boughtGrams, row.boughtSaving, row.boughtOfferStore))
         driver.close()
     }

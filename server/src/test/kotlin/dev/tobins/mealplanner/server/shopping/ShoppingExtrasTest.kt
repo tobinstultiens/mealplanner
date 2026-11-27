@@ -296,7 +296,7 @@ class ShoppingExtrasTest {
         val foods = FoodRepository(db)
         val offers = OfferRepository(db, emptyList())
         val userId = UserRepository(db).resolve(Identity("sub-t", "t")).id
-        val shopping = UserScope(userId, db, foods, offers, PriceRepository(db, null, foods, offers), null, pictures).shopping
+        val shopping = UserScope(userId, db, foods, offers, PriceRepository(db, null, foods, offers), null, pictures).shopping.ownItems
         repeat(ShoppingExtraInput.MAX_OPEN - 2) { shopping.addExtra(week, ShoppingExtraInput("Item $it")) }
 
         val start = CountDownLatch(1)

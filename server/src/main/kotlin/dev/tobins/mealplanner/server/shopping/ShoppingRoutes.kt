@@ -29,26 +29,26 @@ private suspend fun RoutingCall.respondList(list: ShoppingList, status: HttpStat
 /** The shopping list of a week: ticking rows, using items up, own items, and hiding the advice groups. */
 fun Route.shoppingRoutes() {
     route("/api/plans/{weekStart}") {
-        get("/shopping") { call.respondList(call.user.shopping.get(call.week())) }
+        get("/shopping") { call.respondList(call.user.shopping.view.get(call.week())) }
 
         // Ticks an item of the shopping list off, or back on.
-        put("/shopping") { call.respondList(call.user.shopping.setChecked(call.week(), call.receive<ShoppingCheck>())) }
+        put("/shopping") { call.respondList(call.user.shopping.ticking.setChecked(call.week(), call.receive<ShoppingCheck>())) }
 
         // Ticks a ticked row that needs more again, for what it needs now, in one step.
-        put("/shopping/again") { call.respondList(call.user.shopping.tickAgain(call.week(), call.receive<ShoppingRowKey>())) }
+        put("/shopping/again") { call.respondList(call.user.shopping.ticking.tickAgain(call.week(), call.receive<ShoppingRowKey>())) }
 
         // Puts a bought item no meal needs any more on hand with what was bought of it; answers with the week's list.
-        post("/shopping/use-up") { call.respondList(call.user.shopping.useUp(call.week(), call.receive<ShoppingRowKey>())) }
+        post("/shopping/use-up") { call.respondList(call.user.shopping.ticking.useUp(call.week(), call.receive<ShoppingRowKey>())) }
 
         // Puts an own item (coffee, toilet paper) on the list from this week on; answers with the week's list.
         post("/shopping/extras") {
-            call.respondList(call.user.shopping.addExtra(call.week(), call.receive<ShoppingExtraInput>()), HttpStatusCode.Created)
+            call.respondList(call.user.shopping.ownItems.addExtra(call.week(), call.receive<ShoppingExtraInput>()), HttpStatusCode.Created)
         }
 
         // Takes an own item off every list; answers with the week's list.
         delete("/shopping/extras/{id}") {
             val id = call.parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Own item id must be a number")
-            call.respondList(call.user.shopping.deleteExtra(call.week(), id))
+            call.respondList(call.user.shopping.ownItems.deleteExtra(call.week(), id))
         }
 
         // PUT hides the buy-ahead or stock-up group of the week's list, DELETE shows it again.
@@ -57,7 +57,7 @@ fun Route.shoppingRoutes() {
                 handle {
                     val group = ShoppingAdviceGroup.fromPath(call.parameters["group"])
                         ?: throw IllegalArgumentException("group must be one of ${ShoppingAdviceGroup.entries.joinToString { it.path }}")
-                    call.respondList(call.user.shopping.setDismissed(call.week(), group, dismissed))
+                    call.respondList(call.user.shopping.ticking.setDismissed(call.week(), group, dismissed))
                 }
             }
         }

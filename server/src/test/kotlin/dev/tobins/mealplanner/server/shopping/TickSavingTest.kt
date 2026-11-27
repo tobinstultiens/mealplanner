@@ -117,12 +117,12 @@ class TickSavingTest {
 
     private fun userId() = db.userQueries.selectBySubject("sub-t").executeAsOne().id
 
-    /** The account's shopping list as the server is on [day]: the day a tick's saving is worked out for. */
-    private fun shopping(day: String, user: Long = userId()): ShoppingListRepository {
+    /** Ticking the account's shopping list as the server is on [day]: the day a tick's saving is worked out for. */
+    private fun shopping(day: String, user: Long = userId()): Ticking {
         val foods = FoodRepository(db)
         val offers = OfferRepository(db, emptyList())
         val prices = PriceRepository(db, null, foods, offers)
-        return UserScope(user, db, foods, offers, prices, null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(day) }).shopping
+        return UserScope(user, db, foods, offers, prices, null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(day) }).shopping.ticking
     }
 
     private fun tick(day: String, key: String, checked: Boolean = true, shown: ShoppingCheck.Shown? = null): ShoppingItem =

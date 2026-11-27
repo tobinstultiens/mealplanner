@@ -200,20 +200,20 @@ class WriteLockTest {
         whileAnotherWrites("eating a meal", "Eating.setStatus") { http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.EATEN) } }
         whileAnotherWrites("un-eating it", "Eating.setStatus") { http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.PLANNED) } }
 
-        // The stock on its own (StockRepository) and from the shopping list (ShoppingListRepository).
+        // The stock on its own (StockRepository) and from the shopping list (Ticking).
         val stockUp = ShoppingKey.Stock(beef).toString()
         whileAnotherWrites("a stock-up tick", "StockRepository.putOnHandFrom") { http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(stockUp, true, grams = 500.0)) } }
         whileAnotherWrites("taking it back", "StockRepository.takeBackOnHand") { http.put("/api/plans/$week/shopping") { setBody(ShoppingCheck(stockUp, false)) } }
         whileAnotherWrites("on hand by hand", "StockRepository.setOnHand") { http.put("/api/pantry/on-hand/$beef") }
         whileAnotherWrites("off hand by hand", "StockRepository.setOnHand") { http.delete("/api/pantry/on-hand/$beef") }
 
-        // A bought item no meal needs any more, used up (ShoppingListRepository.useUp, StockRepository.addToStock).
+        // A bought item no meal needs any more, used up (Ticking.useUp, StockRepository.addToStock).
         val later = "2026-11-23"
         http.put("/api/plans/$later/meals/0/dinner") { setBody(MealChoice(dinner.id)) }
         http.put("/api/plans/$later/shopping") { setBody(ShoppingCheck(ShoppingKey.Ingredient(beef).toString(), true)) }
         http.delete("/api/plans/$later/meals/1/lunch")
         http.delete("/api/plans/$later/meals/0/dinner")
-        whileAnotherWrites("using up what was bought", "ShoppingListRepository.useUp") { http.post("/api/plans/$later/shopping/use-up") { setBody(ShoppingRowKey("i$beef")) } }
+        whileAnotherWrites("using up what was bought", "Ticking.useUp") { http.post("/api/plans/$later/shopping/use-up") { setBody(ShoppingRowKey("i$beef")) } }
 
         // The catalogue (IngredientRepository.linking) and the recipes (RecipeEdits, MyRecipes, BankSync).
         whileAnotherWrites("a new ingredient", "IngredientRepository.linking") { http.post("/api/ingredients") { setBody(IngredientInput("Pepper")) } }
@@ -451,8 +451,8 @@ class WriteLockTest {
                 repeat(8) { n ->
                     val recipe = user.recipes.edits.create(RecipeInput("Dish $account-$n", 2, "${100 + n} | g | beef"))
                     assertEquals("Dish $account-$n" to 100.0 + n, recipe.summary.title to recipe.ingredients.single().line.amount)
-                    val item = user.shopping.addExtra(week, ShoppingExtraInput("Item $n")).items.single { it.key.startsWith("x:") && it.name == "Item $n" }
-                    user.shopping.setChecked(week, ShoppingCheck(item.key, true))
+                    val item = user.shopping.ownItems.addExtra(week, ShoppingExtraInput("Item $n")).items.single { it.key.startsWith("x:") && it.name == "Item $n" }
+                    user.shopping.ticking.setChecked(week, ShoppingCheck(item.key, true))
                     users.setMeta(account, "last", "$n")
                 }
             }
@@ -461,7 +461,7 @@ class WriteLockTest {
         for (account in accounts) {
             val user = scope(account)
             assertEquals((0..7).map { "Dish $account-$it" }, user.recipes.view.list().map { it.title }.sorted(), "account $account")
-            assertEquals((0..7).map { "Item $it" }, user.shopping.get(week).items.filter { it.key.startsWith("x:") && it.checked }.map { it.name }.sorted())
+            assertEquals((0..7).map { "Item $it" }, user.shopping.view.get(week).items.filter { it.key.startsWith("x:") && it.checked }.map { it.name }.sorted())
             assertEquals("7", users.meta(account, "last"))
         }
     }

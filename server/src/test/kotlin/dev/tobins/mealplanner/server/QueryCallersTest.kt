@@ -36,7 +36,7 @@ class QueryCallersTest {
         "recipes/RecipeStore.kt",
         "recipes/RecipeToppings.kt",
         "shopping/ShoppingAdviceRepository.kt",
-        "shopping/ShoppingListRepository.kt",
+        "shopping/ShoppingStore.kt",
         "shopping/ShopsRepository.kt",
         "tracking/TrackingRepository.kt",
     )
@@ -63,6 +63,16 @@ class QueryCallersTest {
         "recipes/RecipeView.kt",
     )
 
+    /** The classes with the shopping list's rules (#387): they go through [dev.tobins.mealplanner.server.shopping.ShoppingStore], never a query. */
+    private val shoppingRules: Set<String> = setOf(
+        "shopping/BuyingAhead.kt",
+        "shopping/ListAdvice.kt",
+        "shopping/OwnItems.kt",
+        "shopping/ShoppingListView.kt",
+        "shopping/Ticking.kt",
+        "shopping/WeekNeeds.kt",
+    )
+
     private val sourceRoot = File("src/main/kotlin/dev/tobins/mealplanner/server")
     private val query = Regex("\\b[a-z][A-Za-z]*Queries\\b")
 
@@ -86,6 +96,9 @@ class QueryCallersTest {
 
     @Test
     fun theRulesOfTheRecipesAreNotOnTheListAndHoldNoDatabase() = assertRules(recipeRules, "the recipes'", "RecipeStore")
+
+    @Test
+    fun theRulesOfTheShoppingListAreNotOnTheListAndHoldNoDatabase() = assertRules(shoppingRules, "the shopping list's", "ShoppingStore")
 
     /** The files [rules], of the classes with [whose] rules, are there, are not on the list, and reach the database through [store] only. */
     private fun assertRules(rules: Set<String>, whose: String, store: String) {
