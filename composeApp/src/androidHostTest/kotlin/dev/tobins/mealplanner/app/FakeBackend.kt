@@ -258,14 +258,25 @@ class FakeBackend(
     @Volatile
     var standardChoiceAnswer: java.util.concurrent.CountDownLatch? = null
 
+    /** While set, a recipe's quick add-ons are answered once it opens, as over a slow connection; the other calls are answered meanwhile. */
+    @Volatile
+    var addOnsAnswer: java.util.concurrent.CountDownLatch? = null
+
+    /** Opens when a quick add-ons request is held by [addOnsAnswer], so that a test knows it was asked for. */
+    val addOnsHeld = java.util.concurrent.CountDownLatch(1)
+
     private val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
         createContext("/") { exchange ->
             val held = standardMealsAnswer
             val choice = standardChoiceAnswer
+            val addOns = addOnsAnswer
             if (held != null && exchange.requestURI.path.endsWith("/standard-meals")) {
                 thread { held.await(10, java.util.concurrent.TimeUnit.SECONDS); exchange.respond() }
             } else if (choice != null && exchange.requestMethod == "PUT" && exchange.requestURI.path.endsWith("/standard")) {
                 thread { choice.await(10, java.util.concurrent.TimeUnit.SECONDS); exchange.respond() }
+            } else if (addOns != null && exchange.requestURI.path.endsWith("/add-ons")) {
+                addOnsHeld.countDown()
+                thread { addOns.await(10, java.util.concurrent.TimeUnit.SECONDS); exchange.respond() }
             } else {
                 exchange.respond()
             }

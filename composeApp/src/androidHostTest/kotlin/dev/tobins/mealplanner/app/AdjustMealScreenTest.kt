@@ -53,19 +53,18 @@ class AdjustMealScreenTest {
         backend.close()
     }
 
-    private fun show() {
+    private fun open() {
         compose.setContent {
             CompositionLocalProvider(LocalStrings provides Strings.English) {
                 AdjustMealScreen(api, MealPlace(FakeBackend.WEEK_START, 2, MealSlot.DINNER), onBack = {})
             }
         }
+    }
+
+    /** The screen once the meal is shown; its lines and the recipe's chips come in together (issue 368), so nothing moves after this. */
+    private fun show() {
+        open()
         waitFor("Reset to recipe")
-        // The recipe's add-ons are asked for once the meal is in, and their chips are inserted above its lines when they
-        // arrive. A test that scrolled to a line far down (the Add button) before then had it pushed out of the small
-        // test window, and its click missed: the picker never opened and the wait for it timed out (issue 350). It
-        // showed only when the machine was busy enough for the answer to come late, so every test starts with the chips in.
-        // They sit below the first screenful, so the wait scrolls to them.
-        compose.waitUntil(timeoutMillis = 10_000) { runCatching { scrollTo("Feta · 30 g") }.isSuccess }
     }
 
     private fun waitFor(text: String) =
@@ -171,6 +170,27 @@ class AdjustMealScreenTest {
         waitFor("Feta added")
         compose.onNodeWithText("Undo").performClick()
         waitForChanges(*start.toTypedArray())
+    }
+
+    @Test
+    fun nothingCanBeTappedUntilTheQuickAddOnsAreInSoNothingMovesWhenTheyArrive() {
+        val answer = java.util.concurrent.CountDownLatch(1)
+        backend.addOnsAnswer = answer
+        open()
+        // The meal's lines are in once the add-ons are asked for; their answer is held back.
+        compose.waitUntil(timeoutMillis = 10_000) { backend.addOnsHeld.count == 0L }
+        compose.waitForIdle()
+        compose.onNodeWithText("Reset to recipe").assertDoesNotExist()
+        compose.onNodeWithText("Chicken thigh fillet").assertDoesNotExist()
+        compose.onNodeWithText("Add an ingredient").assertDoesNotExist()
+
+        answer.countDown()
+        waitFor("Reset to recipe")
+        // The first picture of the meal has the chips above the first line, and the Add button after the lines.
+        val chips = scrollTo("Feta · 30 g").getUnclippedBoundsInRoot()
+        val firstLine = scrollTo("Chicken thigh fillet").getUnclippedBoundsInRoot()
+        assertTrue(chips.bottom < firstLine.top, "the chips at $chips, the first line at $firstLine")
+        scrollTo("Add an ingredient").assertExists()
     }
 
     @Test

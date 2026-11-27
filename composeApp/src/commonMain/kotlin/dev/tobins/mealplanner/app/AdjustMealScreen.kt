@@ -75,12 +75,23 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
     var editing by remember { mutableStateOf<MealLine?>(null) }
     var picking by rememberSaveable { mutableStateOf(false) }
     var adding by remember { mutableStateOf<Ingredient?>(null) }
-    // The recipe's quick add-ons; none until they are in, or when they could not be loaded (Add still works).
+    // The recipe's quick add-ons; none when they could not be loaded (Add still works). [addOnsFor] is the recipe they
+    // were asked for, answered either way.
     var addOns by remember { mutableStateOf<List<AddOn>>(emptyList()) }
+    var addOnsFor by remember { mutableStateOf<Long?>(null) }
     val recipeId = (state as? Load.Ready)?.value?.recipeId
+    // The meal is shown once the add-ons are answered too: their chips sit above the lines, so showing the lines first
+    // moved every line and button down under a finger when the chips came in (issue 368). A recipe without any shows
+    // no gap. A reload keeps what is on the screen.
+    val addOnsAnswered = recipeId == null || recipeId == addOnsFor
 
     LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.mealLines(place.weekStart, place.day, place.slot) } }
-    LaunchedEffect(recipeId, reload) { recipeId?.let { id -> (load { api.addOns(id) } as? Load.Ready)?.let { addOns = it.value } } }
+    LaunchedEffect(recipeId, reload) {
+        recipeId?.let { id ->
+            (load { api.addOns(id) } as? Load.Ready)?.let { addOns = it.value }
+            addOnsFor = id
+        }
+    }
 
     /**
      * Saves the changes [edit] makes of the meal as it is when its turn comes, and shows the meal as it is
@@ -115,7 +126,7 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) { ErrorMessage(t(Msg.ADJUST_LOAD_FAILED), current) { reload++ } }
-            is Load.Ready -> {
+            is Load.Ready -> if (!addOnsAnswered) LoadingState(Modifier.padding(padding)) else {
                 val meal = current.value
                 LazyColumn(
                     Modifier.padding(padding).fillMaxSize(),
