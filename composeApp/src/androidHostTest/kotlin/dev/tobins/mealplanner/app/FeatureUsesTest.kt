@@ -16,14 +16,14 @@ import kotlin.test.assertTrue
  */
 class FeatureUsesTest {
     private val allowed: Map<String, Set<String>> = mapOf(
-        "accounts" to setOf("prices", "recipes", "shopping", "ui"),
+        "accounts" to setOf("prices", "shopping", "ui"),
         "ingredients" to setOf("plan", "recipes", "shopping", "ui"),
-        "plan" to setOf("ingredients", "prices", "recipes", "shopping", "tracking", "ui"),
+        "plan" to setOf("ingredients", "prices", "recipes", "tracking", "ui"),
         "prices" to setOf("ingredients", "shopping", "ui"),
         "recipes" to setOf("ingredients", "plan", "prices", "ui"),
         "shopping" to setOf("accounts", "ingredients", "prices", "ui"),
         "tracking" to setOf("ingredients", "plan", "ui"),
-        "ui" to setOf("recipes", "shopping"),
+        "ui" to emptySet(),
     )
 
     private val base = "dev.tobins.mealplanner.app"

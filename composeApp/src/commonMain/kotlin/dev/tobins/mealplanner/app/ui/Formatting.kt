@@ -4,10 +4,9 @@ import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.RecipeNutrition
 import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeekRest
 import dev.tobins.mealplanner.app.Strings
-import dev.tobins.mealplanner.app.recipes.MealToCook
-import dev.tobins.mealplanner.app.shopping.shortName
 import dev.tobins.mealplanner.recipes.IngredientLine
 import kotlin.math.roundToLong
 
@@ -120,6 +119,9 @@ fun Offer.shortText(strings: Strings): String {
 /** True for deals that only restate the price, such as "Voor 3.49". */
 private fun singlePriceDeal(deal: String): Boolean = Regex("(?i)^voor\\s+\\d+[.,]\\d{2}$").matches(deal.trim())
 
+/** The store as the app names it in short: `AH` rather than `Albert Heijn`. */
+fun Store.shortName(): String = label.substringBefore(' ').let { if (it == "Albert") "AH" else it }
+
 /** `1 serving`, `1.75 servings`. */
 fun servingsText(portions: Double, strings: Strings): String =
     strings.plural(CommonPlural.SERVINGS_AMOUNT, if (portions == 1.0) 1 else 2, formatAmount(portions, strings.locale))
@@ -132,29 +134,6 @@ fun servingsText(portions: Double, strings: Strings): String =
 fun PlannedMeal.macrosText(strings: Strings): String =
     if (foodsOnly) macrosText(kcal, proteinG, fibreG, strings)
     else "${unbrokenParts(servingsText(portions, strings))} · ${macrosText(kcal, proteinG, fibreG, strings)}"
-
-/**
- * What a planned meal tells the recipe opened from it, in a sentence: how much to cook now and for
- * whom, or that there is nothing to cook (skipped, or the leftovers of yesterday's dinner). A prepped batch's meal
- * on its made-on day cooks the batch for the later meals, also when itself skipped; the later meals were made then.
- */
-fun MealToCook.sentence(strings: Strings): String {
-    val locale = strings.locale
-    return when {
-        prepMadeOn != null && cookPortions > 0.0 -> strings(
-            CommonMsg.COOK_PREP, servingsText(cookPortions, strings),
-            formatAmount(if (skipped) 0.0 else portions, locale), formatAmount(cookPortions - if (skipped) 0.0 else portions, locale),
-        )
-        prepMadeOn != null && !skipped -> strings(CommonMsg.NOTHING_TO_COOK_PREPPED, dayLabel(prepMadeOn, locale))
-        skipped -> strings(CommonMsg.NOTHING_TO_COOK_SKIPPED)
-        cookPortions <= 0.0 -> strings(CommonMsg.NOTHING_TO_COOK_LEFTOVERS)
-        cookPortions > portions + 1e-9 -> strings(
-            CommonMsg.COOK_WITH_LEFTOVERS, servingsText(cookPortions, strings),
-            formatAmount(portions, locale), formatAmount(cookPortions - portions, locale),
-        )
-        else -> strings(CommonMsg.COOK_SERVINGS, servingsText(cookPortions, strings))
-    }
-}
 
 /**
  * The parts of a recipe list row, kept apart so each has a fixed place: [nutrition] left and

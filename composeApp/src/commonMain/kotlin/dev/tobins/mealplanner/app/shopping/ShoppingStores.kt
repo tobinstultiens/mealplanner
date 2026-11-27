@@ -5,13 +5,11 @@ import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.ui.shortName
 import dev.tobins.mealplanner.app.ui.shortText
 import dev.tobins.mealplanner.shopping.bestOffer
 import dev.tobins.mealplanner.shopping.savingOffer
 import dev.tobins.mealplanner.shopping.savingToday
-
-/** The store as the app names it in short: `AH` rather than `Albert Heijn`. */
-fun Store.shortName(): String = label.substringBefore(' ').let { if (it == "Albert") "AH" else it }
 
 /** True when the offer starts after [today]: shown with its day, but not something to buy for yet. */
 fun Offer.startsAfter(today: String): Boolean = validFrom > today

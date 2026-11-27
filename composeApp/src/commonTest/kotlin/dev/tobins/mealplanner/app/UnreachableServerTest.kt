@@ -17,7 +17,7 @@ import dev.tobins.mealplanner.app.accounts.shops
 import dev.tobins.mealplanner.app.recipes.recipes
 import dev.tobins.mealplanner.app.shopping.ShoppingCache
 import dev.tobins.mealplanner.app.shopping.ShoppingSession
-import dev.tobins.mealplanner.app.shopping.plainReason
+import dev.tobins.mealplanner.app.ui.plainReason
 import dev.tobins.mealplanner.app.shopping.shoppingServer
 import dev.tobins.mealplanner.app.shopping.tickShoppingAgain
 import dev.tobins.mealplanner.app.shopping.withTicks

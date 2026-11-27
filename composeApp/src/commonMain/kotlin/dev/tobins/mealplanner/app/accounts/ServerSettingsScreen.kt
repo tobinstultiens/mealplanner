@@ -53,11 +53,11 @@ import dev.tobins.mealplanner.app.msg
 import dev.tobins.mealplanner.app.notificationOn
 import dev.tobins.mealplanner.app.prices.OfferExclusionQueue
 import dev.tobins.mealplanner.app.prices.chooseWithUndo
-import dev.tobins.mealplanner.app.recipes.SwitchRow
+import dev.tobins.mealplanner.app.ui.SwitchRow
 import dev.tobins.mealplanner.app.runsInBrowser
 import dev.tobins.mealplanner.app.saveNotificationOn
 import dev.tobins.mealplanner.app.shopping.ShopsInUse
-import dev.tobins.mealplanner.app.shopping.shortName
+import dev.tobins.mealplanner.app.ui.shortName
 import dev.tobins.mealplanner.app.systemColorsAvailable
 import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorBanner

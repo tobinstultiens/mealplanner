@@ -17,7 +17,7 @@ import dev.tobins.mealplanner.app.shopping.ShoppingSession
 import dev.tobins.mealplanner.app.shopping.noAnswer
 import dev.tobins.mealplanner.app.shopping.noticeFor
 import dev.tobins.mealplanner.app.shopping.refused
-import dev.tobins.mealplanner.app.shopping.shortName
+import dev.tobins.mealplanner.app.ui.shortName
 import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.nowIso

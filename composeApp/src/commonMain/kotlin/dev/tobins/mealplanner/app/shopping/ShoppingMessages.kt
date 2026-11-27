@@ -19,11 +19,6 @@ enum class ShoppingMsg(override val english: String, override val dutch: String)
     // --- Foods in a slot (issue 358)
     FOOD_SOURCE("{0} on {1}", "{0} op {1}"),
 
-    // --- Errors made by the app (the server's own messages are shown as they come)
-    NO_CONNECTION("the server could not be reached", "de server is niet bereikbaar"),
-    WENT_WRONG("something went wrong", "er ging iets mis"),
-    UNREADABLE_ANSWER("the server's answer could not be read", "het antwoord van de server was niet te lezen"),
-
     // --- Shopping
     TICK_FAILED("Could not save the tick: {0}", "Afvinken opslaan is niet gelukt: {0}"),
     TICK_AGAIN_NEEDS_CONNECTION(

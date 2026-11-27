@@ -121,13 +121,13 @@ class StringsTest {
         // With the system language the device's own formats stay: German numbers, English words.
         val german = Strings.of(AppLanguage.SYSTEM, "de-DE")
         assertEquals(',', german.locale.decimalSeparator)
-        assertEquals("Today", german(PlanMsg.TAB_TODAY))
+        assertEquals("Today", german(AppMsg.TAB_TODAY))
         // An explicit choice wins over the device, texts and formats alike.
         val dutchOnBritishPhone = Strings.of(AppLanguage.DUTCH, "en-GB")
-        assertEquals("Vandaag", dutchOnBritishPhone(PlanMsg.TAB_TODAY))
+        assertEquals("Vandaag", dutchOnBritishPhone(AppMsg.TAB_TODAY))
         assertEquals("€2,50", formatEuro(2.5, dutchOnBritishPhone.locale))
         val englishOnDutchPhone = Strings.of(AppLanguage.ENGLISH, "nl-NL")
-        assertEquals("Today", englishOnDutchPhone(PlanMsg.TAB_TODAY))
+        assertEquals("Today", englishOnDutchPhone(AppMsg.TAB_TODAY))
         assertEquals("€2.50", formatEuro(2.5, englishOnDutchPhone.locale))
     }
 

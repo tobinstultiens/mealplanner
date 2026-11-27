@@ -154,7 +154,7 @@ screen uses to draw. A feature's screens, the classes they read (`ShoppingSessio
 
 | Package | What it holds |
 |---|---|
-| `ui` | Theme, icons, illustrations, the bars and chrome, loading and failure sentences, formatting and dates, the focus ring, unsaved changes, markdown |
+| `ui` | Theme, icons, illustrations, the bars and chrome, loading and failure sentences, formatting and dates, the focus ring, unsaved changes, markdown, the switch row; it uses no feature |
 | `plan` | The plan, planning and today screens, adjusting a meal, preps, standard meals, a slot's foods, meal changes, sides |
 | `shopping` | Every `Shopping*` file: the list, its rows, ticks, cache, server calls, advice, shops and mode |
 | `recipes` | The recipe bank, lists, picker, editor and draft, pictures, cook mode, generation, toppings |
@@ -191,13 +191,13 @@ the list does not allow, for an entry no file uses any more, and for a file whos
 The list records what the code has; it is not a design. What looks wrong in it is recorded here, as later
 work, not as a rule:
 
-- `ui` uses `recipes` (`MealToCook` in `Formatting`) and `shopping` (`plainReason` in `Loading`, `shortName`
-  in `Formatting`); the building blocks should use no feature.
+- `ui` uses no feature: the building blocks every screen draws with, and the texts, helpers and small components
+  that several features share (`CommonMsg`, `plainReason`, `shortName`, `SwitchRow`), are in it; what a `MealToCook` says is in `recipes`, next to it.
 - These pairs use each other: `plan` and `ingredients`, `plan` and `recipes`, `plan` and `tracking`,
   `recipes` and `ingredients`, `shopping` and `prices`, `shopping` and `ingredients`, `shopping` and
   `accounts`.
-- `accounts` (`ServerSettingsScreen`) uses `prices`, `recipes` (`SwitchRow`) and `shopping`, and `prices`
-  uses `ShoppingSession`, `ShoppingServer` and `ShoppingCache` of `shopping`.
+- `accounts` (`ServerSettingsScreen`) uses `prices` and `shopping`, and `prices` uses `ShoppingSession`,
+  `ShoppingServer` and `ShoppingCache` of `shopping`.
 
 Adding a use is a reason to ask where the thing belongs instead.
 
@@ -208,7 +208,7 @@ Adding a use is a reason to ask where the thing belongs instead.
   it English and Dutch side by side and the same `{0}` placeholders in both; `StringsTest` checks every enum
   that `messageTables` and `pluralTables` (`Messages.kt`) list, and `MessageTablesTest` fails for an enum
   that is not in them. A text that two features show goes to `CommonMsg` in `ui/CommonMessages.kt`; one
-  that only the app's shell shows (tabs, notifications, updates) to `AppMsg`. A feature never imports
+  that only the app's shell shows (tabs, notifications, updates) to `AppMsg`, as `TAB_TODAY` is. A feature never imports
   another feature's enum: that would be a use `FeatureUsesTest` does not allow.
 - A server call is an extension function of `ApiClient` in `<feature>/<Name>Calls.kt`, using `http` (and
   `unlessUnknown` for a route an older server lacks); the client itself stays in `ApiClient.kt`. A call that

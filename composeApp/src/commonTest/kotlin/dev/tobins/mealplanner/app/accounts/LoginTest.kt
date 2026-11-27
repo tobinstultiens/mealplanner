@@ -16,6 +16,7 @@ import dev.tobins.mealplanner.app.plan.notifications
 import dev.tobins.mealplanner.app.saveApprovesRequests
 import dev.tobins.mealplanner.app.saveNotificationOn
 import dev.tobins.mealplanner.app.shopping.ShoppingMsg
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.load
 import dev.tobins.mealplanner.app.ui.sentence
@@ -491,7 +492,7 @@ class LoginTest {
         val logins = exchange(storage, fakeProvider(mutableListOf(), exchangeFailure = failure, dispatcher = StandardTestDispatcher(testScheduler)))
         logins.deliver("https://meals.example.nl/app/login?code=the-code&state=${startedLogin(logins)}")
         runCurrent()
-        assertEquals(LoginProgress.Failed(sentence(Strings.current(ShoppingMsg.WENT_WRONG))), logins.progress.value, "a failure, in a plain sentence")
+        assertEquals(LoginProgress.Failed(sentence(Strings.current(CommonMsg.WENT_WRONG))), logins.progress.value, "a failure, in a plain sentence")
         assertEquals(null, storage.session())
     }
 

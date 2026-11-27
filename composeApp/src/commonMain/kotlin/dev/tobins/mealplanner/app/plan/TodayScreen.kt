@@ -51,6 +51,7 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.StandardMeal
 import dev.tobins.mealplanner.api.StandardMeals
 import dev.tobins.mealplanner.app.ApiClient
+import dev.tobins.mealplanner.app.AppMsg
 import dev.tobins.mealplanner.app.BackHandler
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.RefreshNotice
@@ -169,7 +170,7 @@ fun TodayScreen(
             TopAppBar(
                 title = {
                     PeriodStepper(
-                        label = if (date == today) t(PlanMsg.TAB_TODAY) else dayLabel(date, t.locale),
+                        label = if (date == today) t(AppMsg.TAB_TODAY) else dayLabel(date, t.locale),
                         previous = t(PlanMsg.PREVIOUS_DAY),
                         next = t(PlanMsg.NEXT_DAY),
                         onPrevious = { show(plusDays(date, -1)) },

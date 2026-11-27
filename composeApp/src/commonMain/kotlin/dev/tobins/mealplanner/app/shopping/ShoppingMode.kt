@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ui.dayMonthLabel
 import dev.tobins.mealplanner.app.ui.daysBetween
 import dev.tobins.mealplanner.app.ui.formatEuro
+import dev.tobins.mealplanner.app.ui.shortName
 import dev.tobins.mealplanner.shopping.leftToBuyGrams
 import dev.tobins.mealplanner.shopping.nothingToBuy
 import kotlinx.datetime.LocalDate

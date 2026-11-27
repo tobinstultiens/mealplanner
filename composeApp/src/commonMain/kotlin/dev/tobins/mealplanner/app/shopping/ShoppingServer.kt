@@ -13,6 +13,7 @@ import dev.tobins.mealplanner.app.prices.ExclusionChange
 import dev.tobins.mealplanner.app.setOnHand
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.load
+import dev.tobins.mealplanner.app.ui.plainReason
 
 /** What the shopping list needs from the server; failures come back as [Load.Failed], never thrown. */
 internal interface ShoppingServer {
@@ -84,11 +85,3 @@ internal class Notice(val msg: Msg, val detail: String, val technical: String? =
 internal fun noticeFor(msg: Msg, failed: Load.Failed): Notice =
     if (failed.technical) Notice(msg, plainReason(failed), failed.message) else Notice(msg, failed.message)
 
-/** What a technical failure means in a few plain words, such as "the server could not be reached". */
-internal fun plainReason(failed: Load.Failed): String = Strings.current(
-    when {
-        failed.unreadable -> ShoppingMsg.UNREADABLE_ANSWER
-        failed.lostConnection -> ShoppingMsg.NO_CONNECTION
-        else -> ShoppingMsg.WENT_WRONG
-    },
-)
