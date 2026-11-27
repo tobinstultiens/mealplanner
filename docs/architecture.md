@@ -51,7 +51,8 @@ The root may use every feature, and every feature may use the root.
 a feature the list does not allow, and for an entry no file uses any more. The list records what the code
 has; it is not a design. Some of it one would rather not have, as these pairs of features use each other:
 `plan` and `shopping` (the plan feeds the list and reads its rows; the list reads the plan's week and shortfalls),
-`plan` and `recipes` (the plan reads recipes as candidates; toppings and generation read the plan's meals), `plan` and `tracking` (the due notifications),
+`plan` and `recipes` (the plan reads recipes as candidates; toppings and generation read the plan's meals, and `RecipeStore` reads `Plan.sq`
+to see where a recipe is planned), `plan` and `tracking` (the due notifications),
 `ingredients` and `recipes`, `ingredients` and `prices` (offers excluded for an ingredient),
 `ingredients` and `shopping` (`ShoppingKey`), and `accounts` and `recipes` (syncing the cooking site).
 Removing such a use is later work; adding one is a reason to ask where the thing belongs instead.
@@ -83,7 +84,7 @@ thread has open already, so a rule that calls another rule's change still makes 
 
 `QueryCallersTest` holds the list of files under `server/src/main` that may call a query (`db.planQueries`, ...) and
 fails for a file outside it, and for an entry that calls none any more, so that the list only gets shorter. The plan
-(#385) and recipes (#386) are split; the shopping list (#387) is next. Until a feature has been split its repository
+(#385), the recipes (#386) and the shopping list (#387) are split. Until a feature has been split its repository
 still holds both, is on the list as it is, and a new class in it should not add to that.
 
 The plan (`plan`), as its classes came out of `PlanRepository`:
@@ -117,8 +118,25 @@ The recipes (`recipes`), as their classes came out of `RecipeRepository`:
 `RecipeToppings`, `RecipePictures`, `CookingSync` and `GenerationService` were classes of their own before, and are
 not split yet.
 
+The shopping list (`shopping`), as its classes came out of `ShoppingListRepository`:
+
+| Class | What it does |
+|---|---|
+| `ShoppingStore` | The store: reads and writes a week's ticks, the dismissed advice groups among them, and the own items (`Shopping.sq`) for one account, and opens their transactions |
+| `ShoppingListView` | The week's list as the app shows it (`ShoppingList`), which every change answers: its rows with their ticks, stock and offers, what was bought that no meal needs any more, and the advice next to it |
+| `WeekNeeds` | What a week's list is to hold, row by row in its shop section: what the planned meals need, all of them and those still to cook, and the own items |
+| `ListAdvice` | The advice next to the list, unless switched off or dismissed: which offers of the account's stores it goes by, stocking up, and buying ahead |
+| `BuyingAhead` | What to buy this week for next week's meals: those planned, or a provisional pick when next week has no plan yet |
+| `Ticking` | Ticks a row off or back on with what it remembers and puts on hand, ticks a row again, uses up a bought item no meal needs any more, hides an advice group |
+| `OwnItems` | Adds an own item, ticks it off as bought in a week, deletes it |
+| `ShoppingScope` | Builds the store and these classes for one account, as they call each other; `UserScope` builds it |
+
+`ShoppingNeeds`, `ShoppingAdvisor`, `ShoppingKey` and `ShopSections` were classes of their own before and call no
+query; `ShopsRepository` and `ShoppingAdviceRepository` were too, and are not split yet.
+
 A store is a class, not an interface: no test needs another store. The tests run on an in-memory SQLite database, and
-a write that fails halfway is made by the driver (`RefusingWrites`, as `MealChangesTest` and `RecipeEditsTest` do). An
+a write that fails halfway is made by the driver (`RefusingWrites`, as `MealChangesTest`, `RecipeEditsTest` and
+`TickingTest` do). An
 interface goes in front of a store only when a test needs one.
 
 A new query of a split feature goes in its store; a new rule goes in the class of what a person does with it.
