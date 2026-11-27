@@ -4,8 +4,6 @@ import androidx.compose.foundation.layout.size
 import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.PlannedSlot
 import dev.tobins.mealplanner.api.ShoppingItem
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ui.FormatLocale
 import dev.tobins.mealplanner.app.ui.dayLabel
@@ -25,8 +23,8 @@ fun weightText(grams: Double, locale: FormatLocale): String =
 
 /** `2 × 700 g`, `1 × 500 g · deal needs 2`, `2 × 3 pieces`: the packs to take and, when the deal wants more than the amount needs, how many it wants. */
 fun PacksToBuy.text(strings: Strings): String {
-    val size = packGrams?.let { weightText(it, strings.locale) } ?: strings.plural(Plural.PACK_PIECES, packPieces ?: 1)
-    return if (dealFits) strings(Msg.PACKS_TO_TAKE, packs, size) else strings(Msg.PACKS_DEAL_NEEDS, packs, size, dealPacks)
+    val size = packGrams?.let { weightText(it, strings.locale) } ?: strings.plural(ShoppingPlural.PACK_PIECES, packPieces ?: 1)
+    return if (dealFits) strings(ShoppingMsg.PACKS_TO_TAKE, packs, size) else strings(ShoppingMsg.PACKS_DEAL_NEEDS, packs, size, dealPacks)
 }
 
 /** `3 ×`: a count of pieces, rounded up, as nobody buys 1.5 onions. */
@@ -77,7 +75,7 @@ internal val ShoppingItem.sourceFoodSlots: List<PlannedSlot> get() = if (toComeR
 
 /** Everything the row names as its source, in [t]'s words: its recipes, then the slots of its foods (`snack on Mon 16 Nov`). */
 internal fun ShoppingItem.sources(t: Strings): List<String> =
-    sourceMeals + sourceFoodSlots.map { t(Msg.FOOD_SOURCE, t.slot(it.slot), dayLabel(it.date, t.locale)) }
+    sourceMeals + sourceFoodSlots.map { t(ShoppingMsg.FOOD_SOURCE, t.slot(it.slot), dayLabel(it.date, t.locale)) }
 
 /**
  * What a row not ticked yet says under its name of what is at home and still to buy: `300 g on
@@ -93,21 +91,21 @@ internal fun ShoppingItem.sources(t: Strings): List<String> =
  */
 internal fun ShoppingItem.toBuyText(strings: Strings): String? {
     if (checked) return null
-    if (mealsDone) return strings(Msg.NOTHING_TO_COME)
+    if (mealsDone) return strings(ShoppingMsg.NOTHING_TO_COME)
     val toCome = partlyDone
-    val left = onHandGrams?.takeIf { onHand } ?: return if (toCome) strings(Msg.FOR_MEALS_TO_COME) else null
+    val left = onHandGrams?.takeIf { onHand } ?: return if (toCome) strings(ShoppingMsg.FOR_MEALS_TO_COME) else null
     val amount = weightText(left, strings.locale)
-    val toBuy = leftToBuyGrams() ?: return strings(Msg.ON_HAND_AMOUNT, amount)
+    val toBuy = leftToBuyGrams() ?: return strings(ShoppingMsg.ON_HAND_AMOUNT, amount)
     return if (toBuy < SCRAP_GRAMS) {
-        strings(if (toCome) Msg.ON_HAND_ENOUGH_TO_COME else Msg.ON_HAND_ENOUGH, amount)
+        strings(if (toCome) ShoppingMsg.ON_HAND_ENOUGH_TO_COME else ShoppingMsg.ON_HAND_ENOUGH, amount)
     } else {
-        strings(if (toCome) Msg.ON_HAND_BUY_TO_COME else Msg.ON_HAND_BUY, amount, weightText(toBuy, strings.locale))
+        strings(if (toCome) ShoppingMsg.ON_HAND_BUY_TO_COME else ShoppingMsg.ON_HAND_BUY, amount, weightText(toBuy, strings.locale))
     }
 }
 
 /** The row's name, asking "(on hand?)" when it is on hand in an amount nobody knows, as before amounts were kept. */
 internal fun ShoppingItem.nameText(strings: Strings): String =
-    if (onHand && onHandGrams == null) strings(Msg.ON_HAND_MAYBE, name) else name
+    if (onHand && onHandGrams == null) strings(ShoppingMsg.ON_HAND_MAYBE, name) else name
 
 /**
  * The packs line of a row not ticked yet: [packsLeftToBuy]. A ticked row has none: what was bought

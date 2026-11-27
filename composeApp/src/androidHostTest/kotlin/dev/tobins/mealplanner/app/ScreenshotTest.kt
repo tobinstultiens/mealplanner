@@ -82,6 +82,7 @@ import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.app.accounts.AccountDecisions
 import dev.tobins.mealplanner.app.accounts.AccountRequestsCard
 import dev.tobins.mealplanner.app.accounts.AccountShops
+import dev.tobins.mealplanner.app.accounts.AccountsMsg
 import dev.tobins.mealplanner.app.accounts.ExcludedOffers
 import dev.tobins.mealplanner.app.accounts.LoggedOut
 import dev.tobins.mealplanner.app.accounts.LoginExchange
@@ -97,7 +98,9 @@ import dev.tobins.mealplanner.app.accounts.ServerSettingsScreen
 import dev.tobins.mealplanner.app.accounts.Session
 import dev.tobins.mealplanner.app.accounts.registrationProblems
 import dev.tobins.mealplanner.app.accounts.saveSession
+import dev.tobins.mealplanner.app.accounts.shops
 import dev.tobins.mealplanner.app.ingredients.BarcodeScanner
+import dev.tobins.mealplanner.app.ingredients.IngredientsMsg
 import dev.tobins.mealplanner.app.ingredients.LocalProductImageLoader
 import dev.tobins.mealplanner.app.ingredients.PantryScreen
 import dev.tobins.mealplanner.app.ingredients.ProductScreen
@@ -107,6 +110,7 @@ import dev.tobins.mealplanner.app.plan.AddSideChoices
 import dev.tobins.mealplanner.app.plan.AdjustMealScreen
 import dev.tobins.mealplanner.app.plan.AnotherDinnerScreen
 import dev.tobins.mealplanner.app.plan.FoodPlace
+import dev.tobins.mealplanner.app.plan.PlanMsg
 import dev.tobins.mealplanner.app.plan.PlanScreen
 import dev.tobins.mealplanner.app.plan.PlanningScreen
 import dev.tobins.mealplanner.app.plan.PrepChoice
@@ -135,21 +139,27 @@ import dev.tobins.mealplanner.app.recipes.RecipeEditorScreen
 import dev.tobins.mealplanner.app.recipes.RecipeImages
 import dev.tobins.mealplanner.app.recipes.RecipeListScreen
 import dev.tobins.mealplanner.app.recipes.RecipePickerBody
+import dev.tobins.mealplanner.app.recipes.RecipesMsg
 import dev.tobins.mealplanner.app.recipes.RotationChoice
 import dev.tobins.mealplanner.app.recipes.SiteChoice
 import dev.tobins.mealplanner.app.recipes.announceAdded
+import dev.tobins.mealplanner.app.recipes.recipe
+import dev.tobins.mealplanner.app.recipes.recipes
 import dev.tobins.mealplanner.app.recipes.rememberFound
 import dev.tobins.mealplanner.app.shopping.ShoppingCache
 import dev.tobins.mealplanner.app.shopping.ShoppingScreen
 import dev.tobins.mealplanner.app.shopping.ShoppingSession
 import dev.tobins.mealplanner.app.shopping.dealOffers
+import dev.tobins.mealplanner.app.shopping.shoppingList
 import dev.tobins.mealplanner.app.shopping.shoppingServer
 import dev.tobins.mealplanner.app.tracking.KeptWeightNote
 import dev.tobins.mealplanner.app.tracking.LogFoodPlace
 import dev.tobins.mealplanner.app.tracking.LogFoodScreen
 import dev.tobins.mealplanner.app.tracking.ProgressScreen
+import dev.tobins.mealplanner.app.tracking.TrackingMsg
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.AppSnackbarHost
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.DiscardQuestion
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
@@ -254,7 +264,7 @@ private val samplePrep = PrepChoice(keepingRecipe, FakeBackend.TODAY, firstDay =
 @Composable
 private fun prepChoices() {
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
+        Text(LocalStrings.current(PlanMsg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
         // The days from today on are offered: Monday and Tuesday have passed.
         PrepChoices(samplePrep, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe), hosts = emptyMap()) {}
     }
@@ -271,7 +281,7 @@ private fun prepSideChoices() {
     val choice = PrepChoice(keepingRecipe, FakeBackend.TODAY, firstDay = FakeBackend.TODAY)
         .eatenAs(0.5).toggled(FakeBackend.TODAY, MealSlot.DINNER).toggled(plusDays(FakeBackend.TODAY, 2), MealSlot.LUNCH)
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
+        Text(LocalStrings.current(PlanMsg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
         PrepChoices(choice, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe), hosts) {}
     }
 }
@@ -290,7 +300,7 @@ private fun prepMixedChoices() {
         .eatenAs(0.25).toggled(plusDays(FakeBackend.TODAY, 1), MealSlot.LUNCH)
         .eatenAs(0.5).toggled(plusDays(FakeBackend.TODAY, 2), MealSlot.LUNCH)
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(LocalStrings.current(Msg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
+        Text(LocalStrings.current(PlanMsg.PREP_TITLE), style = MaterialTheme.typography.headlineSmall)
         PrepChoices(choice, prepDays(FakeBackend.WEEK_START, FakeBackend.TODAY), listOf(keepingRecipe), hosts) {}
     }
 }
@@ -307,7 +317,7 @@ private fun addSideChoices() {
     )
     val slot = PrepSlot(plusDays(FakeBackend.TODAY, 2), MealSlot.DINNER)
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(LocalStrings.current(Msg.ADD_SIDE_TITLE, slotLabel(slot, LocalStrings.current)), style = MaterialTheme.typography.headlineSmall)
+        Text(LocalStrings.current(PlanMsg.ADD_SIDE_TITLE, slotLabel(slot, LocalStrings.current)), style = MaterialTheme.typography.headlineSmall)
         AddSideChoices(batches, batches.first(), 0.5, onBatch = {}, onPortions = {}, onNewPrep = {})
     }
 }
@@ -341,7 +351,7 @@ private fun removePrepQuestion(made: Boolean = false, sides: Boolean = false, mi
         },
     )
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(LocalStrings.current(if (made) Msg.REMOVE_PREP_MADE_TITLE else Msg.REMOVE_PREP_TITLE, keepingRecipe.title), style = MaterialTheme.typography.headlineSmall)
+        Text(LocalStrings.current(if (made) PlanMsg.REMOVE_PREP_MADE_TITLE else PlanMsg.REMOVE_PREP_TITLE, keepingRecipe.title), style = MaterialTheme.typography.headlineSmall)
         RemovePrepText(prep)
     }
 }
@@ -351,12 +361,12 @@ private fun recipePicker(api: ApiClient, standard: Boolean = false) {
     val recipes by produceState<List<RecipeSummary>?>(null) { value = api.recipes() }
     val t = LocalStrings.current
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(t(Msg.PLAN_CHOOSE_FOR, "dinner", "Friday"), style = MaterialTheme.typography.headlineSmall)
+        Text(t(PlanMsg.PLAN_CHOOSE_FOR, "dinner", "Friday"), style = MaterialTheme.typography.headlineSmall)
         // Two recipes of each group: the dialog lists 480 dp at most, and both headings are to be seen. With [standard] the two out
         // of the rotation are standard meals, first under their own heading, for a later meal of a prep still to make (issue 265).
         recipes?.filter { it.id in setOf(2L, 3L, 5L, 6L) }?.let {
             if (standard) {
-                RecipePickerBody(it, MealSlot.DINNER, standard = setOf(3L, 6L), note = t(Msg.PICKER_SHRINKS_PREP), onBrowseBank = {}, onPick = {})
+                RecipePickerBody(it, MealSlot.DINNER, standard = setOf(3L, 6L), note = t(PlanMsg.PICKER_SHRINKS_PREP), onBrowseBank = {}, onPick = {})
             } else {
                 RecipePickerBody(it, MealSlot.DINNER, onBrowseBank = {}, onPick = {})
             }
@@ -374,7 +384,7 @@ private val sampleStandardMeals = listOf(
 @Composable
 private fun skipSheet() {
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(LocalStrings.current(Msg.SKIP_SHEET_TITLE, "Chickpea salad with feta and roasted peppers"), style = MaterialTheme.typography.headlineSmall)
+        Text(LocalStrings.current(PlanMsg.SKIP_SHEET_TITLE, "Chickpea salad with feta and roasted peppers"), style = MaterialTheme.typography.headlineSmall)
         SkipSheetBody(sampleStandardMeals, enabled = true) {}
     }
 }
@@ -417,7 +427,7 @@ private val proteinBar = dev.tobins.mealplanner.api.Ingredient(
 @Composable
 private fun cookingSiteChoices(choice: SiteChoice, url: String) {
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(LocalStrings.current(Msg.COOKING_SITE), style = MaterialTheme.typography.headlineSmall)
+        Text(LocalStrings.current(RecipesMsg.COOKING_SITE), style = MaterialTheme.typography.headlineSmall)
         CookingSiteChoices(true, "https://github.com/example/cooking.git", choice, {}, url, {}, error = null)
     }
 }
@@ -434,7 +444,7 @@ private fun addedSnackbar() {
     val t = LocalStrings.current
     val host = remember { SnackbarHostState() }
     LaunchedEffect(host) {
-        host.announceAdded(t, t(Msg.ADDED_ONE, "Asperge soup"), unlinked = 1, onLink = {}, onUndo = {})
+        host.announceAdded(t, t(RecipesMsg.ADDED_ONE, "Asperge soup"), unlinked = 1, onLink = {}, onUndo = {})
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { AppSnackbarHost(host) }
 }
@@ -443,7 +453,7 @@ private fun addedSnackbar() {
 private fun removedWeighIn() {
     val t = LocalStrings.current
     val host = remember { SnackbarHostState() }
-    LaunchedEffect(host) { host.showSnackbar(t(Msg.WEIGHING_REMOVED, dayLabel("2026-11-12", t.locale)), actionLabel = t(Msg.UNDO)) }
+    LaunchedEffect(host) { host.showSnackbar(t(TrackingMsg.WEIGHING_REMOVED, dayLabel("2026-11-12", t.locale)), actionLabel = t(CommonMsg.UNDO)) }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.padding(16.dp)) { KeptWeightNote {} }
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { AppSnackbarHost(host) }
@@ -900,7 +910,7 @@ enum class Shot(
     // A screen's load error: the plain sentence, with the exception's own text behind "Details".
     LOAD_FAILED(content = { _, _ ->
         ErrorMessage(
-            LocalStrings.current(Msg.WEIGHT_LOAD_FAILED),
+            LocalStrings.current(TrackingMsg.WEIGHT_LOAD_FAILED),
             Load.Failed("unexpected end of stream on http://192.168.1.2:8080/api/weights", technical = true, lostConnection = true),
         ) {}
     }),
@@ -925,7 +935,7 @@ enum class Shot(
             "", "",
         )
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(LocalStrings.current(Msg.UPDATE_AVAILABLE, update.version), style = MaterialTheme.typography.headlineSmall)
+            Text(LocalStrings.current(AppMsg.UPDATE_AVAILABLE, update.version), style = MaterialTheme.typography.headlineSmall)
             UpdateBody(update, "0.1.1")
         }
     }),
@@ -936,7 +946,7 @@ enum class Shot(
     SECTION_CHOICES(heightDp = 1050, content = { _, _ ->
         val entry = IngredientSection(7, "Minced beef", "MEAT", "MEAT", "Albert Heijn: Rundergehakt", byHand = false, keeps = true, keepsAutomatic = true)
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(LocalStrings.current(Msg.SECTION_FOR, entry.name), style = MaterialTheme.typography.headlineSmall)
+            Text(LocalStrings.current(IngredientsMsg.SECTION_FOR, entry.name), style = MaterialTheme.typography.headlineSmall)
             SectionChoices(entry, choice = null, onChoice = {}, keeps = true, onKeeps = {})
         }
     }),
@@ -973,12 +983,12 @@ enum class Shot(
     REGISTER(heightDp = 900, content = { _, _ -> RegistrationScreen(send = { RegistrationReceipt(it.username) }, onBack = {}) }),
     REGISTER_NL(dutch = true, heightDp = 900, content = { _, _ -> RegistrationScreen(send = { RegistrationReceipt(it.username) }, onBack = {}) }),
     REGISTER_X2(heightDp = 1500, fontScale = 2.0f, content = { _, _ -> RegistrationScreen(send = { RegistrationReceipt(it.username) }, onBack = {}) }),
-    REGISTER_PROBLEMS(heightDp = 1200, content = { _, _ -> registrationForm(wrongDraft, Msg.REGISTER_FIX_FIELDS) }),
-    REGISTER_PROBLEMS_NL(dutch = true, heightDp = 1250, content = { _, _ -> registrationForm(wrongDraft, Msg.REGISTER_FIX_FIELDS) }),
-    REGISTER_PROBLEMS_X2(heightDp = 2300, fontScale = 2.0f, content = { _, _ -> registrationForm(wrongDraft, Msg.REGISTER_FIX_FIELDS) }),
-    REGISTER_REFUSED(heightDp = 960, content = { _, _ -> registrationForm(goodDraft, Msg.REFUSED_UNAVAILABLE) }),
-    REGISTER_REFUSED_NL(dutch = true, heightDp = 960, content = { _, _ -> registrationForm(goodDraft, Msg.REFUSED_UNAVAILABLE) }),
-    REGISTER_REFUSED_X2(heightDp = 1700, fontScale = 2.0f, content = { _, _ -> registrationForm(goodDraft, Msg.REFUSED_UNAVAILABLE) }),
+    REGISTER_PROBLEMS(heightDp = 1200, content = { _, _ -> registrationForm(wrongDraft, AccountsMsg.REGISTER_FIX_FIELDS) }),
+    REGISTER_PROBLEMS_NL(dutch = true, heightDp = 1250, content = { _, _ -> registrationForm(wrongDraft, AccountsMsg.REGISTER_FIX_FIELDS) }),
+    REGISTER_PROBLEMS_X2(heightDp = 2300, fontScale = 2.0f, content = { _, _ -> registrationForm(wrongDraft, AccountsMsg.REGISTER_FIX_FIELDS) }),
+    REGISTER_REFUSED(heightDp = 960, content = { _, _ -> registrationForm(goodDraft, AccountsMsg.REFUSED_UNAVAILABLE) }),
+    REGISTER_REFUSED_NL(dutch = true, heightDp = 960, content = { _, _ -> registrationForm(goodDraft, AccountsMsg.REFUSED_UNAVAILABLE) }),
+    REGISTER_REFUSED_X2(heightDp = 1700, fontScale = 2.0f, content = { _, _ -> registrationForm(goodDraft, AccountsMsg.REFUSED_UNAVAILABLE) }),
     REGISTER_SENT(heightDp = 500, content = { _, _ -> RegistrationSent("zoe", onBack = {}) }),
     REGISTER_SENT_NL(dutch = true, heightDp = 500, content = { _, _ -> RegistrationSent("zoe", onBack = {}) }),
     REGISTER_SENT_X2(heightDp = 800, fontScale = 2.0f, content = { _, _ -> RegistrationSent("zoe", onBack = {}) }),

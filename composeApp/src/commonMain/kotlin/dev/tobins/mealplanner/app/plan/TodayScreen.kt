@@ -53,8 +53,9 @@ import dev.tobins.mealplanner.api.StandardMeals
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.BackHandler
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.RefreshNotice
+import dev.tobins.mealplanner.app.day
+import dev.tobins.mealplanner.app.deleteLog
 import dev.tobins.mealplanner.app.followedDate
 import dev.tobins.mealplanner.app.recipes.MealPlace
 import dev.tobins.mealplanner.app.recipes.MealToCook
@@ -65,6 +66,7 @@ import dev.tobins.mealplanner.app.recipes.toCook
 import dev.tobins.mealplanner.app.rememberFrontReturns
 import dev.tobins.mealplanner.app.rememberLoad
 import dev.tobins.mealplanner.app.rememberToday
+import dev.tobins.mealplanner.app.setMealStatus
 import dev.tobins.mealplanner.app.tracking.LogFoodPlace
 import dev.tobins.mealplanner.app.tracking.LogFoodScreen
 import dev.tobins.mealplanner.app.tracking.numbersText
@@ -73,6 +75,7 @@ import dev.tobins.mealplanner.app.tracking.shownName
 import dev.tobins.mealplanner.app.tracking.typedText
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.LoadingState
@@ -166,15 +169,15 @@ fun TodayScreen(
             TopAppBar(
                 title = {
                     PeriodStepper(
-                        label = if (date == today) t(Msg.TAB_TODAY) else dayLabel(date, t.locale),
-                        previous = t(Msg.PREVIOUS_DAY),
-                        next = t(Msg.NEXT_DAY),
+                        label = if (date == today) t(PlanMsg.TAB_TODAY) else dayLabel(date, t.locale),
+                        previous = t(PlanMsg.PREVIOUS_DAY),
+                        next = t(PlanMsg.NEXT_DAY),
                         onPrevious = { show(plusDays(date, -1)) },
                         onNext = { show(plusDays(date, 1)) },
                     )
                 },
                 actions = {
-                    if (date != today) BarAction(AppIcons.Today, t(Msg.BACK_TO_TODAY), onClick = { show(today) })
+                    if (date != today) BarAction(AppIcons.Today, t(PlanMsg.BACK_TO_TODAY), onClick = { show(today) })
                 },
             )
         },
@@ -185,7 +188,7 @@ fun TodayScreen(
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.DAY_LOAD_FAILED), current) { reload++ }
+                ErrorMessage(t(PlanMsg.DAY_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val day = current.value
@@ -195,8 +198,8 @@ fun TodayScreen(
                 ) {
                     TotalsCard(day)
                     if (day.meals.isEmpty()) {
-                        Text(t(Msg.NOTHING_PLANNED_DAY), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedButton(onClick = onOpenPlan) { Text(t(Msg.OPEN_PLAN)) }
+                        Text(t(PlanMsg.NOTHING_PLANNED_DAY), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = onOpenPlan) { Text(t(PlanMsg.OPEN_PLAN)) }
                     }
                     for (meal in day.meals) {
                         MealCard(
@@ -216,7 +219,7 @@ fun TodayScreen(
                                     try {
                                         // Today's and a past day's meal was eaten: that is why it is picked here.
                                         val chosen = api.chooseStandard(day.weekStart, day.dayIndex, meal.slot, choice.recipeId, eaten = day.date <= today)
-                                        if (chosen.addedStaples.isNotEmpty()) scope.launch { snackbar.showSnackbar(t(Msg.STANDARD_RESTOCK, chosen.addedStaples.joinToString(", "))) }
+                                        if (chosen.addedStaples.isNotEmpty()) scope.launch { snackbar.showSnackbar(t(PlanMsg.STANDARD_RESTOCK, chosen.addedStaples.joinToString(", "))) }
                                     } finally {
                                         placing = false
                                     }
@@ -225,7 +228,7 @@ fun TodayScreen(
                         )
                     }
                     // Always there, so that the buttons under it read as what they add: something eaten besides the plan.
-                    SectionHeader(t(Msg.ALSO_EATEN))
+                    SectionHeader(t(CommonMsg.ALSO_EATEN))
                     for (extra in day.extras) {
                         // A food still in the catalogue opens to change its amount; any other entry is typed over.
                         LogRow(
@@ -236,8 +239,8 @@ fun TodayScreen(
                     }
                     // A food of the catalogue is the main way, typing the numbers the lesser one, as Eaten and Skipped are.
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                        Button(onClick = { foodAt = LogFoodPlace(day.date) }) { Text(t(Msg.LOG_ADD_FOOD)) }
-                        OutlinedButton(onClick = { adding = true }) { Text(t(Msg.ADD_EXTRA)) }
+                        Button(onClick = { foodAt = LogFoodPlace(day.date) }) { Text(t(PlanMsg.LOG_ADD_FOOD)) }
+                        OutlinedButton(onClick = { adding = true }) { Text(t(PlanMsg.ADD_EXTRA)) }
                     }
                 }
             }
@@ -278,7 +281,7 @@ private fun LogRow(entry: LogEntry, onOpen: () -> Unit, onRemove: () -> Unit) {
                 color = if (entry.food?.counted == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onRemove) { Text(t(Msg.REMOVE)) }
+        TextButton(onClick = onRemove) { Text(t(CommonMsg.REMOVE)) }
     }
 }
 
@@ -289,16 +292,16 @@ private fun TotalsCard(day: DayView) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             val targets = day.targets
             if (targets == null) {
-                Text(t(Msg.EATEN_TOTAL, day.eatenKcal.roundToInt(), day.eatenProteinG.roundToInt()), style = MaterialTheme.typography.titleMedium.numeric())
-                Text(t(Msg.SET_UP_PROFILE_HINT), style = MaterialTheme.typography.bodySmall)
+                Text(t(PlanMsg.EATEN_TOTAL, day.eatenKcal.roundToInt(), day.eatenProteinG.roundToInt()), style = MaterialTheme.typography.titleMedium.numeric())
+                Text(t(PlanMsg.SET_UP_PROFILE_HINT), style = MaterialTheme.typography.bodySmall)
             } else {
-                Text(t(Msg.EATEN_SO_FAR), style = MaterialTheme.typography.labelLarge)
-                Text(t(Msg.KCAL_OF, day.eatenKcal.roundToInt(), targets.kcal), style = MaterialTheme.typography.titleLarge.numeric())
+                Text(t(PlanMsg.EATEN_SO_FAR), style = MaterialTheme.typography.labelLarge)
+                Text(t(PlanMsg.KCAL_OF, day.eatenKcal.roundToInt(), targets.kcal), style = MaterialTheme.typography.titleLarge.numeric())
                 LinearProgressIndicator(
                     progress = { (day.eatenKcal / targets.kcal).toFloat().coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text(t(Msg.PROTEIN_OF, day.eatenProteinG.roundToInt(), targets.proteinG), style = MaterialTheme.typography.bodyLarge.numeric())
+                Text(t(PlanMsg.PROTEIN_OF, day.eatenProteinG.roundToInt(), targets.proteinG), style = MaterialTheme.typography.bodyLarge.numeric())
                 LinearProgressIndicator(
                     progress = { (day.eatenProteinG / targets.proteinG).toFloat().coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
@@ -307,7 +310,7 @@ private fun TotalsCard(day: DayView) {
                 val fibreTarget = targets.fibreG
                 val eatenFibre = day.eatenFibreG
                 if (fibreTarget != null && eatenFibre != null) {
-                    Text(t(Msg.FIBRE_OF, eatenFibre.roundToInt(), fibreTarget), style = MaterialTheme.typography.bodyLarge.numeric())
+                    Text(t(PlanMsg.FIBRE_OF, eatenFibre.roundToInt(), fibreTarget), style = MaterialTheme.typography.bodyLarge.numeric())
                     LinearProgressIndicator(
                         progress = { (eatenFibre / fibreTarget).toFloat().coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth(),
@@ -316,9 +319,9 @@ private fun TotalsCard(day: DayView) {
                 val difference = (day.expectedKcal - targets.kcal).roundToInt()
                 Text(
                     when {
-                        difference > 0 -> t(Msg.FORECAST_OVER, day.expectedKcal.roundToInt(), difference)
-                        difference < 0 -> t(Msg.FORECAST_UNDER, day.expectedKcal.roundToInt(), -difference)
-                        else -> t(Msg.FORECAST_ON, day.expectedKcal.roundToInt())
+                        difference > 0 -> t(PlanMsg.FORECAST_OVER, day.expectedKcal.roundToInt(), difference)
+                        difference < 0 -> t(PlanMsg.FORECAST_UNDER, day.expectedKcal.roundToInt(), -difference)
+                        else -> t(PlanMsg.FORECAST_ON, day.expectedKcal.roundToInt())
                     },
                     style = MaterialTheme.typography.bodySmall.numeric(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -326,7 +329,7 @@ private fun TotalsCard(day: DayView) {
                 val expectedFibre = day.expectedFibreG
                 if (fibreTarget != null && expectedFibre != null) {
                     Text(
-                        t(Msg.FORECAST_FIBRE, expectedFibre.roundToInt(), fibreTarget),
+                        t(PlanMsg.FORECAST_FIBRE, expectedFibre.roundToInt(), fibreTarget),
                         style = MaterialTheme.typography.bodySmall.numeric(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -385,24 +388,24 @@ private fun MealCard(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), itemVerticalAlignment = Alignment.CenterVertically) {
                 when (meal.status) {
                     MealStatus.PLANNED -> {
-                        Button(onClick = { onStatus(MealStatus.EATEN) }) { Text(t(Msg.STATUS_EATEN)) }
-                        OutlinedButton(onClick = { onStatus(MealStatus.SKIPPED) }) { Text(t(Msg.STATUS_SKIPPED)) }
+                        Button(onClick = { onStatus(MealStatus.EATEN) }) { Text(t(PlanMsg.STATUS_EATEN)) }
+                        OutlinedButton(onClick = { onStatus(MealStatus.SKIPPED) }) { Text(t(PlanMsg.STATUS_SKIPPED)) }
                         // Toppings are often decided while cooking: a meal still to eat can be adjusted too; foods alone are changed on the Plan.
-                        if (!meal.foodsOnly) TextButton(onClick = onAdjust) { Text(t(Msg.ADJUST)) }
+                        if (!meal.foodsOnly) TextButton(onClick = onAdjust) { Text(t(PlanMsg.ADJUST)) }
                     }
                     MealStatus.EATEN -> {
-                        Text(t(Msg.STATUS_EATEN_MARK), color = MaterialTheme.colorScheme.primary)
-                        TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text(t(Msg.UNDO)) }
-                        if (!meal.foodsOnly) TextButton(onClick = onAdjust) { Text(t(Msg.ADJUST)) }
+                        Text(t(PlanMsg.STATUS_EATEN_MARK), color = MaterialTheme.colorScheme.primary)
+                        TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text(t(CommonMsg.UNDO)) }
+                        if (!meal.foodsOnly) TextButton(onClick = onAdjust) { Text(t(PlanMsg.ADJUST)) }
                     }
                     MealStatus.SKIPPED -> {
-                        Text(t(Msg.STATUS_SKIPPED), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text(t(Msg.UNDO)) }
+                        Text(t(PlanMsg.STATUS_SKIPPED), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = { onStatus(MealStatus.PLANNED) }) { Text(t(CommonMsg.UNDO)) }
                     }
                 }
             }
             if (standardChoices.isNotEmpty()) {
-                Text(t(Msg.STANDARD_INSTEAD), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t(PlanMsg.STANDARD_INSTEAD), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 StandardChips(standardChoices, enabled = !placing, onPick = onPickStandard)
             }
         }
@@ -424,21 +427,21 @@ private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Doubl
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(if (entry == null) Msg.EXTRA_TITLE else Msg.LOG_CHANGE_TITLE)) },
+        title = { Text(t(if (entry == null) PlanMsg.EXTRA_TITLE else PlanMsg.LOG_CHANGE_TITLE)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                entry?.food?.let { gone -> Text(t(Msg.LOG_FOOD_GONE, gone.name), style = MaterialTheme.typography.bodyMedium) }
-                OutlinedTextField(description, { description = it }, label = { Text(t(Msg.EXTRA_WHAT)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                entry?.food?.let { gone -> Text(t(PlanMsg.LOG_FOOD_GONE, gone.name), style = MaterialTheme.typography.bodyMedium) }
+                OutlinedTextField(description, { description = it }, label = { Text(t(PlanMsg.EXTRA_WHAT)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     kcal, { kcal = it },
-                    label = { Text(t(Msg.EXTRA_CALORIES)) },
+                    label = { Text(t(PlanMsg.EXTRA_CALORIES)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     protein, { protein = it },
-                    label = { Text(t(Msg.EXTRA_PROTEIN)) },
+                    label = { Text(t(PlanMsg.EXTRA_PROTEIN)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -449,8 +452,8 @@ private fun ExtraDialog(onDismiss: () -> Unit, onConfirm: (String, Double, Doubl
             TextButton(
                 enabled = description.isNotBlank() && kcalValue != null && proteinValue != null,
                 onClick = { onConfirm(description.trim(), kcalValue!!, proteinValue!!) },
-            ) { Text(t(if (entry == null) Msg.ADD else Msg.SAVE)) }
+            ) { Text(t(if (entry == null) CommonMsg.ADD else CommonMsg.SAVE)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }

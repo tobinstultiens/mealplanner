@@ -25,7 +25,6 @@ import dev.tobins.mealplanner.api.RecipeTopping
 import dev.tobins.mealplanner.api.ToppingInput
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.plan.AmountDialog
 import dev.tobins.mealplanner.app.plan.IngredientPicker
 import dev.tobins.mealplanner.app.plan.amountText
@@ -72,8 +71,8 @@ internal fun ToppingsSettings(api: ApiClient, recipe: RecipeDetail, onSaved: sus
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Text(t(Msg.TOPPINGS), style = MaterialTheme.typography.labelLarge)
-        Text(t(Msg.TOPPINGS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(RecipesMsg.TOPPINGS), style = MaterialTheme.typography.labelLarge)
+        Text(t(RecipesMsg.TOPPINGS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         recipe.toppings.forEach { topping ->
             Row(
                 Modifier.fillMaxWidth().clickable(enabled = !busy) { editing = topping }.padding(vertical = 4.dp),
@@ -86,10 +85,10 @@ internal fun ToppingsSettings(api: ApiClient, recipe: RecipeDetail, onSaved: sus
                         Text(it, style = MaterialTheme.typography.bodySmall.numeric(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                BarAction(AppIcons.Close, t(Msg.TOPPING_REMOVE, topping.name), onClick = { save(recipe.toppings.withoutTopping(topping.ingredientId)) }, enabled = !busy)
+                BarAction(AppIcons.Close, t(RecipesMsg.TOPPING_REMOVE, topping.name), onClick = { save(recipe.toppings.withoutTopping(topping.ingredientId)) }, enabled = !busy)
             }
         }
-        OutlinedButton(enabled = !busy, onClick = { picking = true }) { Text(t(Msg.TOPPING_ADD)) }
+        OutlinedButton(enabled = !busy, onClick = { picking = true }) { Text(t(RecipesMsg.TOPPING_ADD)) }
     }
 
     editing?.let { topping ->
@@ -99,7 +98,7 @@ internal fun ToppingsSettings(api: ApiClient, recipe: RecipeDetail, onSaved: sus
         }
     }
     if (picking) {
-        IngredientPicker(api, t(Msg.TOPPING_ADD), left = recipe.toppings.mapTo(HashSet()) { it.ingredientId }, onDismiss = { picking = false }) {
+        IngredientPicker(api, t(RecipesMsg.TOPPING_ADD), left = recipe.toppings.mapTo(HashSet()) { it.ingredientId }, onDismiss = { picking = false }) {
             picking = false
             adding = it
         }

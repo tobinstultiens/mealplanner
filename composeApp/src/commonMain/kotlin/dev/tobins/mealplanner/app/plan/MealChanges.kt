@@ -5,8 +5,6 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.MealLine
 import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ui.FormatLocale
 import dev.tobins.mealplanner.app.ui.dayLabel
@@ -83,7 +81,7 @@ fun piecesText(grams: Double, gramsPerPiece: Double?, strings: Strings): String?
     if (!inPieces(grams, gramsPerPiece)) return null
     // The quarter it was judged to be, so a count rounded on its way through grams reads as that count.
     val pieces = round(grams / gramsPerPiece!! * 4) / 4
-    return strings.plural(Plural.PIECES_AMOUNT, if (pieces == 1.0) 1 else 2, formatAmount(pieces, strings.locale))
+    return strings.plural(PlanPlural.PIECES_AMOUNT, if (pieces == 1.0) 1 else 2, formatAmount(pieces, strings.locale))
 }
 
 /**
@@ -143,18 +141,18 @@ fun QuickAddOn.chipText(strings: Strings): String {
  */
 fun MealLines.shortfallTexts(strings: Strings): List<String> =
     shortfalls.groupBy { it.ingredientId }.values.map { short ->
-        val meals = short.joinToString("; ") { strings(Msg.ADJUST_SHORT_MEAL, it.title, strings.slot(it.slot), dayLabel(plusDays(weekStart, it.day), strings.locale)) }
-        strings(Msg.ADJUST_SHORT, short.first().name, formatGrams(short.sumOf { it.grams }, strings.locale), meals)
+        val meals = short.joinToString("; ") { strings(PlanMsg.ADJUST_SHORT_MEAL, it.title, strings.slot(it.slot), dayLabel(plusDays(weekStart, it.day), strings.locale)) }
+        strings(PlanMsg.ADJUST_SHORT, short.first().name, formatGrams(short.sumOf { it.grams }, strings.locale), meals)
     }
 
 /** What a line says under its name: its amount, and how it differs from the recipe. */
 fun MealLine.note(strings: Strings): String {
-    val amount = amountText(grams, gramsPerPiece, strings) ?: strings(Msg.ADJUST_AMOUNT_UNKNOWN)
-    val recipe = amountText(recipeGrams, gramsPerPiece, strings)?.let { strings(Msg.ADJUST_WAS, it) }
+    val amount = amountText(grams, gramsPerPiece, strings) ?: strings(PlanMsg.ADJUST_AMOUNT_UNKNOWN)
+    val recipe = amountText(recipeGrams, gramsPerPiece, strings)?.let { strings(PlanMsg.ADJUST_WAS, it) }
     return when {
-        ingredientId == null -> "$amount\n${strings(Msg.ADJUST_NOT_LINKED)}"
-        leftOut -> listOfNotNull(strings(Msg.ADJUST_LEFT_OUT), recipe).joinToString(" · ")
-        !fromRecipe -> "${strings(Msg.ADJUST_ADDED)} · $amount"
+        ingredientId == null -> "$amount\n${strings(PlanMsg.ADJUST_NOT_LINKED)}"
+        leftOut -> listOfNotNull(strings(PlanMsg.ADJUST_LEFT_OUT), recipe).joinToString(" · ")
+        !fromRecipe -> "${strings(PlanMsg.ADJUST_ADDED)} · $amount"
         changed -> listOfNotNull(amount, recipe).joinToString(" · ")
         else -> amount
     }

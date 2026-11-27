@@ -43,12 +43,18 @@ import dev.tobins.mealplanner.app.accounts.ProfileScreen
 import dev.tobins.mealplanner.app.accounts.RegistrationScreen
 import dev.tobins.mealplanner.app.accounts.ServerSettingsScreen
 import dev.tobins.mealplanner.app.accounts.loggedOut
+import dev.tobins.mealplanner.app.accounts.me
+import dev.tobins.mealplanner.app.accounts.register
 import dev.tobins.mealplanner.app.accounts.registrationOpen
+import dev.tobins.mealplanner.app.accounts.saveShops
 import dev.tobins.mealplanner.app.accounts.session
+import dev.tobins.mealplanner.app.accounts.shops
 import dev.tobins.mealplanner.app.ingredients.LocalProductImageLoader
 import dev.tobins.mealplanner.app.ingredients.MappingScreen
 import dev.tobins.mealplanner.app.ingredients.PantryScreen
+import dev.tobins.mealplanner.app.ingredients.foodDataset
 import dev.tobins.mealplanner.app.plan.AdjustMealScreen
+import dev.tobins.mealplanner.app.plan.PlanMsg
 import dev.tobins.mealplanner.app.plan.PlanScreen
 import dev.tobins.mealplanner.app.plan.TodayScreen
 import dev.tobins.mealplanner.app.prices.OffersScreen
@@ -61,11 +67,15 @@ import dev.tobins.mealplanner.app.recipes.RecipeDetailScreen
 import dev.tobins.mealplanner.app.recipes.RecipeEditorScreen
 import dev.tobins.mealplanner.app.recipes.RecipeImages
 import dev.tobins.mealplanner.app.recipes.RecipeListScreen
+import dev.tobins.mealplanner.app.recipes.RecipesMsg
 import dev.tobins.mealplanner.app.shopping.ShoppingCache
 import dev.tobins.mealplanner.app.shopping.ShoppingScreen
 import dev.tobins.mealplanner.app.shopping.ShoppingSession
+import dev.tobins.mealplanner.app.shopping.saveShoppingAdvice
+import dev.tobins.mealplanner.app.shopping.shoppingAdvice
 import dev.tobins.mealplanner.app.shopping.shoppingServer
 import dev.tobins.mealplanner.app.tracking.ProgressScreen
+import dev.tobins.mealplanner.app.tracking.TrackingMsg
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.LocalOpenServerSettings
 import dev.tobins.mealplanner.app.ui.MealPlannerTheme
@@ -315,7 +325,7 @@ fun App(
             startingLogin = true
             // No page when the login was called off meanwhile (another server saved, or logged out).
             runCatching { logins.start(server.url, launcher.redirectUri(server.url))?.let(launcher::open) }
-                .onFailure { loginError = sentence(strings(Msg.LOGIN_START_FAILED, reasonOf(it))) }
+                .onFailure { loginError = sentence(strings(AppMsg.LOGIN_START_FAILED, reasonOf(it))) }
             startingLogin = false
         }
     }
@@ -390,7 +400,7 @@ fun App(
                 BackHandler(enabled = true) { serverOpen = false }
                 ServerSettingsScreen(
                     current = settings,
-                    account = account?.let { it.displayName ?: it.username ?: strings(Msg.YOUR_ACCOUNT) }?.takeIf { session != null },
+                    account = account?.let { it.displayName ?: it.username ?: strings(AppMsg.YOUR_ACCOUNT) }?.takeIf { session != null },
                     loggedIn = session != null,
                     loginError = shownLoginError,
                     loggingIn = loggingIn,
@@ -596,11 +606,11 @@ private fun shoppingPlaceSaver(create: (ShoppingSession.Place) -> ShoppingSessio
 
 /** The five tabs; the icon is filled in for the one that is open. */
 enum class Tab(val slug: String, val label: Msg, val icon: ImageVector, val selectedIcon: ImageVector) {
-    TODAY("today", Msg.TAB_TODAY, AppIcons.Today, AppIcons.TodayFilled),
-    PLAN("plan", Msg.TAB_PLAN, AppIcons.Plan, AppIcons.PlanFilled),
-    SHOPPING("shopping", Msg.TAB_SHOPPING, AppIcons.Shopping, AppIcons.ShoppingFilled),
-    RECIPES("recipes", Msg.TAB_RECIPES, AppIcons.Recipes, AppIcons.RecipesFilled),
-    PROGRESS("progress", Msg.TAB_PROGRESS, AppIcons.Progress, AppIcons.ProgressFilled),
+    TODAY("today", PlanMsg.TAB_TODAY, AppIcons.Today, AppIcons.TodayFilled),
+    PLAN("plan", AppMsg.TAB_PLAN, AppIcons.Plan, AppIcons.PlanFilled),
+    SHOPPING("shopping", AppMsg.TAB_SHOPPING, AppIcons.Shopping, AppIcons.ShoppingFilled),
+    RECIPES("recipes", RecipesMsg.TAB_RECIPES, AppIcons.Recipes, AppIcons.RecipesFilled),
+    PROGRESS("progress", TrackingMsg.TAB_PROGRESS, AppIcons.Progress, AppIcons.ProgressFilled),
 }
 
 /**

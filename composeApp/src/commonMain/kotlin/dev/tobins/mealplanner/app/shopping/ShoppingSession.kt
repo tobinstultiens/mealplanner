@@ -12,6 +12,7 @@ import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.prices.OfferExclusionQueue
 import dev.tobins.mealplanner.app.prices.withoutExcluded
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.mondayOf
 import dev.tobins.mealplanner.app.ui.nowIso
@@ -207,14 +208,14 @@ internal class ShoppingSession(
      */
     fun tickAgain(key: String) {
         if (!online) {
-            waitingNotices += Notice(Msg.TICK_AGAIN_NEEDS_CONNECTION, "")
+            waitingNotices += Notice(ShoppingMsg.TICK_AGAIN_NEEDS_CONNECTION, "")
             return
         }
         val week = weekStart
         scope.launch {
             turn.withLock {
                 val result = timedUnlessOld { server.tickAgain(week, key) } ?: untickAndTick(week, key)
-                showAnswer(week, result, Msg.TICK_FAILED, lostConnection = Msg.TICK_AGAIN_NEEDS_CONNECTION)
+                showAnswer(week, result, ShoppingMsg.TICK_FAILED, lostConnection = ShoppingMsg.TICK_AGAIN_NEEDS_CONNECTION)
             }
         }
     }
@@ -242,16 +243,16 @@ internal class ShoppingSession(
         scope.launch {
             turn.withLock {
                 val result = timedUnlessOld { server.useUp(week, key) }
-                if (result == null) putOnHand(week, id) else showAnswer(week, result, Msg.USE_UP_FAILED)
+                if (result == null) putOnHand(week, id) else showAnswer(week, result, ShoppingMsg.USE_UP_FAILED)
             }
         }
     }
 
     /** How the app used up a bought row before the server did: the ingredient on hand as set by hand, without an amount, and the list fetched again. */
     private suspend fun putOnHand(week: String, id: Long) {
-        when (val result = withTimeoutOrNull(TIME_LIMIT) { server.putOnHand(id) } ?: Load.Failed(Strings.current(Msg.NO_ANSWER))) {
+        when (val result = withTimeoutOrNull(TIME_LIMIT) { server.putOnHand(id) } ?: Load.Failed(Strings.current(CommonMsg.NO_ANSWER))) {
             is Load.Ready -> load(week)
-            is Load.Failed -> waitingNotices += noticeFor(Msg.USE_UP_FAILED, result)
+            is Load.Failed -> waitingNotices += noticeFor(ShoppingMsg.USE_UP_FAILED, result)
             Load.Loading -> Unit
         }
     }
@@ -285,7 +286,7 @@ internal class ShoppingSession(
                         cache.save(result.value, nowIso())
                         display(week, ticksOf(week).reset(result.value))
                     }
-                    is Load.Failed -> waitingNotices += noticeFor(Msg.ADVICE_CHANGE_FAILED, result)
+                    is Load.Failed -> waitingNotices += noticeFor(ShoppingMsg.ADVICE_CHANGE_FAILED, result)
                     Load.Loading -> Unit
                 }
             }
@@ -317,7 +318,7 @@ internal class ShoppingSession(
                             display(week, ticksOf(week).reset(result.value))
                             added()
                         }
-                        is Load.Failed -> waitingNotices += noticeFor(Msg.EXTRA_ADD_FAILED, result)
+                        is Load.Failed -> waitingNotices += noticeFor(ShoppingMsg.EXTRA_ADD_FAILED, result)
                         Load.Loading -> Unit
                     }
                 }
@@ -339,7 +340,7 @@ internal class ShoppingSession(
                         cache.save(result.value, nowIso())
                         display(week, ticksOf(week).reset(result.value))
                     }
-                    is Load.Failed -> waitingNotices += noticeFor(Msg.EXTRA_REMOVE_FAILED, result)
+                    is Load.Failed -> waitingNotices += noticeFor(ShoppingMsg.EXTRA_REMOVE_FAILED, result)
                     Load.Loading -> Unit
                 }
             }
@@ -347,7 +348,7 @@ internal class ShoppingSession(
     }
 
     private fun needsConnection() {
-        waitingNotices += Notice(Msg.EXTRA_NEEDS_CONNECTION, "")
+        waitingNotices += Notice(ShoppingMsg.EXTRA_NEEDS_CONNECTION, "")
     }
 
     /** Opens or closes a finished section or a Done group. */
@@ -472,7 +473,7 @@ internal class ShoppingSession(
                     is Load.Failed -> when {
                         result.refused -> {
                             cache.forget(week, key, checked)
-                            waitingNotices += noticeFor(Msg.TICK_FAILED, result)
+                            waitingNotices += noticeFor(ShoppingMsg.TICK_FAILED, result)
                         }
                         // Nothing answered: no connection, or the time limit ran out.
                         result.noAnswer -> {
@@ -526,7 +527,7 @@ internal class ShoppingSession(
                 // The first tick without an answer shows the line that says the list is offline.
                 if (week == weekStart && offlineSince == null) offlineSince = cache.load(week)?.second ?: nowIso()
             },
-            rejected = { waitingNotices += Notice(Msg.TICK_FAILED, it) },
+            rejected = { waitingNotices += Notice(ShoppingMsg.TICK_FAILED, it) },
             turn = turn,
         )
     }
@@ -537,13 +538,13 @@ internal class ShoppingSession(
     }
 
     private suspend fun timed(request: suspend () -> Load<ShoppingList>): Load<ShoppingList> =
-        withTimeoutOrNull(TIME_LIMIT) { request() } ?: Load.Failed(Strings.current(Msg.NO_ANSWER))
+        withTimeoutOrNull(TIME_LIMIT) { request() } ?: Load.Failed(Strings.current(CommonMsg.NO_ANSWER))
 
     /** [request] to a route a server from before it lacks, with the time limit of [timed]; null when the server is from before it. */
     private suspend fun timedUnlessOld(request: suspend () -> Load<ShoppingList>?): Load<ShoppingList>? {
         var old = false
         val result = withTimeoutOrNull(TIME_LIMIT) { request().also { old = it == null } }
-        return if (old) null else result ?: Load.Failed(Strings.current(Msg.NO_ANSWER))
+        return if (old) null else result ?: Load.Failed(Strings.current(CommonMsg.NO_ANSWER))
     }
 
     private fun thisWeek() = mondayOf(today())

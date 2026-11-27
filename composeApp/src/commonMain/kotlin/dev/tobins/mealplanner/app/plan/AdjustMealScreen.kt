@@ -52,14 +52,15 @@ import dev.tobins.mealplanner.api.MealLineChange
 import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.RefreshNotice
+import dev.tobins.mealplanner.app.ingredients
 import dev.tobins.mealplanner.app.prices.ingredientId
 import dev.tobins.mealplanner.app.recipes.MealPlace
 import dev.tobins.mealplanner.app.rememberFrontReturns
 import dev.tobins.mealplanner.app.rememberLoad
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.LoadingState
@@ -138,7 +139,7 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                 }
             }
             when (result) {
-                is Load.Ready -> if (done != null && snackbar.showSnackbar(done, t(Msg.UNDO), duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                is Load.Ready -> if (done != null && snackbar.showSnackbar(done, t(CommonMsg.UNDO), duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
                     save { it.undoing(previous) }
                 }
                 is Load.Failed -> snackbar.showSnackbar(failureSentence(result))
@@ -147,10 +148,10 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
         }
     }
 
-    SubScreen(t(Msg.ADJUST_TITLE), onBack, snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }) { padding ->
+    SubScreen(t(PlanMsg.ADJUST_TITLE), onBack, snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
-            is Load.Failed -> Column(Modifier.padding(padding)) { ErrorMessage(t(Msg.ADJUST_LOAD_FAILED), current) { reload++ } }
+            is Load.Failed -> Column(Modifier.padding(padding)) { ErrorMessage(t(PlanMsg.ADJUST_LOAD_FAILED), current) { reload++ } }
             is Load.Ready -> if (!addOnsAnswered) LoadingState(Modifier.padding(padding)) else {
                 val meal = current.value
                 LazyColumn(
@@ -158,7 +159,7 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                     contentPadding = PaddingValues(Spacing.ScreenEdge),
                     verticalArrangement = Arrangement.spacedBy(Spacing.Related),
                 ) {
-                    item { MealHeader(meal, enabled = !busy, onReset = { save(t(Msg.ADJUST_RESET_DONE)) { emptyList() } }) }
+                    item { MealHeader(meal, enabled = !busy, onReset = { save(t(PlanMsg.ADJUST_RESET_DONE)) { emptyList() } }) }
                     // First on the screen: a warning an edit brings is seen at once, and a known topping is two taps
                     // from Today however long the recipe is.
                     if (meal.shortfalls.isNotEmpty()) item { LaterMealsShort(meal) }
@@ -166,25 +167,25 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                     if (quick.isNotEmpty()) {
                         item {
                             QuickAddOns(quick, enabled = !busy) { chosen ->
-                                save(t(Msg.ADJUST_ADDED_DONE, chosen.addOn.name)) { it.adding(chosen) }
+                                save(t(PlanMsg.ADJUST_ADDED_DONE, chosen.addOn.name)) { it.adding(chosen) }
                             }
                         }
                     }
-                    item { SectionHeader(t(Msg.ADJUST_IN_MEAL), Modifier.padding(top = Spacing.Related)) }
+                    item { SectionHeader(t(PlanMsg.ADJUST_IN_MEAL), Modifier.padding(top = Spacing.Related)) }
                     items(meal.lines, key = { "${it.ingredientId}:${it.name}" }) { line ->
                         LineRow(
                             line,
                             enabled = !busy,
                             onEdit = { editing = line },
                             onLeaveOut = {
-                                val done = if (line.fromRecipe) Msg.ADJUST_LEFT_OUT_DONE else Msg.ADJUST_REMOVED_DONE
+                                val done = if (line.fromRecipe) PlanMsg.ADJUST_LEFT_OUT_DONE else PlanMsg.ADJUST_REMOVED_DONE
                                 save(t(done, line.name)) { it.leavingOut(line) }
                             },
                             onPutBack = { save { it.asInRecipe(line) } },
                         )
                     }
                     item {
-                        Button(enabled = !busy, onClick = { picking = true }, modifier = Modifier.padding(top = Spacing.Related)) { Text(t(Msg.ADJUST_ADD)) }
+                        Button(enabled = !busy, onClick = { picking = true }, modifier = Modifier.padding(top = Spacing.Related)) { Text(t(PlanMsg.ADJUST_ADD)) }
                     }
                 }
                 editing?.let { line ->
@@ -194,7 +195,7 @@ fun AdjustMealScreen(api: ApiClient, place: MealPlace, onBack: () -> Unit) {
                     }
                 }
                 if (picking) {
-                    IngredientPicker(api, t(Msg.ADJUST_ADD), left = meal.lines.mapNotNullTo(HashSet()) { it.ingredientId }, onDismiss = { picking = false }) { ingredient ->
+                    IngredientPicker(api, t(PlanMsg.ADJUST_ADD), left = meal.lines.mapNotNullTo(HashSet()) { it.ingredientId }, onDismiss = { picking = false }) { ingredient ->
                         picking = false
                         adding = ingredient
                     }
@@ -227,10 +228,10 @@ private fun MealHeader(meal: MealLines, enabled: Boolean, onReset: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium.numeric(),
         )
         if (!meal.complete) {
-            Text(t(Msg.ADJUST_INCOMPLETE, meal.uncounted.joinToString()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(t(PlanMsg.ADJUST_INCOMPLETE, meal.uncounted.joinToString()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
-        Text(t(Msg.ADJUST_EXPLAIN), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (meal.adjusted) OutlinedButton(enabled = enabled, onClick = onReset) { Text(t(Msg.ADJUST_RESET)) }
+        Text(t(PlanMsg.ADJUST_EXPLAIN), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (meal.adjusted) OutlinedButton(enabled = enabled, onClick = onReset) { Text(t(PlanMsg.ADJUST_RESET)) }
     }
 }
 
@@ -246,9 +247,9 @@ private fun LaterMealsShort(meal: MealLines) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
     ) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-            Text(t(Msg.ADJUST_SHORT_TITLE), style = MaterialTheme.typography.titleSmall)
+            Text(t(PlanMsg.ADJUST_SHORT_TITLE), style = MaterialTheme.typography.titleSmall)
             meal.shortfallTexts(t).forEach { Text(it, style = MaterialTheme.typography.bodyMedium.numeric()) }
-            Text(t(Msg.ADJUST_SHORT_LISTED), style = MaterialTheme.typography.bodySmall)
+            Text(t(PlanMsg.ADJUST_SHORT_LISTED), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -262,7 +263,7 @@ private fun LaterMealsShort(meal: MealLines) {
 private fun QuickAddOns(addOns: List<QuickAddOn>, enabled: Boolean, onAdd: (QuickAddOn) -> Unit) {
     val t = LocalStrings.current
     Column(Modifier.padding(top = Spacing.Related), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        SectionHeader(t(Msg.ADJUST_QUICK))
+        SectionHeader(t(PlanMsg.ADJUST_QUICK))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             addOns.forEach { quick ->
                 AssistChip(
@@ -298,8 +299,8 @@ private fun LineRow(line: MealLine, enabled: Boolean, onEdit: () -> Unit, onLeav
         }
         when {
             !changeable -> Unit
-            line.leftOut -> TextButton(enabled = enabled, onClick = onPutBack) { Text(t(Msg.ADJUST_PUT_BACK)) }
-            else -> BarAction(AppIcons.Close, t(Msg.ADJUST_LEAVE_OUT, line.name), onClick = onLeaveOut, enabled = enabled)
+            line.leftOut -> TextButton(enabled = enabled, onClick = onPutBack) { Text(t(PlanMsg.ADJUST_PUT_BACK)) }
+            else -> BarAction(AppIcons.Close, t(PlanMsg.ADJUST_LEAVE_OUT, line.name), onClick = onLeaveOut, enabled = enabled)
         }
     }
 }
@@ -328,18 +329,18 @@ internal fun AmountDialog(name: String, gramsPerPiece: Double?, grams: Double?, 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.AMOUNT_OF, name)) },
+        title = { Text(t(PlanMsg.AMOUNT_OF, name)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                 if (gramsPerPiece != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                        FilterChip(selected = inPieces, onClick = { switchTo(true) }, label = { Text(t(Msg.AMOUNT_PIECES)) })
-                        FilterChip(selected = !inPieces, onClick = { switchTo(false) }, label = { Text(t(Msg.AMOUNT_GRAMS)) })
+                        FilterChip(selected = inPieces, onClick = { switchTo(true) }, label = { Text(t(PlanMsg.AMOUNT_PIECES)) })
+                        FilterChip(selected = !inPieces, onClick = { switchTo(false) }, label = { Text(t(PlanMsg.AMOUNT_GRAMS)) })
                     }
                 }
                 OutlinedTextField(
                     text, { text = it },
-                    label = { Text(if (inPieces) t(Msg.AMOUNT_PIECES) else t(Msg.AMOUNT_GRAMS)) },
+                    label = { Text(if (inPieces) t(PlanMsg.AMOUNT_PIECES) else t(PlanMsg.AMOUNT_GRAMS)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
@@ -353,9 +354,9 @@ internal fun AmountDialog(name: String, gramsPerPiece: Double?, grams: Double?, 
             TextButton(enabled = entered != null, onClick = {
                 val unchanged = text == startText && inPieces == startInPieces && grams != null
                 onConfirm(if (unchanged) grams!! else entered!!)
-            }) { Text(t(Msg.SAVE)) }
+            }) { Text(t(CommonMsg.SAVE)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -375,13 +376,13 @@ internal fun IngredientPicker(api: ApiClient, title: String, left: Set<Long>, on
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                OutlinedTextField(query, { query = it }, label = { Text(t(Msg.SEARCH_INGREDIENTS)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(query, { query = it }, label = { Text(t(CommonMsg.SEARCH_INGREDIENTS)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 when (val all = catalogue) {
-                    Load.Loading -> Text(t(Msg.LOADING))
+                    Load.Loading -> Text(t(CommonMsg.LOADING))
                     is Load.Failed -> Text(failureSentence(all), color = MaterialTheme.colorScheme.error)
                     is Load.Ready -> {
                         val shown = ingredientsMatching(all.value, query, left)
-                        if (shown.isEmpty()) Text(t(Msg.ADJUST_NO_MATCH), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (shown.isEmpty()) Text(t(PlanMsg.ADJUST_NO_MATCH), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         LazyColumn(Modifier.heightIn(max = 320.dp)) {
                             items(shown, key = { it.id }) { ingredient ->
                                 Text(
@@ -395,6 +396,6 @@ internal fun IngredientPicker(api: ApiClient, title: String, left: Set<Long>, on
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }

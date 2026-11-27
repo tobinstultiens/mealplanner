@@ -66,14 +66,16 @@ import dev.tobins.mealplanner.app.BackHandler
 import dev.tobins.mealplanner.app.KeepScreenOn
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.RefreshNotice
 import dev.tobins.mealplanner.app.plan.StandardMealRow
 import dev.tobins.mealplanner.app.prices.line
 import dev.tobins.mealplanner.app.rememberFrontReturns
 import dev.tobins.mealplanner.app.rememberLoad
+import dev.tobins.mealplanner.app.setMealStatus
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
+import dev.tobins.mealplanner.app.ui.CommonPlural
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.LoadingState
@@ -226,11 +228,11 @@ fun RecipeDetailScreen(
         scope.launch {
             val result = load { api.setRecipeAdded(recipeId, added = true, inRotation = pickOnAdd) }
             acting = false
-            settle(result, Msg.ADDED_FAILED)
+            settle(result, RecipesMsg.ADDED_FAILED)
             if (result is Load.Ready) {
                 val summary = result.value.summary
-                snackbar.announceAdded(t, t(Msg.ADDED_ONE, summary.title), unlinkedIngredients(listOf(summary)), onOpenMapping) {
-                    settle(load { api.setRecipeAdded(recipeId, added = false) }, Msg.REMOVE_FAILED)
+                snackbar.announceAdded(t, t(RecipesMsg.ADDED_ONE, summary.title), unlinkedIngredients(listOf(summary)), onOpenMapping) {
+                    settle(load { api.setRecipeAdded(recipeId, added = false) }, RecipesMsg.REMOVE_FAILED)
                 }
             }
         }
@@ -243,12 +245,12 @@ fun RecipeDetailScreen(
         scope.launch {
             val result = load { api.setRecipeAdded(recipeId, added = false) }
             acting = false
-            settle(result, Msg.REMOVE_FAILED)
+            settle(result, RecipesMsg.REMOVE_FAILED)
             if (result is Load.Ready) {
                 // The bank view's switch shows what it was (the server's answer is the default), so that adding it again keeps it.
                 pickOnAdd = wasInRotation
-                val undo = snackbar.showSnackbar(t(Msg.REMOVED_ONE, title), actionLabel = t(Msg.UNDO), duration = SnackbarDuration.Long)
-                if (undo == SnackbarResult.ActionPerformed) settle(load { api.setRecipeAdded(recipeId, added = true, inRotation = wasInRotation) }, Msg.ADDED_FAILED)
+                val undo = snackbar.showSnackbar(t(RecipesMsg.REMOVED_ONE, title), actionLabel = t(CommonMsg.UNDO), duration = SnackbarDuration.Long)
+                if (undo == SnackbarResult.ActionPerformed) settle(load { api.setRecipeAdded(recipeId, added = true, inRotation = wasInRotation) }, RecipesMsg.ADDED_FAILED)
             }
         }
     }
@@ -262,7 +264,7 @@ fun RecipeDetailScreen(
             acting = false
             when (result) {
                 is Load.Ready -> eaten = true
-                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.COOK_MARK_EATEN_FAILED))
+                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, RecipesMsg.COOK_MARK_EATEN_FAILED))
                 Load.Loading -> Unit
             }
         }
@@ -275,7 +277,7 @@ fun RecipeDetailScreen(
             acting = false
             when (result) {
                 is Load.Ready -> onBack()
-                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.DELETE_FAILED))
+                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, RecipesMsg.DELETE_FAILED))
                 Load.Loading -> Unit
             }
         }
@@ -285,32 +287,32 @@ fun RecipeDetailScreen(
     if (confirmingDelete && opened != null) {
         AlertDialog(
             onDismissRequest = { confirmingDelete = false },
-            title = { Text(t(Msg.DELETE_RECIPE_TITLE, opened.title)) },
+            title = { Text(t(RecipesMsg.DELETE_RECIPE_TITLE, opened.title)) },
             // A copy of a cooking-site recipe goes for good too, but the site's file comes back to the bank.
-            text = { Text(t(if (opened.source == RecipeSource.COOKING_SITE) Msg.DELETE_TAKEN_RECIPE_TEXT else Msg.DELETE_RECIPE_TEXT)) },
-            confirmButton = { TextButton(onClick = { confirmingDelete = false; delete() }) { Text(t(Msg.DELETE), color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text(t(Msg.CANCEL)) } },
+            text = { Text(t(if (opened.source == RecipeSource.COOKING_SITE) RecipesMsg.DELETE_TAKEN_RECIPE_TEXT else RecipesMsg.DELETE_RECIPE_TEXT)) },
+            confirmButton = { TextButton(onClick = { confirmingDelete = false; delete() }) { Text(t(RecipesMsg.DELETE), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text(t(CommonMsg.CANCEL)) } },
         )
     }
 
     KeepScreenOn(cookMode)
     // Back from cook mode goes to the recipe, back from the recipe leaves it.
-    SubScreen(opened?.title ?: t(Msg.RECIPE), if (cookMode) ({ cookMode = false }) else onBack, snackbar = snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
+    SubScreen(opened?.title ?: t(RecipesMsg.RECIPE), if (cookMode) ({ cookMode = false }) else onBack, snackbar = snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
         // Every one of my recipes is edited in the app (issue 342), also one taken from the cooking site; the bank's is the site's.
         if (opened != null && opened.added) {
-            BarAction(AppIcons.Edit, t(Msg.EDIT_RECIPE), onEdit)
+            BarAction(AppIcons.Edit, t(RecipesMsg.EDIT_RECIPE), onEdit)
             // What leaves a recipe: one of the cooking site not changed in the app goes back to the bank, any other is deleted.
             if (opened.hasBank()) {
-                OverflowMenu(MenuAction(AppIcons.Close, t(Msg.REMOVE_FROM_MINE)) { putBack(opened.title, opened.inRotation) })
+                OverflowMenu(MenuAction(AppIcons.Close, t(RecipesMsg.REMOVE_FROM_MINE)) { putBack(opened.title, opened.inRotation) })
             } else {
-                OverflowMenu(MenuAction(AppIcons.Close, t(Msg.DELETE)) { confirmingDelete = true })
+                OverflowMenu(MenuAction(AppIcons.Close, t(RecipesMsg.DELETE)) { confirmingDelete = true })
             }
         }
     }) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Box(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.RECIPE_LOAD_FAILED), current) { reload++ }
+                ErrorMessage(t(RecipesMsg.RECIPE_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val recipe = current.value
@@ -320,7 +322,7 @@ fun RecipeDetailScreen(
                 val servings = recipe.summary.servings?.takeIf { it > 0 }
                 val factor = servings?.let { cooking?.amountsFactor(it, asWritten) }
                 // A later meal of a batch shows what is in its box, under its own heading.
-                val ingredientsTitle = cooking?.takeIf { it.fromBatch && factor != null }?.let { t(Msg.IN_THIS_MEAL, servingsText(it.portions, t)) }
+                val ingredientsTitle = cooking?.takeIf { it.fromBatch && factor != null }?.let { t(RecipesMsg.IN_THIS_MEAL, servingsText(it.portions, t)) }
                 // The amounts can be shown as written whenever they are scaled for this meal.
                 val scalable = cooking != null && (cooking.cookPortions > 0 || cooking.fromBatch)
                 if (cookMode) {
@@ -345,7 +347,7 @@ fun RecipeDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
                 ) {
                     if (recipe.ingredients.isNotEmpty() || recipe.instructions.isNotBlank()) {
-                        Button(onClick = { cookMode = true }, Modifier.fillMaxWidth()) { Text(t(Msg.COOK)) }
+                        Button(onClick = { cookMode = true }, Modifier.fillMaxWidth()) { Text(t(RecipesMsg.COOK)) }
                     }
                     recipePicture(recipe.summary.imageUrl)?.let { RecipePhoto(it, Modifier.fillMaxWidth().aspectRatio(16f / 9f)) }
                     if (recipe.summary.tags.isNotEmpty()) {
@@ -355,10 +357,10 @@ fun RecipeDetailScreen(
                     }
                     // Not for a later meal of a batch, which cooks nothing: its box holds its own portion.
                     recipe.summary.servings?.takeIf { ingredientsTitle == null }?.let {
-                        Text(t.plural(Plural.MAKES_SERVINGS, it), style = MaterialTheme.typography.labelLarge)
+                        Text(t.plural(RecipesPlural.MAKES_SERVINGS, it), style = MaterialTheme.typography.labelLarge)
                     }
                     if (recipe.summary.removedFromSite) {
-                        Text(t(Msg.REMOVED_FROM_SITE), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(t(RecipesMsg.REMOVED_FROM_SITE), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (!recipe.summary.added) {
                         AddFromBank(pickOnAdd, acting, onPick = { pickOnAdd = it }, onAdd = ::add)
@@ -375,7 +377,7 @@ fun RecipeDetailScreen(
                             scope.launch {
                                 val result = load { api.setRecipeRotation(recipeId, inRotation) }
                                 acting = false
-                                settle(result, Msg.ROTATION_FAILED)
+                                settle(result, RecipesMsg.ROTATION_FAILED)
                             }
                         }
                         // A building block is no standard meal (issue 265). Busy while saving, as for the rotation.
@@ -390,7 +392,7 @@ fun RecipeDetailScreen(
                                             standardMarked = result.value.takeIf { standard }
                                             state = Load.Ready(result.value.recipe)
                                         }
-                                        is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.STANDARD_FAILED))
+                                        is Load.Failed -> snackbar.showSnackbar(failureSentence(result, RecipesMsg.STANDARD_FAILED))
                                         Load.Loading -> Unit
                                     }
                                 }
@@ -409,11 +411,11 @@ fun RecipeDetailScreen(
                                 scope.launch {
                                     val result = load { api.setRecipeKeeps(recipeId, keeps) }
                                     acting = false
-                                    settle(result, Msg.KEEPS_FAILED)
+                                    settle(result, RecipesMsg.KEEPS_FAILED)
                                 }
                             }
                         }
-                        ToppingsSettings(api, recipe) { settle(it, Msg.TOPPINGS_FAILED) }
+                        ToppingsSettings(api, recipe) { settle(it, RecipesMsg.TOPPINGS_FAILED) }
                         routines?.let { current ->
                             RoutineButtons(recipe.summary, current) { updated ->
                                 scope.launch { (load { api.saveRoutines(updated) } as? Load.Ready)?.let { routines = it.value } }
@@ -431,12 +433,12 @@ fun RecipeDetailScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards)) {
                             if (recipe.ingredients.isEmpty()) {
                                 Text(
-                                    t(Msg.NO_STRUCTURED_INGREDIENTS),
+                                    t(RecipesMsg.NO_STRUCTURED_INGREDIENTS),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             } else {
-                                Text(ingredientsTitle ?: t(Msg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
+                                Text(ingredientsTitle ?: t(RecipesMsg.INGREDIENTS), style = MaterialTheme.typography.titleMedium)
                                 var group: String? = null
                                 for (mapped in recipe.ingredients) {
                                     val line = factor?.let { mapped.line.scaled(it) } ?: mapped.line
@@ -449,10 +451,10 @@ fun RecipeDetailScreen(
                                         mapped.ingredientName?.let { name ->
                                             Text(
                                                 "     $name" + when {
-                                                    mapped.negligible -> " · " + t(Msg.NOT_COUNTED)
+                                                    mapped.negligible -> " · " + t(RecipesMsg.NOT_COUNTED)
                                                     mapped.grams != null -> " · ${formatGrams(mapped.grams?.times(factor ?: 1.0), t.locale)}"
                                                     mapped.line.amount == null -> ""
-                                                    else -> " · " + t(Msg.WEIGHT_UNKNOWN)
+                                                    else -> " · " + t(RecipesMsg.WEIGHT_UNKNOWN)
                                                 },
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -478,7 +480,7 @@ fun RecipeDetailScreen(
 private fun AsWrittenRow(servings: Int, asWritten: Boolean, onChange: (Boolean) -> Unit) {
     val t = LocalStrings.current
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(t(Msg.AS_WRITTEN, t.plural(Plural.SERVINGS, servings)), Modifier.weight(1f))
+        Text(t(RecipesMsg.AS_WRITTEN, t.plural(CommonPlural.SERVINGS, servings)), Modifier.weight(1f))
         Switch(checked = asWritten, onCheckedChange = onChange)
     }
 }
@@ -491,9 +493,9 @@ private fun AsWrittenRow(servings: Int, asWritten: Boolean, onChange: (Boolean) 
 private fun AddFromBank(pick: Boolean, busy: Boolean, onPick: (Boolean) -> Unit, onAdd: () -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-        Button(onClick = onAdd, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t(Msg.ADD_TO_MY_RECIPES)) }
+        Button(onClick = onAdd, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t(RecipesMsg.ADD_TO_MY_RECIPES)) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(t(Msg.LET_PLANNER_PICK), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            Text(t(RecipesMsg.LET_PLANNER_PICK), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             Switch(checked = pick, onCheckedChange = onPick)
         }
     }
@@ -519,9 +521,9 @@ internal fun SwitchRow(label: String, checked: Boolean, enabled: Boolean, onChan
 private fun RotationRow(inRotation: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        SwitchRow(t(Msg.IN_MY_ROTATION), inRotation, enabled, onChange)
+        SwitchRow(t(RecipesMsg.IN_MY_ROTATION), inRotation, enabled, onChange)
         Text(
-            t(if (inRotation) Msg.ROTATION_ON_HINT else Msg.ROTATION_OFF_HINT),
+            t(if (inRotation) RecipesMsg.ROTATION_ON_HINT else RecipesMsg.ROTATION_OFF_HINT),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -533,13 +535,13 @@ private fun RotationRow(inRotation: Boolean, enabled: Boolean, onChange: (Boolea
 private fun RatingRow(rating: Int?, onRate: (Int?) -> Unit) {
     val t = LocalStrings.current
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(t(Msg.RATING), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = 8.dp))
+        Text(t(RecipesMsg.RATING), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = 8.dp))
         for (star in 1..5) {
             val filled = rating != null && star <= rating
             IconButton(onClick = { onRate(if (rating == star) null else star) }) {
                 Icon(
                     if (filled) AppIcons.StarFilled else AppIcons.Star,
-                    contentDescription = t.plural(Plural.RATE_STARS, star),
+                    contentDescription = t.plural(RecipesPlural.RATE_STARS, star),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -560,14 +562,14 @@ private fun RoutineButtons(summary: RecipeSummary, routines: Routines, onChange:
             FilterChip(
                 selected = routines.breakfast == summary.id,
                 onClick = { onChange(routines.copy(breakfast = if (routines.breakfast == summary.id) null else summary.id)) },
-                label = { Text(t(Msg.EVERY_DAY_BREAKFAST)) },
+                label = { Text(t(RecipesMsg.EVERY_DAY_BREAKFAST)) },
             )
         }
         if (canSnack || routines.snack == summary.id) {
             FilterChip(
                 selected = routines.snack == summary.id,
                 onClick = { onChange(routines.copy(snack = if (routines.snack == summary.id) null else summary.id)) },
-                label = { Text(t(Msg.EVERY_DAY_SNACK)) },
+                label = { Text(t(RecipesMsg.EVERY_DAY_SNACK)) },
             )
         }
     }
@@ -579,7 +581,7 @@ private fun RoutineButtons(summary: RecipeSummary, routines: Routines, onChange:
 private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Text(t(Msg.PLAN_AS), style = MaterialTheme.typography.labelLarge)
+        Text(t(RecipesMsg.PLAN_AS), style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             val isMeal = summary.kind == RecipeKind.MEAL
             MealSlot.entries.forEach { slot ->
@@ -596,7 +598,7 @@ private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -
         }
         if (summary.kind == RecipeKind.COMPONENT) {
             Text(
-                t(Msg.NOT_PLANNED_AS_MEAL),
+                t(RecipesMsg.NOT_PLANNED_AS_MEAL),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -614,10 +616,10 @@ private fun PlannerSettings(summary: RecipeSummary, onChange: (RecipeSettings) -
 internal fun KeepsSettings(keeps: RecipeKeeps, enabled: Boolean, onChange: (RecipeKeeps) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        Text(t(Msg.KEEPS_ONCE_MADE), style = MaterialTheme.typography.labelLarge)
+        Text(t(RecipesMsg.KEEPS_ONCE_MADE), style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-            KeepsChoice(Msg.KEEPS_IN_A_BOX, keeps.days, enabled) { onChange(keeps.copy(days = it)) }
-            KeepsChoice(Msg.KEEPS_VACUUM, keeps.vacuumDays, enabled) { onChange(keeps.copy(vacuumDays = it)) }
+            KeepsChoice(RecipesMsg.KEEPS_IN_A_BOX, keeps.days, enabled) { onChange(keeps.copy(days = it)) }
+            KeepsChoice(RecipesMsg.KEEPS_VACUUM, keeps.vacuumDays, enabled) { onChange(keeps.copy(vacuumDays = it)) }
         }
     }
 }
@@ -626,7 +628,7 @@ internal fun KeepsSettings(keeps: RecipeKeeps, enabled: Boolean, onChange: (Reci
 @Composable
 private fun KeepsChoice(label: Msg, days: Int?, enabled: Boolean, onChoose: (Int?) -> Unit) {
     val t = LocalStrings.current
-    fun text(days: Int?) = days?.let { t.plural(Plural.DAYS, it) } ?: t(Msg.KEEPS_NOT)
+    fun text(days: Int?) = days?.let { t.plural(CommonPlural.DAYS, it) } ?: t(CommonMsg.KEEPS_NOT)
     Box {
         var open by remember { mutableStateOf(false) }
         OutlinedButton(onClick = { open = true }, enabled = enabled) { Text(t(label, text(days))) }
@@ -643,37 +645,37 @@ private fun NutritionCard(nutrition: RecipeNutrition, source: String?) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-            Text(t(Msg.PER_SERVING), style = MaterialTheme.typography.labelLarge)
+            Text(t(RecipesMsg.PER_SERVING), style = MaterialTheme.typography.labelLarge)
             Text(nutrition.headline(t), style = MaterialTheme.typography.titleLarge)
             with(nutrition.perServing) {
                 Text(
-                    t(Msg.NUTRITION_MACROS, formatGrams(fatG, t.locale), formatGrams(carbsG, t.locale), formatGrams(fibreG, t.locale)),
+                    t(RecipesMsg.NUTRITION_MACROS, formatGrams(fatG, t.locale), formatGrams(carbsG, t.locale), formatGrams(fibreG, t.locale)),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             if (!nutrition.complete) {
                 Text(
-                    t.plural(Plural.INCOMPLETE, nutrition.uncounted.size, nutrition.uncounted.joinToString("; ")),
+                    t.plural(RecipesPlural.INCOMPLETE, nutrition.uncounted.size, nutrition.uncounted.joinToString("; ")),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
             if (nutrition.unquantified.isNotEmpty()) {
                 Text(
-                    t(Msg.TOO_LOW, nutrition.unquantified.joinToString("; ")),
+                    t(RecipesMsg.TOO_LOW, nutrition.unquantified.joinToString("; ")),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
             if (nutrition.approximate) {
                 Text(
-                    t(Msg.APPROXIMATE),
+                    t(RecipesMsg.APPROXIMATE),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             source?.let {
-                Text(t(Msg.SOURCE, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t(RecipesMsg.SOURCE, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -684,22 +686,22 @@ private fun CostCard(cost: RecipeCost) {
     val t = LocalStrings.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-            Text(t(Msg.COST_PER_SERVING), style = MaterialTheme.typography.labelLarge)
+            Text(t(RecipesMsg.COST_PER_SERVING), style = MaterialTheme.typography.labelLarge)
             Text("≈ ${formatEuro(cost.perServingWithOffers, t.locale)}", style = MaterialTheme.typography.titleLarge.numeric())
             if (cost.perServingWithOffers < cost.perServing - 0.005) {
                 Text(
-                    t(Msg.COST_SAVED, formatEuro(cost.perServing, t.locale), formatEuro(cost.perServing - cost.perServingWithOffers, t.locale)),
+                    t(RecipesMsg.COST_SAVED, formatEuro(cost.perServing, t.locale), formatEuro(cost.perServing - cost.perServingWithOffers, t.locale)),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             if (cost.estimated.isNotEmpty()) {
                 Text(
-                    t(Msg.COST_ESTIMATED, cost.estimated.joinToString("; ")),
+                    t(RecipesMsg.COST_ESTIMATED, cost.estimated.joinToString("; ")),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(t(Msg.COST_SOURCE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(t(RecipesMsg.COST_SOURCE), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

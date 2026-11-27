@@ -5,7 +5,6 @@ import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.app.MemorySettingsStorage
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ui.Load
 import kotlinx.coroutines.test.runTest
@@ -81,7 +80,7 @@ class ShoppingAdviceTest {
         val chicken = item("ahead:i6", offer(Store.AH, 3.49, 0.9), offer(Store.AH, 8.99, 0.7))
         assertEquals(chicken.regularPrice!! * 0.3, savingOf(listOf(chicken), all, today)!!, 1e-9)
         val unknown = item("stock:i5", offer(Store.AH, 1.0, 0.5), regularPrice = null)
-        assertEquals(Strings.English(Msg.STOCK_UP_HINT), adviceHint(AdviceTexts.STOCK_UP, listOf(unknown), all, today, Strings.English))
+        assertEquals(Strings.English(ShoppingMsg.STOCK_UP_HINT), adviceHint(AdviceTexts.STOCK_UP, listOf(unknown), all, today, Strings.English))
     }
 
     @Test
@@ -99,8 +98,8 @@ class ShoppingAdviceTest {
             adviceHint(AdviceTexts.STOCK_UP, listOf(rice), all, today, Strings.English),
             adviceHint(AdviceTexts.STOCK_UP, listOf(rice), all, today, Strings.English, provisional = true),
         )
-        assertEquals("for e.g. Beef chilli, Lasagne", Strings.English(Msg.SUGGESTED_MEALS, "Beef chilli, Lasagne"))
-        assertEquals("bijv. voor Beef chilli, Lasagne", Strings.Dutch(Msg.SUGGESTED_MEALS, "Beef chilli, Lasagne"))
+        assertEquals("for e.g. Beef chilli, Lasagne", Strings.English(ShoppingMsg.SUGGESTED_MEALS, "Beef chilli, Lasagne"))
+        assertEquals("bijv. voor Beef chilli, Lasagne", Strings.Dutch(ShoppingMsg.SUGGESTED_MEALS, "Beef chilli, Lasagne"))
     }
 
     @Test

@@ -35,10 +35,10 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ingredients.RadioOption
 import dev.tobins.mealplanner.app.recipes.MealToCook
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.MealNumbers
 import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.dayLabel
@@ -127,7 +127,7 @@ fun AddSideDialog(
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.ADD_SIDE_TITLE, slotLabel(slot, t))) },
+        title = { Text(t(PlanMsg.ADD_SIDE_TITLE, slotLabel(slot, t))) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 AddSideChoices(batches, batch, portions, onBatch = { batch = it; error = null }, onPortions = { portions = it; error = null }, onNewPrep = onNewPrep)
@@ -144,9 +144,9 @@ fun AddSideDialog(
                         saving = false
                     }
                 },
-            ) { Text(t(Msg.ADD)) }
+            ) { Text(t(CommonMsg.ADD)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(t(Msg.CANCEL)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(CommonMsg.CANCEL)) } },
     )
 }
 
@@ -166,19 +166,19 @@ fun AddSideChoices(
 ) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-        Text(t(Msg.ADD_SIDE_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(t(Msg.ADD_SIDE_FROM), style = MaterialTheme.typography.labelLarge)
+        Text(t(PlanMsg.ADD_SIDE_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t(PlanMsg.ADD_SIDE_FROM), style = MaterialTheme.typography.labelLarge)
         for (each in batches) {
-            val detail = t(Msg.ADD_SIDE_BATCH, dayLabel(each.prep.madeOn, t.locale), dayLabel(each.prep.lastDay, t.locale))
+            val detail = t(PlanMsg.ADD_SIDE_BATCH, dayLabel(each.prep.madeOn, t.locale), dayLabel(each.prep.lastDay, t.locale))
             RadioOption(each.title, detail, selected = each == batch) { onBatch(each) }
         }
-        Text(t(Msg.ADD_SIDE_SIZE), style = MaterialTheme.typography.labelLarge)
+        Text(t(PlanMsg.ADD_SIDE_SIZE), style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
             for (size in SIDE_PORTIONS) {
                 FilterChip(selected = size == portions, onClick = { onPortions(size) }, label = { Text(servingsText(size, t)) })
             }
         }
-        TextButton(onClick = onNewPrep) { Text(t(Msg.ADD_SIDE_NEW_PREP)) }
+        TextButton(onClick = onNewPrep) { Text(t(PlanMsg.ADD_SIDE_NEW_PREP)) }
     }
 }
 
@@ -197,7 +197,7 @@ fun MealSide.macrosText(strings: Strings): String =
     "${unbrokenParts(servingsText(portions, strings))} · ${macrosText(kcal, proteinG, fibreG, strings)}"
 
 /** What [this] meal comes to with its side: `With the side: 945 kcal · 44 g protein · 9 g fibre`. */
-fun PlannedMeal.withSideText(strings: Strings): String = strings(Msg.MEAL_WITH_SIDE, macrosText(totalKcal, totalProteinG, totalFibreG, strings))
+fun PlannedMeal.withSideText(strings: Strings): String = strings(PlanMsg.MEAL_WITH_SIDE, macrosText(totalKcal, totalProteinG, totalFibreG, strings))
 
 /**
  * The side next to [meal], on [date]: labelled as prepped, with its title and numbers, then what the meal comes to with it.

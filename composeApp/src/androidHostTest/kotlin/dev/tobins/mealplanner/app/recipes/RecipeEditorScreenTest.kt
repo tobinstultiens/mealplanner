@@ -35,8 +35,8 @@ import dev.tobins.mealplanner.api.RecipeLineInput
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.FakeBackend
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.ingredients
 import dev.tobins.mealplanner.app.ui.headline
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -203,7 +203,7 @@ class RecipeEditorScreenTest {
         val shown = totals()
         save()
         val nutrition = runBlocking { api.recipe(saved!!) }.summary.nutrition!!
-        assertEquals(Strings.English(Msg.EDITOR_PER_SERVING, nutrition.headline(Strings.English)), shown)
+        assertEquals(Strings.English(RecipesMsg.EDITOR_PER_SERVING, nutrition.headline(Strings.English)), shown)
         // The oil changed from 100 g to ml is still 100 g (109.9 ml shown), not a rounded 110 ml.
         assertEquals("Per serving: 755 kcal · 22 g protein", shown.replace(Typography.nbsp, ' '))
     }

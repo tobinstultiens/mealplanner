@@ -10,10 +10,10 @@ import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.ShoppingList
 import dev.tobins.mealplanner.app.AppFront
 import dev.tobins.mealplanner.app.MemorySettingsStorage
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.logOut
 import dev.tobins.mealplanner.app.prices.ExclusionChange
+import dev.tobins.mealplanner.app.prices.PricesMsg
 import dev.tobins.mealplanner.app.prices.key
 import dev.tobins.mealplanner.app.ui.Load
 import kotlinx.coroutines.CoroutineScope
@@ -261,7 +261,7 @@ class ShoppingSessionTest {
         session.tickAgain("a")
         settle()
 
-        assertEquals(listOf(Msg.TICK_FAILED to "Internal server error"), session.notices.map { it.msg to it.detail })
+        assertEquals(listOf(ShoppingMsg.TICK_FAILED to "Internal server error"), session.notices.map { it.msg to it.detail })
         assertEquals("list $monday", server.asked.last())
         val row = session.shown().items.single()
         assertEquals(false to null, row.checked to row.boughtGrams)
@@ -280,7 +280,7 @@ class ShoppingSessionTest {
         session.tickAgain("a")
         settle()
 
-        assertEquals(listOf(Msg.TICK_FAILED to "No tick of a in the week of $monday"), session.notices.map { it.msg to it.detail })
+        assertEquals(listOf(ShoppingMsg.TICK_FAILED to "No tick of a in the week of $monday"), session.notices.map { it.msg to it.detail })
         assertEquals(emptyList(), server.ticks, "a refusal of the route is no reason to un-tick and tick")
         assertFalse(session.shown().items.single().checked)
     }
@@ -325,7 +325,7 @@ class ShoppingSessionTest {
         server.lists[monday] = server.listFor(monday).let { it.copy(items = it.items + broccoli, noLongerNeeded = emptyList()) }
         session.useUp("i7")
         settle()
-        assertEquals(listOf(Msg.USE_UP_FAILED to "The meals of the week of $monday need i7 again"), session.notices.map { it.msg to it.detail })
+        assertEquals(listOf(ShoppingMsg.USE_UP_FAILED to "The meals of the week of $monday need i7 again"), session.notices.map { it.msg to it.detail })
         assertEquals("list $monday", server.asked.last())
         assertTrue(session.shown().items.any { it.key == "i7" })
         assertEquals(emptyList(), server.onHand)
@@ -402,7 +402,7 @@ class ShoppingSessionTest {
         assertEquals(listOf(false, false, false), session.checked())
         assertNull(session.offlineSince)
         assertEquals(emptyMap(), pending())
-        assertEquals(listOf(Msg.TICK_FAILED to "No such item"), session.notices.map { it.msg to it.detail }, "said the next time the list shows")
+        assertEquals(listOf(ShoppingMsg.TICK_FAILED to "No such item"), session.notices.map { it.msg to it.detail }, "said the next time the list shows")
         session.shown(session.notices.single())
         assertEquals(emptyList(), session.notices.toList())
     }
@@ -682,7 +682,7 @@ class ShoppingSessionTest {
         assertEquals(listOf(true, false, false), session.checked())
         settle()
         assertEquals(listOf(false, false, false), session.checked(), "back as the server has it")
-        assertEquals(listOf(Msg.TICK_FAILED to "No such item"), session.notices.map { it.msg to it.detail })
+        assertEquals(listOf(ShoppingMsg.TICK_FAILED to "No such item"), session.notices.map { it.msg to it.detail })
         assertEquals(emptyMap(), pending())
         assertNull(session.offlineSince)
     }
@@ -727,7 +727,7 @@ class ShoppingSessionTest {
         settle()
         offline.dismiss(ShoppingAdviceGroup.BUY_AHEAD, false)
         settle()
-        assertEquals(listOf(Msg.ADVICE_CHANGE_FAILED to "Server down"), offline.notices.map { it.msg to it.detail })
+        assertEquals(listOf(ShoppingMsg.ADVICE_CHANGE_FAILED to "Server down"), offline.notices.map { it.msg to it.detail })
     }
 
     private fun lists() = server.asked.count { it.startsWith("list") }
@@ -1079,7 +1079,7 @@ class ShoppingSessionTest {
 
         assertFalse(added, "the field keeps its text")
         assertFalse(session.adding, "and can be used again")
-        assertEquals(listOf(Msg.EXTRA_ADD_FAILED to "Too many open items"), session.notices.map { it.msg to it.detail })
+        assertEquals(listOf(ShoppingMsg.EXTRA_ADD_FAILED to "Too many open items"), session.notices.map { it.msg to it.detail })
         assertEquals(listOf("a", "b", "c"), session.shown().items.map { it.name })
     }
 
@@ -1102,7 +1102,7 @@ class ShoppingSessionTest {
 
         assertFalse(added)
         assertTrue(server.asked.none { it.startsWith("add") || it.startsWith("remove") })
-        assertEquals(listOf(Msg.EXTRA_NEEDS_CONNECTION, Msg.EXTRA_NEEDS_CONNECTION), session.notices.map { it.msg })
+        assertEquals(listOf(ShoppingMsg.EXTRA_NEEDS_CONNECTION, ShoppingMsg.EXTRA_NEEDS_CONNECTION), session.notices.map { it.msg })
     }
 
     @Test
@@ -1139,7 +1139,7 @@ class ShoppingSessionTest {
         settle()
 
         // Not the generic "could not save the tick" beside a line that promises ticks are sent later.
-        assertEquals(listOf(Msg.TICK_AGAIN_NEEDS_CONNECTION), session.notices.map { it.msg })
+        assertEquals(listOf(ShoppingMsg.TICK_AGAIN_NEEDS_CONNECTION), session.notices.map { it.msg })
         assertEquals(emptyList(), server.asked, "the server cannot answer")
         assertEquals(emptyMap(), pending().filterKeys { it == "a" }, "ticking again is not kept for later")
     }
@@ -1156,7 +1156,7 @@ class ShoppingSessionTest {
         settle()
 
         val notice = session.notices.single()
-        assertEquals(Msg.TICK_AGAIN_NEEDS_CONNECTION, notice.msg)
+        assertEquals(ShoppingMsg.TICK_AGAIN_NEEDS_CONNECTION, notice.msg)
         assertEquals("unexpected end of stream on http://192.168.1.2:8080/...", notice.technical)
         assertFalse(Strings.English(notice.msg, notice.detail).contains("http"), "a plain sentence")
     }
@@ -1335,7 +1335,7 @@ class ShoppingSessionTest {
         session.excludeCurry()
         settle()
 
-        assertEquals(listOf(Msg.EXCLUSION_FAILED to "No ingredient with id 3"), session.notices.map { it.msg to it.detail })
+        assertEquals(listOf(PricesMsg.EXCLUSION_FAILED to "No ingredient with id 3"), session.notices.map { it.msg to it.detail })
         assertEquals(emptyList(), ShoppingCache(storage).waitingExclusions())
         assertEquals(listOf(helaCurry), session.curryOffers())
     }

@@ -11,8 +11,8 @@ import dev.tobins.mealplanner.shopping.bestOffer
 
 /** The texts of one advice group: its title, what it is for, and the line shown while it is hidden. */
 enum class AdviceTexts(val group: ShoppingAdviceGroup, val title: Msg, val hint: Msg, val hidden: Msg) {
-    BUY_AHEAD(ShoppingAdviceGroup.BUY_AHEAD, Msg.BUY_AHEAD_TITLE, Msg.BUY_AHEAD_HINT, Msg.BUY_AHEAD_HIDDEN),
-    STOCK_UP(ShoppingAdviceGroup.STOCK_UP, Msg.STOCK_UP_TITLE, Msg.STOCK_UP_HINT, Msg.STOCK_UP_HIDDEN),
+    BUY_AHEAD(ShoppingAdviceGroup.BUY_AHEAD, ShoppingMsg.BUY_AHEAD_TITLE, ShoppingMsg.BUY_AHEAD_HINT, ShoppingMsg.BUY_AHEAD_HIDDEN),
+    STOCK_UP(ShoppingAdviceGroup.STOCK_UP, ShoppingMsg.STOCK_UP_TITLE, ShoppingMsg.STOCK_UP_HINT, ShoppingMsg.STOCK_UP_HIDDEN),
     ;
 
     fun items(list: ShoppingList): List<ShoppingItem> = when (group) {
@@ -49,7 +49,7 @@ fun ShoppingList.hasAdvice(store: Store?, shops: Set<Store>, today: String): Boo
  */
 fun adviceHint(texts: AdviceTexts, items: List<ShoppingItem>, shops: Set<Store>, today: String, strings: Strings, provisional: Boolean = false): String =
     listOfNotNull(
-        strings(if (provisional && texts == AdviceTexts.BUY_AHEAD) Msg.BUY_AHEAD_HINT_PROVISIONAL else texts.hint),
-        savingOf(items, shops, today)?.let { strings(Msg.ADVICE_SAVING, formatEuro(it, strings.locale)) },
+        strings(if (provisional && texts == AdviceTexts.BUY_AHEAD) ShoppingMsg.BUY_AHEAD_HINT_PROVISIONAL else texts.hint),
+        savingOf(items, shops, today)?.let { strings(ShoppingMsg.ADVICE_SAVING, formatEuro(it, strings.locale)) },
     )
         .joinToString(" ")

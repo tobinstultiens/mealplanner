@@ -5,7 +5,6 @@ import dev.tobins.mealplanner.api.LookupProblem
 import dev.tobins.mealplanner.api.ProductHit
 import dev.tobins.mealplanner.api.ProductLookup
 import dev.tobins.mealplanner.api.hasValues
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 
 /*
@@ -21,7 +20,7 @@ fun barcodeIn(text: String): String? = text.filterNot { it == ' ' }.takeIf { cod
 
 /** What helps to pick [this] product: its brand, its pack, and of a multi-pack how many it holds. */
 fun ProductHit.detail(t: Strings): String =
-    listOfNotNull(brand, netContent, packOf?.let { t(Msg.LOOKUP_PACK_OF, it) }).joinToString(" · ")
+    listOfNotNull(brand, netContent, packOf?.let { t(IngredientsMsg.LOOKUP_PACK_OF, it) }).joinToString(" · ")
 
 /** The name of a lookup's source ([LabelSource]): "AH" or "Open Food Facts"; null for values typed or of a source the app does not know. */
 fun sourceName(source: String?): String? = when (LabelSource.parse(source)?.origin) {
@@ -33,11 +32,11 @@ fun sourceName(source: String?): String? = when (LabelSource.parse(source)?.orig
 /** `AH`, or `AH, changed by hand` once a value was changed after the lookup; null as [sourceName] is. */
 fun sourceLabel(source: String?, t: Strings): String? {
     val name = sourceName(source) ?: return null
-    return if (LabelSource.parse(source)?.changedByHand == true) t(Msg.PRODUCT_CHANGED_BY_HAND, name) else name
+    return if (LabelSource.parse(source)?.changedByHand == true) t(IngredientsMsg.PRODUCT_CHANGED_BY_HAND, name) else name
 }
 
 /** `Values from AH`, or `Values from AH, changed by hand` ([sourceLabel]); another source's text as it is. */
-fun sourceLine(source: String, t: Strings): String = t(Msg.PRODUCT_VALUES_FROM, sourceLabel(source, t) ?: source)
+fun sourceLine(source: String, t: Strings): String = t(IngredientsMsg.PRODUCT_VALUES_FROM, sourceLabel(source, t) ?: source)
 
 /** Whether values from [source] are Open Food Facts', which are shown with its licence. */
 fun fromOpenFoodFacts(source: String?): Boolean = LabelSource.parse(source)?.origin == LabelSource.Origin.OPEN_FOOD_FACTS
@@ -57,20 +56,20 @@ private fun labelValueOf(field: String): LabelValue? = when (field) {
 
 /** [this] value as a sentence names it: "fibre", "saturated fat". */
 private fun LabelValue.lowerName(t: Strings): String = when (this) {
-    LabelValue.SATURATED_FAT -> t(Msg.NUTRIENT_SATURATED_FAT)
-    LabelValue.SUGARS -> t(Msg.NUTRIENT_SUGARS)
+    LabelValue.SATURATED_FAT -> t(IngredientsMsg.NUTRIENT_SATURATED_FAT)
+    LabelValue.SUGARS -> t(IngredientsMsg.NUTRIENT_SUGARS)
     else -> t(msg).lowercase()
 }
 
 /** A source's problem in the app's words; one it does not know as such. */
 fun problemText(problem: String, t: Strings): String = t(
     when (problem) {
-        LookupProblem.AH_FAILED -> Msg.LOOKUP_AH_FAILED
-        LookupProblem.AH_NO_TABLE -> Msg.LOOKUP_AH_NO_TABLE
-        LookupProblem.OFF_FAILED -> Msg.LOOKUP_OFF_FAILED
-        LookupProblem.OFF_BUSY -> Msg.LOOKUP_OFF_BUSY
-        LookupProblem.OFF_NOT_CONFIGURED -> Msg.LOOKUP_OFF_NOT_CONFIGURED
-        else -> Msg.LOOKUP_OTHER_PROBLEM
+        LookupProblem.AH_FAILED -> IngredientsMsg.LOOKUP_AH_FAILED
+        LookupProblem.AH_NO_TABLE -> IngredientsMsg.LOOKUP_AH_NO_TABLE
+        LookupProblem.OFF_FAILED -> IngredientsMsg.LOOKUP_OFF_FAILED
+        LookupProblem.OFF_BUSY -> IngredientsMsg.LOOKUP_OFF_BUSY
+        LookupProblem.OFF_NOT_CONFIGURED -> IngredientsMsg.LOOKUP_OFF_NOT_CONFIGURED
+        else -> IngredientsMsg.LOOKUP_OTHER_PROBLEM
     },
 )
 
@@ -81,10 +80,10 @@ fun problemText(problem: String, t: Strings): String = t(
  */
 fun lookupNotes(answer: ProductLookup, t: Strings): List<String> = buildList {
     val product = answer.product
-    if (product == null && answer.problems.isEmpty()) add(t(Msg.LOOKUP_NOT_FOUND))
+    if (product == null && answer.problems.isEmpty()) add(t(IngredientsMsg.LOOKUP_NOT_FOUND))
     answer.problems.forEach { add(problemText(it, t)) }
     val source = product?.source?.let { sourceName(it) ?: it }.orEmpty()
-    if (product != null && !product.hasValues && LookupProblem.AH_NO_TABLE !in answer.problems) add(t(Msg.LOOKUP_NO_VALUES, source))
+    if (product != null && !product.hasValues && LookupProblem.AH_NO_TABLE !in answer.problems) add(t(IngredientsMsg.LOOKUP_NO_VALUES, source))
     if (product?.hasValues == true) {
         val unread = product.unread.mapNotNull(::labelValueOf).toSet()
         val values = product.per100
@@ -93,10 +92,10 @@ fun lookupNotes(answer: ProductLookup, t: Strings): List<String> = buildList {
             LabelValue.CARBS to values.carbsG, LabelValue.SUGARS to values.sugarG, LabelValue.FIBRE to values.fibreG,
             LabelValue.PROTEIN to values.proteinG, LabelValue.SALT to values.sodiumMg,
         ).filter { (value, number) -> number == null && value !in unread }.keys
-        if (missing.isNotEmpty()) add(t(Msg.LOOKUP_NOT_GIVEN, missing.joinToString { it.lowerName(t) }))
-        if (unread.isNotEmpty()) add(t(Msg.LOOKUP_UNREAD, LabelValue.entries.filter { it in unread }.joinToString { it.lowerName(t) }))
-        if (product.basis == null) add(t(Msg.LOOKUP_BASIS_UNKNOWN, source))
+        if (missing.isNotEmpty()) add(t(IngredientsMsg.LOOKUP_NOT_GIVEN, missing.joinToString { it.lowerName(t) }))
+        if (unread.isNotEmpty()) add(t(IngredientsMsg.LOOKUP_UNREAD, LabelValue.entries.filter { it in unread }.joinToString { it.lowerName(t) }))
+        if (product.basis == null) add(t(IngredientsMsg.LOOKUP_BASIS_UNKNOWN, source))
     }
-    product?.packOf?.let { add(t(Msg.LOOKUP_ONE_OF_PACK, it)) }
-    if (product?.hasValues != true) add(t(Msg.LOOKUP_TYPE_VALUES))
+    product?.packOf?.let { add(t(IngredientsMsg.LOOKUP_ONE_OF_PACK, it)) }
+    if (product?.hasValues != true) add(t(IngredientsMsg.LOOKUP_TYPE_VALUES))
 }

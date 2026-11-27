@@ -1,7 +1,7 @@
 package dev.tobins.mealplanner.app.ui
 
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.prices.PricesMsg
 import dev.tobins.mealplanner.app.shopping.plainReason
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -47,9 +47,9 @@ class FailureSentenceTest {
 
     @Test
     fun aFailedOffersRefreshGivesThePlainReasonNotTheExceptionText() {
-        assertEquals("Could not refresh: the server could not be reached.", failureSentence(unreachable, Msg.REFRESH_FAILED))
+        assertEquals("Could not refresh: the server could not be reached.", failureSentence(unreachable, PricesMsg.REFRESH_FAILED))
         Strings.current = Strings.Dutch
-        assertEquals("Vernieuwen is niet gelukt: de server is niet bereikbaar.", failureSentence(unreachable, Msg.REFRESH_FAILED))
+        assertEquals("Vernieuwen is niet gelukt: de server is niet bereikbaar.", failureSentence(unreachable, PricesMsg.REFRESH_FAILED))
     }
 
     @Test
@@ -62,7 +62,7 @@ class FailureSentenceTest {
     @Test
     fun theServersOwnExplanationStaysAndGetsNoSecondFullStop() {
         assertEquals("Not allowed.", failureSentence(Load.Failed("Not allowed.", status = 403)))
-        assertEquals("Could not refresh: no offers today.", failureSentence(Load.Failed("no offers today", status = 502), Msg.REFRESH_FAILED))
+        assertEquals("Could not refresh: no offers today.", failureSentence(Load.Failed("no offers today", status = 502), PricesMsg.REFRESH_FAILED))
     }
 
     @Test
@@ -84,7 +84,7 @@ class FailureSentenceTest {
     @Test
     fun everyActionFailureShownInASentenceHidesTheExceptionText() = runTest {
         val raw = IOException("unexpected end of stream on http://localhost:18081/api/x")
-        assertEquals("Could not save: the server could not be reached.", failureSentence(failedFrom(raw), Msg.SAVE_FAILED))
+        assertEquals("Could not save: the server could not be reached.", failureSentence(failedFrom(raw), CommonMsg.SAVE_FAILED))
         assertEquals("The server could not be reached.", sentence(reasonOf(raw)))
         // The app's own sentences (an AppError) are not exception text and stay; a library's IllegalStateException is told in plain words.
         assertEquals("The login answer has no code", reasonOf(AppError("The login answer has no code")))

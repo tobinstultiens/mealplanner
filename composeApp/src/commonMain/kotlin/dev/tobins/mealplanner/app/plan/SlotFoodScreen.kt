@@ -16,13 +16,12 @@ import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ingredients.ChosenFood
 import dev.tobins.mealplanner.app.ingredients.FoodScreen
 import dev.tobins.mealplanner.app.recipes.PIECE
 import dev.tobins.mealplanner.app.recipes.unitLabel
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.dayLabel
 import dev.tobins.mealplanner.app.ui.formatAmount
 import dev.tobins.mealplanner.app.ui.numeric
@@ -48,7 +47,7 @@ data class FoodPlace(val day: Int, val slot: MealSlot, val food: MealFood? = nul
 fun PlannedMeal.shownTitle(t: Strings): String = when {
     !foodsOnly || foods.isEmpty() -> title
     foods.size <= 2 -> foods.joinToString(", ") { it.name }
-    else -> t(Msg.FOODS_AND_MORE, foods.first().name, foods.size - 1)
+    else -> t(PlanMsg.FOODS_AND_MORE, foods.first().name, foods.size - 1)
 }
 
 /** Whether a food can go in [meal]'s slot, as the server lets it: not in a skipped meal, which counts for nothing, nor a prepped one. */
@@ -56,7 +55,7 @@ fun takesFoods(meal: PlannedMeal?): Boolean = meal == null || (meal.status != Me
 
 /** `2 bar`, `1 piece`, `150 g`: an [amount] of a food in the [unit] it was picked in, in the app's language. */
 fun foodAmount(amount: Double, unit: String, t: Strings): String = if (unit == PIECE) {
-    t.plural(Plural.PIECES_AMOUNT, if (amount == 1.0) 1 else 2, formatAmount(amount, t.locale))
+    t.plural(PlanPlural.PIECES_AMOUNT, if (amount == 1.0) 1 else 2, formatAmount(amount, t.locale))
 } else {
     "${formatAmount(amount, t.locale)} ${unitLabel(unit, t)}"
 }
@@ -67,7 +66,7 @@ fun foodAmount(amount: Double, unit: String, t: Strings): String = if (unit == P
  */
 fun MealFood.amountText(t: Strings): String {
     val amount = foodAmount(this.amount, unit, t)
-    return unbrokenParts(if (counted) t(Msg.FOOD_AMOUNT, amount, kcal.roundToLong()) else t(Msg.FOOD_UNCOUNTED, amount))
+    return unbrokenParts(if (counted) t(PlanMsg.FOOD_AMOUNT, amount, kcal.roundToLong()) else t(CommonMsg.FOOD_UNCOUNTED, amount))
 }
 
 /** The foods of a slot under its meal, a row each: the name and [amountText]; with [onOpen], a tap opens one. */

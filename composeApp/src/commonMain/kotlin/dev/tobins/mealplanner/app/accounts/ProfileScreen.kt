@@ -39,7 +39,9 @@ import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
+import dev.tobins.mealplanner.app.profile
+import dev.tobins.mealplanner.app.saveProfile
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.FormatLocale
 import dev.tobins.mealplanner.app.ui.Load
@@ -57,17 +59,17 @@ import dev.tobins.mealplanner.targets.TargetCalculator
 import kotlinx.coroutines.launch
 
 private fun ActivityLevel.msg() = when (this) {
-    ActivityLevel.SEDENTARY -> Msg.ACTIVITY_SEDENTARY
-    ActivityLevel.LIGHT -> Msg.ACTIVITY_LIGHT
-    ActivityLevel.MODERATE -> Msg.ACTIVITY_MODERATE
-    ActivityLevel.ACTIVE -> Msg.ACTIVITY_ACTIVE
+    ActivityLevel.SEDENTARY -> AccountsMsg.ACTIVITY_SEDENTARY
+    ActivityLevel.LIGHT -> AccountsMsg.ACTIVITY_LIGHT
+    ActivityLevel.MODERATE -> AccountsMsg.ACTIVITY_MODERATE
+    ActivityLevel.ACTIVE -> AccountsMsg.ACTIVITY_ACTIVE
 }
 
 private fun PlanPriority.msg() = when (this) {
-    PlanPriority.BALANCED -> Msg.PRIORITY_BALANCED
-    PlanPriority.PROTEIN -> Msg.PRIORITY_PROTEIN
-    PlanPriority.FIBRE -> Msg.PRIORITY_FIBRE
-    PlanPriority.PRICE -> Msg.PRIORITY_PRICE
+    PlanPriority.BALANCED -> AccountsMsg.PRIORITY_BALANCED
+    PlanPriority.PROTEIN -> AccountsMsg.PRIORITY_PROTEIN
+    PlanPriority.FIBRE -> AccountsMsg.PRIORITY_FIBRE
+    PlanPriority.PRICE -> AccountsMsg.PRIORITY_PRICE
 }
 
 /**
@@ -190,36 +192,36 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
     }
     val portionProblems = portions?.problems().orEmpty()
 
-    SubScreen(t(Msg.PROFILE_AND_TARGETS), leave, snackbar) { padding ->
+    SubScreen(t(CommonMsg.PROFILE_AND_TARGETS), leave, snackbar) { padding ->
         when (val current = loaded) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.PROFILE_LOAD_FAILED), current) { reload++ }
+                ErrorMessage(t(AccountsMsg.PROFILE_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> Column(
                 Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
                 verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
             ) {
-                NumberField(t(Msg.WEIGHT_KG), form.weight, decimal = true) { form = form.copy(weight = it) }
-                NumberField(t(Msg.HEIGHT_CM), form.height, decimal = true) { form = form.copy(height = it) }
-                NumberField(t(Msg.AGE), form.age, decimal = false) { form = form.copy(age = it) }
+                NumberField(t(AccountsMsg.WEIGHT_KG), form.weight, decimal = true) { form = form.copy(weight = it) }
+                NumberField(t(AccountsMsg.HEIGHT_CM), form.height, decimal = true) { form = form.copy(height = it) }
+                NumberField(t(AccountsMsg.AGE), form.age, decimal = false) { form = form.copy(age = it) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                    FilterChip(selected = form.sex == Sex.MALE, onClick = { form = form.copy(sex = Sex.MALE) }, label = { Text(t(Msg.MALE)) })
-                    FilterChip(selected = form.sex == Sex.FEMALE, onClick = { form = form.copy(sex = Sex.FEMALE) }, label = { Text(t(Msg.FEMALE)) })
+                    FilterChip(selected = form.sex == Sex.MALE, onClick = { form = form.copy(sex = Sex.MALE) }, label = { Text(t(AccountsMsg.MALE)) })
+                    FilterChip(selected = form.sex == Sex.FEMALE, onClick = { form = form.copy(sex = Sex.FEMALE) }, label = { Text(t(AccountsMsg.FEMALE)) })
                 }
-                Text(t(Msg.ACTIVITY), style = MaterialTheme.typography.labelLarge)
+                Text(t(AccountsMsg.ACTIVITY), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     ActivityLevel.entries.forEach { level ->
                         FilterChip(selected = form.activity == level, onClick = { form = form.copy(activity = level) }, label = { Text(t(level.msg())) })
                     }
                 }
-                NumberField(t(Msg.GOAL_PER_WEEK), form.goal, decimal = true) { form = form.copy(goal = it) }
+                NumberField(t(AccountsMsg.GOAL_PER_WEEK), form.goal, decimal = true) { form = form.copy(goal = it) }
 
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(Spacing.InsideCard), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-                        Text(t(Msg.DAILY_TARGETS), style = MaterialTheme.typography.labelLarge)
+                        Text(t(AccountsMsg.DAILY_TARGETS), style = MaterialTheme.typography.labelLarge)
                         when {
-                            draft == null -> Text(t(Msg.FILL_IN))
+                            draft == null -> Text(t(AccountsMsg.FILL_IN))
                             !problems.isNullOrEmpty() -> Text(problems.joinToString("\n") { t.profileProblem(it) }, color = MaterialTheme.colorScheme.error)
                             else -> {
                                 val targets = TargetCalculator.targets(draft)
@@ -228,7 +230,7 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                                     style = MaterialTheme.typography.titleLarge.numeric(),
                                 )
                                 Text(
-                                    TargetCalculator.suggest(draft).let { t(Msg.MAINTENANCE, TargetCalculator.maintenanceKcal(draft), it.kcal, it.proteinG, it.fibreG) },
+                                    TargetCalculator.suggest(draft).let { t(AccountsMsg.MAINTENANCE, TargetCalculator.maintenanceKcal(draft), it.kcal, it.proteinG, it.fibreG) },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -236,41 +238,41 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                         }
                     }
                 }
-                Text(t(Msg.OWN_TARGETS), style = MaterialTheme.typography.labelLarge)
-                NumberField(t(Msg.CALORIES_PER_DAY), form.kcalOverride, decimal = false) { form = form.copy(kcalOverride = it) }
-                NumberField(t(Msg.PROTEIN_PER_DAY), form.proteinOverride, decimal = false) { form = form.copy(proteinOverride = it) }
-                NumberField(t(Msg.FIBRE_PER_DAY), form.fibreOverride, decimal = false) { form = form.copy(fibreOverride = it) }
+                Text(t(AccountsMsg.OWN_TARGETS), style = MaterialTheme.typography.labelLarge)
+                NumberField(t(AccountsMsg.CALORIES_PER_DAY), form.kcalOverride, decimal = false) { form = form.copy(kcalOverride = it) }
+                NumberField(t(AccountsMsg.PROTEIN_PER_DAY), form.proteinOverride, decimal = false) { form = form.copy(proteinOverride = it) }
+                NumberField(t(AccountsMsg.FIBRE_PER_DAY), form.fibreOverride, decimal = false) { form = form.copy(fibreOverride = it) }
 
-                Text(t(Msg.PRIORITY), style = MaterialTheme.typography.labelLarge)
+                Text(t(AccountsMsg.PRIORITY), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
                     PlanPriority.entries.forEach { priority ->
                         FilterChip(selected = form.priority == priority, onClick = { form = form.copy(priority = priority) }, label = { Text(t(priority.msg())) })
                     }
                 }
-                Text(t(Msg.PRIORITY_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t(AccountsMsg.PRIORITY_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-                Text(t(Msg.PORTION_PER_MEAL), style = MaterialTheme.typography.labelLarge)
+                Text(t(AccountsMsg.PORTION_PER_MEAL), style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-                    NumberField(t(Msg.PORTION_FROM), form.minPortions, decimal = true, Modifier.weight(1f)) { form = form.copy(minPortions = it) }
-                    NumberField(t(Msg.PORTION_TO), form.maxPortions, decimal = true, Modifier.weight(1f)) { form = form.copy(maxPortions = it) }
+                    NumberField(t(AccountsMsg.PORTION_FROM), form.minPortions, decimal = true, Modifier.weight(1f)) { form = form.copy(minPortions = it) }
+                    NumberField(t(AccountsMsg.PORTION_TO), form.maxPortions, decimal = true, Modifier.weight(1f)) { form = form.copy(maxPortions = it) }
                 }
                 Text(
-                    if (portionProblems.isEmpty()) t(Msg.PORTION_HINT) else portionProblems.joinToString("\n") { t.profileProblem(it) },
+                    if (portionProblems.isEmpty()) t(AccountsMsg.PORTION_HINT) else portionProblems.joinToString("\n") { t.profileProblem(it) },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (portions == null || portionProblems.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Text(t(Msg.TASTE), style = MaterialTheme.typography.labelLarge)
+                Text(t(AccountsMsg.TASTE), style = MaterialTheme.typography.labelLarge)
                 OutlinedTextField(
                     form.likes, { form = form.copy(likes = it) },
-                    label = { Text(t(Msg.LIKES)) },
-                    supportingText = { Text(t(Msg.LIKES_HINT)) },
+                    label = { Text(t(AccountsMsg.LIKES)) },
+                    supportingText = { Text(t(AccountsMsg.LIKES_HINT)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     form.dislikes, { form = form.copy(dislikes = it) },
-                    label = { Text(t(Msg.DISLIKES)) },
-                    supportingText = { Text(t(Msg.DISLIKES_HINT)) },
+                    label = { Text(t(AccountsMsg.DISLIKES)) },
+                    supportingText = { Text(t(AccountsMsg.DISLIKES_HINT)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
 
@@ -284,14 +286,14 @@ fun ProfileScreen(api: ApiClient, onBack: () -> Unit) {
                                 is Load.Ready -> {
                                     loaded = result
                                     baseline = saving
-                                    snackbar.showSnackbar(t(Msg.PROFILE_SAVED))
+                                    snackbar.showSnackbar(t(AccountsMsg.PROFILE_SAVED))
                                 }
-                                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, Msg.SAVE_FAILED))
+                                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, CommonMsg.SAVE_FAILED))
                                 Load.Loading -> Unit
                             }
                         }
                     },
-                ) { Text(t(Msg.SAVE)) }
+                ) { Text(t(CommonMsg.SAVE)) }
             }
         }
     }

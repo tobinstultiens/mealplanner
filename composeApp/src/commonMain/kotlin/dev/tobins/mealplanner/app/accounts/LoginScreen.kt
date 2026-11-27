@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.ServerSettings
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorBanner
 import dev.tobins.mealplanner.app.ui.Illustrations
 import dev.tobins.mealplanner.app.ui.Spacing
@@ -72,11 +73,11 @@ fun LoginScreen(
         ) {
             Spacer(Modifier.height(32.dp))
             Image(Illustrations.Mark, contentDescription = null, Modifier.size(96.dp))
-            Text(t(Msg.APP_NAME), style = MaterialTheme.typography.headlineMedium)
+            Text(t(AccountsMsg.APP_NAME), style = MaterialTheme.typography.headlineMedium)
             val narrow = Modifier.widthIn(max = 420.dp).fillMaxWidth()
             reason?.message?.let { Text(t(it), narrow, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center) }
             Text(
-                t(Msg.LOGIN_EXPLAIN),
+                t(AccountsMsg.LOGIN_EXPLAIN),
                 narrow,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -85,8 +86,8 @@ fun LoginScreen(
             if (!serverKnown) {
                 OutlinedTextField(
                     url, { url = it },
-                    label = { Text(t(Msg.SERVER_ADDRESS)) },
-                    supportingText = { Text(t(Msg.SERVER_ADDRESS_HINT)) },
+                    label = { Text(t(AccountsMsg.SERVER_ADDRESS)) },
+                    supportingText = { Text(t(AccountsMsg.SERVER_ADDRESS_HINT)) },
                     isError = url.isNotBlank() && !urlValid,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -94,22 +95,22 @@ fun LoginScreen(
                 )
             }
             Button(enabled = urlValid && !busy, onClick = { onLogin(draft) }, modifier = narrow) {
-                Text(if (busy) t(Msg.LOGGING_IN) else t(Msg.LOG_IN))
+                Text(if (busy) t(AccountsMsg.LOGGING_IN) else t(AccountsMsg.LOG_IN))
             }
-            onRegister?.let { OutlinedButton(onClick = it, modifier = narrow) { Text(t(Msg.REGISTER)) } }
-            error?.let { ErrorBanner(t(Msg.COULD_NOT_LOG_IN), it, narrow) }
+            onRegister?.let { OutlinedButton(onClick = it, modifier = narrow) { Text(t(AccountsMsg.REGISTER)) } }
+            error?.let { ErrorBanner(t(AccountsMsg.COULD_NOT_LOG_IN), it, narrow) }
             if (serverKnown) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        t(Msg.LOGIN_AT, server.url.substringAfter("://")),
+                        t(AccountsMsg.LOGIN_AT, server.url.substringAfter("://")),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                     )
-                    TextButton(onClick = onOpenSettings) { Text(t(Msg.CHANGE_SERVER)) }
+                    TextButton(onClick = onOpenSettings) { Text(t(AccountsMsg.CHANGE_SERVER)) }
                 }
             } else {
-                TextButton(onClick = onOpenSettings) { Text(t(Msg.SETTINGS)) }
+                TextButton(onClick = onOpenSettings) { Text(t(CommonMsg.SETTINGS)) }
             }
         }
     }
@@ -119,10 +120,10 @@ fun LoginScreen(
 private val LoggedOut.message: Msg?
     get() = when (this) {
         LoggedOut.LOGIN_OPENED -> null
-        LoggedOut.BY_USER -> Msg.LOGGED_OUT_BY_USER
-        LoggedOut.EXPIRED -> Msg.LOGGED_OUT_EXPIRED
-        LoggedOut.NOT_RENEWED -> Msg.LOGGED_OUT_NOT_RENEWED
-        LoggedOut.NOT_ALLOWED -> Msg.LOGGED_OUT_NOT_ALLOWED
-        LoggedOut.NO_GROUPS -> Msg.LOGGED_OUT_NO_GROUPS
-        LoggedOut.WAITING_FOR_APPROVAL -> Msg.LOGGED_OUT_WAITING
+        LoggedOut.BY_USER -> AccountsMsg.LOGGED_OUT_BY_USER
+        LoggedOut.EXPIRED -> AccountsMsg.LOGGED_OUT_EXPIRED
+        LoggedOut.NOT_RENEWED -> AccountsMsg.LOGGED_OUT_NOT_RENEWED
+        LoggedOut.NOT_ALLOWED -> AccountsMsg.LOGGED_OUT_NOT_ALLOWED
+        LoggedOut.NO_GROUPS -> AccountsMsg.LOGGED_OUT_NO_GROUPS
+        LoggedOut.WAITING_FOR_APPROVAL -> AccountsMsg.LOGGED_OUT_WAITING
     }

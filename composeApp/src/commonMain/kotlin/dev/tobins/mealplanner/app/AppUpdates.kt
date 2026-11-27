@@ -65,7 +65,7 @@ object AppUpdates {
         val http = HttpClient { install(ContentNegotiation) { json(json) } }
         try {
             val response = http.get(url) { header("Accept", "application/vnd.github+json") }
-            if (!response.status.isSuccess()) throw AppError(Strings.current(Msg.GITHUB_ANSWERED, response.status.value))
+            if (!response.status.isSuccess()) throw AppError(Strings.current(AppMsg.GITHUB_ANSWERED, response.status.value))
             return newer(response.body<GithubRelease>(), currentVersion)
         } finally {
             http.close()
@@ -110,9 +110,9 @@ fun UpdateBody(update: AppUpdate, currentVersion: String) {
     val t = LocalStrings.current
     val lines = noteLines(update.notes)
     androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.Related)) {
-        androidx.compose.material3.Text(t(Msg.UPDATE_EXPLAIN, currentVersion))
+        androidx.compose.material3.Text(t(AppMsg.UPDATE_EXPLAIN, currentVersion))
         if (lines.isNotEmpty()) {
-            androidx.compose.material3.Text(t(Msg.WHATS_NEW), style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+            androidx.compose.material3.Text(t(AppMsg.WHATS_NEW), style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
             lines.forEach { androidx.compose.material3.Text(it) }
         }
     }
@@ -124,16 +124,16 @@ fun UpdateDialog(update: AppUpdate, currentVersion: String, onUpdate: () -> Unit
     val t = LocalStrings.current
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onLater,
-        title = { androidx.compose.material3.Text(t(Msg.UPDATE_AVAILABLE, update.version)) },
+        title = { androidx.compose.material3.Text(t(AppMsg.UPDATE_AVAILABLE, update.version)) },
         text = {
             androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
                 UpdateBody(update, currentVersion)
             }
         },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = onUpdate) { androidx.compose.material3.Text(t(Msg.UPDATE)) } },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onLater) { androidx.compose.material3.Text(t(Msg.LATER)) } },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onUpdate) { androidx.compose.material3.Text(t(AppMsg.UPDATE)) } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onLater) { androidx.compose.material3.Text(t(AppMsg.LATER)) } },
     )
 }
 
 /** What the settings say when the check for a newer app failed with [e]: a plain sentence, never GitHub's or the HTTP library's own text. */
-internal suspend fun updateCheckFailure(t: Strings, e: Throwable): String = sentence(t(Msg.CHECK_FAILED, reasonOf(e)))
+internal suspend fun updateCheckFailure(t: Strings, e: Throwable): String = sentence(t(AppMsg.CHECK_FAILED, reasonOf(e)))

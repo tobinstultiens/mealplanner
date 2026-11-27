@@ -1,6 +1,16 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.app.accounts.AccountsMsg
+import dev.tobins.mealplanner.app.ingredients.IngredientsMsg
+import dev.tobins.mealplanner.app.plan.PlanMsg
+import dev.tobins.mealplanner.app.prices.PricesMsg
+import dev.tobins.mealplanner.app.recipes.RecipesMsg
+import dev.tobins.mealplanner.app.shopping.ShoppingMsg
+import dev.tobins.mealplanner.app.shopping.ShoppingPlural
+import dev.tobins.mealplanner.app.tracking.TrackingMsg
+import dev.tobins.mealplanner.app.ui.CommonMsg
+import dev.tobins.mealplanner.app.ui.CommonPlural
 import dev.tobins.mealplanner.app.ui.formatEuro
 import dev.tobins.mealplanner.app.ui.servingsText
 import dev.tobins.mealplanner.app.ui.whenLabel
@@ -18,15 +28,15 @@ class StringsTest {
 
     /** Texts that are the same in both languages on purpose: names, units, examples and words both share. */
     private val sameInBothLanguages = setOf(
-        Msg.DETAILS, Msg.SLOT_LUNCH, Msg.CARD_SERVER, Msg.CARD_ACCOUNT, Msg.CARD_APP, Msg.LATER,
-        Msg.LANGUAGE_ENGLISH, Msg.LANGUAGE_DUTCH, Msg.OFFER_WAS, Msg.PRICE_PER_KG, Msg.WEIGHING_ROW,
-        Msg.SERVER_ADDRESS_HINT, Msg.PACKS_TO_TAKE, Msg.APP_NAME, Msg.ADJUST_SHORT_MEAL, Msg.PREP_MEAL_NOTES,
-        Msg.STANDARD_CHIP, Msg.VERDICT_UNIT_KG, Msg.ROW_COUNTED, Msg.ROW_NOT_COUNTED, Msg.PRODUCT_SUMMARY, Msg.FOOD_AMOUNT,
+        CommonMsg.DETAILS, AppMsg.SLOT_LUNCH, AccountsMsg.CARD_SERVER, AccountsMsg.CARD_ACCOUNT, AccountsMsg.CARD_APP, AppMsg.LATER,
+        AppMsg.LANGUAGE_ENGLISH, AppMsg.LANGUAGE_DUTCH, CommonMsg.OFFER_WAS, PricesMsg.PRICE_PER_KG, TrackingMsg.WEIGHING_ROW,
+        AccountsMsg.SERVER_ADDRESS_HINT, ShoppingMsg.PACKS_TO_TAKE, AccountsMsg.APP_NAME, PlanMsg.ADJUST_SHORT_MEAL, PlanMsg.PREP_MEAL_NOTES,
+        PlanMsg.STANDARD_CHIP, PricesMsg.VERDICT_UNIT_KG, RecipesMsg.ROW_COUNTED, RecipesMsg.ROW_NOT_COUNTED, IngredientsMsg.PRODUCT_SUMMARY, PlanMsg.FOOD_AMOUNT,
     )
 
     @Test
     fun everyMessageHasBothLanguagesAndTheSamePlaceholders() {
-        for (msg in Msg.entries) {
+        for (msg in messageTables.flatten()) {
             val english = msg.text(Language.ENGLISH)
             val dutch = msg.text(Language.DUTCH)
             assertTrue(english.isNotBlank(), "$msg has no English text")
@@ -37,12 +47,13 @@ class StringsTest {
 
     @Test
     fun theBrowserWordingClicksWhereThePhoneTaps() {
-        val browserTexts = Msg.entries.filter { it.name.endsWith("_BROWSER") }
+        // A text and its browser wording are in the same enum.
+        val browserTexts = messageTables.flatMap { table -> table.filter { it.name.endsWith("_BROWSER") }.map { table to it } }
         assertTrue(browserTexts.isNotEmpty())
-        for (msg in browserTexts) {
+        for ((table, msg) in browserTexts) {
             assertTrue(!Regex("\\btap", RegexOption.IGNORE_CASE).containsMatchIn(msg.text(Language.ENGLISH)), "$msg says tap in a browser")
             assertTrue(!Regex("\\btik\\b", RegexOption.IGNORE_CASE).containsMatchIn(msg.text(Language.DUTCH)), "$msg says tik in a browser")
-            val phone = Msg.valueOf(msg.name.removeSuffix("_BROWSER"))
+            val phone = table.first { it.name == msg.name.removeSuffix("_BROWSER") }
             assertEquals(placeholders(phone.text(Language.ENGLISH)), placeholders(msg.text(Language.ENGLISH)), "$msg and $phone differ in placeholders")
         }
     }
@@ -50,19 +61,19 @@ class StringsTest {
     @Test
     fun aTextForBothUsesTheWordingOfWhereTheAppRuns() {
         val expected = if (runsInBrowser()) "No offers fetched yet. Click Refresh." else "No offers fetched yet. Tap Refresh."
-        assertEquals(expected, Strings.English.onWeb(Msg.NO_OFFERS_YET, Msg.NO_OFFERS_YET_BROWSER))
+        assertEquals(expected, Strings.English.onWeb(PricesMsg.NO_OFFERS_YET, PricesMsg.NO_OFFERS_YET_BROWSER))
     }
 
     @Test
     fun aDutchTextThatEqualsTheEnglishOneIsOnPurpose() {
         // A translation that was never written would pass the test above as a copy of the English text.
-        val untranslated = Msg.entries.filter { it.text(Language.ENGLISH) == it.text(Language.DUTCH) }
+        val untranslated = messageTables.flatten().filter { it.text(Language.ENGLISH) == it.text(Language.DUTCH) }
         assertEquals(emptyList(), untranslated - sameInBothLanguages, "Dutch equals English, so probably untranslated")
     }
 
     @Test
     fun everyPluralHasBothLanguagesAndFormsThatDiffer() {
-        for (plural in Plural.entries) {
+        for (plural in pluralTables.flatten()) {
             for (language in Language.entries) {
                 val one = plural.text(language, 1)
                 val other = plural.text(language, 2)
@@ -83,11 +94,11 @@ class StringsTest {
             Strings.English to listOf("0 servings", "1 serving", "2 servings"),
             Strings.Dutch to listOf("0 porties", "1 portie", "2 porties"),
         )) {
-            assertEquals(expected, listOf(0, 1, 2).map { strings.plural(Plural.SERVINGS, it) })
+            assertEquals(expected, listOf(0, 1, 2).map { strings.plural(CommonPlural.SERVINGS, it) })
         }
-        assertEquals("Elke winkel · 0 producten", Strings.Dutch.plural(Plural.ANY_STORE_ITEMS, 0))
+        assertEquals("Elke winkel · 0 producten", Strings.Dutch.plural(ShoppingPlural.ANY_STORE_ITEMS, 0))
         // The count is {0}, further arguments follow.
-        assertEquals("AH · 1 item on offer", Strings.English.plural(Plural.STORE_ITEMS_ON_OFFER, 1, "AH"))
+        assertEquals("AH · 1 item on offer", Strings.English.plural(ShoppingPlural.STORE_ITEMS_ON_OFFER, 1, "AH"))
     }
 
     @Test
@@ -110,13 +121,13 @@ class StringsTest {
         // With the system language the device's own formats stay: German numbers, English words.
         val german = Strings.of(AppLanguage.SYSTEM, "de-DE")
         assertEquals(',', german.locale.decimalSeparator)
-        assertEquals("Today", german(Msg.TAB_TODAY))
+        assertEquals("Today", german(PlanMsg.TAB_TODAY))
         // An explicit choice wins over the device, texts and formats alike.
         val dutchOnBritishPhone = Strings.of(AppLanguage.DUTCH, "en-GB")
-        assertEquals("Vandaag", dutchOnBritishPhone(Msg.TAB_TODAY))
+        assertEquals("Vandaag", dutchOnBritishPhone(PlanMsg.TAB_TODAY))
         assertEquals("€2,50", formatEuro(2.5, dutchOnBritishPhone.locale))
         val englishOnDutchPhone = Strings.of(AppLanguage.ENGLISH, "nl-NL")
-        assertEquals("Today", englishOnDutchPhone(Msg.TAB_TODAY))
+        assertEquals("Today", englishOnDutchPhone(PlanMsg.TAB_TODAY))
         assertEquals("€2.50", formatEuro(2.5, englishOnDutchPhone.locale))
     }
 

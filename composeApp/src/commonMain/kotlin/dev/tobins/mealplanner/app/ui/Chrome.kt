@@ -52,7 +52,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 
 /*
  * The pieces every screen's top bar is built from, so that bars look and behave the same
@@ -87,7 +86,7 @@ fun BarAction(
 
 /** The arrow that leaves a sub-screen. */
 @Composable
-fun BackButton(onClick: () -> Unit) = BarAction(AppIcons.Back, LocalStrings.current(Msg.BACK), onClick)
+fun BackButton(onClick: () -> Unit) = BarAction(AppIcons.Back, LocalStrings.current(CommonMsg.BACK), onClick)
 
 /** One entry of an [OverflowMenu]. */
 class MenuAction(val icon: ImageVector, val label: String, val onClick: () -> Unit)
@@ -97,7 +96,7 @@ class MenuAction(val icon: ImageVector, val label: String, val onClick: () -> Un
 fun OverflowMenu(vararg actions: MenuAction) {
     var open by remember { mutableStateOf(false) }
     Box {
-        BarAction(AppIcons.More, LocalStrings.current(Msg.MORE), onClick = { open = true })
+        BarAction(AppIcons.More, LocalStrings.current(CommonMsg.MORE), onClick = { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             actions.forEach { action ->
                 DropdownMenuItem(
@@ -132,7 +131,7 @@ private fun DetailsBanner(summary: String, details: String, icon: ImageVector, t
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) {
         Icon(icon, contentDescription = null, Modifier.size(20.dp), tint = tint)
         Text(summary, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = tint)
-        TextButton(onClick = { open = true }) { Text(LocalStrings.current(Msg.DETAILS)) }
+        TextButton(onClick = { open = true }) { Text(LocalStrings.current(CommonMsg.DETAILS)) }
     }
     if (open) DetailsDialog(summary, details) { open = false }
 }
@@ -144,7 +143,7 @@ fun DetailsDialog(title: String, details: String, onClose: () -> Unit) {
         onDismissRequest = onClose,
         title = { Text(title) },
         text = { Text(details, Modifier.verticalScroll(rememberScrollState())) },
-        confirmButton = { TextButton(onClick = onClose) { Text(LocalStrings.current(Msg.CLOSE)) } },
+        confirmButton = { TextButton(onClick = onClose) { Text(LocalStrings.current(CommonMsg.CLOSE)) } },
     )
 }
 
@@ -337,6 +336,6 @@ fun LoadingState(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         CircularProgressIndicator()
-        Text(LocalStrings.current(Msg.LOADING), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(LocalStrings.current(CommonMsg.LOADING), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

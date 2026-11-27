@@ -4,7 +4,6 @@ import dev.tobins.mealplanner.api.Offer
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingItem
 import dev.tobins.mealplanner.api.Store
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.ui.shortText
 import dev.tobins.mealplanner.shopping.bestOffer
@@ -102,7 +101,7 @@ internal fun ShoppingItem.shownAtTick(shops: Set<Store>, today: String): Shoppin
 /** The items whose group is at [store]([groupStore]), and what they save ([savingOf]). */
 data class StoreGroup(val store: Store, val items: List<ShoppingItem>, val saving: Double? = null) {
     /** `Jumbo · 5 items on offer`. */
-    fun title(strings: Strings): String = strings.plural(Plural.STORE_ITEMS_ON_OFFER, items.size, store.shortName())
+    fun title(strings: Strings): String = strings.plural(ShoppingPlural.STORE_ITEMS_ON_OFFER, items.size, store.shortName())
 }
 
 /**

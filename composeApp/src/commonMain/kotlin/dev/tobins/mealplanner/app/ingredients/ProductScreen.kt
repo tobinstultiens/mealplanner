@@ -58,13 +58,14 @@ import dev.tobins.mealplanner.api.ProductSearch
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.KeyboardMakesRoom
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.createIngredient
 import dev.tobins.mealplanner.app.plan.jsonSaver
 import dev.tobins.mealplanner.app.recipes.Found
 import dev.tobins.mealplanner.app.recipes.per100
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.UnsavedChangesGuard
@@ -125,7 +126,7 @@ fun ProductScreen(
 
     /** Fills the form with what [answer] found, its pack named as a portion in the form's language. */
     fun fill(answer: ProductLookup) {
-        answer.product?.let { found -> draft = draft.filledWith(found, t(if (found.pack?.single == true) Msg.PORTION_ITEM else Msg.PORTION_PACK), t.locale) }
+        answer.product?.let { found -> draft = draft.filledWith(found, t(if (found.pack?.single == true) IngredientsMsg.PORTION_ITEM else IngredientsMsg.PORTION_PACK), t.locale) }
         notes = answer
         lookup = LookupState.Idle
     }
@@ -187,7 +188,7 @@ fun ProductScreen(
                 is Load.Ready -> onDone(result.value)
                 is Load.Failed -> {
                     saving = false
-                    snackbar.showSnackbar(failureSentence(result, Msg.SAVE_FAILED))
+                    snackbar.showSnackbar(failureSentence(result, CommonMsg.SAVE_FAILED))
                 }
                 Load.Loading -> Unit
             }
@@ -200,9 +201,9 @@ fun ProductScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (ingredient == null) t(Msg.NEW_PRODUCT) else t(Msg.EDIT_PRODUCT)) },
-                navigationIcon = { BarAction(AppIcons.Close, t(Msg.CANCEL), leave) },
-                actions = { TextButton(onClick = ::saveAsked, enabled = draft.canSave && !nameTaken && !saving) { Text(t(Msg.SAVE)) } },
+                title = { Text(if (ingredient == null) t(IngredientsMsg.NEW_PRODUCT) else t(IngredientsMsg.EDIT_PRODUCT)) },
+                navigationIcon = { BarAction(AppIcons.Close, t(CommonMsg.CANCEL), leave) },
+                actions = { TextButton(onClick = ::saveAsked, enabled = draft.canSave && !nameTaken && !saving) { Text(t(CommonMsg.SAVE)) } },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -230,11 +231,11 @@ fun ProductScreen(
             )
             OutlinedTextField(
                 draft.name, { draft = draft.copy(name = it) },
-                label = { Text(t(Msg.NAME)) },
+                label = { Text(t(CommonMsg.NAME)) },
                 isError = draft.name.isBlank() || nameTaken,
                 supportingText = when {
-                    draft.name.isBlank() -> ({ Text(t(Msg.PRODUCT_NAME_NEEDED)) })
-                    nameTaken -> ({ Text(t(Msg.PRODUCT_NAME_TAKEN)) })
+                    draft.name.isBlank() -> ({ Text(t(IngredientsMsg.PRODUCT_NAME_NEEDED)) })
+                    nameTaken -> ({ Text(t(IngredientsMsg.PRODUCT_NAME_TAKEN)) })
                     else -> null
                 },
                 enabled = enabled,
@@ -244,16 +245,16 @@ fun ProductScreen(
             )
             draft.source?.let { SourceLine(it) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), itemVerticalAlignment = Alignment.CenterVertically) {
-                Text(t(Msg.PRODUCT_VALUES_PER), style = MaterialTheme.typography.labelLarge)
+                Text(t(IngredientsMsg.PRODUCT_VALUES_PER), style = MaterialTheme.typography.labelLarge)
                 // Neither is chosen while a lookup left it open.
                 val chosen = !draft.basisNeeded
                 FilterChip(selected = chosen && !draft.perMl, onClick = { draft = draft.choosingBasis(ml = false) }, label = { Text(per100(FoodBasis.PER_100_G)) }, enabled = enabled)
                 FilterChip(selected = chosen && draft.perMl, onClick = { draft = draft.choosingBasis(ml = true) }, label = { Text(per100(FoodBasis.PER_100_ML)) }, enabled = enabled)
             }
             if (draft.basisNeeded) {
-                Text(t(Msg.PRODUCT_BASIS_NEEDED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Text(t(IngredientsMsg.PRODUCT_BASIS_NEEDED), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
-            Text(t(Msg.PRODUCT_VALUES_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(t(IngredientsMsg.PRODUCT_VALUES_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             val firstPortion = draft.portions.firstOrNull()?.key
             LabelValue.entries.forEach { value ->
                 // From the last value on into the portions, which the focus does not find by itself: it went back up.
@@ -265,8 +266,8 @@ fun ProductScreen(
                 ValueField(draft, value, enabled, next) { draft = draft.withValue(value, it) }
             }
 
-            Text(t(Msg.PORTIONS), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Spacing.Related))
-            Text(t(Msg.PORTIONS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(t(IngredientsMsg.PORTIONS), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Spacing.Related))
+            Text(t(IngredientsMsg.PORTIONS_HINT), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             draft.portions.forEachIndexed { index, row ->
                 key(row.key) {
                     val following = draft.portions.getOrNull(index + 1)?.key
@@ -280,7 +281,7 @@ fun ProductScreen(
                     )
                 }
             }
-            TextButton(onClick = { draft = draft.addingPortion() }, enabled = enabled) { Text(t(Msg.ADD_PORTION)) }
+            TextButton(onClick = { draft = draft.addingPortion() }, enabled = enabled) { Text(t(IngredientsMsg.ADD_PORTION)) }
         }
     }
 
@@ -288,13 +289,13 @@ fun ProductScreen(
         val names = draft.removedPortions.joinToString { "“${it.name}”" }
         AlertDialog(
             onDismissRequest = { askingRemoval = false },
-            title = { Text(t(Msg.REMOVE_PORTIONS_TITLE, names)) },
-            text = { Text(t(Msg.REMOVE_PORTIONS_TEXT, names)) },
+            title = { Text(t(IngredientsMsg.REMOVE_PORTIONS_TITLE, names)) },
+            text = { Text(t(IngredientsMsg.REMOVE_PORTIONS_TEXT, names)) },
             confirmButton = {
-                TextButton(onClick = { askingRemoval = false; save() }) { Text(t(Msg.REMOVE_AND_SAVE)) }
+                TextButton(onClick = { askingRemoval = false; save() }) { Text(t(IngredientsMsg.REMOVE_AND_SAVE)) }
             },
             dismissButton = {
-                TextButton(onClick = { askingRemoval = false; draft = draft.keepingRemovedPortions(t.locale) }) { Text(t(Msg.KEEP_PORTIONS)) }
+                TextButton(onClick = { askingRemoval = false; draft = draft.keepingRemovedPortions(t.locale) }) { Text(t(IngredientsMsg.KEEP_PORTIONS)) }
             },
         )
     }
@@ -340,11 +341,11 @@ private fun LookupPanel(
     val busy = state == LookupState.Busy
     val quiet = MaterialTheme.colorScheme.onSurfaceVariant
     val error = MaterialTheme.colorScheme.error
-    Text(t(Msg.LOOKUP_TITLE), style = MaterialTheme.typography.titleMedium)
-    Text(t(Msg.LOOKUP_HINT), style = MaterialTheme.typography.bodySmall, color = quiet)
+    Text(t(IngredientsMsg.LOOKUP_TITLE), style = MaterialTheme.typography.titleMedium)
+    Text(t(IngredientsMsg.LOOKUP_HINT), style = MaterialTheme.typography.bodySmall, color = quiet)
     OutlinedTextField(
         query, onQuery,
-        label = { Text(t(Msg.LOOKUP_FIELD)) },
+        label = { Text(t(IngredientsMsg.LOOKUP_FIELD)) },
         enabled = enabled && !busy,
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -352,15 +353,15 @@ private fun LookupPanel(
         modifier = Modifier.fillMaxWidth(),
     )
     FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), itemVerticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onLookUp, enabled = enabled && !busy) { Text(t(Msg.LOOKUP)) }
-        onScan?.let { TextButton(onClick = it, enabled = enabled && !busy) { Text(t(Msg.SCAN)) } }
+        TextButton(onClick = onLookUp, enabled = enabled && !busy) { Text(t(IngredientsMsg.LOOKUP)) }
+        onScan?.let { TextButton(onClick = it, enabled = enabled && !busy) { Text(t(IngredientsMsg.SCAN)) } }
     }
     when (scanProblem) {
         ScanResult.Refused -> {
-            Text(t(Msg.SCAN_REFUSED), style = MaterialTheme.typography.bodySmall, color = error)
-            onOpenSettings?.let { TextButton(onClick = it) { Text(t(Msg.SCAN_SETTINGS)) } }
+            Text(t(IngredientsMsg.SCAN_REFUSED), style = MaterialTheme.typography.bodySmall, color = error)
+            onOpenSettings?.let { TextButton(onClick = it) { Text(t(IngredientsMsg.SCAN_SETTINGS)) } }
         }
-        ScanResult.Unavailable -> Text(t(Msg.SCAN_UNAVAILABLE), style = MaterialTheme.typography.bodySmall, color = error)
+        ScanResult.Unavailable -> Text(t(IngredientsMsg.SCAN_UNAVAILABLE), style = MaterialTheme.typography.bodySmall, color = error)
         is ScanResult.Read, null -> Unit
     }
     when (state) {
@@ -368,20 +369,20 @@ private fun LookupPanel(
             val color = if (answer.product?.basis == null || answer.problems.isNotEmpty()) error else quiet
             lookupNotes(answer, t).forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = color) }
         }
-        LookupState.TooShort -> Text(t(Msg.LOOKUP_TOO_SHORT), style = MaterialTheme.typography.bodySmall, color = error)
+        LookupState.TooShort -> Text(t(IngredientsMsg.LOOKUP_TOO_SHORT), style = MaterialTheme.typography.bodySmall, color = error)
         LookupState.Busy -> Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Related), verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            Text(t(Msg.LOOKUP_BUSY), style = MaterialTheme.typography.bodyMedium, color = quiet)
+            Text(t(IngredientsMsg.LOOKUP_BUSY), style = MaterialTheme.typography.bodyMedium, color = quiet)
         }
         is LookupState.Found -> {
             state.search.problems.forEach { Text(problemText(it, t), style = MaterialTheme.typography.bodySmall, color = error) }
-            if (state.search.problems.isNotEmpty()) Text(t(Msg.LOOKUP_TYPE_VALUES), style = MaterialTheme.typography.bodySmall, color = error)
+            if (state.search.problems.isNotEmpty()) Text(t(IngredientsMsg.LOOKUP_TYPE_VALUES), style = MaterialTheme.typography.bodySmall, color = error)
             if (state.search.products.isEmpty() && state.search.problems.isEmpty()) {
-                Text(t(Msg.LOOKUP_NOTHING, state.text), style = MaterialTheme.typography.bodyMedium, color = quiet)
+                Text(t(IngredientsMsg.LOOKUP_NOTHING, state.text), style = MaterialTheme.typography.bodyMedium, color = quiet)
             }
             state.search.products.forEach { hit -> HitRow(hit, enabled) { onPick(hit) } }
         }
-        is LookupState.Failed -> Text(failureSentence(state.failed, Msg.LOOKUP_FAILED), style = MaterialTheme.typography.bodySmall, color = error)
+        is LookupState.Failed -> Text(failureSentence(state.failed, IngredientsMsg.LOOKUP_FAILED), style = MaterialTheme.typography.bodySmall, color = error)
     }
     HorizontalDivider(Modifier.padding(vertical = Spacing.Related))
 }
@@ -410,7 +411,7 @@ private fun SourceLine(source: String) {
     if (fromOpenFoodFacts(source)) {
         val link = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
         Text(
-            inlineMarkdown(t(Msg.OFF_LICENCE, "[openfoodfacts.org]($OPEN_FOOD_FACTS_URL)"), link),
+            inlineMarkdown(t(IngredientsMsg.OFF_LICENCE, "[openfoodfacts.org]($OPEN_FOOD_FACTS_URL)"), link),
             style = MaterialTheme.typography.bodySmall,
             color = quiet,
         )
@@ -444,7 +445,7 @@ private fun ValueField(draft: ProductDraft, value: LabelValue, enabled: Boolean,
         label = { Text(t(value.msg)) },
         suffix = { Text(value.unit) },
         isError = problem != null,
-        supportingText = problem?.let { { Text(numberProblemText(it, t(Msg.PRODUCT_NEEDS_ENERGY), t)) } },
+        supportingText = problem?.let { { Text(numberProblemText(it, t(IngredientsMsg.PRODUCT_NEEDS_ENERGY), t)) } },
         enabled = enabled,
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = next.imeAction),
@@ -456,9 +457,9 @@ private fun ValueField(draft: ProductDraft, value: LabelValue, enabled: Boolean,
 /** What is wrong with a number, as the line under its field says it; [needed] when none is given and one is needed. */
 private fun numberProblemText(problem: NumberProblem, needed: String, t: Strings): String = when (problem) {
     NumberProblem.NEEDED -> needed
-    NumberProblem.NOT_A_NUMBER -> t(Msg.PRODUCT_NOT_A_NUMBER)
-    NumberProblem.NEGATIVE -> t(Msg.PRODUCT_NEGATIVE)
-    NumberProblem.ZERO -> t(Msg.PORTION_SIZE_ZERO)
+    NumberProblem.NOT_A_NUMBER -> t(IngredientsMsg.PRODUCT_NOT_A_NUMBER)
+    NumberProblem.NEGATIVE -> t(IngredientsMsg.PRODUCT_NEGATIVE)
+    NumberProblem.ZERO -> t(IngredientsMsg.PORTION_SIZE_ZERO)
 }
 
 /**
@@ -483,16 +484,16 @@ private fun PortionField(
     Row(verticalAlignment = Alignment.Top) {
         OutlinedTextField(
             row.name, { onChange(row.copy(name = it)) },
-            label = { Text(t(Msg.PORTION_NAME)) },
+            label = { Text(t(IngredientsMsg.PORTION_NAME)) },
             isError = problem != null,
             supportingText = problem?.let {
                 {
                     Text(
                         when (it) {
-                            PortionNameProblem.NEEDED -> t(Msg.PORTION_NAME_NEEDED)
-                            PortionNameProblem.TAKEN -> t(Msg.PORTION_NAME_TAKEN)
-                            PortionNameProblem.IS_UNIT -> t(Msg.PORTION_NAME_IS_UNIT, row.name.trim())
-                            PortionNameProblem.BAD_CHARACTER -> t(Msg.PORTION_NAME_BAD)
+                            PortionNameProblem.NEEDED -> t(IngredientsMsg.PORTION_NAME_NEEDED)
+                            PortionNameProblem.TAKEN -> t(IngredientsMsg.PORTION_NAME_TAKEN)
+                            PortionNameProblem.IS_UNIT -> t(IngredientsMsg.PORTION_NAME_IS_UNIT, row.name.trim())
+                            PortionNameProblem.BAD_CHARACTER -> t(IngredientsMsg.PORTION_NAME_BAD)
                         },
                     )
                 }
@@ -504,16 +505,16 @@ private fun PortionField(
             modifier = Modifier.weight(1f).focusRequester(nameFocus),
         )
         Column(Modifier.padding(top = 4.dp)) {
-            BarAction(AppIcons.Close, t(Msg.REMOVE_PORTION, row.name), onRemove, enabled = enabled)
+            BarAction(AppIcons.Close, t(IngredientsMsg.REMOVE_PORTION, row.name), onRemove, enabled = enabled)
         }
     }
     Row(Modifier.padding(start = 24.dp, bottom = Spacing.Related), verticalAlignment = Alignment.Top) {
         val sizeProblem = row.sizeProblem
         OutlinedTextField(
             row.size, { onChange(row.copy(size = it)) },
-            label = { Text(t(Msg.PORTION_SIZE)) },
+            label = { Text(t(IngredientsMsg.PORTION_SIZE)) },
             isError = sizeProblem != null,
-            supportingText = sizeProblem?.let { { Text(numberProblemText(it, t(Msg.PORTION_SIZE_NEEDED, unit), t)) } },
+            supportingText = sizeProblem?.let { { Text(numberProblemText(it, t(IngredientsMsg.PORTION_SIZE_NEEDED, unit), t)) } },
             enabled = enabled,
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = next.imeAction),
@@ -523,7 +524,7 @@ private fun PortionField(
         TextButton(
             onClick = { onChange(row.copy(ml = !row.ml)) },
             enabled = enabled,
-            modifier = Modifier.padding(top = 8.dp).semantics { contentDescription = t(Msg.PORTION_UNIT, unit) },
+            modifier = Modifier.padding(top = 8.dp).semantics { contentDescription = t(IngredientsMsg.PORTION_UNIT, unit) },
         ) { Text(unit) }
     }
 }

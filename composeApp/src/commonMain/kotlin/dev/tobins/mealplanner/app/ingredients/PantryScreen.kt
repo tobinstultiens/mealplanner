@@ -33,12 +33,14 @@ import dev.tobins.mealplanner.api.Ingredient
 import dev.tobins.mealplanner.api.Pantry
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.RefreshNotice
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.ingredients
 import dev.tobins.mealplanner.app.rememberFrontReturns
 import dev.tobins.mealplanner.app.rememberLoad
+import dev.tobins.mealplanner.app.setOnHand
 import dev.tobins.mealplanner.app.shopping.weightText
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.LoadingState
@@ -57,14 +59,14 @@ import kotlinx.coroutines.launch
  */
 internal fun pantryNote(pantry: Pantry, id: Long, strings: Strings): String? {
     if (pantry.onHand.none { it.id == id }) return null
-    val left = pantry.onHandGrams[id]?.let { strings(Msg.PANTRY_LEFT, weightText(it, strings.locale)) }
+    val left = pantry.onHandGrams[id]?.let { strings(IngredientsMsg.PANTRY_LEFT, weightText(it, strings.locale)) }
     // A date never breaks across lines: its day and month are joined by a no-break space.
     fun date(iso: String) = dayMonthLabel(iso, strings.locale).replace(' ', '\u00A0')
     val weeks = pantry.onHandWeeks[id].orEmpty().ifEmpty { listOfNotNull(pantry.onHandFrom[id]) }
     val week = when (weeks.size) {
         0 -> null
-        1 -> strings(Msg.PANTRY_FROM_WEEK, date(weeks.single()))
-        else -> strings(Msg.PANTRY_FROM_WEEKS, weeks.joinToString(", ") { date(it) })
+        1 -> strings(IngredientsMsg.PANTRY_FROM_WEEK, date(weeks.single()))
+        else -> strings(IngredientsMsg.PANTRY_FROM_WEEKS, weeks.joinToString(", ") { date(it) })
     }
     return listOfNotNull(left, week).joinToString(" · ").ifEmpty { null }
 }
@@ -89,11 +91,11 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
 
     LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.ingredients() to api.pantry() } }
 
-    SubScreen(t(Msg.PANTRY), onBack, snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }) { padding ->
+    SubScreen(t(CommonMsg.PANTRY), onBack, snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }) { padding ->
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.PANTRY_LOAD_FAILED), current) { reload++ }
+                ErrorMessage(t(IngredientsMsg.PANTRY_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val (ingredients, pantry) = current.value
@@ -116,14 +118,14 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
 
                 Column(Modifier.padding(padding).fillMaxSize()) {
                     Text(
-                        t(Msg.PANTRY_SUMMARY, staples.size, onHand.size),
+                        t(IngredientsMsg.PANTRY_SUMMARY, staples.size, onHand.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = Spacing.ScreenEdge),
                     )
                     OutlinedTextField(
                         query, { query = it },
-                        label = { Text(t(Msg.SEARCH_INGREDIENTS)) },
+                        label = { Text(t(CommonMsg.SEARCH_INGREDIENTS)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.ScreenEdge, vertical = 8.dp),
                     )
@@ -143,12 +145,12 @@ fun PantryScreen(api: ApiClient, onBack: () -> Unit) {
                                 FilterChip(
                                     selected = ingredient.id in staples,
                                     onClick = { update { api.setStaple(ingredient.id, ingredient.id !in staples) } },
-                                    label = { Text(t(Msg.STAPLE)) },
+                                    label = { Text(t(IngredientsMsg.STAPLE)) },
                                 )
                                 FilterChip(
                                     selected = ingredient.id in onHand,
                                     onClick = { update { api.setOnHand(ingredient.id, ingredient.id !in onHand) } },
-                                    label = { Text(t(Msg.ON_HAND)) },
+                                    label = { Text(t(IngredientsMsg.ON_HAND)) },
                                 )
                             }
                         }

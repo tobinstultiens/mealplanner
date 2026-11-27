@@ -20,7 +20,6 @@ import dev.tobins.mealplanner.api.StandardMeal
 import dev.tobins.mealplanner.api.StandardMeals
 import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.recipes.SwitchRow
 import dev.tobins.mealplanner.app.ui.Spacing
@@ -38,7 +37,7 @@ fun standardChoices(offer: StandardMeals?, day: Int, slot: MealSlot, skipped: Lo
     else offer.meals.filter { it.slot == slot && it.recipeId != skipped }
 
 /** What a chip of [this] standard meal says first: `Eggs on bread · 553 kcal`, the calories at the slot's portion. */
-fun StandardMeal.chipText(strings: Strings): String = strings(Msg.STANDARD_CHIP, title, kcal.roundToInt())
+fun StandardMeal.chipText(strings: Strings): String = strings(PlanMsg.STANDARD_CHIP, title, kcal.roundToInt())
 
 /**
  * What a chip of [this] says under its title when the pantry has ingredients of it not at home: `no eggs at home`, `no
@@ -46,8 +45,8 @@ fun StandardMeal.chipText(strings: Strings): String = strings(Msg.STANDARD_CHIP,
  */
 fun StandardMeal.missingText(strings: Strings): String? {
     val names = missing.map { it.replaceFirstChar(Char::lowercase) }.ifEmpty { return null }
-    val listed = if (names.size == 1) names.single() else names.dropLast(1).joinToString(", ") + " " + strings(Msg.STANDARD_OR) + " " + names.last()
-    return strings(Msg.STANDARD_MISSING, listed)
+    val listed = if (names.size == 1) names.single() else names.dropLast(1).joinToString(", ") + " " + strings(PlanMsg.STANDARD_OR) + " " + names.last()
+    return strings(PlanMsg.STANDARD_MISSING, listed)
 }
 
 /**
@@ -62,8 +61,8 @@ fun shrinksPrep(meal: PlannedMeal?): Boolean {
 
 /** What the recipe's switch says after marking it ([switch]): the ingredients it made staples, and those it could not. */
 fun standardReport(switch: StandardSwitch, strings: Strings): List<String> = listOfNotNull(
-    if (switch.addedStaples.isEmpty()) strings(Msg.STANDARD_NONE_ADDED) else strings(Msg.STANDARD_ADDED_STAPLES, switch.addedStaples.joinToString(", ")),
-    switch.unlinked.takeIf { it.isNotEmpty() }?.let { strings(Msg.STANDARD_UNLINKED, it.joinToString(", ")) },
+    if (switch.addedStaples.isEmpty()) strings(PlanMsg.STANDARD_NONE_ADDED) else strings(PlanMsg.STANDARD_ADDED_STAPLES, switch.addedStaples.joinToString(", ")),
+    switch.unlinked.takeIf { it.isNotEmpty() }?.let { strings(PlanMsg.STANDARD_UNLINKED, it.joinToString(", ")) },
 )
 
 /** One chip per standard meal of [choices]: its title and calories, and on a second line an ingredient that is out. */
@@ -98,9 +97,9 @@ fun SkipSheet(title: String, choices: List<StandardMeal>, enabled: Boolean, onDi
     val t = LocalStrings.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t(Msg.SKIP_SHEET_TITLE, title)) },
+        title = { Text(t(PlanMsg.SKIP_SHEET_TITLE, title)) },
         text = { SkipSheetBody(choices, enabled, onPick) },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(t(Msg.SKIP_SHEET_LEAVE)) } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(t(PlanMsg.SKIP_SHEET_LEAVE)) } },
     )
 }
 
@@ -108,7 +107,7 @@ fun SkipSheet(title: String, choices: List<StandardMeal>, enabled: Boolean, onDi
 @Composable
 fun SkipSheetBody(choices: List<StandardMeal>, enabled: Boolean, onPick: (StandardMeal) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Related)) {
-        Text(LocalStrings.current(Msg.SKIP_SHEET_TEXT))
+        Text(LocalStrings.current(PlanMsg.SKIP_SHEET_TEXT))
         StandardChips(choices, enabled, onPick)
     }
 }
@@ -121,8 +120,8 @@ fun SkipSheetBody(choices: List<StandardMeal>, enabled: Boolean, onPick: (Standa
 fun StandardMealRow(standard: Boolean, report: StandardSwitch?, enabled: Boolean, onChange: (Boolean) -> Unit) {
     val t = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
-        SwitchRow(t(Msg.STANDARD_MEAL), standard, enabled, onChange)
-        val hint = listOf(t(if (standard) Msg.STANDARD_ON_HINT else Msg.STANDARD_OFF_HINT)) + report?.let { standardReport(it, t) }.orEmpty()
+        SwitchRow(t(PlanMsg.STANDARD_MEAL), standard, enabled, onChange)
+        val hint = listOf(t(if (standard) PlanMsg.STANDARD_ON_HINT else PlanMsg.STANDARD_OFF_HINT)) + report?.let { standardReport(it, t) }.orEmpty()
         for (line in hint) {
             Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

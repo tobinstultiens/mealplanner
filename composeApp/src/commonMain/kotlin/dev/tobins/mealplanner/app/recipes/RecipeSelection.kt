@@ -25,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.ui.Spacing
 
 /**
@@ -83,8 +82,8 @@ internal fun SelectionBar(count: Int, onSelectAll: () -> Unit, aboveSystemBar: B
             verticalArrangement = Arrangement.spacedBy(Spacing.Tight),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(t(Msg.SELECTED_COUNT, count), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                TextButton(onClick = onSelectAll) { Text(t(Msg.SELECT_ALL)) }
+                Text(t(RecipesMsg.SELECTED_COUNT, count), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                TextButton(onClick = onSelectAll) { Text(t(RecipesMsg.SELECT_ALL)) }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Related)) { actions() }
         }

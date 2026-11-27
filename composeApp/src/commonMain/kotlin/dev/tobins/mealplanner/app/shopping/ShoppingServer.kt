@@ -10,6 +10,7 @@ import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.prices.ExclusionChange
+import dev.tobins.mealplanner.app.setOnHand
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.load
 
@@ -86,8 +87,8 @@ internal fun noticeFor(msg: Msg, failed: Load.Failed): Notice =
 /** What a technical failure means in a few plain words, such as "the server could not be reached". */
 internal fun plainReason(failed: Load.Failed): String = Strings.current(
     when {
-        failed.unreadable -> Msg.UNREADABLE_ANSWER
-        failed.lostConnection -> Msg.NO_CONNECTION
-        else -> Msg.WENT_WRONG
+        failed.unreadable -> ShoppingMsg.UNREADABLE_ANSWER
+        failed.lostConnection -> ShoppingMsg.NO_CONNECTION
+        else -> ShoppingMsg.WENT_WRONG
     },
 )

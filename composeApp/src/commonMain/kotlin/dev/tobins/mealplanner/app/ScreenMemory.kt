@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import dev.tobins.mealplanner.app.shopping.ShoppingMsg
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.load
@@ -141,8 +142,8 @@ internal fun RefreshNotice(loaded: LoadState<*>, aboveSystemBar: Boolean = false
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Related),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(t(Msg.REFRESH_FAILED_KEPT), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-                TextButton(enabled = !loaded.refreshing, onClick = onRetry) { Text(t(Msg.RETRY)) }
+                Text(t(AppMsg.REFRESH_FAILED_KEPT), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                TextButton(enabled = !loaded.refreshing, onClick = onRetry) { Text(t(ShoppingMsg.RETRY)) }
             }
         }
     }

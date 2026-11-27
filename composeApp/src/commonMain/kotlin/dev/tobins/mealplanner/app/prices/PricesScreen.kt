@@ -26,8 +26,6 @@ import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.PricesState
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
-import dev.tobins.mealplanner.app.Plural
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
 import dev.tobins.mealplanner.app.ui.ErrorMessage
@@ -66,15 +64,15 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
     }
     val refreshing = (state as? Load.Ready)?.value?.refreshing == true
 
-    SubScreen(t(Msg.REGULAR_PRICES), onBack, snackbar, actions = {
-        BarAction(AppIcons.Refresh, if (refreshing) t(Msg.LOOKING_UP_PRICES) else t(Msg.REFRESH_PRICES), busy = refreshing, onClick = {
+    SubScreen(t(PricesMsg.REGULAR_PRICES), onBack, snackbar, actions = {
+        BarAction(AppIcons.Refresh, if (refreshing) t(PricesMsg.LOOKING_UP_PRICES) else t(PricesMsg.REFRESH_PRICES), busy = refreshing, onClick = {
             scope.launch {
                 when (val started = load { api.refreshPrices() }) {
                     is Load.Ready -> {
                         state = started
                         reload++
                     }
-                    is Load.Failed -> snackbar.showSnackbar(failureSentence(started, Msg.PRICES_START_FAILED))
+                    is Load.Failed -> snackbar.showSnackbar(failureSentence(started, PricesMsg.PRICES_START_FAILED))
                     Load.Loading -> {}
                 }
             }
@@ -83,7 +81,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
-                ErrorMessage(t(Msg.PRICES_LOAD_FAILED), current) { reload++ }
+                ErrorMessage(t(PricesMsg.PRICES_LOAD_FAILED), current) { reload++ }
             }
             is Load.Ready -> {
                 val prices = current.value
@@ -92,14 +90,14 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                         Column(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
                             Text(
                                 when {
-                                    prices.refreshing -> t(Msg.PRICES_LOOKING)
-                                    prices.fetchedAt == null -> t.onWeb(Msg.PRICES_NONE, Msg.PRICES_NONE_BROWSER)
-                                    else -> t.plural(Plural.PRICES_SUMMARY, prices.prices.size, dayMonthLabel(prices.fetchedAt!!.take(10), t.locale))
+                                    prices.refreshing -> t(PricesMsg.PRICES_LOOKING)
+                                    prices.fetchedAt == null -> t.onWeb(PricesMsg.PRICES_NONE, PricesMsg.PRICES_NONE_BROWSER)
+                                    else -> t.plural(PricesPlural.PRICES_SUMMARY, prices.prices.size, dayMonthLabel(prices.fetchedAt!!.take(10), t.locale))
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                t(Msg.PRICES_EXPLAIN),
+                                t(PricesMsg.PRICES_EXPLAIN),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -107,7 +105,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                     }
                     items(prices.prices, key = { it.ingredientId }) { price ->
                         ListItem(
-                            headlineContent = { Text(t(Msg.PRICE_PER_KG, price.ingredientName, formatEuro(price.eurosPerKg, t.locale))) },
+                            headlineContent = { Text(t(PricesMsg.PRICE_PER_KG, price.ingredientName, formatEuro(price.eurosPerKg, t.locale))) },
                             supportingContent = {
                                 Text(
                                     listOfNotNull(
@@ -123,7 +121,7 @@ fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
                     if (prices.unpriced.isNotEmpty()) {
                         item {
                             Text(
-                                t(Msg.PRICES_UNPRICED, prices.unpriced.joinToString("; ")),
+                                t(PricesMsg.PRICES_UNPRICED, prices.unpriced.joinToString("; ")),
                                 modifier = Modifier.padding(Spacing.InsideCard),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

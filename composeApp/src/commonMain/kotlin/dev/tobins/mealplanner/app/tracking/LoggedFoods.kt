@@ -6,11 +6,13 @@ import dev.tobins.mealplanner.api.LogEntry
 import dev.tobins.mealplanner.api.LogFoodInput
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.day
+import dev.tobins.mealplanner.app.deleteLog
 import dev.tobins.mealplanner.app.ingredients.ChosenFood
 import dev.tobins.mealplanner.app.ingredients.FoodScreen
 import dev.tobins.mealplanner.app.plan.foodAmount
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.dayLabel
 import dev.tobins.mealplanner.app.ui.unbrokenParts
 import kotlinx.serialization.Serializable
@@ -36,10 +38,10 @@ val LogEntry.shownName: String get() = food?.name ?: description
  * that it counted nothing; a typed entry's numbers.
  */
 fun LogEntry.numbersText(t: Strings): String {
-    val numbers = t(Msg.KCAL_PROTEIN, kcal.roundToInt(), proteinG.roundToInt())
+    val numbers = t(CommonMsg.KCAL_PROTEIN, kcal.roundToInt(), proteinG.roundToInt())
     val food = food ?: return numbers
     val amount = foodAmount(food.amount, food.unit, t)
-    return unbrokenParts(if (food.counted) "$amount · $numbers" else t(Msg.FOOD_UNCOUNTED, amount))
+    return unbrokenParts(if (food.counted) "$amount · $numbers" else t(CommonMsg.FOOD_UNCOUNTED, amount))
 }
 
 /** How [this] is typed over when it cannot be recounted: a food's amount and name in the app's language, or what was typed. */
@@ -56,7 +58,7 @@ fun LogFoodScreen(api: ApiClient, place: LogFoodPlace, onBack: () -> Unit, onDon
     val entry = place.entry
     val food = entry?.food
     FoodScreen(
-        api, t(if (entry == null) Msg.ALSO_EATEN else Msg.LOG_CHANGE_FOOD_TITLE), dayLabel(place.date, t.locale),
+        api, t(if (entry == null) CommonMsg.ALSO_EATEN else TrackingMsg.LOG_CHANGE_FOOD_TITLE), dayLabel(place.date, t.locale),
         food?.ingredientId?.let { ChosenFood(it, food.name, food.amount, food.unit, entry.kcal, entry.proteinG) }, onBack,
         save = { sent ->
             if (entry == null) api.logPickedFood(LogFoodInput(place.date, sent.ingredientId, sent.amount, sent.unit)) else api.changeLoggedFood(entry.id, sent)

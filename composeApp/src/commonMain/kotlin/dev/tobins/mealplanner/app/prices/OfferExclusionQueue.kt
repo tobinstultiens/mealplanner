@@ -9,7 +9,6 @@ import androidx.compose.runtime.setValue
 import dev.tobins.mealplanner.api.OfferExclusion
 import dev.tobins.mealplanner.api.OfferExclusions
 import dev.tobins.mealplanner.api.Store
-import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.shopping.Notice
 import dev.tobins.mealplanner.app.shopping.ShoppingCache
@@ -19,6 +18,7 @@ import dev.tobins.mealplanner.app.shopping.noAnswer
 import dev.tobins.mealplanner.app.shopping.noticeFor
 import dev.tobins.mealplanner.app.shopping.refused
 import dev.tobins.mealplanner.app.shopping.shortName
+import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.nowIso
 import kotlinx.coroutines.CoroutineScope
@@ -92,7 +92,7 @@ internal class OfferExclusionQueue(
                     is Load.Failed -> when {
                         result.refused -> {
                             cache.forgetExclusion(change)
-                            rejected(noticeFor(Msg.EXCLUSION_FAILED, result))
+                            rejected(noticeFor(PricesMsg.EXCLUSION_FAILED, result))
                         }
                         result.noAnswer -> return result
                         else -> Unit
@@ -112,7 +112,7 @@ internal class OfferExclusionQueue(
     }
 
     private suspend fun timed(request: suspend () -> Load<OfferExclusions>): Load<OfferExclusions> =
-        withTimeoutOrNull(ShoppingSession.TIME_LIMIT) { request() } ?: Load.Failed(Strings.current(Msg.NO_ANSWER))
+        withTimeoutOrNull(ShoppingSession.TIME_LIMIT) { request() } ?: Load.Failed(Strings.current(CommonMsg.NO_ANSWER))
 }
 
 /**
@@ -133,8 +133,8 @@ internal fun OfferExclusionQueue.chooseWithUndo(
     scope.launch {
         snackbar.currentSnackbarData?.dismiss()
         val answer = snackbar.showSnackbar(
-            strings(if (excluded) Msg.EXCLUDED else Msg.TAKEN_BACK, title, store.shortName(), ingredientName),
-            actionLabel = strings(Msg.UNDO),
+            strings(if (excluded) PricesMsg.EXCLUDED else PricesMsg.TAKEN_BACK, title, store.shortName(), ingredientName),
+            actionLabel = strings(CommonMsg.UNDO),
             duration = SnackbarDuration.Long,
         )
         if (answer == SnackbarResult.ActionPerformed) choose(store, title, ingredientId, ingredientName, !excluded)

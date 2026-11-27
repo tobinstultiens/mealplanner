@@ -100,7 +100,7 @@ fun RegistrationScreen(send: suspend (RegistrationRequest) -> RegistrationReceip
             tried = true
             triedHere = true
             // Said under Send too: at a large font the marked field may be off the screen.
-            refusal = t(Msg.REGISTER_FIX_FIELDS).takeIf { problems.isNotEmpty() }
+            refusal = t(AccountsMsg.REGISTER_FIX_FIELDS).takeIf { problems.isNotEmpty() }
             if (problems.isNotEmpty()) return@RegistrationForm
             sending = true
             scope.launch {
@@ -156,13 +156,13 @@ fun RegistrationForm(
     onBack: () -> Unit,
 ) {
     val t = LocalStrings.current
-    SubScreen(t(Msg.REGISTER), onBack) { padding ->
+    SubScreen(t(AccountsMsg.REGISTER), onBack) { padding ->
         Column(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
             verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
         ) {
             val narrow = Modifier.widthIn(max = 420.dp).fillMaxWidth()
-            Text(t(Msg.REGISTER_INTRO), narrow, style = MaterialTheme.typography.bodyMedium)
+            Text(t(AccountsMsg.REGISTER_INTRO), narrow, style = MaterialTheme.typography.bodyMedium)
             for (field in FormField.entries) {
                 val problem = problems[field]
                 OutlinedTextField(
@@ -178,7 +178,7 @@ fun RegistrationForm(
                 )
             }
             Button(enabled = !sending, onClick = onSend, modifier = narrow) {
-                Text(if (sending) t(Msg.REGISTER_SENDING) else t(Msg.REGISTER_SEND))
+                Text(if (sending) t(AccountsMsg.REGISTER_SENDING) else t(AccountsMsg.REGISTER_SEND))
             }
             refusal?.let { PlainError(it, narrow) }
         }
@@ -187,16 +187,16 @@ fun RegistrationForm(
 
 private val FormField.label: Msg
     get() = when (this) {
-        FormField.DISPLAY_NAME -> Msg.FIELD_DISPLAY_NAME
-        FormField.USERNAME -> Msg.FIELD_USERNAME
-        FormField.EMAIL -> Msg.FIELD_EMAIL
-        FormField.PASSWORD -> Msg.FIELD_PASSWORD
-        FormField.PASSWORD_AGAIN -> Msg.FIELD_PASSWORD_AGAIN
+        FormField.DISPLAY_NAME -> AccountsMsg.FIELD_DISPLAY_NAME
+        FormField.USERNAME -> AccountsMsg.FIELD_USERNAME
+        FormField.EMAIL -> AccountsMsg.FIELD_EMAIL
+        FormField.PASSWORD -> AccountsMsg.FIELD_PASSWORD
+        FormField.PASSWORD_AGAIN -> AccountsMsg.FIELD_PASSWORD_AGAIN
     }
 
 /** What a field says under it while nothing is wrong with it. */
 private val FormField.hint: Msg?
-    get() = if (this == FormField.USERNAME) Msg.FIELD_USERNAME_HINT else null
+    get() = if (this == FormField.USERNAME) AccountsMsg.FIELD_USERNAME_HINT else null
 
 private val FormField.secret: Boolean get() = this == FormField.PASSWORD || this == FormField.PASSWORD_AGAIN
 
@@ -225,15 +225,15 @@ internal fun PlainError(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun RegistrationSent(username: String, onBack: () -> Unit) {
     val t = LocalStrings.current
-    SubScreen(t(Msg.REGISTER), onBack) { padding ->
+    SubScreen(t(AccountsMsg.REGISTER), onBack) { padding ->
         Column(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.ScreenEdge),
             verticalArrangement = Arrangement.spacedBy(Spacing.BetweenCards),
         ) {
             val narrow = Modifier.widthIn(max = 420.dp).fillMaxWidth()
-            Text(t(Msg.REGISTER_SENT_TITLE), narrow, style = MaterialTheme.typography.titleMedium)
-            Text(t(Msg.REGISTER_SENT, username), narrow, style = MaterialTheme.typography.bodyLarge)
-            Button(onClick = onBack, modifier = narrow) { Text(t(Msg.BACK_TO_LOGIN)) }
+            Text(t(AccountsMsg.REGISTER_SENT_TITLE), narrow, style = MaterialTheme.typography.titleMedium)
+            Text(t(AccountsMsg.REGISTER_SENT, username), narrow, style = MaterialTheme.typography.bodyLarge)
+            Button(onClick = onBack, modifier = narrow) { Text(t(AccountsMsg.BACK_TO_LOGIN)) }
         }
     }
 }
