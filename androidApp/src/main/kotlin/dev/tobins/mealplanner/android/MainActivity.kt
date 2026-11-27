@@ -5,7 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import dev.tobins.mealplanner.app.LoginLauncher
+import dev.tobins.mealplanner.app.accounts.LoginLauncher
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle

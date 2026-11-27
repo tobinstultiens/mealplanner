@@ -1,5 +1,7 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.app.ui.Load
+import dev.tobins.mealplanner.app.ui.load
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertIs

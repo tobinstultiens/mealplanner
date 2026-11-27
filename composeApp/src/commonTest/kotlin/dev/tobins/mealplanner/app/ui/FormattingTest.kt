@@ -1,0 +1,271 @@
+package dev.tobins.mealplanner.app.ui
+
+import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.Nutrition
+import dev.tobins.mealplanner.api.PlannedMeal
+import dev.tobins.mealplanner.api.RecipeCost
+import dev.tobins.mealplanner.api.RecipeKind
+import dev.tobins.mealplanner.api.RecipeNutrition
+import dev.tobins.mealplanner.api.RecipeSource
+import dev.tobins.mealplanner.api.RecipeSummary
+import dev.tobins.mealplanner.api.WeekRest
+import dev.tobins.mealplanner.app.AppLanguage
+import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.recipes.MealPlace
+import dev.tobins.mealplanner.app.recipes.MealToCook
+import dev.tobins.mealplanner.app.recipes.toCook
+import dev.tobins.mealplanner.app.shopping.quantityText
+import dev.tobins.mealplanner.recipes.IngredientLine
+import dev.tobins.mealplanner.units.Dimension
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+private val en = FormatLocale.English
+private val nl = FormatLocale.Dutch
+
+/** English texts with the decimal comma of a German device, as the "System" language gives. */
+private val germanFormats = Strings.of(AppLanguage.SYSTEM, "de-DE")
+
+class FormattingTest {
+    @Test
+    fun amountsDropTrailingZerosAndRoundToHundredths() {
+        assertEquals("400", formatAmount(400.0, en))
+        assertEquals("1.5", formatAmount(1.5, en))
+        assertEquals("0.33", formatAmount(1.0 / 3, en))
+        assertEquals("0.05", formatAmount(0.05, en))
+        assertEquals("2", formatAmount(1.999, en))
+    }
+
+    @Test
+    fun ingredientLinesReadNaturally() {
+        fun line(amount: Double?, unit: String?, dimension: Dimension?, base: Double?, item: String) =
+            IngredientLine(amount, unit, dimension, base, item, group = null)
+
+        assertEquals("400 g beef", line(400.0, "g", Dimension.WEIGHT, 400.0, "beef").displayText(en))
+        assertEquals("1 onion, large", line(1.0, "onion", Dimension.COUNT, null, "large").displayText(en))
+        assertEquals("2 onion", line(2.0, "onion", Dimension.COUNT, null, "").displayText(en))
+        assertEquals("3 clove garlic", line(3.0, "clove", Dimension.COUNT, null, "garlic").displayText(en))
+        assertEquals("salt to taste", line(null, null, null, null, "salt to taste").displayText(en))
+    }
+
+    @Test
+    fun scalingALineRoundsToWhatCanBeMeasured() {
+        fun line(amount: Double?, unit: String?, dimension: Dimension?, item: String) =
+            IngredientLine(amount, unit, dimension, amount.takeIf { dimension != Dimension.COUNT }, item, group = null)
+        val factor = 2.5 / 4
+
+        assertEquals("250 g beef", line(400.0, "g", Dimension.WEIGHT, "beef").scaled(factor).displayText(en))
+        // 1.5 tbsp is 0.94: a quarter spoon is the finest anyone measures.
+        assertEquals("1 tbsp oil", line(1.5, "tbsp", Dimension.VOLUME, "oil").scaled(factor).displayText(en))
+        assertEquals("1.25 clove garlic", line(2.0, "clove", Dimension.COUNT, "garlic").scaled(factor).displayText(en))
+        assertEquals("salt to taste", line(null, null, null, "salt to taste").scaled(factor).displayText(en))
+        // Below ten grams one decimal stays, and nothing rounds to nothing.
+        assertEquals("3.1 g salt", line(5.0, "g", Dimension.WEIGHT, "salt").scaled(factor).displayText(en))
+        assertEquals("0.25 pinch chili", line(0.1, "pinch", Dimension.COUNT, "chili").scaled(factor).displayText(en))
+        assertEquals("0.63 kg flour", line(1.0, "kg", Dimension.WEIGHT, "flour").scaled(factor).displayText(en))
+        assertEquals(250.0, line(400.0, "g", Dimension.WEIGHT, "beef").scaled(factor).baseAmount)
+    }
+
+    @Test
+    fun aRecipeFromAMealSaysWhatToCook() {
+        val english = Strings.of(AppLanguage.ENGLISH, "en")
+        val dutch = Strings.of(AppLanguage.DUTCH, "nl")
+        val dinner = MealToCook(1, 1.25, 2.5, skipped = false)
+        assertEquals("Cook 2.5 servings: 1.25 now, 1.25 for tomorrow's lunch", dinner.sentence(english))
+        assertEquals("Kook 2,5 porties: 1,25 nu, 1,25 voor de lunch van morgen", dinner.sentence(dutch))
+        assertEquals("Cook 1 serving", MealToCook(1, 1.0, 1.0, skipped = false).sentence(english))
+        assertEquals("Leftovers of yesterday's dinner: nothing to cook", MealToCook(1, 1.0, 0.0, skipped = false).sentence(english))
+        assertEquals("Skipped: nothing to cook", MealToCook(1, 1.0, 0.0, skipped = true).sentence(english))
+    }
+
+    @Test
+    fun aMealPassesItsServingsToCookOnlyWhenTheServerSaysThem() {
+        val meal = PlannedMeal(0, MealSlot.DINNER, 7, "Stew", 1.25, 700.0, 50.0)
+        assertNull(meal.toCook("2026-11-16"), "an older server: the recipe shows as written")
+        assertEquals(
+            MealToCook(7, 1.25, 2.5, skipped = false, place = MealPlace("2026-11-16", 0, MealSlot.DINNER), planned = true),
+            meal.copy(cookPortions = 2.5).toCook("2026-11-16"),
+        )
+        // A meal skipped or eaten is not to be marked eaten from cook mode.
+        assertEquals(false, meal.copy(cookPortions = 2.5, status = MealStatus.EATEN).toCook("2026-11-16")?.planned)
+    }
+
+    @Test
+    fun gramsAreWholeAboveTenAndOneDecimalBelow() {
+        assertEquals("28 g", formatGrams(28.06, en))
+        assertEquals("302 g", formatGrams(301.65, en))
+        assertEquals("4.6 g", formatGrams(4.59, en))
+        assertEquals("5 g", formatGrams(5.0, en))
+        assertEquals("0 g", formatGrams(null, en))
+    }
+
+    @Test
+    fun shoppingQuantitiesRoundPiecesUpAndSwitchToKilograms() {
+        fun item(grams: Double?, pieces: Double?) =
+            dev.tobins.mealplanner.api.ShoppingItem("k", "x", grams, pieces, "c", emptyList(), onHand = false, checked = false)
+
+        assertEquals("450 g", item(450.2, null).quantityText(en))
+        assertEquals("1.25 kg", item(1250.0, null).quantityText(en))
+        assertEquals("2 × · 165 g", item(165.0, 1.5).quantityText(en))
+        assertEquals("3 ×", item(null, 3.0).quantityText(en))
+        assertEquals("", item(null, null).quantityText(en))
+    }
+
+    @Test
+    fun shoppingQuantitiesKeepWhatCannotBeWeighed() {
+        fun item(knownGrams: Double?, pieces: Double?, vararg other: String) =
+            dev.tobins.mealplanner.api.ShoppingItem(
+                "k", "x", null, pieces, "c", emptyList(), onHand = false, checked = false,
+                knownGrams = knownGrams, otherAmounts = other.toList(),
+            )
+
+        assertEquals("200 g + 1 bag", item(200.0, 1.0, "1 bag").quantityText(en))
+        assertEquals("1.25 kg + 2 can + 3 clove", item(1250.0, 5.0, "2 can", "3 clove").quantityText(en))
+        assertEquals("1,25 kg + 1 bag", item(1250.0, 1.0, "1 bag").quantityText(nl))
+        assertEquals("250 ml", item(null, null, "250 ml").quantityText(en))
+        assertEquals("2 can", item(null, 2.0, "2 can").quantityText(nl))
+        // 2 onions and a bag of them: the count of the ingredient itself is not lost behind the bag.
+        assertEquals("2 × + 1 bag", item(null, 3.0, "1 bag").copy(ownPieces = 2.0).quantityText(en))
+        assertEquals("200 g + 2 × + 1 bag", item(200.0, 2.5, "1 bag").copy(ownPieces = 1.5).quantityText(en), "rounded up")
+        // Weight known, and a piece count that has no unit of its own.
+        assertEquals("2 × · 200 g", item(200.0, 2.0).quantityText(en))
+        assertEquals("", item(null, null).quantityText(en))
+    }
+
+    @Test
+    fun offersAreSummarisedPerStore() {
+        fun offer(store: dev.tobins.mealplanner.api.Store, deal: String?, price: Double? = null, was: Double? = null) =
+            dev.tobins.mealplanner.api.Offer(store, "x", deal, price, was, validFrom = "a", validUntil = "b")
+
+        assertEquals("AH: €3.49 (was €4.59)", offer(dev.tobins.mealplanner.api.Store.AH, "VOOR 3.49", 3.49, 4.59).shortText(Strings.English))
+        assertEquals("AH: 25% korting", offer(dev.tobins.mealplanner.api.Store.AH, "25% KORTING").shortText(Strings.English))
+        assertEquals("Jumbo: 1+1 gratis", offer(dev.tobins.mealplanner.api.Store.JUMBO, "1+1 gratis").shortText(Strings.English))
+        assertEquals("Lidl: €4.29", offer(dev.tobins.mealplanner.api.Store.LIDL, null, 4.29).shortText(Strings.English))
+        assertEquals("AH: 2 voor 1.99, €1.00", offer(dev.tobins.mealplanner.api.Store.AH, "2 voor 1.99", 1.0).shortText(Strings.English))
+        assertEquals("Jumbo: Alleen online, €1.09", offer(dev.tobins.mealplanner.api.Store.JUMBO, "Voor 1,09 · alleen online", 1.09).shortText(Strings.English))
+        assertEquals("€0.05", formatEuro(0.049, en))
+    }
+
+    @Test
+    fun moneyAndAmountsFollowTheDecimalSeparator() {
+        assertEquals("€2,11", formatEuro(2.11, nl))
+        assertEquals("1,5", formatAmount(1.5, nl))
+        assertEquals("1,25 kg", item(1250.0).quantityText(nl))
+        assertEquals("AH: €3,49 (was €4,59)", offer("VOOR 3.49", 3.49, 4.59).shortText(germanFormats))
+        assertEquals("1,75 servings · 461 kcal · 46 g protein", meal(1.75).macrosText(germanFormats).plain())
+    }
+
+    @Test
+    fun theLocaleComesFromTheDeviceTag() {
+        assertEquals(',', FormatLocale.of("nl-NL").decimalSeparator)
+        assertEquals("ma", FormatLocale.of("nl_NL").dayNames[0])
+        assertEquals('.', FormatLocale.of("en-GB").decimalSeparator)
+        assertEquals(false, FormatLocale.of("en-GB").monthFirst)
+        assertEquals(true, FormatLocale.of("en-US").monthFirst)
+        // Without names of its own, a language still gets its decimal comma.
+        assertEquals(',', FormatLocale.of("sv-SE").decimalSeparator)
+        assertEquals("Mon", FormatLocale.of("sv-SE").dayNames[0])
+        assertEquals('.', FormatLocale.of("").decimalSeparator)
+    }
+
+    @Test
+    fun mealNumbersAreServingsKcalAndProtein() {
+        assertEquals("1 serving · 461 kcal · 46 g protein", meal(1.0).macrosText(Strings.English).plain())
+        assertEquals("1.5 servings · 461 kcal · 46 g protein", meal(1.5).macrosText(Strings.English).plain())
+    }
+
+    @Test
+    fun fibreFollowsProteinWhenItIsKnown() {
+        val withFibre = meal(1.0).copy(fibreG = 7.6)
+        assertEquals("1 serving · 461 kcal · 46 g protein · 8 g fibre", withFibre.macrosText(Strings.English).plain())
+        assertEquals("461 kcal · 46 g eiwit · 8 g vezels", withFibre.macrosText(Strings.Dutch).substringAfter(" · ").plain())
+        // A recipe row shows a serving's fibre; a recipe's page shows it with the other nutrients instead.
+        val stew = nutrition(complete = true, fibre = 9.4)
+        assertEquals("387 kcal · 43 g protein · 9 g fibre", recipe(stew).rowText(Strings.English).nutrition?.plain())
+        assertEquals("387 kcal · 43 g eiwit · 9 g vezels", recipe(stew).rowText(Strings.Dutch).nutrition?.plain())
+        assertEquals("387 kcal · 43 g protein", stew.headline(Strings.English).plain())
+    }
+
+    @Test
+    fun aNarrowScreenBreaksTheNumbersBetweenPartsOnly() {
+        val text = meal(1.75).copy(fibreG = 7.6).macrosText(Strings.Dutch)
+        assertEquals(listOf("1,75\u00A0porties", "461\u00A0kcal", "46\u00A0g\u00A0eiwit", "8\u00A0g\u00A0vezels"), text.split(" · "))
+        assertEquals("Dagdoel:\u00A02100\u00A0kcal · 130\u00A0g\u00A0eiwit", unbrokenParts("Dagdoel: 2100 kcal · 130 g eiwit"))
+    }
+
+    @Test
+    fun aRecipeRowKeepsNutritionAndCostApart() {
+        val full = recipe(nutrition = nutrition(complete = true), cost = RecipeCost(3.0, 2.1)).rowText(Strings.English)
+        assertEquals("387 kcal · 43 g protein", full.nutrition?.plain())
+        assertEquals("≈ €2.10", full.cost)
+        assertEquals("4 servings · ★★★★ · vegan · quick", full.details)
+        assertNull(full.warning)
+
+        val missing = recipe(nutrition = nutrition(complete = true, unquantified = listOf("chicken")), cost = null).rowText(Strings.English)
+        assertEquals("387 kcal · 43 g protein", missing.nutrition?.plain())
+        assertNull(missing.cost)
+        assertEquals("Missing amounts", missing.warning)
+
+        val toLink = recipe(nutrition = nutrition(complete = false, uncounted = listOf("a", "b")), cost = null).rowText(Strings.English)
+        assertNull(toLink.nutrition)
+        assertEquals("2 ingredients to link", toLink.warning)
+
+        val none = recipe(nutrition = null, plannable = false, servings = 1, rating = null, tags = emptyList()).rowText(Strings.English)
+        assertEquals("No amounts yet", none.warning)
+        assertEquals("1 serving", none.details)
+    }
+
+    /** The text with its non-breaking spaces ([unbrokenParts]) as plain ones, to compare it with what a reader sees. */
+    private fun String.plain() = replace('\u00A0', ' ')
+
+    private fun item(grams: Double) =
+        dev.tobins.mealplanner.api.ShoppingItem("k", "x", grams, null, "c", emptyList(), onHand = false, checked = false)
+
+    private fun offer(deal: String, price: Double, was: Double) =
+        dev.tobins.mealplanner.api.Offer(dev.tobins.mealplanner.api.Store.AH, "x", deal, price, was, validFrom = "a", validUntil = "b")
+
+    private fun meal(portions: Double) = PlannedMeal(0, MealSlot.DINNER, 1, "Stew", portions, 461.2, 45.6)
+
+    private fun nutrition(complete: Boolean, uncounted: List<String> = emptyList(), unquantified: List<String> = emptyList(), fibre: Double? = null) =
+        RecipeNutrition(
+            Nutrition(387.2, 42.6, null, null, null, null, fibre, null),
+            complete = complete,
+            approximate = false,
+            uncounted = uncounted,
+            unquantified = unquantified,
+        )
+
+    private fun recipe(
+        nutrition: RecipeNutrition?,
+        cost: RecipeCost? = null,
+        plannable: Boolean = true,
+        servings: Int? = 4,
+        rating: Int? = 4,
+        tags: List<String> = listOf("vegan", "quick"),
+    ) = RecipeSummary(
+        1, "Stew", "dinner", tags, servings, RecipeSource.MANUAL, RecipeKind.MEAL, plannable,
+        nutrition = nutrition, rating = rating, cost = cost,
+    )
+
+    @Test
+    fun theWeeksRestIsOneLineUnderItsCostAndNothingWhenThereIsNone() {
+        val rest = listOf(WeekRest("Crème fraîche", 100.0, 1.10), WeekRest("Koriander", 12.0, 0.60), WeekRest("Bieslook", 8.0, 0.40))
+
+        assertNull(restLine(emptyList(), Strings.English))
+        assertEquals("About €2.10 of fresh ingredients left over: 100 g crème fraîche, 12 g koriander, 8 g bieslook", restLine(rest, Strings.English))
+        assertEquals("Ongeveer €2,10 aan verse ingrediënten over: 100 g crème fraîche, 12 g koriander, 8 g bieslook", restLine(rest, Strings.Dutch))
+    }
+
+    @Test
+    fun aLongListNamesThreeAndCountsTheRestButTheEurosAreThoseOfAll() {
+        val rest = rest(5)
+
+        assertEquals("About €1.50 of fresh ingredients left over: 10 g a1, 10 g a2, 10 g a3 and 2 more", restLine(rest, Strings.English))
+        assertEquals("Ongeveer €1,50 aan verse ingrediënten over: 10 g a1, 10 g a2, 10 g a3 en nog 2", restLine(rest, Strings.Dutch))
+        assertEquals("About €1.20 of fresh ingredients left over: 10 g a1, 10 g a2, 10 g a3 and 1 more", restLine(rest(4), Strings.English))
+    }
+
+    private fun rest(count: Int) = (1..count).map { WeekRest("A$it", 10.0, 0.30) }
+}

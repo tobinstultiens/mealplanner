@@ -1,0 +1,137 @@
+package dev.tobins.mealplanner.app.prices
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import dev.tobins.mealplanner.api.PricesState
+import dev.tobins.mealplanner.app.ApiClient
+import dev.tobins.mealplanner.app.LocalStrings
+import dev.tobins.mealplanner.app.Msg
+import dev.tobins.mealplanner.app.Plural
+import dev.tobins.mealplanner.app.ui.AppIcons
+import dev.tobins.mealplanner.app.ui.BarAction
+import dev.tobins.mealplanner.app.ui.ErrorMessage
+import dev.tobins.mealplanner.app.ui.Load
+import dev.tobins.mealplanner.app.ui.LoadingState
+import dev.tobins.mealplanner.app.ui.Spacing
+import dev.tobins.mealplanner.app.ui.SubScreen
+import dev.tobins.mealplanner.app.ui.dayMonthLabel
+import dev.tobins.mealplanner.app.ui.failureSentence
+import dev.tobins.mealplanner.app.ui.formatEuro
+import dev.tobins.mealplanner.app.ui.load
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/**
+ * The regular price per kg used for each ingredient, and the product it came from, so a
+ * wrong match is easy to spot. Recipes are costed with these, minus this week's offers.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PricesScreen(api: ApiClient, onBack: () -> Unit) {
+    val t = LocalStrings.current
+    var state by remember { mutableStateOf<Load<PricesState>>(Load.Loading) }
+    var reload by remember { mutableIntStateOf(0) }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(reload) {
+        if (state !is Load.Ready) state = Load.Loading
+        state = load { api.prices() }
+        // A lookup runs on the server for a few minutes: check back until it is done.
+        while ((state as? Load.Ready)?.value?.refreshing == true) {
+            delay(5_000)
+            (load { api.prices() } as? Load.Ready)?.let { state = it }
+        }
+    }
+    val refreshing = (state as? Load.Ready)?.value?.refreshing == true
+
+    SubScreen(t(Msg.REGULAR_PRICES), onBack, snackbar, actions = {
+        BarAction(AppIcons.Refresh, if (refreshing) t(Msg.LOOKING_UP_PRICES) else t(Msg.REFRESH_PRICES), busy = refreshing, onClick = {
+            scope.launch {
+                when (val started = load { api.refreshPrices() }) {
+                    is Load.Ready -> {
+                        state = started
+                        reload++
+                    }
+                    is Load.Failed -> snackbar.showSnackbar(failureSentence(started, Msg.PRICES_START_FAILED))
+                    Load.Loading -> {}
+                }
+            }
+        })
+    }) { padding ->
+        when (val current = state) {
+            Load.Loading -> LoadingState(Modifier.padding(padding))
+            is Load.Failed -> Column(Modifier.padding(padding)) {
+                ErrorMessage(t(Msg.PRICES_LOAD_FAILED), current) { reload++ }
+            }
+            is Load.Ready -> {
+                val prices = current.value
+                LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.ScreenEdge)) {
+                    item {
+                        Column(Modifier.padding(horizontal = Spacing.ScreenEdge), verticalArrangement = Arrangement.spacedBy(Spacing.Tight)) {
+                            Text(
+                                when {
+                                    prices.refreshing -> t(Msg.PRICES_LOOKING)
+                                    prices.fetchedAt == null -> t.onWeb(Msg.PRICES_NONE, Msg.PRICES_NONE_BROWSER)
+                                    else -> t.plural(Plural.PRICES_SUMMARY, prices.prices.size, dayMonthLabel(prices.fetchedAt!!.take(10), t.locale))
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                t(Msg.PRICES_EXPLAIN),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    items(prices.prices, key = { it.ingredientId }) { price ->
+                        ListItem(
+                            headlineContent = { Text(t(Msg.PRICE_PER_KG, price.ingredientName, formatEuro(price.eurosPerKg, t.locale))) },
+                            supportingContent = {
+                                Text(
+                                    listOfNotNull(
+                                        price.product,
+                                        price.packSize,
+                                        price.packPrice?.let { formatEuro(it, t.locale) },
+                                    ).joinToString(" · "),
+                                )
+                            },
+                        )
+                        HorizontalDivider()
+                    }
+                    if (prices.unpriced.isNotEmpty()) {
+                        item {
+                            Text(
+                                t(Msg.PRICES_UNPRICED, prices.unpriced.joinToString("; ")),
+                                modifier = Modifier.padding(Spacing.InsideCard),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -4,6 +4,11 @@ import dev.tobins.mealplanner.api.OfferExclusions
 import dev.tobins.mealplanner.api.ShoppingAdviceGroup
 import dev.tobins.mealplanner.api.ShoppingCheck
 import dev.tobins.mealplanner.api.ShoppingList
+import dev.tobins.mealplanner.app.prices.ExclusionChange
+import dev.tobins.mealplanner.app.shopping.ShoppingCache
+import dev.tobins.mealplanner.app.shopping.ShoppingServer
+import dev.tobins.mealplanner.app.shopping.ShoppingSession
+import dev.tobins.mealplanner.app.ui.Load
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy

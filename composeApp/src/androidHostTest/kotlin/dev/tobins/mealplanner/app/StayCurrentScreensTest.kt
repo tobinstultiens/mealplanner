@@ -20,6 +20,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToNode
+import dev.tobins.mealplanner.app.ingredients.PantryScreen
+import dev.tobins.mealplanner.app.recipes.RecipeListScreen
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders

@@ -1,6 +1,8 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.Store
+import dev.tobins.mealplanner.app.accounts.saveSession
+import dev.tobins.mealplanner.app.shopping.ShoppingCache
 
 /** Small key-value storage on the device, for settings such as the server address. */
 interface SettingsStorage {

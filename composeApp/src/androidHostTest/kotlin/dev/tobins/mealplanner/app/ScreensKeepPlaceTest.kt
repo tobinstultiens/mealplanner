@@ -19,6 +19,11 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
+import dev.tobins.mealplanner.app.accounts.LoginExchange
+import dev.tobins.mealplanner.app.accounts.LoginLauncher
+import dev.tobins.mealplanner.app.accounts.Session
+import dev.tobins.mealplanner.app.accounts.saveSession
+import dev.tobins.mealplanner.app.ui.appClock
 import kotlinx.coroutines.MainScope
 import org.junit.After
 import org.junit.Before
