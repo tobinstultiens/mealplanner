@@ -13,7 +13,8 @@ import dev.tobins.mealplanner.server.writing
 import java.time.LocalDate
 
 /**
- * What the plan's rules read and write in the database for one account (the tables of `Plan.sq`): rows in, values
+ * What the plan's rules read and write in the database for one account (the tables of `Plan.sq`, and what the stock
+ * gave a meal, `stockUse` of `Pantry.sq`, which [holdsStock] reads and [moveStockUses] moves): rows in, values
  * out, and no rule of what may change. It is built for the account [userId], so a caller never names one, and every
  * query it runs is of that account only. The rules ([WeekMeals], [MealChanges], [Eating], ...) call it and no query.
  */

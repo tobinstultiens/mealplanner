@@ -11,7 +11,7 @@ import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.RecipeIngredient
 import dev.tobins.mealplanner.server.foodLine
 import dev.tobins.mealplanner.server.ingredients.IngredientRepository
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.server.shopping.gramsUsed
 import dev.tobins.mealplanner.units.Dimension
 import java.time.Instant
@@ -25,7 +25,7 @@ import java.time.Instant
  * a recipe; next to a recipe the foods count with it ([withFoods]). Which meal holds them, and the stock, is
  * [WeekMeals]' and [FoodChanges]'.
  */
-class SlotFoods(private val db: Database, private val userId: Long, private val recipes: RecipeRepository) {
+class SlotFoods(private val db: Database, private val userId: Long, private val recipes: RecipeCandidates) {
     private val q = db.recipeQueries
 
     /** [input] as the line of a food ([foodLine]): the account's ingredient (another's is not there, 404). */

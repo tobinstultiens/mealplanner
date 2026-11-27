@@ -30,7 +30,7 @@ import dev.tobins.mealplanner.server.plan.WeekMeals
 import dev.tobins.mealplanner.server.plan.WeekShortfalls
 import dev.tobins.mealplanner.server.plan.parseWeekStart
 import dev.tobins.mealplanner.server.recipes.RecipeLines
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.server.serverToday
 import dev.tobins.mealplanner.server.writing
 import dev.tobins.mealplanner.shopping.ShopSection
@@ -51,7 +51,7 @@ class ShoppingListRepository(
     private val weekMeals: WeekMeals,
     private val weekShortfalls: WeekShortfalls,
     private val costs: WeekCosts,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
     private val profiles: ProfileRepository,
     private val ingredients: IngredientRepository,
     private val stock: StockRepository,

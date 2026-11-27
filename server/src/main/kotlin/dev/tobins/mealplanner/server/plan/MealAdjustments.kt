@@ -12,7 +12,7 @@ import dev.tobins.mealplanner.server.NotFoundException
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.ingredients.IngredientRepository
 import dev.tobins.mealplanner.server.recipes.RecipeLines
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.server.shopping.gramsUsed
 import dev.tobins.mealplanner.server.writing
 import dev.tobins.mealplanner.units.Dimension
@@ -28,7 +28,7 @@ import kotlin.math.abs
 class MealAdjustments(
     private val db: Database,
     private val userId: Long,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
     private val catalogue: IngredientRepository,
 ) {
     private val q = db.planQueries
@@ -46,7 +46,7 @@ class MealAdjustments(
     /**
      * [meals] of one week as [shortfalls] walks them: what each one's recipe gives it and what
      * it eats with its changes ([changesOf], as [changesIn] has them); those in [toCook] are still to cook.
-     * [recipeLines] are their recipes' lines by id ([RecipeRepository.linesWithIngredients]).
+     * [recipeLines] are their recipes' lines by id ([RecipeCandidates.linesWithIngredients]).
      */
     fun demands(
         meals: List<PlannedMeal>,

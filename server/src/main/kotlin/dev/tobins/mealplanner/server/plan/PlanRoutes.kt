@@ -113,7 +113,7 @@ fun Route.planRoutes() {
                 val plan = call.user.plan
                 call.unprocessableOnConflict { plan.keptMeals.requireReplaceable(week, day, slot) } ?: return@post
                 val recipe = service.generate(call.receive<GenerateRequest>().copy(slot = slot))
-                val candidate = call.user.recipes.candidate(recipe.summary.id)
+                val candidate = call.user.recipes.candidates.candidate(recipe.summary.id)
                     ?: throw GenerationException("The generated recipe has no amounts to plan with")
                 // Eaten while the recipe was written: the recipe stays in the account's recipes, and the dialog says so.
                 val kept = "; the new recipe \"${recipe.summary.title}\" is kept in your recipes"

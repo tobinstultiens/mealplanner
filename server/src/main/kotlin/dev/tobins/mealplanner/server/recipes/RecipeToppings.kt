@@ -7,6 +7,7 @@ import dev.tobins.mealplanner.api.ToppingsInput
 import dev.tobins.mealplanner.server.NotFoundException
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.SelectRecipeMealLines
+import dev.tobins.mealplanner.server.ingredients.IngredientRepository
 import dev.tobins.mealplanner.server.plan.MealAdjustments
 import dev.tobins.mealplanner.server.writing
 
@@ -15,7 +16,13 @@ import dev.tobins.mealplanner.server.writing
  * A topping is kept apart from the recipe's lines (`recipeTopping`), so a sync of a cooking-site recipe
  * never changes it, and nothing counts it (nutrition, cost, shopping) until a meal has it added.
  */
-class RecipeToppings(private val db: Database, private val userId: Long, private val recipes: RecipeRepository) {
+class RecipeToppings(
+    private val db: Database,
+    private val userId: Long,
+    private val ingredients: IngredientRepository,
+    private val view: RecipeView,
+    private val candidates: RecipeCandidates,
+) {
     private val q = db.recipeQueries
 
     /**
@@ -36,12 +43,12 @@ class RecipeToppings(private val db: Database, private val userId: Long, private
         db.writing {
             requireRecipe(recipeId)
             for (topping in toppings) {
-                recipes.ingredients.find(topping.ingredientId) ?: throw NotFoundException("No ingredient with id ${topping.ingredientId}")
+                ingredients.find(topping.ingredientId) ?: throw NotFoundException("No ingredient with id ${topping.ingredientId}")
             }
             q.deleteToppings(userId, recipeId)
             toppings.forEachIndexed { position, topping -> q.insertTopping(userId, recipeId, topping.ingredientId, position.toLong(), topping.grams) }
         }
-        return recipes.find(recipeId)!!
+        return view.find(recipeId)!!
     }
 
     /**
@@ -54,13 +61,13 @@ class RecipeToppings(private val db: Database, private val userId: Long, private
      */
     fun addOns(recipeId: Long): List<AddOn> {
         requireRecipe(recipeId)
-        val toppings = recipes.toppings(recipeId)
-        val inRecipe = recipes.linesWithIngredients(listOf(recipeId))[recipeId]?.lines.orEmpty().mapNotNullTo(HashSet()) { it.second?.id }
+        val toppings = view.toppings(recipeId)
+        val inRecipe = candidates.linesWithIngredients(listOf(recipeId))[recipeId]?.lines.orEmpty().mapNotNullTo(HashSet()) { it.second?.id }
         val added = db.planQueries.selectRecipeMealLines(userId, recipeId).executeAsList()
             .filter { it.ingredientId !in inRecipe }
             .groupBy { it.ingredientId }
         val first = toppings.map { AddOn(it.ingredientId, it.name, it.grams, it.gramsPerPiece, topping = true, times = added[it.ingredientId]?.size ?: 0) }
-        val catalogue = recipes.ingredients.list().associateBy { it.id }
+        val catalogue = ingredients.list().associateBy { it.id }
         val earlier = added.filterKeys { id -> toppings.none { it.ingredientId == id } }.mapNotNull { (id, meals) ->
             val ingredient = catalogue[id] ?: return@mapNotNull null
             val latest = meals.maxWith(planOrder)

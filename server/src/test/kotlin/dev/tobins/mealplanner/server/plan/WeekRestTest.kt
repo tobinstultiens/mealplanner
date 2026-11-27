@@ -20,7 +20,7 @@ import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.openDatabase
 import dev.tobins.mealplanner.server.prices.OfferRepository
 import dev.tobins.mealplanner.server.prices.PriceRepository
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeScope
 import java.time.LocalDate
 import kotlin.io.path.createTempFile
 import kotlin.math.abs
@@ -46,20 +46,20 @@ class WeekRestTest {
     private val userId = UserRepository(db).resolve(Identity("a", "alice")).id
     private val ingredients = IngredientRepository(db, foods, userId)
     private val prices = PriceRepository(db, null, foods, OfferRepository(db, emptyList()))
-    private val recipes = RecipeRepository(db, ingredients, userId)
+    private val recipes = RecipeScope(db, ingredients, userId)
     private val profiles = ProfileRepository(db, userId).also { it.save(Profile(75.0, 180.0, 35, Sex.MALE, ActivityLevel.MODERATE)) }
     private val stock = StockRepository(db, foods, userId)
     private val cream = ingredients.create(IngredientInput("Cream", nevoCode = 9301))
     private var keepsUntilNextWeek = false
     private val plans = PlanScope(db, userId, recipes, profiles, stock, freshPacks = { prices.freshPacks(ingredients, mapOf(cream.id to keepsUntilNextWeek)) })
-    private val preps = PrepRepository(db, userId, plans.weekMeals, plans.keptMeals, plans.view, recipes, profiles) { LocalDate.parse(week) }
+    private val preps = PrepRepository(db, userId, plans.weekMeals, plans.keptMeals, plans.view, recipes.candidates, recipes.mine, profiles) { LocalDate.parse(week) }
 
     /** A pack of cream of [size], at 2 euros per 100 g. */
     private fun sellCream(size: String, euros: Double) =
         db.priceQueries.upsertPrice("Cream", "AH", "Cream", size, euros, 20.0, "2026-11-19T00:00:00Z", null, null, null)
 
     /** A recipe whose serving takes 100 g of cream, eaten at lunch and dinner. */
-    private fun creamy(title: String) = recipes.create(RecipeInput(title, 4, "400 | g | Cream", "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER)))
+    private fun creamy(title: String) = recipes.edits.create(RecipeInput(title, 4, "400 | g | Cream", "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER)))
 
     /** The grams of cream the meals of the plan that are eaten or to eat take. */
     private fun WeekPlan.creamGrams() = days.flatMap { it.meals }.filter { it.status != MealStatus.SKIPPED }.sumOf { it.portions } * 100
@@ -107,7 +107,7 @@ class WeekRestTest {
     fun aPreppedBatchIsOnePurchaseOfAllItsPortionsOnTheDayItIsMade() {
         sellCream("250 g", 5.0)
         val batch = creamy("Batch")
-        recipes.setKeeps(batch.summary.id, RecipeKeeps(days = 4))
+        recipes.edits.setKeeps(batch.summary.id, RecipeKeeps(days = 4))
 
         val plan = preps.create(week, PrepInput(batch.summary.id, "2026-11-16", meals = (0..2).map { PrepSlot("2026-11-${16 + it}", MealSlot.DINNER) }))
 
@@ -120,7 +120,7 @@ class WeekRestTest {
     fun aBatchIsBoughtInTheWeekItIsMadeAndNotInTheOneItIsEatenIn() {
         sellCream("250 g", 5.0)
         val batch = creamy("Batch")
-        recipes.setKeeps(batch.summary.id, RecipeKeeps(days = 4))
+        recipes.edits.setKeeps(batch.summary.id, RecipeKeeps(days = 4))
         // Made on the Sunday, eaten that day and on the Monday and Tuesday of the week after.
         val dates = listOf("2026-11-22", "2026-11-23", "2026-11-24")
         val made = preps.create(week, PrepInput(batch.summary.id, dates[0], meals = dates.map { PrepSlot(it, MealSlot.DINNER) }))

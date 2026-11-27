@@ -89,7 +89,7 @@ class ShopSectionsTest {
 
         // Listed in no particular order: the list sorts them.
         val lines = (names.shuffled(kotlin.random.Random(1)) + "Rice" + "Baking paper" + "Unobtainium").joinToString("\n") { "100 | g | ${it.lowercase()}" }
-        val recipe = user.recipes.create(RecipeInput("Everything", 1, lines))
+        val recipe = user.recipes.edits.create(RecipeInput("Everything", 1, lines))
         val week = "2026-11-16"
         db.planQueries.upsertMeal(accountId, week, 0, MealSlot.DINNER.name, recipe.summary.id, "Everything", 1.0, 500.0, 30.0, 0, 0, MealStatus.PLANNED.name)
         return Setup(db, user, week)

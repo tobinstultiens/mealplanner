@@ -19,7 +19,7 @@ import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.prices.OfferExclusionRepository
 import dev.tobins.mealplanner.server.prices.offers.ExcludedMatch
 import dev.tobins.mealplanner.server.prices.offers.OfferTerms
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.MyRecipes
 import dev.tobins.mealplanner.server.shopping.ShoppingKey
 import dev.tobins.mealplanner.server.writing
 import dev.tobins.mealplanner.shopping.ShopSection
@@ -215,7 +215,7 @@ class IngredientRepository(private val db: Database, private val foods: FoodRepo
      * the same words in any order, ignoring a plural s and NEVO's neutral qualifiers
      * ("raw", "av"). Texts that match several foods are left for the user. Texts only bank
      * recipes use are left alone, so the catalogue does not fill with what the account never
-     * added; adding a recipe runs this again ([RecipeRepository.setAdded]).
+     * added; adding a recipe runs this again ([MyRecipes.setAdded]).
      * @return the number of texts linked.
      */
     fun autoLink(): Int = linking {

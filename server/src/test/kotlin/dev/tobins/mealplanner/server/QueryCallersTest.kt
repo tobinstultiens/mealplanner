@@ -33,7 +33,7 @@ class QueryCallersTest {
         "prices/PriceHistoryRepository.kt",
         "prices/PriceRepository.kt",
         "recipes/RecipePictures.kt",
-        "recipes/RecipeRepository.kt",
+        "recipes/RecipeStore.kt",
         "recipes/RecipeToppings.kt",
         "shopping/ShoppingAdviceRepository.kt",
         "shopping/ShoppingListRepository.kt",
@@ -52,6 +52,15 @@ class QueryCallersTest {
         "plan/WeekPlans.kt",
         "plan/WeekShortfalls.kt",
         "plan/WeekView.kt",
+    )
+
+    /** The classes with the recipes' rules (#386): they go through [dev.tobins.mealplanner.server.recipes.RecipeStore], never a query. */
+    private val recipeRules: Set<String> = setOf(
+        "recipes/BankSync.kt",
+        "recipes/MyRecipes.kt",
+        "recipes/RecipeCandidates.kt",
+        "recipes/RecipeEdits.kt",
+        "recipes/RecipeView.kt",
     )
 
     private val sourceRoot = File("src/main/kotlin/dev/tobins/mealplanner/server")
@@ -73,10 +82,16 @@ class QueryCallersTest {
     }
 
     @Test
-    fun theRulesOfThePlanAreNotOnTheListAndHoldNoDatabase() {
-        assertEquals(emptyList(), planRules.filterNot { File(sourceRoot, it).isFile }, "files of the plan's rules that are not there: rename them here too")
-        assertEquals(emptySet(), planRules intersect allowed, "a class with the plan's rules may not call a query")
-        val holding = planRules.filter { File(sourceRoot, it).readText().contains("import dev.tobins.mealplanner.server.db.Database\n") }
-        assertEquals(emptyList(), holding, "a class with the plan's rules reaches the database only through PlanStore")
+    fun theRulesOfThePlanAreNotOnTheListAndHoldNoDatabase() = assertRules(planRules, "the plan's", "PlanStore")
+
+    @Test
+    fun theRulesOfTheRecipesAreNotOnTheListAndHoldNoDatabase() = assertRules(recipeRules, "the recipes'", "RecipeStore")
+
+    /** The files [rules], of the classes with [whose] rules, are there, are not on the list, and reach the database through [store] only. */
+    private fun assertRules(rules: Set<String>, whose: String, store: String) {
+        assertEquals(emptyList(), rules.filterNot { File(sourceRoot, it).isFile }, "files of $whose rules that are not there: rename them here too")
+        assertEquals(emptySet(), rules intersect allowed, "a class with $whose rules may not call a query")
+        val holding = rules.filter { File(sourceRoot, it).readText().contains("import dev.tobins.mealplanner.server.db.Database\n") }
+        assertEquals(emptyList(), holding, "a class with $whose rules reaches the database only through $store")
     }
 }

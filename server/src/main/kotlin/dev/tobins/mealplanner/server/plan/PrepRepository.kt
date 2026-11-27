@@ -16,7 +16,8 @@ import dev.tobins.mealplanner.server.NotFoundException
 import dev.tobins.mealplanner.server.accounts.ProfileRepository
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.ingredients.MealRef
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.MyRecipes
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.server.serverToday
 import dev.tobins.mealplanner.server.writing
 import java.time.LocalDate
@@ -33,7 +34,8 @@ class PrepRepository(
     private val weekMeals: WeekMeals,
     private val keptMeals: KeptMeals,
     private val view: WeekView,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
+    private val myRecipes: MyRecipes,
     private val profiles: ProfileRepository,
     /** Today as the household sees it: a batch is never made on a day that has passed. */
     private val today: () -> LocalDate = ::serverToday,
@@ -67,7 +69,7 @@ class PrepRepository(
         val dates = input.meals.map { Batch.parseDate(it.date) }
         require(dates.min() == madeOn) { "the first meal is on the day it is made" }
         if (madeOn < today()) throw ConflictException("${Batch.dayName(madeOn)} has passed: a prep is made today or later")
-        val recipe = recipes.requireMine(input.recipeId)
+        val recipe = myRecipes.requireMine(input.recipeId)
         if (recipe.kind == RecipeKind.COMPONENT.name) throw ConflictException("This recipe is a building block, not a meal")
         val keeps = (if (input.vacuum) recipe.keepsVacuumDays else recipe.keepsDays)
             ?: throw ConflictException("Set how many days \"${recipe.title}\" keeps ${if (input.vacuum) "vacuum sealed" else "in a box"} first")

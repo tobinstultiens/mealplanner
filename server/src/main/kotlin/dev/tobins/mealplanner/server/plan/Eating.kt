@@ -12,7 +12,7 @@ import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.dinnerOf
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.leftoversOf
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.mealAt
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.server.shopping.gramsUsed
 import java.time.LocalDate
 import kotlin.math.abs
@@ -29,7 +29,7 @@ class Eating(
     private val shortfalls: WeekShortfalls,
     private val adjustments: MealAdjustments,
     private val foods: SlotFoods,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
     private val stock: StockRepository,
 ) {
     /**

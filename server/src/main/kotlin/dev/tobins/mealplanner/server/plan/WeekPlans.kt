@@ -14,7 +14,8 @@ import dev.tobins.mealplanner.server.accounts.ProfileRepository
 import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.DAYS
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.dinnerOf
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.MyRecipes
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import java.time.LocalDate
 import kotlin.random.Random
 
@@ -29,7 +30,8 @@ class WeekPlans(
     private val keptMeals: KeptMeals,
     private val costs: WeekCosts,
     private val view: WeekView,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
+    private val myRecipes: MyRecipes,
     private val profiles: ProfileRepository,
     private val stock: StockRepository,
     /** The packs of the account's fresh ingredients, by ingredient id: the planner uses up the rest of an opened one. */
@@ -103,7 +105,7 @@ class WeekPlans(
             targets = targets,
             candidates = candidates,
             known = unknown.mapNotNull { recipes.candidate(it, freshPacks(), stock.onHandFor(start)) },
-            routines = recipes.routines().let { r ->
+            routines = myRecipes.routines().let { r ->
                 listOfNotNull(r.breakfast?.let { MealSlot.BREAKFAST to it }, r.snack?.let { MealSlot.SNACK to it }).toMap()
             },
             days = DAYS,
@@ -117,7 +119,7 @@ class WeekPlans(
     }
 
     /**
-     * The account's recipes as the planner sees them in the week starting [start] ([RecipeRepository.planCandidates]),
+     * The account's recipes as the planner sees them in the week starting [start] ([RecipeCandidates.planCandidates]),
      * with its offers, prices, what is on hand and the fresh packs; with [everyMeal], every one of my meals.
      */
     internal fun candidates(start: LocalDate, everyMeal: Boolean = false): List<PlanCandidate> = recipes.planCandidates(

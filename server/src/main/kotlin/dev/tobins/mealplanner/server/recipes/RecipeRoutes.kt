@@ -37,23 +37,23 @@ import io.ktor.server.routing.route
  */
 fun Route.recipeRoutes(cooking: CookingSync) {
     // My recipes only, so that a released app, which knows nothing of the bank, lists the right ones.
-    get("/api/recipes") { call.respond(call.user.recipes.list()) }
+    get("/api/recipes") { call.respond(call.user.recipes.view.list()) }
 
     // A new account's first look at the bank finds the server's site there, without waiting for the schedule.
     get("/api/recipes/bank") {
         cooking.importFirst(call.accountId)
-        call.respond(call.user.recipes.bank())
+        call.respond(call.user.recipes.view.bank())
     }
 
     // Many at once, answering my recipes; an id that is not the account's is a 404 and nothing changes.
-    put("/api/recipes/added") { call.respond(call.user.recipes.setAdded(call.receive<ManyAddedInput>())) }
+    put("/api/recipes/added") { call.respond(call.user.recipes.mine.setAdded(call.receive<ManyAddedInput>())) }
 
-    put("/api/recipes/rotation") { call.respond(call.user.recipes.setRotation(call.receive<ManyRotationInput>())) }
+    put("/api/recipes/rotation") { call.respond(call.user.recipes.mine.setRotation(call.receive<ManyRotationInput>())) }
 
     get("/api/recipes/{id}") {
         val id = call.parameters["id"]?.toLongOrNull()
             ?: throw IllegalArgumentException("Recipe id must be a number")
-        val recipe = call.user.recipes.find(id)
+        val recipe = call.user.recipes.view.find(id)
         if (recipe == null) {
             call.respond(HttpStatusCode.NotFound, mapOf("error" to "No recipe with id $id"))
         } else {
@@ -61,9 +61,9 @@ fun Route.recipeRoutes(cooking: CookingSync) {
         }
     }
 
-    get("/api/routines") { call.respond(call.user.recipes.routines()) }
+    get("/api/routines") { call.respond(call.user.recipes.mine.routines()) }
 
-    put("/api/routines") { call.respond(call.user.recipes.saveRoutines(call.receive<Routines>())) }
+    put("/api/routines") { call.respond(call.user.recipes.mine.saveRoutines(call.receive<Routines>())) }
 
     // Writes a new recipe with Claude and stores it. Takes up to a minute or so.
     post("/api/recipes/generate") {
@@ -71,28 +71,28 @@ fun Route.recipeRoutes(cooking: CookingSync) {
         call.respond(HttpStatusCode.Created, service.generate(call.receive<GenerateRequest>()))
     }
 
-    post("/api/recipes") { call.respond(HttpStatusCode.Created, call.user.recipes.create(call.receive<RecipeInput>())) }
+    post("/api/recipes") { call.respond(HttpStatusCode.Created, call.user.recipes.edits.create(call.receive<RecipeInput>())) }
 
     // Lines as a recipe saved with them would have them, each with its ingredient; nothing is saved (issue 342).
-    post("/api/recipes/lines") { call.respond(call.user.recipes.readDraft(call.receive<List<RecipeLineInput>>())) }
+    post("/api/recipes/lines") { call.respond(call.user.recipes.edits.readDraft(call.receive<List<RecipeLineInput>>())) }
 
     route("/api/recipes/{id}") {
         fun io.ktor.server.routing.RoutingCall.id() =
             parameters["id"]?.toLongOrNull() ?: throw IllegalArgumentException("Recipe id must be a number")
-        put { call.respond(call.user.recipes.update(call.id(), call.receive<RecipeInput>())) }
+        put { call.respond(call.user.recipes.edits.update(call.id(), call.receive<RecipeInput>())) }
         delete {
-            call.user.recipes.delete(call.id())
+            call.user.recipes.mine.delete(call.id())
             call.user.pictures.forget(call.id())
             call.respond(HttpStatusCode.NoContent)
         }
-        put("/settings") { call.respond(call.user.recipes.updateSettings(call.id(), call.receive<RecipeSettings>())) }
+        put("/settings") { call.respond(call.user.recipes.edits.updateSettings(call.id(), call.receive<RecipeSettings>())) }
         // How many days it keeps once made (issue 234), body {"days": 3, "vacuumDays": 6}; null for a way it is not prepped.
-        put("/keeps") { call.respond(call.user.recipes.setKeeps(call.id(), call.receive<RecipeKeeps>())) }
+        put("/keeps") { call.respond(call.user.recipes.edits.setKeeps(call.id(), call.receive<RecipeKeeps>())) }
         // A standard meal (issue 265), body {"standard": true}: marking makes its ingredients staples and says which.
-        put("/standard") { call.respond(call.user.recipes.setStandard(call.id(), call.receive<StandardInput>().standard)) }
-        put("/rating") { call.respond(call.user.recipes.setRating(call.id(), call.receive<RatingInput>().rating)) }
-        put("/added") { call.respond(call.user.recipes.setAdded(call.id(), call.receive<AddedInput>())) }
-        put("/rotation") { call.respond(call.user.recipes.setRotation(call.id(), call.receive<RotationInput>())) }
+        put("/standard") { call.respond(call.user.recipes.edits.setStandard(call.id(), call.receive<StandardInput>().standard)) }
+        put("/rating") { call.respond(call.user.recipes.edits.setRating(call.id(), call.receive<RatingInput>().rating)) }
+        put("/added") { call.respond(call.user.recipes.mine.setAdded(call.id(), call.receive<AddedInput>())) }
+        put("/rotation") { call.respond(call.user.recipes.mine.setRotation(call.id(), call.receive<RotationInput>())) }
         // Optional toppings (issue 226), body {"toppings": [{"ingredientId": 7, "grams": 60}]}: all of them, replacing those before.
         put("/toppings") { call.respond(call.user.toppings.set(call.id(), call.receive<ToppingsInput>())) }
         // What a meal of the recipe can have added with one tap: its toppings, then what its meals had added before.

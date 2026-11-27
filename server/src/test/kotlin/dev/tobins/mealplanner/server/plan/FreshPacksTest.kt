@@ -11,7 +11,7 @@ import dev.tobins.mealplanner.server.ingredients.IngredientRepository
 import dev.tobins.mealplanner.server.openDatabase
 import dev.tobins.mealplanner.server.prices.OfferRepository
 import dev.tobins.mealplanner.server.prices.PriceRepository
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeScope
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,7 +29,7 @@ class FreshPacksTest {
     private val userId = UserRepository(db).resolve(Identity("a", "alice")).id
     private val ingredients = IngredientRepository(db, foods, userId)
     private val prices = PriceRepository(db, null, foods, OfferRepository(db, emptyList()))
-    private val recipes = RecipeRepository(db, ingredients, userId)
+    private val recipes = RecipeScope(db, ingredients, userId)
 
     private fun price(name: String, packSize: String?, packPrice: Double?, perKg: Double) =
         db.priceQueries.upsertPrice(name, "AH", name, packSize, packPrice, perKg, "2026-11-19T00:00:00Z", null, null, null)
@@ -67,14 +67,14 @@ class FreshPacksTest {
 
     @Test
     fun aRecipeTakesTheFreshIngredientsOfAServingAndNotThoseOnHand() {
-        recipes.create(RecipeInput("Onion rice", 2, "200 | g | Onion\n300 | g | Rice\n50 | g | Onion"))
+        recipes.edits.create(RecipeInput("Onion rice", 2, "200 | g | Onion\n300 | g | Rice\n50 | g | Onion"))
         val packs = prices.freshPacks(ingredients, everyoneBuysFresh)
 
-        val uses = recipes.planCandidates(freshPacks = packs).single().freshUses
+        val uses = recipes.candidates.planCandidates(freshPacks = packs).single().freshUses
 
         // 250 g of onion for two servings; the rice keeps and has no pack.
         assertEquals(listOf(FreshUse(onion.id, 125.0, Pack(300.0, 1.2))), uses)
-        assertEquals(emptyList(), recipes.planCandidates(freshPacks = packs, onHand = setOf(onion.id)).single().freshUses, "onions on hand are used up first")
-        assertEquals(emptyList(), recipes.planCandidates().single().freshUses, "without packs the recipe opens none")
+        assertEquals(emptyList(), recipes.candidates.planCandidates(freshPacks = packs, onHand = setOf(onion.id)).single().freshUses, "onions on hand are used up first")
+        assertEquals(emptyList(), recipes.candidates.planCandidates().single().freshUses, "without packs the recipe opens none")
     }
 }

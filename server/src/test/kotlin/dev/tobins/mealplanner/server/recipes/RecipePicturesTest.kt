@@ -218,11 +218,11 @@ class RecipePicturesTest {
 
         fun sync(): RecipePictures.Outcome {
             val pages = CookingSiteReader(dir).readAll()!!
-            user.recipes.syncCookingSite(pages)
+            user.recipes.bankSync.syncCookingSite(pages)
             return user.pictures.sync(pages)
         }
 
-        fun summary(title: String) = user.recipes.bank().single { it.title == title }
+        fun summary(title: String) = user.recipes.view.bank().single { it.title == title }
     }
 
     @Test
@@ -267,7 +267,7 @@ class RecipePicturesTest {
 
         // Changing the site forgets every picture of the bank until the next sync.
         account.user.pictures.removeBank()
-        assertTrue(account.user.recipes.bank().all { it.imageUrl == null })
+        assertTrue(account.user.recipes.view.bank().all { it.imageUrl == null })
         assertEquals(emptyList(), File(account.images, "1").listFiles()!!.toList())
     }
 

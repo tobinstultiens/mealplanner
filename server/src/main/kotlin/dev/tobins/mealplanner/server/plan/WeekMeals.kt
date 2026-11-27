@@ -9,7 +9,7 @@ import dev.tobins.mealplanner.server.NotFoundException
 import dev.tobins.mealplanner.server.db.SelectBoxPortion
 import dev.tobins.mealplanner.server.ingredients.MealRef
 import dev.tobins.mealplanner.server.ingredients.StockRepository
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.server.shopping.ShoppingListRepository
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -23,7 +23,7 @@ import java.time.temporal.TemporalAdjusters
  */
 class WeekMeals(
     private val store: PlanStore,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
     private val stock: StockRepository,
     private val adjustments: MealAdjustments,
     private val foods: SlotFoods,

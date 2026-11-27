@@ -555,7 +555,7 @@ class BuyAheadTest {
         val notCalled = object : RecipeGenerator {
             override suspend fun generate(context: GenerationContext): GeneratedRecipe = error("only the context is asked for")
         }
-        val generation = GenerationService(notCalled, user.recipes, user.ingredients, user.stock, user.profiles, user.plan.weekMeals, OfferRepository(db, emptyList()))
+        val generation = GenerationService(notCalled, user.recipes.edits, user.recipes.view, user.recipes.mine, user.ingredients, user.stock, user.profiles, user.plan.weekMeals, OfferRepository(db, emptyList()))
         val wednesday = LocalDate.parse(week).plusDays(2)
 
         // The chicken is in the freezer for next week's meals: not something to use up now.

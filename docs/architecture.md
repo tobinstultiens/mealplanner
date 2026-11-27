@@ -51,7 +51,7 @@ The root may use every feature, and every feature may use the root.
 a feature the list does not allow, and for an entry no file uses any more. The list records what the code
 has; it is not a design. Some of it one would rather not have, as these pairs of features use each other:
 `plan` and `shopping` (the plan feeds the list and reads its rows; the list reads the plan's week and shortfalls),
-`plan` and `recipes` (`RecipeRepository` settles meals), `plan` and `tracking` (the due notifications),
+`plan` and `recipes` (the plan reads recipes as candidates; toppings and generation read the plan's meals), `plan` and `tracking` (the due notifications),
 `ingredients` and `recipes`, `ingredients` and `prices` (offers excluded for an ingredient),
 `ingredients` and `shopping` (`ShoppingKey`), and `accounts` and `recipes` (syncing the cooking site).
 Removing such a use is later work; adding one is a reason to ask where the thing belongs instead.
@@ -83,14 +83,14 @@ thread has open already, so a rule that calls another rule's change still makes 
 
 `QueryCallersTest` holds the list of files under `server/src/main` that may call a query (`db.planQueries`, ...) and
 fails for a file outside it, and for an entry that calls none any more, so that the list only gets shorter. The plan
-is split (#385); recipes (#386) and the shopping list (#387) are next. Until a feature has been split its repository
+(#385) and recipes (#386) are split; the shopping list (#387) is next. Until a feature has been split its repository
 still holds both, is on the list as it is, and a new class in it should not add to that.
 
 The plan (`plan`), as its classes came out of `PlanRepository`:
 
 | Class | What it does |
 |---|---|
-| `PlanStore` | The store: reads and writes the plan's tables (`Plan.sq`) for one account, and opens its transactions |
+| `PlanStore` | The store: reads and writes the plan's tables (`Plan.sq`, and what the stock gave a meal) for one account, and opens its transactions |
 | `WeekMeals` | Reads a week's meals with their batches and sides, as the shopping list and the stock count them, and stores a meal in a slot with what stays there (its side, a share in the box, its foods) |
 | `KeptMeals` | Which meals stay as they are, and why: those planning keeps, a meal the stock went down for or that makes a batch, a side that stays, the slots no standard meal can take |
 | `WeekPlans` | Plans a week with the planner (Generate, and Done on the planning screen), and what the planner is given for a week |
@@ -102,11 +102,26 @@ The plan (`plan`), as its classes came out of `PlanRepository`:
 | `WeekView` | The week as the Plan shows it (`WeekPlan`), which every change answers |
 | `PlanScope` | Builds the store and these classes for one account, as they call each other; `UserScope` builds it |
 
-`PlanStore` is a class, not an interface: no test needs another store. The tests run on an in-memory SQLite
-database, and a write that fails halfway is made by the driver (`RefusingWrites`, as `MealChangesTest` does). An
+The recipes (`recipes`), as their classes came out of `RecipeRepository`:
+
+| Class | What it does |
+|---|---|
+| `RecipeStore` | The store: reads and writes the recipes, their lines and the routines for one account, where a recipe is planned (which keeps it from being deleted or put back), and opens their transactions |
+| `RecipeView` | The recipes as the app shows them: my recipes, the bank, one recipe with its lines, toppings, nutrition and this week's cost, which every change answers |
+| `MyRecipes` | Which recipes are mine: adds them from the bank and puts them back, the rotation, the routines, deleting one; a recipe of another account or only in the bank is refused here (404, 409) |
+| `RecipeEdits` | Writes a recipe: a new one, an edit, the lines of one being edited as they would be saved, its rating, kind and slots, how long it keeps, a standard meal or not |
+| `RecipeCandidates` | The recipes as the plan, the planner and the shopping list read them: candidates to plan, the standard meals, their lines with their ingredients, fibre and cost |
+| `BankSync` | Brings the account's bank in line with its cooking site as `CookingSync` read it: new, changed and removed recipes |
+| `RecipeScope` | Builds the store and these classes for one account, as they call each other; `UserScope` builds it |
+
+`RecipeToppings`, `RecipePictures`, `CookingSync` and `GenerationService` were classes of their own before, and are
+not split yet.
+
+A store is a class, not an interface: no test needs another store. The tests run on an in-memory SQLite database, and
+a write that fails halfway is made by the driver (`RefusingWrites`, as `MealChangesTest` and `RecipeEditsTest` do). An
 interface goes in front of a store only when a test needs one.
 
-A new query of the plan goes in `PlanStore`; a new rule goes in the class of what a person does with it.
+A new query of a split feature goes in its store; a new rule goes in the class of what a person does with it.
 
 ## The app
 

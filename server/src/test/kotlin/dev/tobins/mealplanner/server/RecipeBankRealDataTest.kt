@@ -120,11 +120,11 @@ class RecipeBankRealDataTest {
         val offers = OfferRepository(db, emptyList())
         for (account in UserRepository(db).all()) {
             val recipes = UserScope(account, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile()).recipes
-            val taken = recipes.list().filter { it.source == RecipeSource.COOKING_SITE }.associate { it.id to recipes.find(it.id) }
-            val result = recipes.syncCookingSite(emptyList())
-            println("Account $account: ${taken.size} taken, ${recipes.list().size} mine; a sync of no file hides ${result.removed}")
-            assertEquals(taken, taken.keys.associateWith { recipes.find(it) }, "account $account: every taken recipe as it was")
-            assertEquals(emptyList(), recipes.bank())
+            val taken = recipes.view.list().filter { it.source == RecipeSource.COOKING_SITE }.associate { it.id to recipes.view.find(it.id) }
+            val result = recipes.bankSync.syncCookingSite(emptyList())
+            println("Account $account: ${taken.size} taken, ${recipes.view.list().size} mine; a sync of no file hides ${result.removed}")
+            assertEquals(taken, taken.keys.associateWith { recipes.view.find(it) }, "account $account: every taken recipe as it was")
+            assertEquals(emptyList(), recipes.view.bank())
         }
         driver.close()
     }
@@ -161,7 +161,7 @@ class RecipeBankRealDataTest {
         for (account in UserRepository(db).all()) {
             val scope = UserScope(account, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
             assertTrue(scope.ingredients.list().all { it.label == null && it.portions.isEmpty() && it.removedPortions.isEmpty() }, "account $account")
-            val recipes = scope.recipes.list()
+            val recipes = scope.recipes.view.list()
             println("Account $account: ${recipes.size} recipes, ${recipes.count { it.nutrition?.complete == true }} counted in full")
         }
         driver.close()
@@ -218,7 +218,7 @@ class RecipeBankRealDataTest {
             }
             println("Account $account: ${weeks.size} weeks, ${read.size} meals")
             assertEquals(plans.getValue(account), read, "account $account: every planned meal as it was")
-            val ids = scope.recipes.list().map { it.id.toString() }.sortedBy(String::toLong) to scope.recipes.bank().map { it.id.toString() }.sortedBy(String::toLong)
+            val ids = scope.recipes.view.list().map { it.id.toString() }.sortedBy(String::toLong) to scope.recipes.view.bank().map { it.id.toString() }.sortedBy(String::toLong)
             assertEquals(lists.getValue(account), ids, "account $account: the same recipes mine and in the bank")
         }
         driver.close()

@@ -39,7 +39,7 @@ import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.ingredients.StockSource
 import dev.tobins.mealplanner.server.module
 import dev.tobins.mealplanner.server.openDatabase
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeScope
 import dev.tobins.mealplanner.server.recipes.generation.GeneratedIngredient
 import dev.tobins.mealplanner.server.recipes.generation.GeneratedRecipe
 import dev.tobins.mealplanner.server.recipes.generation.GenerationContext
@@ -636,7 +636,7 @@ class PlanTest {
             var writer: Thread? = null
             val userId = userId()
             val ingredients = IngredientRepository(db, FoodRepository(db), userId)
-            val plans = PlanScope(db, userId, RecipeRepository(db, ingredients, userId), ProfileRepository(db, userId), StockRepository(db, FoodRepository(db), userId), pricing = { _, _ ->
+            val plans = PlanScope(db, userId, RecipeScope(db, ingredients, userId), ProfileRepository(db, userId), StockRepository(db, FoodRepository(db), userId), pricing = { _, _ ->
                 if (writer == null) writer = thread { other.planQueries.recordFailure("written during $change", "AH") }.apply { join(500) }
                 Pricing.NONE
             })

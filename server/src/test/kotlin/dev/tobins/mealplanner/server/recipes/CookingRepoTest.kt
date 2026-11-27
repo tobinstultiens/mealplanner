@@ -318,11 +318,11 @@ class CookingRepoTest {
         }
 
         fun scope(id: Long) = UserScope(id, db, foods, offers, prices, null, images)
-        fun bank(id: Long) = scope(id).recipes.bank().map { it.title }.sorted()
-        fun mine(id: Long) = scope(id).recipes.list().associate { it.title to it.removedFromSite }
-        fun add(id: Long, title: String) = scope(id).recipes.let { it.setAdded(it.bank().single { r -> r.title == title }.id, AddedInput(added = true)) }
+        fun bank(id: Long) = scope(id).recipes.view.bank().map { it.title }.sorted()
+        fun mine(id: Long) = scope(id).recipes.view.list().associate { it.title to it.removedFromSite }
+        fun add(id: Long, title: String) = scope(id).recipes.let { it.mine.setAdded(it.view.bank().single { r -> r.title == title }.id, AddedInput(added = true)) }
         fun grams(id: Long, title: String) = scope(id).recipes.let { r ->
-            (r.list() + r.bank()).single { it.title == title }.let { r.find(it.id)!!.ingredients.single().line.amount }
+            (r.view.list() + r.view.bank()).single { it.title == title }.let { r.view.find(it.id)!!.ingredients.single().line.amount }
         }
     }
 
