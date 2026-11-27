@@ -23,6 +23,11 @@ enum class CommonMsg(override val english: String, override val dutch: String) :
     WHEN_TODAY("today {0}", "vandaag {0}"),
     WHEN_YESTERDAY("yesterday {0}", "gisteren {0}"),
 
+    // --- Errors made by the app (the server's own messages are shown as they come)
+    NO_CONNECTION("the server could not be reached", "de server is niet bereikbaar"),
+    WENT_WRONG("something went wrong", "er ging iets mis"),
+    UNREADABLE_ANSWER("the server's answer could not be read", "het antwoord van de server was niet te lezen"),
+
     // --- Today
     ALSO_EATEN("Also eaten", "Ook gegeten"),
     KCAL_PROTEIN("{0} kcal · {1} g protein", "{0} kcal · {1} g eiwit"),

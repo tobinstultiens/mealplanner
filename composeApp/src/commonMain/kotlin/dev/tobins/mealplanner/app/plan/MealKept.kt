@@ -6,7 +6,7 @@ import dev.tobins.mealplanner.api.PlannedMeal
 
 /**
  * Why a meal on the Plan keeps its recipe and its place, so that its menu offers neither another recipe, a chosen
- * one, a new one nor a prep for it: the server answers 409 to each (`PlanRepository.whyKeepsItsRecipe`), because
+ * one, a new one nor a prep for it: the server answers 409 to each (`KeptMeals.whyKeepsItsRecipe`), because
  * the stock went down for the meal or a batch is made for it.
  */
 enum class WhyKept {
@@ -46,7 +46,7 @@ fun PlannedMeal.whyKept(date: String, dayBefore: List<PlannedMeal>): WhyKept? {
 
 /**
  * True when the side next to this meal, on the day [date], stays with it: its batch was made (a meal or side of it is
- * eaten) or it makes the batch, which goes only as a whole through "Remove the side's prep" (`PlanRepository.whySideStays`).
+ * eaten) or it makes the batch, which goes only as a whole through "Remove the side's prep" (`KeptMeals.whySideStays`).
  */
 fun PlannedMeal.sideStays(date: String): Boolean {
     val prep = side?.prep ?: return false
@@ -86,8 +86,8 @@ enum class WhyStays {
 }
 
 /**
- * Why this dinner, on the day [date], stays on its day (issue 255), as the server says it (`PlanRepository.whyStaysOnItsDay`
- * and the past days of `moveDinner`), or null when it may move or give its day to another dinner. [dayBefore] and [dayAfter]
+ * Why this dinner, on the day [date], stays on its day (issue 255), as the server says it (`MealChanges.whyStaysOnItsDay`
+ * and the past days of `MealChanges.moveDinner`), or null when it may move or give its day to another dinner. [dayBefore] and [dayAfter]
  * are the meals of the days around it, for its own [whyKept] and its leftover lunch; [today] is today's ISO date. A skipped
  * prepped meal's share in the box under it, which the plan does not show, the server refuses with a sentence of its own.
  */

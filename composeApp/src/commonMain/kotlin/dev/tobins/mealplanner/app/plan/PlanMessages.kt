@@ -5,9 +5,6 @@ import dev.tobins.mealplanner.app.Plural
 
 /** The texts of the plan, planning and today screens, adjusting a meal, preps, standard meals and meal changes, in English and Dutch side by side. */
 enum class PlanMsg(override val english: String, override val dutch: String) : Msg {
-    // --- Tabs
-    TAB_TODAY("Today", "Vandaag"),
-
     // --- Today
     PREVIOUS_DAY("Previous day", "Vorige dag"),
     NEXT_DAY("Next day", "Volgende dag"),

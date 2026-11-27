@@ -8,7 +8,7 @@ import dev.tobins.mealplanner.api.PrepPastLastDay
 import dev.tobins.mealplanner.api.WeighInDue
 import dev.tobins.mealplanner.app.recipes.MealPlace
 import dev.tobins.mealplanner.app.recipes.MealToCook
-import dev.tobins.mealplanner.app.ui.sentence
+import dev.tobins.mealplanner.app.recipes.sentence
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals

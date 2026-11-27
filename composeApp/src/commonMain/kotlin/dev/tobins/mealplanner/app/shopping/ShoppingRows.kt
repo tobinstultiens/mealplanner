@@ -61,6 +61,7 @@ import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.formatEuro
 import dev.tobins.mealplanner.app.ui.numeric
 import dev.tobins.mealplanner.app.ui.sectionIcon
+import dev.tobins.mealplanner.app.ui.shortName
 
 /**
  * The field and button that put an own item on the list. Enter or the button adds it; the field

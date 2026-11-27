@@ -83,13 +83,13 @@ import dev.tobins.mealplanner.app.ui.OverflowMenu
 import dev.tobins.mealplanner.app.ui.SectionHeader
 import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.SubScreen
+import dev.tobins.mealplanner.app.ui.SwitchRow
 import dev.tobins.mealplanner.app.ui.displayText
 import dev.tobins.mealplanner.app.ui.formatEuro
 import dev.tobins.mealplanner.app.ui.formatGrams
 import dev.tobins.mealplanner.app.ui.headline
 import dev.tobins.mealplanner.app.ui.numeric
 import dev.tobins.mealplanner.app.ui.scaled
-import dev.tobins.mealplanner.app.ui.sentence
 import dev.tobins.mealplanner.app.ui.servingsText
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.ResponseException
@@ -405,21 +405,6 @@ private fun AddFromBank(pick: Boolean, busy: Boolean, onPick: (Boolean) -> Unit,
             Text(t(RecipesMsg.LET_PLANNER_PICK), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             Switch(checked = pick, onCheckedChange = onPick)
         }
-    }
-}
-
-/**
- * A setting's [label] with its switch at the end of the line: the whole line toggles it, as a tap on the words is meant
- * for the switch too, and reads as one switch to TalkBack.
- */
-@Composable
-internal fun SwitchRow(label: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 

@@ -20,7 +20,7 @@ import dev.tobins.mealplanner.api.RecipeSummary
 import dev.tobins.mealplanner.api.SparePortion
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.app.Strings
-import dev.tobins.mealplanner.app.ui.sentence
+import dev.tobins.mealplanner.app.recipes.sentence
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

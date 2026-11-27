@@ -21,7 +21,7 @@ import dev.tobins.mealplanner.api.StandardMeals
 import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Strings
-import dev.tobins.mealplanner.app.recipes.SwitchRow
+import dev.tobins.mealplanner.app.ui.SwitchRow
 import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.numeric
 import kotlin.math.roundToInt

@@ -20,9 +20,9 @@ import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.recipes.MealToCook
 import dev.tobins.mealplanner.app.recipes.RecipesMsg
+import dev.tobins.mealplanner.app.recipes.sentence
 import dev.tobins.mealplanner.app.shopping.nothingToBuyText
 import dev.tobins.mealplanner.app.ui.plusDays
-import dev.tobins.mealplanner.app.ui.sentence
 import dev.tobins.mealplanner.app.ui.servingsText
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -30,6 +30,7 @@ enum class AppMsg(override val english: String, override val dutch: String) : Ms
     SECTION_OTHER("Other", "Overig"),
 
     // --- Tabs
+    TAB_TODAY("Today", "Vandaag"),
     TAB_PLAN("Plan", "Weekplan"),
     TAB_SHOPPING("Shopping", "Boodschappen"),
 

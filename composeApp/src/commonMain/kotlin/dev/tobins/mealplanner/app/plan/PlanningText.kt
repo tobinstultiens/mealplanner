@@ -5,7 +5,7 @@ import dev.tobins.mealplanner.api.PlanningTotals
 import dev.tobins.mealplanner.api.SuggestionGround
 import dev.tobins.mealplanner.api.WeekPlanning
 import dev.tobins.mealplanner.app.Strings
-import dev.tobins.mealplanner.app.shopping.shortName
+import dev.tobins.mealplanner.app.ui.shortName
 import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.formatEuro
 import dev.tobins.mealplanner.app.ui.macrosText

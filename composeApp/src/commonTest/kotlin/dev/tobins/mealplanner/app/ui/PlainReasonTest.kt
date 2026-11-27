@@ -2,7 +2,7 @@ package dev.tobins.mealplanner.app.ui
 
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.prices.PricesMsg
-import dev.tobins.mealplanner.app.shopping.plainReason
+import dev.tobins.mealplanner.app.ui.plainReason
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond

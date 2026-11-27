@@ -14,6 +14,7 @@ import dev.tobins.mealplanner.app.AppLanguage
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.recipes.MealPlace
 import dev.tobins.mealplanner.app.recipes.MealToCook
+import dev.tobins.mealplanner.app.recipes.sentence
 import dev.tobins.mealplanner.app.recipes.toCook
 import dev.tobins.mealplanner.app.shopping.quantityText
 import dev.tobins.mealplanner.recipes.IngredientLine

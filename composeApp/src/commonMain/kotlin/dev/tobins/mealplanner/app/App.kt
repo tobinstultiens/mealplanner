@@ -606,7 +606,7 @@ private fun shoppingPlaceSaver(create: (ShoppingSession.Place) -> ShoppingSessio
 
 /** The five tabs; the icon is filled in for the one that is open. */
 enum class Tab(val slug: String, val label: Msg, val icon: ImageVector, val selectedIcon: ImageVector) {
-    TODAY("today", PlanMsg.TAB_TODAY, AppIcons.Today, AppIcons.TodayFilled),
+    TODAY("today", AppMsg.TAB_TODAY, AppIcons.Today, AppIcons.TodayFilled),
     PLAN("plan", AppMsg.TAB_PLAN, AppIcons.Plan, AppIcons.PlanFilled),
     SHOPPING("shopping", AppMsg.TAB_SHOPPING, AppIcons.Shopping, AppIcons.ShoppingFilled),
     RECIPES("recipes", RecipesMsg.TAB_RECIPES, AppIcons.Recipes, AppIcons.RecipesFilled),

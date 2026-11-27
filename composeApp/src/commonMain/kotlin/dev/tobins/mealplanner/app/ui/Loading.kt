@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
-import dev.tobins.mealplanner.app.shopping.plainReason
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
@@ -139,3 +138,12 @@ internal fun ErrorMessage(title: String, failed: Load.Failed, onRetry: () -> Uni
 
 /** Opens the server settings; provided by [App] so any error message can offer it. */
 val LocalOpenServerSettings = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/** What a technical failure means in a few plain words, such as "the server could not be reached". */
+internal fun plainReason(failed: Load.Failed): String = Strings.current(
+    when {
+        failed.unreadable -> CommonMsg.UNREADABLE_ANSWER
+        failed.lostConnection -> CommonMsg.NO_CONNECTION
+        else -> CommonMsg.WENT_WRONG
+    },
+)
