@@ -619,7 +619,8 @@ them, or one batch partly each way (issue 269). Only by hand: the planner never 
   dinner, side and all); the dinner
   that makes a batch says so (`DinnerToday.prep`), so its recipe speaks of the prep's later meals.
   A shortfall warning ("What was in a meal") counts what the batch took for its meals of the next week in the week
-  it was made, whose stock it was cooked from.
+  it was made, whose stock it was cooked from. The warning on a meal of such a batch is that of the meal that made it, whichever of
+  its two weeks is open: what was at home on the day it was made, and the meals after it that falls short for.
 - **Sides.** A meal of `PrepInput.meals` with `"side": 0.25` or `0.5` (else 400) eats the batch there as a side of
   that many servings next to the slot's meal, which must hold a meal still to eat without a side, whose main is
   another recipe, as no plate holds one recipe twice (409 naming the slot otherwise); the meals without one eat it as

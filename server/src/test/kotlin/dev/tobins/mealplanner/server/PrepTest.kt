@@ -402,6 +402,28 @@ class PrepTest {
         assertEquals(listOf(2 to 175.0), shortfallsAfter("2026-11-24"))
     }
 
+    /**
+     * Issue 372: a batch made on Saturday and eaten on the Monday after is cooked from what was at home on Saturday, so the
+     * meals after it that this leaves short are named the same whichever of its two meals is looked at.
+     */
+    @Test
+    fun aBatchMadeOnSaturdayGivesTheSameShortfallWarningInBothWeeks() = testApplication {
+        val http = start()
+        val k = http.kitchen()
+        http.planned()
+        // 1.4 kg of chicken; the batch is 450 g on Saturday and 375 g on Monday, and Sunday's dinner of the salad needs 450 g.
+        k.stockUp(k.chicken, 1400.0)
+        http.prep(k.salad.id, "2026-11-21", "2026-11-21" to DINNER, "2026-11-23" to LUNCH)
+        http.put(mealPath("2026-11-22", DINNER)) { setBody(MealChoice(k.salad.id)) }
+
+        // Monday's portion gets 575 g: the batch takes 1025 g, which leaves 375 g for Sunday's 450 g.
+        val adjusted = http.put(mealPath("2026-11-23", LUNCH, "/lines")) { setBody(MealAdjustment(listOf(MealLineChange(k.chicken.id, 575.0)))) }
+        assertEquals(HttpStatusCode.OK, adjusted.status)
+        val expected = listOf(6 to 75.0)
+        assertEquals(expected, http.get(mealPath("2026-11-21", DINNER, "/lines")).body<MealLines>().shortfalls.map { it.day to it.grams }, "Saturday's view")
+        assertEquals(expected, http.get(mealPath("2026-11-23", LUNCH, "/lines")).body<MealLines>().shortfalls.map { it.day to it.grams }, "Monday's view")
+    }
+
     /** Issue 263: a week with only meals of last week's batch buys nothing, and its list says which week's list bought them. */
     @Test
     fun aWeekWithOnlyMealsOfAnEarlierBatchSaysWhichListBoughtThem() = testApplication {
