@@ -23,6 +23,7 @@ class ScreensCallNoServerTest {
 
     private val screens = listOf(
         Screen("plan", listOf("PlanScreen.kt", "Prep.kt", "Sides.kt", "StandardMeals.kt"), allowedOnApi = setOf("planServer")),
+        Screen("recipes", listOf("RecipeScreens.kt", "ToppingsSettings.kt"), allowedOnApi = setOf("recipeServer")),
     )
 
     private val appFolder = "src/commonMain/kotlin/dev/tobins/mealplanner/app"

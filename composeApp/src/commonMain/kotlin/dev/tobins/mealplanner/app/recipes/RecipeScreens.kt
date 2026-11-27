@@ -37,10 +37,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -51,9 +51,7 @@ import androidx.compose.ui.unit.dp
 import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlannedMeal
-import dev.tobins.mealplanner.api.RecipeDetail
 import dev.tobins.mealplanner.api.RecipeKeeps
-import dev.tobins.mealplanner.api.StandardSwitch
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeCost
 import dev.tobins.mealplanner.api.RecipeNutrition
@@ -66,12 +64,12 @@ import dev.tobins.mealplanner.app.BackHandler
 import dev.tobins.mealplanner.app.KeepScreenOn
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Msg
+import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.RefreshNotice
 import dev.tobins.mealplanner.app.plan.StandardMealRow
 import dev.tobins.mealplanner.app.prices.line
 import dev.tobins.mealplanner.app.rememberFrontReturns
-import dev.tobins.mealplanner.app.rememberLoad
-import dev.tobins.mealplanner.app.setMealStatus
+import dev.tobins.mealplanner.app.rememberScreenMemory
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
 import dev.tobins.mealplanner.app.ui.CommonMsg
@@ -86,11 +84,9 @@ import dev.tobins.mealplanner.app.ui.SectionHeader
 import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.SubScreen
 import dev.tobins.mealplanner.app.ui.displayText
-import dev.tobins.mealplanner.app.ui.failureSentence
 import dev.tobins.mealplanner.app.ui.formatEuro
 import dev.tobins.mealplanner.app.ui.formatGrams
 import dev.tobins.mealplanner.app.ui.headline
-import dev.tobins.mealplanner.app.ui.load
 import dev.tobins.mealplanner.app.ui.numeric
 import dev.tobins.mealplanner.app.ui.scaled
 import dev.tobins.mealplanner.app.ui.sentence
@@ -100,7 +96,6 @@ import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
 import io.ktor.serialization.ContentConvertException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 import kotlinx.io.IOException
 import kotlinx.serialization.SerializationException
 
@@ -190,98 +185,29 @@ fun RecipeDetailScreen(
 ) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
-    val loaded = rememberLoad<RecipeDetail>("recipe:$recipeId")
-    var state by loaded
-    var routines by remember { mutableStateOf<Routines?>(null) }
-    var reload by remember { mutableIntStateOf(0) }
     val frontReturns = rememberFrontReturns()
     val scroll = rememberScrollState()
     val snackbar = remember { SnackbarHostState() }
+    // What the page loads, sends and shows while that runs or fails is the state's; this draws it. The state reads the latest
+    // language and the screen's way to the mapping when it needs them.
+    val latestStrings by rememberUpdatedState(t)
+    val latestOpenMapping by rememberUpdatedState(onOpenMapping)
+    val memory = rememberScreenMemory()
+    val server = remember(api) { api.recipeServer() }
+    val voice = remember(snackbar) { SnackbarVoice(snackbar, { latestStrings }, { latestOpenMapping() }) }
+    val page = remember(server, memory, recipeId) { RecipeState(server, scope, memory, recipeId, { latestStrings }, voice) }
+    val state = page.recipe
+    val routines = page.routines
+    val acting = page.acting
     // A recipe of the bank is read-only until it is added: whether the planner may pick it is asked for with the adding.
     var pickOnAdd by rememberSaveable(recipeId) { mutableStateOf(true) }
-    var acting by remember { mutableStateOf(false) }
-    // What marking it a standard meal here made staples (issue 265), said under the switch while the recipe is open.
-    var standardMarked by remember(recipeId) { mutableStateOf<StandardSwitch?>(null) }
     var confirmingDelete by remember { mutableStateOf(false) }
     // Cook mode and its ticks live as long as the recipe is open (App forgets them with the screen).
     var cookMode by rememberSaveable(recipeId) { mutableStateOf(initiallyCooking) }
     var progress by rememberSaveable(recipeId, stateSaver = CookProgress.Saver) { mutableStateOf(CookProgress()) }
     var eaten by rememberSaveable(recipeId) { mutableStateOf(false) }
     BackHandler(enabled = cookMode) { cookMode = false }
-    LaunchedEffect(loaded, reload, frontReturns) {
-        loaded.refresh { api.recipe(recipeId) }
-        (load { api.routines() } as? Load.Ready)?.value?.let { routines = it }
-    }
-
-    /** Shows the recipe the server answered after a change, or tells why the change failed. */
-    suspend fun settle(result: Load<RecipeDetail>, failed: Msg) {
-        when (result) {
-            is Load.Ready -> state = result
-            is Load.Failed -> snackbar.showSnackbar(failureSentence(result, failed))
-            Load.Loading -> Unit
-        }
-    }
-
-    fun add() {
-        if (acting) return
-        acting = true
-        scope.launch {
-            val result = load { api.setRecipeAdded(recipeId, added = true, inRotation = pickOnAdd) }
-            acting = false
-            settle(result, RecipesMsg.ADDED_FAILED)
-            if (result is Load.Ready) {
-                val summary = result.value.summary
-                snackbar.announceAdded(t, t(RecipesMsg.ADDED_ONE, summary.title), unlinkedIngredients(listOf(summary)), onOpenMapping) {
-                    settle(load { api.setRecipeAdded(recipeId, added = false) }, RecipesMsg.REMOVE_FAILED)
-                }
-            }
-        }
-    }
-
-    /** Puts a recipe from the cooking site back in the bank; a recipe that is planned says so (409) and stays. */
-    fun putBack(title: String, wasInRotation: Boolean) {
-        if (acting) return
-        acting = true
-        scope.launch {
-            val result = load { api.setRecipeAdded(recipeId, added = false) }
-            acting = false
-            settle(result, RecipesMsg.REMOVE_FAILED)
-            if (result is Load.Ready) {
-                // The bank view's switch shows what it was (the server's answer is the default), so that adding it again keeps it.
-                pickOnAdd = wasInRotation
-                val undo = snackbar.showSnackbar(t(RecipesMsg.REMOVED_ONE, title), actionLabel = t(CommonMsg.UNDO), duration = SnackbarDuration.Long)
-                if (undo == SnackbarResult.ActionPerformed) settle(load { api.setRecipeAdded(recipeId, added = true, inRotation = wasInRotation) }, RecipesMsg.ADDED_FAILED)
-            }
-        }
-    }
-
-    /** Sets the planned meal this recipe was opened from to eaten, by the route Today and the Plan use; they load it again when they come back. */
-    fun markEaten(place: MealPlace) {
-        if (acting) return
-        acting = true
-        scope.launch {
-            val result = load { api.setMealStatus(place.weekStart, place.day, place.slot, MealStatus.EATEN) }
-            acting = false
-            when (result) {
-                is Load.Ready -> eaten = true
-                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, RecipesMsg.COOK_MARK_EATEN_FAILED))
-                Load.Loading -> Unit
-            }
-        }
-    }
-
-    fun delete() {
-        acting = true
-        scope.launch {
-            val result = load { api.deleteRecipe(recipeId) }
-            acting = false
-            when (result) {
-                is Load.Ready -> onBack()
-                is Load.Failed -> snackbar.showSnackbar(failureSentence(result, RecipesMsg.DELETE_FAILED))
-                Load.Loading -> Unit
-            }
-        }
-    }
+    LaunchedEffect(page.loaded, page.reloads, frontReturns) { page.refresh() }
 
     val opened = (state as? Load.Ready)?.value?.summary
     if (confirmingDelete && opened != null) {
@@ -290,20 +216,20 @@ fun RecipeDetailScreen(
             title = { Text(t(RecipesMsg.DELETE_RECIPE_TITLE, opened.title)) },
             // A copy of a cooking-site recipe goes for good too, but the site's file comes back to the bank.
             text = { Text(t(if (opened.source == RecipeSource.COOKING_SITE) RecipesMsg.DELETE_TAKEN_RECIPE_TEXT else RecipesMsg.DELETE_RECIPE_TEXT)) },
-            confirmButton = { TextButton(onClick = { confirmingDelete = false; delete() }) { Text(t(RecipesMsg.DELETE), color = MaterialTheme.colorScheme.error) } },
+            confirmButton = { TextButton(onClick = { confirmingDelete = false; page.delete(onBack) }) { Text(t(RecipesMsg.DELETE), color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text(t(CommonMsg.CANCEL)) } },
         )
     }
 
     KeepScreenOn(cookMode)
     // Back from cook mode goes to the recipe, back from the recipe leaves it.
-    SubScreen(opened?.title ?: t(RecipesMsg.RECIPE), if (cookMode) ({ cookMode = false }) else onBack, snackbar = snackbar, notice = { RefreshNotice(loaded, aboveSystemBar = true) { reload++ } }, actions = {
+    SubScreen(opened?.title ?: t(RecipesMsg.RECIPE), if (cookMode) ({ cookMode = false }) else onBack, snackbar = snackbar, notice = { RefreshNotice(page.loaded, aboveSystemBar = true) { page.reload() } }, actions = {
         // Every one of my recipes is edited in the app (issue 342), also one taken from the cooking site; the bank's is the site's.
         if (opened != null && opened.added) {
             BarAction(AppIcons.Edit, t(RecipesMsg.EDIT_RECIPE), onEdit)
             // What leaves a recipe: one of the cooking site not changed in the app goes back to the bank, any other is deleted.
             if (opened.hasBank()) {
-                OverflowMenu(MenuAction(AppIcons.Close, t(RecipesMsg.REMOVE_FROM_MINE)) { putBack(opened.title, opened.inRotation) })
+                OverflowMenu(MenuAction(AppIcons.Close, t(RecipesMsg.REMOVE_FROM_MINE)) { page.putBack(opened.title, opened.inRotation) { pickOnAdd = it } })
             } else {
                 OverflowMenu(MenuAction(AppIcons.Close, t(RecipesMsg.DELETE)) { confirmingDelete = true })
             }
@@ -312,7 +238,7 @@ fun RecipeDetailScreen(
         when (val current = state) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Box(Modifier.padding(padding)) {
-                ErrorMessage(t(RecipesMsg.RECIPE_LOAD_FAILED), current) { reload++ }
+                ErrorMessage(t(RecipesMsg.RECIPE_LOAD_FAILED), current) { page.reload() }
             }
             is Load.Ready -> {
                 val recipe = current.value
@@ -329,7 +255,7 @@ fun RecipeDetailScreen(
                     val place = cooking?.takeIf { it.planned && !eaten }?.place
                     CookMode(
                         recipe, factor, progress, { progress = it },
-                        onMarkEaten = place?.let { { markEaten(it) } },
+                        onMarkEaten = place?.let { { page.markEaten(it) { eaten = true } } },
                         modifier = Modifier.padding(padding),
                         ingredientsTitle = ingredientsTitle,
                         top = {
@@ -363,63 +289,27 @@ fun RecipeDetailScreen(
                         Text(t(RecipesMsg.REMOVED_FROM_SITE), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (!recipe.summary.added) {
-                        AddFromBank(pickOnAdd, acting, onPick = { pickOnAdd = it }, onAdd = ::add)
+                        AddFromBank(pickOnAdd, acting, onPick = { pickOnAdd = it }, onAdd = { page.add(pickOnAdd) })
                     }
                     recipe.summary.nutrition?.let { NutritionCard(it, nutritionSource) }
                     recipe.summary.cost?.let { CostCard(it) }
                     // Rating, the rotation, "Plan as" and the routines are about one of my recipes: none until it is added.
                     if (recipe.summary.added) {
-                        RatingRow(recipe.summary.rating) { rating ->
-                            scope.launch { (load { api.rateRecipe(recipeId, rating) } as? Load.Ready)?.let { state = it } }
-                        }
-                        RotationRow(recipe.summary.inRotation, enabled = !acting) { inRotation ->
-                            acting = true
-                            scope.launch {
-                                val result = load { api.setRecipeRotation(recipeId, inRotation) }
-                                acting = false
-                                settle(result, RecipesMsg.ROTATION_FAILED)
-                            }
-                        }
+                        RatingRow(recipe.summary.rating) { rating -> page.rate(rating) }
+                        RotationRow(recipe.summary.inRotation, enabled = !acting) { inRotation -> page.setInRotation(inRotation) }
                         // A building block is no standard meal (issue 265). Busy while saving, as for the rotation.
                         if (recipe.summary.kind == RecipeKind.MEAL) {
-                            StandardMealRow(recipe.summary.standardMeal, standardMarked, enabled = !acting) { standard ->
-                                acting = true
-                                scope.launch {
-                                    val result = load { api.setStandardMeal(recipeId, standard) }
-                                    acting = false
-                                    when (result) {
-                                        is Load.Ready -> {
-                                            standardMarked = result.value.takeIf { standard }
-                                            state = Load.Ready(result.value.recipe)
-                                        }
-                                        is Load.Failed -> snackbar.showSnackbar(failureSentence(result, RecipesMsg.STANDARD_FAILED))
-                                        Load.Loading -> Unit
-                                    }
-                                }
-                            }
+                            StandardMealRow(recipe.summary.standardMeal, page.standardMarked, enabled = !acting) { standard -> page.setStandard(standard) }
                         }
-                        PlannerSettings(recipe.summary) { settings ->
-                            scope.launch {
-                                (load { api.updateRecipeSettings(recipeId, settings) } as? Load.Ready)?.let { state = it }
-                            }
-                        }
+                        PlannerSettings(recipe.summary) { settings -> page.saveSettings(settings) }
                         // Only a meal can be prepped, not a building block. Busy while saving, so a second choice is made on
                         // the answer to the first and does not send the other number as the screen last drew it.
                         if (recipe.summary.kind == RecipeKind.MEAL) {
-                            KeepsSettings(RecipeKeeps(recipe.summary.keepsDays, recipe.summary.keepsVacuumDays), enabled = !acting) { keeps ->
-                                acting = true
-                                scope.launch {
-                                    val result = load { api.setRecipeKeeps(recipeId, keeps) }
-                                    acting = false
-                                    settle(result, RecipesMsg.KEEPS_FAILED)
-                                }
-                            }
+                            KeepsSettings(RecipeKeeps(recipe.summary.keepsDays, recipe.summary.keepsVacuumDays), enabled = !acting) { keeps -> page.setKeeps(keeps) }
                         }
-                        ToppingsSettings(api, recipe) { settle(it, RecipesMsg.TOPPINGS_FAILED) }
+                        ToppingsSettings(api, recipe, save = page::saveToppings, onSaved = page::toppingsSaved)
                         routines?.let { current ->
-                            RoutineButtons(recipe.summary, current) { updated ->
-                                scope.launch { (load { api.saveRoutines(updated) } as? Load.Ready)?.let { routines = it.value } }
-                            }
+                            RoutineButtons(recipe.summary, current) { updated -> page.saveRoutines(updated) }
                         }
                     }
                     if (cooking != null && servings != null) {
@@ -473,6 +363,23 @@ fun RecipeDetailScreen(
             }
         }
     }
+}
+
+/** The recipe page's [RecipeVoice]: snackbars on [snackbar], in the language [strings] gives, with [openMapping] for the link to unlinked ingredients. */
+private class SnackbarVoice(
+    private val snackbar: SnackbarHostState,
+    private val strings: () -> Strings,
+    private val openMapping: () -> Unit,
+) : RecipeVoice {
+    override suspend fun say(sentence: String) {
+        snackbar.showSnackbar(sentence)
+    }
+
+    override suspend fun announceAdded(message: String, unlinked: Int, onUndo: suspend () -> Unit) =
+        snackbar.announceAdded(strings(), message, unlinked, openMapping, onUndo)
+
+    override suspend fun offerUndo(message: String): Boolean =
+        snackbar.showSnackbar(message, actionLabel = strings()(CommonMsg.UNDO), duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed
 }
 
 /** The switch that shows the amounts as the recipe is written ([servings] of it) instead of scaled to what is cooked now. */

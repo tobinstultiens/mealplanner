@@ -32,7 +32,6 @@ import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.Spacing
-import dev.tobins.mealplanner.app.ui.load
 import dev.tobins.mealplanner.app.ui.numeric
 import kotlinx.coroutines.launch
 
@@ -49,11 +48,16 @@ fun List<RecipeTopping>.withoutTopping(ingredientId: Long): List<ToppingInput> =
 /**
  * A recipe's optional toppings in its settings (issue 226): each with the amount a meal usually gets, tapped to
  * change it, the cross to remove it, and "Add a topping" from the catalogue, in pieces where it counts them. The
- * Adjust screen offers them first. Every change saves the whole list at once, and [onSaved] gets the answer:
+ * Adjust screen offers them first. Every change saves the whole list at once with [save], and [onSaved] gets the answer:
  * the recipe as the server has it, or why it failed.
  */
 @Composable
-internal fun ToppingsSettings(api: ApiClient, recipe: RecipeDetail, onSaved: suspend (Load<RecipeDetail>) -> Unit) {
+internal fun ToppingsSettings(
+    api: ApiClient,
+    recipe: RecipeDetail,
+    save: suspend (List<ToppingInput>) -> Load<RecipeDetail>,
+    onSaved: suspend (Load<RecipeDetail>) -> Unit,
+) {
     val t = LocalStrings.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -61,10 +65,10 @@ internal fun ToppingsSettings(api: ApiClient, recipe: RecipeDetail, onSaved: sus
     var picking by rememberSaveable { mutableStateOf(false) }
     var adding by remember { mutableStateOf<Ingredient?>(null) }
 
-    fun save(toppings: List<ToppingInput>) {
+    fun saveToppings(toppings: List<ToppingInput>) {
         busy = true
         scope.launch {
-            val result = load { api.setRecipeToppings(recipe.summary.id, toppings) }
+            val result = save(toppings)
             busy = false
             onSaved(result)
         }
@@ -85,7 +89,7 @@ internal fun ToppingsSettings(api: ApiClient, recipe: RecipeDetail, onSaved: sus
                         Text(it, style = MaterialTheme.typography.bodySmall.numeric(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                BarAction(AppIcons.Close, t(RecipesMsg.TOPPING_REMOVE, topping.name), onClick = { save(recipe.toppings.withoutTopping(topping.ingredientId)) }, enabled = !busy)
+                BarAction(AppIcons.Close, t(RecipesMsg.TOPPING_REMOVE, topping.name), onClick = { saveToppings(recipe.toppings.withoutTopping(topping.ingredientId)) }, enabled = !busy)
             }
         }
         OutlinedButton(enabled = !busy, onClick = { picking = true }) { Text(t(RecipesMsg.TOPPING_ADD)) }
@@ -94,7 +98,7 @@ internal fun ToppingsSettings(api: ApiClient, recipe: RecipeDetail, onSaved: sus
     editing?.let { topping ->
         AmountDialog(topping.name, topping.gramsPerPiece, topping.grams, onDismiss = { editing = null }) { grams ->
             editing = null
-            save(recipe.toppings.withTopping(topping.ingredientId, grams))
+            saveToppings(recipe.toppings.withTopping(topping.ingredientId, grams))
         }
     }
     if (picking) {
@@ -107,7 +111,7 @@ internal fun ToppingsSettings(api: ApiClient, recipe: RecipeDetail, onSaved: sus
         // Prefilled with one piece when the catalogue knows its weight, as on the Adjust screen.
         AmountDialog(ingredient.name, ingredient.gramsPerPiece, ingredient.gramsPerPiece, onDismiss = { adding = null }) { grams ->
             adding = null
-            save(recipe.toppings.withTopping(ingredient.id, grams))
+            saveToppings(recipe.toppings.withTopping(ingredient.id, grams))
         }
     }
 }
