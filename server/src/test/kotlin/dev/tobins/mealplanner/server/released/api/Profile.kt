@@ -1,4 +1,4 @@
-// Frozen from v0.1.12 (dd5ad93e7c8489f1199ba88c609352532d2b298f) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.13 (bd9ebd8e6d679057d814bb48ea7186dbd3816907) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import dev.tobins.mealplanner.released.planner.PortionRange
