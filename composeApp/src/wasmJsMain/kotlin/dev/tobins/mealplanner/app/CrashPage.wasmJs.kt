@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.app.ui.Load
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window

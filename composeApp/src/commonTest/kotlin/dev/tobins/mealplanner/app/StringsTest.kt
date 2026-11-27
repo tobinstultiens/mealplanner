@@ -1,6 +1,9 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.app.ui.formatEuro
+import dev.tobins.mealplanner.app.ui.servingsText
+import dev.tobins.mealplanner.app.ui.whenLabel
 import dev.tobins.mealplanner.planner.PortionRange
 import dev.tobins.mealplanner.shopping.ShopSection
 import kotlin.test.Test

@@ -1,6 +1,8 @@
 package dev.tobins.mealplanner.app
 
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.app.recipes.MealPlace
+import dev.tobins.mealplanner.app.recipes.MealToCook
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

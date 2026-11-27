@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+
 /*
  * Every text the app shows that is not made of data, in English and Dutch side by side, so a
  * translation is read (and fixed) in one place. Placeholders are `{0}`, `{1}`, ...; both

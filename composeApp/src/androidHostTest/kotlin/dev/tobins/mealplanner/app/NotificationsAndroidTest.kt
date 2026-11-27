@@ -7,6 +7,9 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.app.accounts.NotificationsCard
+import dev.tobins.mealplanner.app.recipes.MealPlace
+import dev.tobins.mealplanner.app.recipes.MealToCook
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Rule
 import org.junit.Test

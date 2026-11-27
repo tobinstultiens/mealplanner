@@ -1,6 +1,10 @@
 package dev.tobins.mealplanner.app
 
 import androidx.compose.foundation.verticalScroll
+import dev.tobins.mealplanner.app.ui.AppError
+import dev.tobins.mealplanner.app.ui.Spacing
+import dev.tobins.mealplanner.app.ui.reasonOf
+import dev.tobins.mealplanner.app.ui.sentence
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation

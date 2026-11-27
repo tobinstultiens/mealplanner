@@ -168,7 +168,3 @@ internal actual fun connectionFailure(cause: Throwable): IOException? {
     if (chain.none { it is JsError }) return null
     return IOException(chain.mapNotNull { it.message }.distinct().joinToString(": "), cause)
 }
-
-/** The browser has no scanner: the barcode is typed. */
-@Composable
-actual fun rememberBarcodeScanner(): BarcodeScanner? = null

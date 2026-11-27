@@ -2,7 +2,7 @@ package dev.tobins.mealplanner.android
 
 import android.content.Context
 import android.content.SharedPreferences
-import dev.tobins.mealplanner.app.LoginExchange
+import dev.tobins.mealplanner.app.accounts.LoginExchange
 import dev.tobins.mealplanner.app.Openings
 import dev.tobins.mealplanner.app.SettingsStorage
 import kotlinx.coroutines.MainScope
