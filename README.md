@@ -10,8 +10,8 @@ using weekly offers from AH, Jumbo and Lidl and recipes from the cooking site.
 | `composeApp` | Compose Multiplatform UI for Android and the web (WebAssembly). |
 | `androidApp` | Thin Android application that hosts `composeApp`. |
 
-Server and app are ordered by feature (`plan`, `shopping`, `recipes`, `ingredients`, `prices`,
-`tracking`, `accounts`); [docs/architecture.md](docs/architecture.md) says how, and where a new file goes.
+The server is ordered by feature (`plan`, `shopping`, `recipes`, `ingredients`, `prices`, `tracking`,
+`accounts`); [docs/architecture.md](docs/architecture.md) says how, where a new file goes, and where the app is headed.
 
 ## Requirements
 
