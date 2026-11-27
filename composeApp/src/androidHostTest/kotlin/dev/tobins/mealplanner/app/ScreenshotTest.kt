@@ -98,6 +98,7 @@ import dev.tobins.mealplanner.app.accounts.ServerSettingsScreen
 import dev.tobins.mealplanner.app.accounts.Session
 import dev.tobins.mealplanner.app.accounts.registrationProblems
 import dev.tobins.mealplanner.app.accounts.saveSession
+import dev.tobins.mealplanner.app.accounts.shops
 import dev.tobins.mealplanner.app.ingredients.BarcodeScanner
 import dev.tobins.mealplanner.app.ingredients.IngredientsMsg
 import dev.tobins.mealplanner.app.ingredients.LocalProductImageLoader
@@ -142,11 +143,14 @@ import dev.tobins.mealplanner.app.recipes.RecipesMsg
 import dev.tobins.mealplanner.app.recipes.RotationChoice
 import dev.tobins.mealplanner.app.recipes.SiteChoice
 import dev.tobins.mealplanner.app.recipes.announceAdded
+import dev.tobins.mealplanner.app.recipes.recipe
+import dev.tobins.mealplanner.app.recipes.recipes
 import dev.tobins.mealplanner.app.recipes.rememberFound
 import dev.tobins.mealplanner.app.shopping.ShoppingCache
 import dev.tobins.mealplanner.app.shopping.ShoppingScreen
 import dev.tobins.mealplanner.app.shopping.ShoppingSession
 import dev.tobins.mealplanner.app.shopping.dealOffers
+import dev.tobins.mealplanner.app.shopping.shoppingList
 import dev.tobins.mealplanner.app.shopping.shoppingServer
 import dev.tobins.mealplanner.app.tracking.KeptWeightNote
 import dev.tobins.mealplanner.app.tracking.LogFoodPlace

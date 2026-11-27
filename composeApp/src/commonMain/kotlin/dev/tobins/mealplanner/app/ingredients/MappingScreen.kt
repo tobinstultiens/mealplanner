@@ -49,8 +49,10 @@ import dev.tobins.mealplanner.api.UnmappedText
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.ingredients
 import dev.tobins.mealplanner.app.msg
 import dev.tobins.mealplanner.app.recipes.per100
+import dev.tobins.mealplanner.app.searchFoods
 import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.Load

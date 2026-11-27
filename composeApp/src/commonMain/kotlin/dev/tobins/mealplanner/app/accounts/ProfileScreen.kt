@@ -39,6 +39,8 @@ import dev.tobins.mealplanner.api.ProfileState
 import dev.tobins.mealplanner.api.Sex
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
+import dev.tobins.mealplanner.app.profile
+import dev.tobins.mealplanner.app.saveProfile
 import dev.tobins.mealplanner.app.ui.CommonMsg
 import dev.tobins.mealplanner.app.ui.ErrorMessage
 import dev.tobins.mealplanner.app.ui.FormatLocale

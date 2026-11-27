@@ -71,6 +71,7 @@ import dev.tobins.mealplanner.app.plan.StandardMealRow
 import dev.tobins.mealplanner.app.prices.line
 import dev.tobins.mealplanner.app.rememberFrontReturns
 import dev.tobins.mealplanner.app.rememberLoad
+import dev.tobins.mealplanner.app.setMealStatus
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
 import dev.tobins.mealplanner.app.ui.CommonMsg

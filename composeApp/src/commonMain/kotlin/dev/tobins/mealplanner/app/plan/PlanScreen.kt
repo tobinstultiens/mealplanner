@@ -83,6 +83,7 @@ import dev.tobins.mealplanner.app.recipes.toCook
 import dev.tobins.mealplanner.app.rememberFrontReturns
 import dev.tobins.mealplanner.app.rememberLoad
 import dev.tobins.mealplanner.app.rememberToday
+import dev.tobins.mealplanner.app.setMealStatus
 import dev.tobins.mealplanner.app.ui.AppError
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction

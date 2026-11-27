@@ -54,6 +54,8 @@ import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.BackHandler
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.RefreshNotice
+import dev.tobins.mealplanner.app.day
+import dev.tobins.mealplanner.app.deleteLog
 import dev.tobins.mealplanner.app.followedDate
 import dev.tobins.mealplanner.app.recipes.MealPlace
 import dev.tobins.mealplanner.app.recipes.MealToCook
@@ -64,6 +66,7 @@ import dev.tobins.mealplanner.app.recipes.toCook
 import dev.tobins.mealplanner.app.rememberFrontReturns
 import dev.tobins.mealplanner.app.rememberLoad
 import dev.tobins.mealplanner.app.rememberToday
+import dev.tobins.mealplanner.app.setMealStatus
 import dev.tobins.mealplanner.app.tracking.LogFoodPlace
 import dev.tobins.mealplanner.app.tracking.LogFoodScreen
 import dev.tobins.mealplanner.app.tracking.numbersText

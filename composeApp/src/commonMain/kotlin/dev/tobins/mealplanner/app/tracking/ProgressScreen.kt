@@ -55,9 +55,11 @@ import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.RefreshNotice
 import dev.tobins.mealplanner.app.plan.SuggestionCard
+import dev.tobins.mealplanner.app.profile
 import dev.tobins.mealplanner.app.rememberFrontReturns
 import dev.tobins.mealplanner.app.rememberLoad
 import dev.tobins.mealplanner.app.rememberToday
+import dev.tobins.mealplanner.app.saveProfile
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
 import dev.tobins.mealplanner.app.ui.CommonMsg

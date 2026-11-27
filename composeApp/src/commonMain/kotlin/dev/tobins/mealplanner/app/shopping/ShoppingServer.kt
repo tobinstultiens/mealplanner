@@ -10,6 +10,7 @@ import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.Strings
 import dev.tobins.mealplanner.app.prices.ExclusionChange
+import dev.tobins.mealplanner.app.setOnHand
 import dev.tobins.mealplanner.app.ui.Load
 import dev.tobins.mealplanner.app.ui.load
 

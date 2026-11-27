@@ -7,6 +7,8 @@ import dev.tobins.mealplanner.api.LogFoodInput
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.day
+import dev.tobins.mealplanner.app.deleteLog
 import dev.tobins.mealplanner.app.ingredients.ChosenFood
 import dev.tobins.mealplanner.app.ingredients.FoodScreen
 import dev.tobins.mealplanner.app.plan.foodAmount

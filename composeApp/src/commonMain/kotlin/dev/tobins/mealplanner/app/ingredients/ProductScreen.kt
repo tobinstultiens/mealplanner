@@ -59,6 +59,7 @@ import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.KeyboardMakesRoom
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.createIngredient
 import dev.tobins.mealplanner.app.plan.jsonSaver
 import dev.tobins.mealplanner.app.recipes.Found
 import dev.tobins.mealplanner.app.recipes.per100

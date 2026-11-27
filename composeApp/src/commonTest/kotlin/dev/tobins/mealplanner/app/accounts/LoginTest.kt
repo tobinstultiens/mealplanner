@@ -12,6 +12,7 @@ import dev.tobins.mealplanner.app.approvesRequests
 import dev.tobins.mealplanner.app.askWhatIsDue
 import dev.tobins.mealplanner.app.askWhatIsDueIfWanted
 import dev.tobins.mealplanner.app.logOut
+import dev.tobins.mealplanner.app.plan.notifications
 import dev.tobins.mealplanner.app.saveApprovesRequests
 import dev.tobins.mealplanner.app.saveNotificationOn
 import dev.tobins.mealplanner.app.shopping.ShoppingMsg

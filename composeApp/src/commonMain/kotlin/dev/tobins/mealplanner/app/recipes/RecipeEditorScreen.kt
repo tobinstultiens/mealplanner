@@ -75,10 +75,13 @@ import dev.tobins.mealplanner.app.KeyboardMakesRoom
 import dev.tobins.mealplanner.app.Language
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.createIngredient
+import dev.tobins.mealplanner.app.ingredients
 import dev.tobins.mealplanner.app.ingredients.ProductScreen
 import dev.tobins.mealplanner.app.ingredients.fromOpenFoodFacts
 import dev.tobins.mealplanner.app.plan.jsonSaver
 import dev.tobins.mealplanner.app.runsInBrowser
+import dev.tobins.mealplanner.app.searchFoods
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
 import dev.tobins.mealplanner.app.ui.CommonMsg

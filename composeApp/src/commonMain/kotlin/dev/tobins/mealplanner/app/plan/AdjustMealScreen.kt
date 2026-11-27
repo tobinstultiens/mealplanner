@@ -53,6 +53,7 @@ import dev.tobins.mealplanner.api.MealLines
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.RefreshNotice
+import dev.tobins.mealplanner.app.ingredients
 import dev.tobins.mealplanner.app.prices.ingredientId
 import dev.tobins.mealplanner.app.recipes.MealPlace
 import dev.tobins.mealplanner.app.rememberFrontReturns

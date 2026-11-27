@@ -36,6 +36,7 @@ import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.FakeBackend
 import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Strings
+import dev.tobins.mealplanner.app.ingredients
 import dev.tobins.mealplanner.app.ui.headline
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json

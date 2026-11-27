@@ -43,11 +43,16 @@ import dev.tobins.mealplanner.app.accounts.ProfileScreen
 import dev.tobins.mealplanner.app.accounts.RegistrationScreen
 import dev.tobins.mealplanner.app.accounts.ServerSettingsScreen
 import dev.tobins.mealplanner.app.accounts.loggedOut
+import dev.tobins.mealplanner.app.accounts.me
+import dev.tobins.mealplanner.app.accounts.register
 import dev.tobins.mealplanner.app.accounts.registrationOpen
+import dev.tobins.mealplanner.app.accounts.saveShops
 import dev.tobins.mealplanner.app.accounts.session
+import dev.tobins.mealplanner.app.accounts.shops
 import dev.tobins.mealplanner.app.ingredients.LocalProductImageLoader
 import dev.tobins.mealplanner.app.ingredients.MappingScreen
 import dev.tobins.mealplanner.app.ingredients.PantryScreen
+import dev.tobins.mealplanner.app.ingredients.foodDataset
 import dev.tobins.mealplanner.app.plan.AdjustMealScreen
 import dev.tobins.mealplanner.app.plan.PlanMsg
 import dev.tobins.mealplanner.app.plan.PlanScreen
@@ -66,6 +71,8 @@ import dev.tobins.mealplanner.app.recipes.RecipesMsg
 import dev.tobins.mealplanner.app.shopping.ShoppingCache
 import dev.tobins.mealplanner.app.shopping.ShoppingScreen
 import dev.tobins.mealplanner.app.shopping.ShoppingSession
+import dev.tobins.mealplanner.app.shopping.saveShoppingAdvice
+import dev.tobins.mealplanner.app.shopping.shoppingAdvice
 import dev.tobins.mealplanner.app.shopping.shoppingServer
 import dev.tobins.mealplanner.app.tracking.ProgressScreen
 import dev.tobins.mealplanner.app.tracking.TrackingMsg
