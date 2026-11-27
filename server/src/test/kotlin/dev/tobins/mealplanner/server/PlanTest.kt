@@ -1216,10 +1216,10 @@ class PlanTest {
      * one. After every step the stock left plus what the meals recorded taking is what was stocked up, and no
      * leftover lunch of an eaten dinner goes without the share it was cooked with (issue 169). After each
      * sequence the shopping lists count what the meals still to cook need, and un-eating every meal in random
-     * order makes the stock whole again with nothing recorded. A failure names the seed and the step.
+     * order makes the stock whole again with nothing recorded. A failure names the seed and the step. Each seed is
+     * a test of its own on a fresh database, so no one test comes near the time limit of a test on a slow runner.
      */
-    @Test
-    fun randomChangesToTwoWeeksNeverLoseOrMakeStock() = testApplication {
+    private fun randomChangesToTwoWeeks(seed: Long) = testApplication {
         val http = start().ready()
         val weeks = listOf(week, LocalDate.parse(week).plusWeeks(1).toString())
         val beef = http.get("/api/ingredients").body<List<Ingredient>>().first { it.name == "Beef raw" }.id
@@ -1248,8 +1248,7 @@ class PlanTest {
             }
         }
 
-        val seeds = 1L..8L
-        for (seed in seeds) {
+        run {
             val random = Random(seed)
             weeks.forEach { http.post("/api/plans/$it/generate") }
             repeat(60) { step ->
@@ -1291,6 +1290,30 @@ class PlanTest {
             assertEquals(stocked, left(), 1e-6, "seed $seed: the stock after un-eating every meal")
         }
     }
+
+    @Test
+    fun randomChangesToTwoWeeksNeverLoseOrMakeStockSeed1() = randomChangesToTwoWeeks(1L)
+
+    @Test
+    fun randomChangesToTwoWeeksNeverLoseOrMakeStockSeed2() = randomChangesToTwoWeeks(2L)
+
+    @Test
+    fun randomChangesToTwoWeeksNeverLoseOrMakeStockSeed3() = randomChangesToTwoWeeks(3L)
+
+    @Test
+    fun randomChangesToTwoWeeksNeverLoseOrMakeStockSeed4() = randomChangesToTwoWeeks(4L)
+
+    @Test
+    fun randomChangesToTwoWeeksNeverLoseOrMakeStockSeed5() = randomChangesToTwoWeeks(5L)
+
+    @Test
+    fun randomChangesToTwoWeeksNeverLoseOrMakeStockSeed6() = randomChangesToTwoWeeks(6L)
+
+    @Test
+    fun randomChangesToTwoWeeksNeverLoseOrMakeStockSeed7() = randomChangesToTwoWeeks(7L)
+
+    @Test
+    fun randomChangesToTwoWeeksNeverLoseOrMakeStockSeed8() = randomChangesToTwoWeeks(8L)
 
     /**
      * The planner picks on its own from my recipes in the rotation only (issue 205), however well another
