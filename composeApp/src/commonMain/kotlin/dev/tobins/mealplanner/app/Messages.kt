@@ -446,6 +446,10 @@ enum class Msg(private val english: String, private val dutch: String) {
         "A meal with this side was eaten, so the batch was cooked and its sides stay in the plan. Mark the meals you do not eat it with skipped instead: {0}.",
         "Een maaltijd met dit bijgerecht is gegeten, dus de prep is gekookt en de bijgerechten blijven in het plan. Zet de maaltijden waarbij je het niet eet op overgeslagen: {0}.",
     ),
+    REMOVE_PREP_MADE_NOTHING_LEFT(
+        "One of its meals was eaten, so the batch was cooked and stays in the plan. All its meals are eaten or skipped already: there is nothing left to change.",
+        "Een van de maaltijden is gegeten, dus de prep is gekookt en blijft in het plan. Alle maaltijden zijn al gegeten of overgeslagen: er valt niets meer te wijzigen.",
+    ),
     SPARE_TITLE("A portion in the box: {0}", "Een portie in het bakje: {0}"),
     SPARE_KEEPS("Skipped on {0} · keeps until {1}", "Overgeslagen op {0} · goed tot {1}"),
     SPARE_LAST_DAY("Its last day: eat it today or throw it away.", "Laatste dag: eet het vandaag op of gooi het weg."),

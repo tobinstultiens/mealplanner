@@ -674,7 +674,7 @@ labelled "Dinner · prep day" where it is made and "Lunch · prepped Mon 16 Nov"
 vacuum sealed" added for a batch kept that way (its sides too); its lock can't be undone, and its
 menu has "Remove the prep…", which names every meal that goes, with those eaten or skipped already, before it removes
 them; once one was eaten the batch was made, and the dialog says beforehand that it stays and its meals are to be
-skipped instead (of a batch eaten as sides, in words of sides), with nothing to confirm. The recipe opened from the prep
+skipped instead, naming only those still to eat (of a batch eaten as sides, in words of sides), with nothing to confirm. The recipe opened from the prep
 day says "Cook 4 servings: 1 now, 3 for the prep's later meals", as cook mode does too; from a later day "Prepped on
 Mon 16 Nov: nothing to cook", with what is in that meal's box ("In this meal: 1.25 servings") rather than the recipe
 as written. A skipped meal's share still in the box today is a card above the days of the weeks it can still be eaten

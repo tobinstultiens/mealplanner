@@ -164,7 +164,7 @@ class SidesTest {
         val made = mixed.copy(meals = mixed.meals.map { if (it.side) it.copy(status = MealStatus.EATEN) else it })
         assertEquals(
             "One of its meals, or a meal with one of its sides, was eaten, so the batch was cooked and stays in the plan. Mark the meals you do " +
-                "not eat, or do not eat it with, skipped instead: Tue 17 Nov dinner, Wed 18 Nov lunch (side, eaten).",
+                "not eat, or do not eat it with, skipped instead: Tue 17 Nov dinner.",
             removePrepText(made, english),
         )
         // A batch of one kind keeps its own words.

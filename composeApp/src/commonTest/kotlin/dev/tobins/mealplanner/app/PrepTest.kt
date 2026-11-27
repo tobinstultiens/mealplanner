@@ -170,23 +170,34 @@ class PrepTest {
         assertEquals(false, skipped.made)
         assertEquals("This takes all its meals out of the plan: Tue 17 Nov dinner, Wed 18 Nov lunch (skipped).", removePrepText(skipped, english))
 
-        val made = skipped.copy(meals = listOf(prep.meals[0].copy(status = MealStatus.EATEN), skipped.meals[1]))
+        // The one eaten and the one skipped are not listed: only a meal still to eat can be skipped instead.
+        val planned = PrepMeal("2026-11-19", DINNER, 1.0, MealStatus.PLANNED)
+        val made = skipped.copy(meals = listOf(prep.meals[0].copy(status = MealStatus.EATEN), skipped.meals[1], planned))
         assertEquals(true, made.made)
         assertEquals(
-            "One of its meals was eaten, so the batch was cooked and stays in the plan. Mark the meals you do not eat skipped instead: " +
-                "Tue 17 Nov dinner (eaten), Wed 18 Nov lunch (skipped).",
+            "One of its meals was eaten, so the batch was cooked and stays in the plan. Mark the meals you do not eat skipped instead: Thu 19 Nov dinner.",
             removePrepText(made, english),
         )
         val sides = made.copy(meals = made.meals.map { it.copy(side = true) })
         assertEquals(
             "A meal with this side was eaten, so the batch was cooked and its sides stay in the plan. Mark the meals you do not eat it with skipped instead: " +
-                "Tue 17 Nov dinner (side, eaten), Wed 18 Nov lunch (side, skipped).",
+                "Thu 19 Nov dinner (side).",
             removePrepText(sides, english),
         )
         assertEquals(
             "Een maaltijd met dit bijgerecht is gegeten, dus de prep is gekookt en de bijgerechten blijven in het plan. Zet de maaltijden waarbij je het niet eet op overgeslagen: " +
-                "di 17 nov avondeten (bijgerecht, gegeten), wo 18 nov lunch (bijgerecht, overgeslagen).",
+                "do 19 nov avondeten (bijgerecht).",
             removePrepText(sides, Strings.Dutch),
+        )
+        // Nothing left to skip: it says so instead of listing what is done.
+        val allDone = made.copy(meals = made.meals - planned)
+        assertEquals(
+            "One of its meals was eaten, so the batch was cooked and stays in the plan. All its meals are eaten or skipped already: there is nothing left to change.",
+            removePrepText(allDone, english),
+        )
+        assertEquals(
+            "Een van de maaltijden is gegeten, dus de prep is gekookt en blijft in het plan. Alle maaltijden zijn al gegeten of overgeslagen: er valt niets meer te wijzigen.",
+            removePrepText(allDone, Strings.Dutch),
         )
     }
 
