@@ -60,6 +60,12 @@ class AdjustMealScreenTest {
             }
         }
         waitFor("Reset to recipe")
+        // The recipe's add-ons are asked for once the meal is in, and their chips are inserted above its lines when they
+        // arrive. A test that scrolled to a line far down (the Add button) before then had it pushed out of the small
+        // test window, and its click missed: the picker never opened and the wait for it timed out (issue 350). It
+        // showed only when the machine was busy enough for the answer to come late, so every test starts with the chips in.
+        // They sit below the first screenful, so the wait scrolls to them.
+        compose.waitUntil(timeoutMillis = 10_000) { runCatching { scrollTo("Feta · 30 g") }.isSuccess }
     }
 
     private fun waitFor(text: String) =
