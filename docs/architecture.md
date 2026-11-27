@@ -74,12 +74,39 @@ Removing such a use is later work; adding one is a reason to ask where the thing
 
 ### Rules and SQL go in different classes
 
-A feature's rules (what to do) and its database code (what to read and write) are to be in different classes:
-the class with the rules is to call no query, and the class with the queries to hold no rule and take and give
-values. The route is to call the rules, and the rules the store. A change that must be stored together is one
-transaction that takes the write lock, as before. This is the target, not yet the case: the server moves to it
-feature by feature (the plan #385, recipes #386, the shopping list #387). Until a feature has been
-split, its repository still holds both, and a new class in it should not add to that.
+A feature's rules (what to do) and its database code (what to read and write) are in different classes: the class
+with the rules calls no query, and the class with the queries, the feature's store, holds no rule and takes and gives
+values. The route calls the rules, and the rules the store. The store is built for one account and filters every
+query by it, so no rule and no route passes an account's id. A change that must be stored together is one transaction
+that takes the write lock: a rule opens it with its store's `writing` (`Database.kt`), which joins a transaction the
+thread has open already, so a rule that calls another rule's change still makes one transaction of the two.
+
+`QueryCallersTest` holds the list of files under `server/src/main` that may call a query (`db.planQueries`, ...) and
+fails for a file outside it, and for an entry that calls none any more, so that the list only gets shorter. The plan
+is split (#385); recipes (#386) and the shopping list (#387) are next. Until a feature has been split its repository
+still holds both, is on the list as it is, and a new class in it should not add to that.
+
+The plan (`plan`), as its classes came out of `PlanRepository`:
+
+| Class | What it does |
+|---|---|
+| `PlanStore` | The store: reads and writes the plan's tables (`Plan.sq`) for one account, and opens its transactions |
+| `WeekMeals` | Reads a week's meals with their batches and sides, as the shopping list and the stock count them, and stores a meal in a slot with what stays there (its side, a share in the box, its foods) |
+| `KeptMeals` | Which meals stay as they are, and why: those planning keeps, a meal the stock went down for or that makes a batch, a side that stays, the slots no standard meal can take |
+| `WeekPlans` | Plans a week with the planner (Generate, and Done on the planning screen), and what the planner is given for a week |
+| `MealChanges` | Changes one meal: chosen, rerolled, a dinner moved to another day with its leftovers, a standard meal in its place, locked, removed |
+| `FoodChanges` | Puts foods in a meal's slot, changes them and takes them out |
+| `Eating` | Cooks or eats a meal: eaten, skipped or planned again, what was in it, and what either takes from the stock or gives back |
+| `WeekShortfalls` | What the adjusted meals of a week leave later meals short of, for the shopping list and the Adjust screen's warnings |
+| `WeekCosts` | What a week costs: its prices and offers, what each meal and the week cost, the day's sums, the rests of fresh packs |
+| `WeekView` | The week as the Plan shows it (`WeekPlan`), which every change answers |
+| `PlanScope` | Builds the store and these classes for one account, as they call each other; `UserScope` builds it |
+
+`PlanStore` is a class, not an interface: no test needs another store. The tests run on an in-memory SQLite
+database, and a write that fails halfway is made by the driver (`RefusingWrites`, as `MealChangesTest` does). An
+interface goes in front of a store only when a test needs one.
+
+A new query of the plan goes in `PlanStore`; a new rule goes in the class of what a person does with it.
 
 ## The app
 

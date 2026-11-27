@@ -159,7 +159,7 @@ CREATE INDEX prep_user ON prep(userId, lastDay);
 -- role BOX (issue 265): a skipped meal's share, portions servings, still in the box after a standard meal took its
 -- slot; the slot's meal is that standard meal, and the share is eaten elsewhere as any skipped one is.
 -- A row goes with its meal, so removing the meal takes it out of the batch; replacing a meal's main keeps
--- its side and a share in the box (PlanRepository.save), and removing a standard meal puts back the skipped meal
+-- its side and a share in the box (WeekMeals.save), and removing a standard meal puts back the skipped meal
 -- whose share is in the box.
 CREATE TABLE prepPortion (
     userId INTEGER NOT NULL,

@@ -52,7 +52,7 @@ class Batch(
 ) {
     /**
      * The meal that makes the batch: its first, on [madeOn], a slot's meal or a side next to one. It stays while the
-     * batch does ([PlanRepository]'s rules).
+     * batch does ([KeptMeals]' rules).
      */
     val cook: BatchMeal? get() = meals.firstOrNull()?.takeIf { it.date == madeOn }
 

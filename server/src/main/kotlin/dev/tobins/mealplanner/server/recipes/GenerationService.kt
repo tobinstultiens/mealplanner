@@ -10,7 +10,7 @@ import dev.tobins.mealplanner.server.ConflictException
 import dev.tobins.mealplanner.server.accounts.ProfileRepository
 import dev.tobins.mealplanner.server.ingredients.IngredientRepository
 import dev.tobins.mealplanner.server.ingredients.StockRepository
-import dev.tobins.mealplanner.server.plan.PlanRepository
+import dev.tobins.mealplanner.server.plan.WeekMeals
 import dev.tobins.mealplanner.server.prices.OfferRepository
 import dev.tobins.mealplanner.server.recipes.generation.GeneratedRecipe
 import dev.tobins.mealplanner.server.recipes.generation.GenerationContext
@@ -28,7 +28,7 @@ class GenerationService(
     private val ingredients: IngredientRepository,
     private val stock: StockRepository,
     private val profiles: ProfileRepository,
-    private val plans: PlanRepository,
+    private val weekMeals: WeekMeals,
     private val offers: OfferRepository,
     /** The stores the account shops at: recipes are written around their offers only. */
     private val shops: () -> Set<Store> = { Store.entries.toSet() },
@@ -62,7 +62,7 @@ class GenerationService(
             staples = pantry.staples.map { it.name },
             onHand = pantry.onHand.filter { it.id in onHandNow }.map { it.name },
             onOffer = onOffer.sorted(),
-            recent = plans.recentTitles(today),
+            recent = weekMeals.recentTitles(today),
             existing = recipes.allTitles(),
             likes = profiles.profile()?.likes.orEmpty(),
             dislikes = profiles.profile()?.dislikes.orEmpty(),

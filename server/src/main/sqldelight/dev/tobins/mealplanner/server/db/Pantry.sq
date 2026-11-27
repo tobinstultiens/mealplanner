@@ -90,8 +90,8 @@ DELETE FROM stock WHERE ingredientId = :id AND ingredientId IN (SELECT id FROM i
 -- role is MEAL for the meal's own share (its main), SIDE for that of the side next to it taken from a prepped
 -- batch (issue 234, step 2), and BOX for that of a skipped prepped meal still in the box after a standard meal took its
 -- slot (issue 265): each is taken and given back with its own batch or meal, so they are kept apart.
--- The rows go with their meal, so a meal that has some is neither replaced nor removed (PlanRepository.whyKeepsItsRecipe);
--- those of its side and of a share in the box are carried over when its main is replaced (PlanRepository.save).
+-- The rows go with their meal, so a meal that has some is neither replaced nor removed (KeptMeals.whyKeepsItsRecipe);
+-- those of its side and of a share in the box are carried over when its main is replaced (WeekMeals.save).
 CREATE TABLE stockUse (
     userId INTEGER NOT NULL,
     weekStart TEXT NOT NULL,

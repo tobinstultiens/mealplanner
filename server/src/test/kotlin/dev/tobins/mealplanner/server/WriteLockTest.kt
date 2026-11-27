@@ -195,10 +195,10 @@ class WriteLockTest {
         val beef = http.get("/api/ingredients").body<List<Ingredient>>().first { it.name == "Beef raw" }.id
         val dinner = http.get("/api/recipes").body<List<RecipeSummary>>().first { it.title == "Dinner 1" }
 
-        // The plan (PlanRepository), and a stock change joined from inside it (StockRepository.useUp, giveBack).
-        whileAnotherWrites("a replan", "PlanRepository.generate") { http.post("/api/plans/$week/generate") }
-        whileAnotherWrites("eating a meal", "PlanRepository.setStatus") { http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.EATEN) } }
-        whileAnotherWrites("un-eating it", "PlanRepository.setStatus") { http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.PLANNED) } }
+        // The plan (WeekPlans, Eating), and a stock change joined from inside it (StockRepository.useUp, giveBack).
+        whileAnotherWrites("a replan", "WeekPlans.generate") { http.post("/api/plans/$week/generate") }
+        whileAnotherWrites("eating a meal", "Eating.setStatus") { http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.EATEN) } }
+        whileAnotherWrites("un-eating it", "Eating.setStatus") { http.put("/api/plans/$week/meals/1/dinner/status") { setBody(MealStatus.PLANNED) } }
 
         // The stock on its own (StockRepository) and from the shopping list (ShoppingListRepository).
         val stockUp = ShoppingKey.Stock(beef).toString()

@@ -22,7 +22,7 @@ import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.FoodLog
 import dev.tobins.mealplanner.server.foodLine
 import dev.tobins.mealplanner.server.ingredients.IngredientRepository
-import dev.tobins.mealplanner.server.plan.PlanRepository
+import dev.tobins.mealplanner.server.plan.WeekMeals
 import dev.tobins.mealplanner.server.writing
 import dev.tobins.mealplanner.tracking.Weighing
 import dev.tobins.mealplanner.tracking.WeightTrend
@@ -40,7 +40,7 @@ import java.time.format.DateTimeParseException
 class TrackingRepository(
     private val db: Database,
     private val userId: Long,
-    private val plans: PlanRepository,
+    private val weekMeals: WeekMeals,
     private val profiles: ProfileRepository,
     private val ingredients: IngredientRepository,
 ) {
@@ -48,7 +48,7 @@ class TrackingRepository(
 
     fun day(date: String): DayView {
         val day = parseDate(date)
-        val (weekStart, index, meals) = plans.mealsOn(day)
+        val (weekStart, index, meals) = weekMeals.mealsOn(day)
         val extras = q.selectLogForDate(userId, day.toString()).executeAsList().map { it.toEntry() }
         val eaten = meals.filter { it.status == MealStatus.EATEN }
         val expected = meals.filter { it.status != MealStatus.SKIPPED }

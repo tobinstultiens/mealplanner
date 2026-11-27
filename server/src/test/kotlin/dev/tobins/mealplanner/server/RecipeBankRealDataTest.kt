@@ -211,7 +211,7 @@ class RecipeBankRealDataTest {
             val scope = UserScope(account, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
             val weeks = query(url, "SELECT DISTINCT weekStart FROM planMeal WHERE userId = $account ORDER BY weekStart").map(java.time.LocalDate::parse)
             val read = weeks.flatMap { week ->
-                scope.plans.meals(week).sortedWith(compareBy({ it.day }, { it.slot.name })).map { meal ->
+                scope.plan.weekMeals.of(week).sortedWith(compareBy({ it.day }, { it.slot.name })).map { meal ->
                     assertTrue(meal.foodsId == null && !meal.foodsOnly && meal.foods.isEmpty(), "account $account, $week: $meal")
                     "$week ${meal.day} ${meal.slot} ${meal.recipeId} ${meal.title} ${"%.3f".format(java.util.Locale.ROOT, meal.portions)} ${"%.3f".format(java.util.Locale.ROOT, meal.kcal)} ${meal.status}"
                 }

@@ -7,7 +7,7 @@ import dev.tobins.mealplanner.server.NotFoundException
 import dev.tobins.mealplanner.server.ingredients.IngredientRepository
 import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.plan.MealAdjustments
-import dev.tobins.mealplanner.server.plan.PlanRepository
+import dev.tobins.mealplanner.server.plan.MealChanges
 import dev.tobins.mealplanner.server.prices.PriceRepository
 import dev.tobins.mealplanner.server.serverToday
 import dev.tobins.mealplanner.server.writing
@@ -201,7 +201,7 @@ class RecipeRepository(
      * @param freshPacks the packs of the fresh ingredients ([PriceRepository.freshPacks]); a recipe's
      *   [PlanCandidate.freshUses] are those of its ingredients that have one and are not on hand.
      * @param everyMeal every one of my recipes that is a meal with amounts, in the rotation or not, disliked or not and
-     *   with complete nutrition or not: those the user may put in a plan by hand ([PlanRepository.choose]), as the planning
+     *   with complete nutrition or not: those the user may put in a plan by hand ([MealChanges.choose]), as the planning
      *   screen's search finds them (issue 255).
      */
     fun planCandidates(

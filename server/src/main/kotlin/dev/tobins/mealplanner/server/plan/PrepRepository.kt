@@ -25,12 +25,14 @@ import java.time.LocalDate
  * One account's prepped meals (issue 234): a recipe made once and eaten over several days, started by hand
  * only, as the slots' meals, as sides next to them (step 2), or both (issue 269). Making, growing by a side, removing
  * and the share of a skipped meal are here; how the plan, the shopping list and the stock count a batch is
- * [PlanRepository]'s ([Batch]).
+ * [WeekMeals]' ([Batch]).
  */
 class PrepRepository(
     private val db: Database,
     private val userId: Long,
-    private val plans: PlanRepository,
+    private val weekMeals: WeekMeals,
+    private val keptMeals: KeptMeals,
+    private val view: WeekView,
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
     /** Today as the household sees it: a batch is never made on a day that has passed. */
@@ -43,7 +45,7 @@ class PrepRepository(
      * the planner would give that slot within the profile's range; the batch is their sum. The recipe must be
      * one of mine, a meal, with amounts, and keep for the chosen way ([RecipeKeeps]): the meals are lunches and
      * dinners from the made-on day (the first of them is that day) to the last day it keeps. A slot may be
-     * empty or hold a meal that may be replaced ([PlanRepository.whyKeepsItsRecipe]) and is of no other batch;
+     * empty or hold a meal that may be replaced ([KeptMeals.whyKeepsItsRecipe]) and is of no other batch;
      * a dinner's leftover lunch goes with it. The made-on day is today or later: a batch can't be cooked in the past, and
      * the app offers no such day (issue 263). Answers the week starting [weekStart], the one the app shows.
      *
@@ -72,10 +74,10 @@ class PrepRepository(
         val lastDay = madeOn.plusDays(keeps)
         if (dates.max() > lastDay) throw ConflictException("\"${recipe.title}\" keeps until ${Batch.dayName(lastDay)}")
         val candidate = recipes.candidate(input.recipeId) ?: throw ConflictException("This recipe has no amounts to plan with")
-        val targets = plans.targets()
+        val targets = profiles.planTargets()
         val range = profiles.portions()
         db.writing {
-            val weeks = places.map { it.first }.distinct().associateWith { plans.meals(it) }
+            val weeks = places.map { it.first }.distinct().associateWith { weekMeals.of(it) }
             for ((place, side) in places.zip(sides)) {
                 val (week, day, slot) = place
                 if (side != null) requireRoomForSide(week, weeks.getValue(week), day, slot, input.recipeId) else requireRoom(week, weeks.getValue(week), day, slot)
@@ -90,14 +92,14 @@ class PrepRepository(
                 }
                 // A slot of the prep, a side's too, is not the leftover lunch that goes with a dinner it replaces.
                 val taken = places.filter { it.first == week }.map { it.second to it.third }.toSet()
-                plans.leftoversToReplace(week, weeks.getValue(week), day, slot)?.takeIf { (it.day to it.slot) !in taken }
-                    ?.let { plans.deleteMeal(week, it.day, it.slot) }
+                keptMeals.leftoversToReplace(week, weeks.getValue(week), day, slot)?.takeIf { (it.day to it.slot) !in taken }
+                    ?.let { weekMeals.deleteMeal(week, it.day, it.slot) }
                 val portions = WeekPlanner.portionsFor(candidate, slot, targets, range)
                 val meal = PlannedMeal(day, slot, candidate.recipeId, candidate.title, portions, candidate.kcal * portions, candidate.proteinG * portions)
-                plans.saveInBatch(week, meal, prepId)
+                weekMeals.saveInBatch(week, meal, prepId)
             }
         }
-        return plans.view(shown)
+        return view.of(shown)
     }
 
     /**
@@ -106,19 +108,19 @@ class PrepRepository(
      * meals then hold what the stock gave, and the later ones are skipped instead. A batch of another account
      * is not there (404). A batch eaten as sides takes only its sides: the meals they go with stay. A meal of
      * the batch with a side of another batch takes that side with it, unless that side stays
-     * ([PlanRepository.whySideStays]).
+     * ([KeptMeals.whySideStays]).
      */
     fun remove(weekStart: String, id: Long): WeekPlan {
         val shown = parseWeekStart(weekStart)
         db.writing {
             val batch = batch(id)
             if (batch.made) throw ConflictException(madeAlready(batch))
-            val weeks = batch.meals.map { it.week }.distinct().associateWith { plans.meals(it) }
+            val weeks = batch.meals.map { it.week }.distinct().associateWith { weekMeals.of(it) }
             // A share in the box is under a standard meal's slot (issue 265): the standard meal stays, the share goes with the prep.
             val inBox = batch.meals.filter { it.boxed }
             for (meal in batch.meals.filterNot { it.side } - inBox.toSet()) {
                 val stored = weeks.getValue(meal.week).first { it.day == meal.meal.day && it.slot == meal.meal.slot }
-                plans.whySideStays(meal.week, stored)?.let { why ->
+                keptMeals.whySideStays(meal.week, stored)?.let { why ->
                     throw ConflictException("${Batch.slotName(meal.date, meal.meal.slot)}: ${why.replaceFirstChar { it.lowercase() }}")
                 }
             }
@@ -126,28 +128,28 @@ class PrepRepository(
                 when {
                     meal.side -> q.deleteSidePortion(userId, meal.week.toString(), meal.meal.day.toLong(), meal.meal.slot.name)
                     meal.boxed -> q.deleteBoxPortion(userId, meal.week.toString(), meal.meal.day.toLong(), meal.meal.slot.name)
-                    else -> plans.deleteMeal(meal.week, meal.meal.day, meal.meal.slot)
+                    else -> weekMeals.deleteMeal(meal.week, meal.meal.day, meal.meal.slot)
                 }
             }
             q.deletePrep(userId, id)
         }
-        return plans.view(shown)
+        return view.of(shown)
     }
 
     /**
      * Takes the side next to the meal in [day]'s [slot] of the week starting [weekStart] out of its batch, which is made
      * smaller; the meal keeps its main. Not the side that makes the batch, nor one of a batch that was made
-     * ([PlanRepository.whySideStays]); a meal without a side is a [NotFoundException].
+     * ([KeptMeals.whySideStays]); a meal without a side is a [NotFoundException].
      */
     fun removeSide(weekStart: String, day: Int, slot: MealSlot): WeekPlan {
         val start = parseWeekStart(weekStart)
         db.writing {
-            val meal = plans.meals(start).firstOrNull { it.day == day && it.slot == slot && it.side != null }
+            val meal = weekMeals.of(start).firstOrNull { it.day == day && it.slot == slot && it.side != null }
                 ?: throw NotFoundException("No side next to the meal of day $day $slot")
-            plans.whySideStays(start, meal)?.let { throw ConflictException(it) }
+            keptMeals.whySideStays(start, meal)?.let { throw ConflictException(it) }
             q.deleteSidePortion(userId, start.toString(), day.toLong(), slot.name)
         }
-        return plans.view(start)
+        return view.of(start)
     }
 
     /**
@@ -173,7 +175,7 @@ class PrepRepository(
             if (!after(date, slot, first)) {
                 throw ConflictException("It is made with ${Batch.slotName(first.date, first.meal.slot)}: a side of it comes after that")
             }
-            val meals = plans.meals(week)
+            val meals = weekMeals.of(week)
             if (meals.any { it.day == day && it.slot == slot && it.prep?.id == id }) {
                 throw ConflictException("${Batch.slotName(date, slot)} is a meal of this batch already")
             }
@@ -183,7 +185,7 @@ class PrepRepository(
             requireRoomForSide(week, meals, day, slot, batch.recipeId)
             q.insertSidePortion(userId, week.toString(), day.toLong(), slot.name, id, portions)
         }
-        return plans.view(shown)
+        return view.of(shown)
     }
 
     /**
@@ -198,7 +200,7 @@ class PrepRepository(
         val weeks = HashMap<LocalDate, List<PlannedMeal>>()
         return Batch.load(db, userId, ids).values.sortedBy { it.madeOn }.flatMap { batch ->
             batch.meals.filter { it.meal.status == MealStatus.SKIPPED && it.share > 0.0 }.map { skipped ->
-                val weekOf = { week: LocalDate -> weeks.getOrPut(week) { plans.meals(week) } }
+                val weekOf = { week: LocalDate -> weeks.getOrPut(week) { weekMeals.of(week) } }
                 val room = room(batch, skipped, from = day, weekOf)
                 SparePortion(
                     prepId = batch.id,
@@ -248,7 +250,7 @@ class PrepRepository(
             val target = week.plusDays(day.toLong())
             if (target > batch.lastDay) throw ConflictException("It keeps until ${Batch.dayName(batch.lastDay)}: it can't be eaten later")
             if (!after(target, slot, from)) throw ConflictException("It can only be eaten in a later meal")
-            val meals = plans.meals(week)
+            val meals = weekMeals.of(week)
             val old = from.ref
             if (from.side) {
                 if (!hasRoomForSide(meals, day, slot, batch)) throw ConflictException("${Batch.slotName(target, slot)} has no meal of another recipe still to eat without a side")
@@ -261,9 +263,9 @@ class PrepRepository(
                 }
             } else {
                 if (!hasRoom(week, meals, day, slot, batch.id)) throw ConflictException("${Batch.slotName(target, slot)} has a meal that stays")
-                plans.leftoversToReplace(week, meals, day, slot)?.let { plans.deleteMeal(week, it.day, it.slot) }
+                keptMeals.leftoversToReplace(week, meals, day, slot)?.let { weekMeals.deleteMeal(week, it.day, it.slot) }
                 val eaten = if (from.boxed) fromBox(batch, from) else from.meal
-                plans.saveInBatch(week, eaten.copy(day = day, slot = slot, status = MealStatus.PLANNED), batch.id)
+                weekMeals.saveInBatch(week, eaten.copy(day = day, slot = slot, status = MealStatus.PLANNED), batch.id)
                 if (from.boxed) {
                     // Its slot is the standard meal's, which keeps what was in it; the share leaves the box.
                     q.deleteBoxPortion(userId, old.week.toString(), old.day.toLong(), old.slot.name)
@@ -276,7 +278,7 @@ class PrepRepository(
             val role = if (from.boxed) MealRef.MEAL else old.role
             q.moveStockUses(week.toString(), day.toLong(), slot.name, role, userId, old.week.toString(), old.day.toLong(), old.slot.name, old.role)
         }
-        return plans.view(shown)
+        return view.of(shown)
     }
 
     /**
@@ -324,7 +326,7 @@ class PrepRepository(
 
     /**
      * Whether a slot can take a meal of batch [batchId]: it is empty, or its meal is still to eat, not locked (the
-     * owner chose it), of no batch, and may be replaced ([PlanRepository.whyKeepsItsRecipe]); and its side, if it has
+     * owner chose it), of no batch, and may be replaced ([KeptMeals.whyKeepsItsRecipe]); and its side, if it has
      * one, is of another batch, as a batch is never both a slot's meal and the side next to it ([Batch.mealAt]). Not a
      * slot with a skipped meal's share in the box under it (issue 265): a slot holds one share of a batch at most. Nor
      * one with foods (issue 358), as [requireRoom] has it.
@@ -332,7 +334,7 @@ class PrepRepository(
     private fun hasRoom(week: LocalDate, meals: List<PlannedMeal>, day: Int, slot: MealSlot, batchId: Long): Boolean {
         val meal = meals.firstOrNull { it.day == day && it.slot == slot } ?: return true
         return meal.prep == null && !meal.locked && meal.foodsId == null && meal.status == MealStatus.PLANNED && meal.side?.prep?.id != batchId &&
-            plans.whyKeepsItsRecipe(week, meal, meals) == null && plans.box(week, day, slot) == null
+            keptMeals.whyKeepsItsRecipe(week, meal, meals) == null && weekMeals.box(week, day, slot) == null
     }
 
     /**
@@ -371,8 +373,8 @@ class PrepRepository(
         val name = Batch.slotName(week.plusDays(day.toLong()), slot)
         if (meal.prep != null) throw ConflictException("$name is from another prepped batch already")
         if (meal.foodsId != null) throw ConflictException("$name has foods: take them out first to eat a prepped meal there")
-        plans.whyKeepsItsRecipe(week, meal, meals)?.let { throw ConflictException("$name: $it") }
-        if (plans.box(week, day, slot) != null) throw ConflictException("$name holds the share of a skipped prepped meal in the box already")
+        keptMeals.whyKeepsItsRecipe(week, meal, meals)?.let { throw ConflictException("$name: $it") }
+        if (weekMeals.box(week, day, slot) != null) throw ConflictException("$name holds the share of a skipped prepped meal in the box already")
     }
 
     companion object {

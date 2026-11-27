@@ -487,7 +487,7 @@ class PlanTest {
             assertEquals(afterEating, stock(), 1e-6)
             // The day counts the kept lunch, as it is still to eat; the list does not buy for it again, as its share was taken.
             assertEquals(replanned.days[5].meals.sumOf { it.kcal }, replanned.days[5].kcal, 1e-9)
-            val toCook = PlanRepository.toCook(replanned.days.flatMap { it.meals })
+            val toCook = WeekMeals.toCook(replanned.days.flatMap { it.meals })
             assertFalse(lunch in toCook)
             val beef = http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef raw" }
             assertEquals(toCook.sumOf(::share), beef.toComeGrams!!, 1e-6)
@@ -521,7 +521,7 @@ class PlanTest {
             assertFalse(lunch.leftover && lunch.recipeId == dinner.recipeId, "$change planned leftovers of a dinner eaten without them: $lunch")
             // Planned like any other meal: cooked for itself, and bought for.
             assertEquals(lunch.portions, lunch.cookPortions, change)
-            val toCook = PlanRepository.toCook(plan.days.flatMap { it.meals })
+            val toCook = WeekMeals.toCook(plan.days.flatMap { it.meals })
             assertTrue(lunch in toCook, change)
             val beef = http.get("/api/plans/$week/shopping").body<ShoppingList>().items.single { it.name == "Beef raw" }
             assertEquals(toCook.sumOf(::share), beef.toComeGrams!!, 1e-6, change)
@@ -636,13 +636,13 @@ class PlanTest {
             var writer: Thread? = null
             val userId = userId()
             val ingredients = IngredientRepository(db, FoodRepository(db), userId)
-            val plans = PlanRepository(db, userId, RecipeRepository(db, ingredients, userId), ProfileRepository(db, userId), StockRepository(db, FoodRepository(db), userId), pricing = { _, _ ->
+            val plans = PlanScope(db, userId, RecipeRepository(db, ingredients, userId), ProfileRepository(db, userId), StockRepository(db, FoodRepository(db), userId), pricing = { _, _ ->
                 if (writer == null) writer = thread { other.planQueries.recordFailure("written during $change", "AH") }.apply { join(500) }
                 Pricing.NONE
             })
             for ((name, run) in listOf<Pair<String, () -> Unit>>(
-                "another recipe" to { plans.reroll(week, 1, MealSlot.DINNER) },
-                "a replan" to { plans.generate(week) },
+                "another recipe" to { plans.changes.reroll(week, 1, MealSlot.DINNER) },
+                "a replan" to { plans.weeks.generate(week) },
             )) {
                 change = name
                 writer = null
@@ -886,7 +886,7 @@ class PlanTest {
         fun meal(day: Int, slot: MealSlot, status: MealStatus, leftover: Boolean = false, recipeId: Long = 1) =
             PlannedMeal(day, slot, recipeId, "Stew", 2.0, 800.0, 40.0, leftover = leftover, status = status)
         fun toCook(dinner: MealStatus, lunch: MealStatus) =
-            PlanRepository.toCook(listOf(meal(0, MealSlot.DINNER, dinner), meal(1, MealSlot.LUNCH, lunch, leftover = true))).map { it.slot }
+            WeekMeals.toCook(listOf(meal(0, MealSlot.DINNER, dinner), meal(1, MealSlot.LUNCH, lunch, leftover = true))).map { it.slot }
         val p = MealStatus.PLANNED
         val e = MealStatus.EATEN
         val s = MealStatus.SKIPPED
@@ -902,7 +902,7 @@ class PlanTest {
         assertEquals(listOf(MealSlot.LUNCH), toCook(s, p))
         assertEquals(emptyList(), toCook(s, s))
         // A leftover lunch of another recipe is no leftover of this dinner: on its own, skipped is not cooked.
-        assertEquals(listOf(MealSlot.DINNER), PlanRepository.toCook(listOf(meal(0, MealSlot.DINNER, p), meal(1, MealSlot.LUNCH, s, leftover = true, recipeId = 2))).map { it.slot })
+        assertEquals(listOf(MealSlot.DINNER), WeekMeals.toCook(listOf(meal(0, MealSlot.DINNER, p), meal(1, MealSlot.LUNCH, s, leftover = true, recipeId = 2))).map { it.slot })
     }
 
     @Test
