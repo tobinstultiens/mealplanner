@@ -115,10 +115,14 @@ internal class LoadState<T : Any>(private val memory: ScreenMemory, private val 
     }
 }
 
+/** The [ScreenMemory] of the app, or one of its own for a screen shown without the app around it (a test). */
+@Composable
+internal fun rememberScreenMemory(): ScreenMemory = LocalScreenMemory.current ?: remember { ScreenMemory() }
+
 /** The [LoadState] for [key]; a new key (another week, another recipe) starts from what was kept for that one. */
 @Composable
 internal fun <T : Any> rememberLoad(key: String): LoadState<T> {
-    val memory = LocalScreenMemory.current ?: remember { ScreenMemory() }
+    val memory = rememberScreenMemory()
     return remember(memory, key) { LoadState(memory, key) }
 }
 
