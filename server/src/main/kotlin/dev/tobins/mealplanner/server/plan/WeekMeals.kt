@@ -10,7 +10,7 @@ import dev.tobins.mealplanner.server.db.SelectBoxPortion
 import dev.tobins.mealplanner.server.ingredients.MealRef
 import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.recipes.RecipeCandidates
-import dev.tobins.mealplanner.server.shopping.ShoppingListRepository
+import dev.tobins.mealplanner.server.shopping.ShoppingListView
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -19,7 +19,7 @@ import java.time.temporal.TemporalAdjusters
 /**
  * The meals of a week as the plan, the shopping list and the stock count them, and storing a meal in a slot. Every
  * other class of the plan reads the week here: a meal with its batch and side ([of]), the week as the shopping list buys
- * it ([forShopping]), what is still to cook ([stillToCook]). The shopping list of a week is [ShoppingListRepository]'s.
+ * it ([forShopping]), what is still to cook ([stillToCook]). The shopping list of a week is [ShoppingListView]'s.
  */
 class WeekMeals(
     private val store: PlanStore,

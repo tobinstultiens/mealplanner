@@ -119,18 +119,18 @@ class ShopSectionsTest {
     @Test
     fun aTypicalWeeksListFollowsTheRouteThroughTheShop() {
         val (_, user, week) = setup()
-        assertEquals(route, user.shopping.get(week).sections())
+        assertEquals(route, user.shopping.view.get(week).sections())
     }
 
     @Test
     fun tickedAndOnHandItemsKeepTheirPlace() {
         val (_, user, week) = setup()
-        val before = user.shopping.get(week)
+        val before = user.shopping.view.get(week)
         val milk = before.items.single { it.name == "Milk" }
-        user.shopping.setChecked(week, ShoppingCheck(milk.key, true))
+        user.shopping.ticking.setChecked(week, ShoppingCheck(milk.key, true))
         user.stock.setOnHand(before.items.single { it.name == "Onion" }.key.removePrefix("i").toLong(), true)
 
-        val after = user.shopping.get(week)
+        val after = user.shopping.view.get(week)
         assertTrue(after.items.single { it.name == "Milk" }.checked)
         assertTrue(after.items.single { it.name == "Onion" }.onHand)
         assertEquals(before.items.map { it.key }, after.items.map { it.key })
@@ -139,7 +139,7 @@ class ShopSectionsTest {
     @Test
     fun theReleasedAppReadsTheListInWalkingOrder() {
         val (_, user, week) = setup()
-        val text = DefaultJson.encodeToString(ShoppingList.serializer(), user.shopping.get(week))
+        val text = DefaultJson.encodeToString(ShoppingList.serializer(), user.shopping.view.get(week))
         // Such an app groups the items by category in the order they come.
         val old = releasedJson.decodeFromString<ReleasedShoppingList>(text)
         assertEquals(route, old.items.groupBy { it.category }.map { (category, items) -> category to items.map { it.name } })
@@ -171,7 +171,7 @@ class ShopSectionsTest {
         prices.refresh(pause = Duration.ZERO)
         assertEquals("Albert Heijn: Kaas › Goudse kaas", gouda().source, "the store's category, now known, comes before the food group")
         assertEquals(ShopSection.DAIRY.name, gouda().section)
-        assertEquals("Dairy and eggs", user.shopping.get(setup.week).items.single { it.name == "Gouda" }.category)
+        assertEquals("Dairy and eggs", user.shopping.view.get(setup.week).items.single { it.name == "Gouda" }.category)
 
         // Cleared, the automatic section is back.
         assertFalse(user.sections.set(gouda.id, SectionChoice(null)).byHand)

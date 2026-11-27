@@ -11,7 +11,7 @@ import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.api.WeighInDue
 import dev.tobins.mealplanner.server.accounts.ProfileRepository
 import dev.tobins.mealplanner.server.serverToday
-import dev.tobins.mealplanner.server.shopping.ShoppingListRepository
+import dev.tobins.mealplanner.server.shopping.ShoppingListView
 import dev.tobins.mealplanner.server.tracking.TrackingRepository
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -24,7 +24,7 @@ import java.time.temporal.ChronoUnit
  * Everything comes through the account's own repositories; only the offers are shared.
  */
 class DueNotifications(
-    private val shopping: ShoppingListRepository,
+    private val shopping: ShoppingListView,
     private val weekMeals: WeekMeals,
     private val preps: PrepRepository,
     private val tracking: TrackingRepository,
