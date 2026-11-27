@@ -534,9 +534,9 @@ class BuyAheadTest {
         // The plan: this week's, with the same seeds, is the same whether or not rice was bought ahead
         // for next week. Rice on hand this week would change it: the chicken and beef dinners use rice,
         // the cheaper fillers that end most weeks don't.
-        val plans = scope().plans
+        val weeks = scope().plan.weeks
         val seeds = 1L..12L
-        fun plans() = seeds.map { seed -> plans.generate(week, seed).days.flatMap { it.meals }.map { Triple(it.day, it.slot, it.recipeId) } }
+        fun plans() = seeds.map { seed -> weeks.generate(week, seed).days.flatMap { it.meals }.map { Triple(it.day, it.slot, it.recipeId) } }
         val without = plans()
         val rice = http.ingredient("White rice")
         http.tick("ahead:i${rice.id}")
@@ -555,7 +555,7 @@ class BuyAheadTest {
         val notCalled = object : RecipeGenerator {
             override suspend fun generate(context: GenerationContext): GeneratedRecipe = error("only the context is asked for")
         }
-        val generation = GenerationService(notCalled, user.recipes, user.ingredients, user.stock, user.profiles, user.plans, OfferRepository(db, emptyList()))
+        val generation = GenerationService(notCalled, user.recipes, user.ingredients, user.stock, user.profiles, user.plan.weekMeals, OfferRepository(db, emptyList()))
         val wednesday = LocalDate.parse(week).plusDays(2)
 
         // The chicken is in the freezer for next week's meals: not something to use up now.

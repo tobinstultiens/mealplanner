@@ -23,7 +23,7 @@ import kotlin.math.abs
  * What planned meals ate that differs from their recipes (issue 226, the table `mealLine`): each meal's
  * changes by ingredient, and what they come to: the meal's lines, its numbers, and what eating it takes
  * from the stock. The recipe itself never changes; a change belongs to one meal on one day. Whether a
- * meal may be adjusted, and moving the stock when it was eaten already, is [PlanRepository.adjust]'s.
+ * meal may be adjusted, and moving the stock when it was eaten already, is [Eating.adjust]'s.
  */
 class MealAdjustments(
     private val db: Database,

@@ -50,10 +50,10 @@ private suspend fun <T> RoutingCall.unprocessableOnConflict(more: String = "", b
 
 fun Route.planRoutes() {
     route("/api/plans/{weekStart}") {
-        get { call.respond(call.user.plans.get(call.week())) }
+        get { call.respond(call.user.plan.view.get(call.week())) }
 
         // Replans every meal that is not locked.
-        post("/generate") { call.respond(call.user.plans.generate(call.week())) }
+        post("/generate") { call.respond(call.user.plan.weeks.generate(call.week())) }
 
         // Prepped meals (issue 234), each answering this week's plan: make a batch, body PrepInput; remove one with all its
         // meals; eat the share of one of its skipped meals in a later meal, body {"from": {...}, "to": {"date": ..., "slot": ...}};
@@ -94,54 +94,54 @@ fun Route.planRoutes() {
         route("/meals/{day}/{slot}") {
             // A standard meal in place of what is there, body {"recipeId": 12, "eaten": true}; locked, as a choice by hand.
             put("/standard") { call.respond(call.user.standardMeals.choose(call.week(), call.day(), call.slot(), call.receive<StandardChoice>())) }
-            post("/reroll") { call.respond(call.user.plans.reroll(call.week(), call.day(), call.slot())) }
+            post("/reroll") { call.respond(call.user.plan.changes.reroll(call.week(), call.day(), call.slot())) }
             // A dinner to another day, body {"toDay": 3}, swapping with the dinner there (issue 255); 409 for one that stays.
             post("/move") {
                 if (call.slot() != MealSlot.DINNER) throw IllegalArgumentException("Only a dinner moves to another day")
-                call.respond(call.user.plans.moveDinner(call.week(), call.day(), call.receive<DinnerMove>().toDay))
+                call.respond(call.user.plan.changes.moveDinner(call.week(), call.day(), call.receive<DinnerMove>().toDay))
             }
-            put("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
-            delete("/lock") { call.respond(call.user.plans.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
+            put("/lock") { call.respond(call.user.plan.changes.setLocked(call.week(), call.day(), call.slot(), locked = true)) }
+            delete("/lock") { call.respond(call.user.plan.changes.setLocked(call.week(), call.day(), call.slot(), locked = false)) }
             // The user's own choice of recipe, body {"recipeId": 12}; locked, so replanning keeps it.
-            put { call.respond(call.user.plans.choose(call.week(), call.day(), call.slot(), call.receive<MealChoice>().recipeId)) }
+            put { call.respond(call.user.plan.changes.choose(call.week(), call.day(), call.slot(), call.receive<MealChoice>().recipeId)) }
             // Not a meal the stock went down for (409): it keeps what was taken, to give back when un-eaten.
-            delete { call.respond(call.user.plans.remove(call.week(), call.day(), call.slot())) }
+            delete { call.respond(call.user.plan.changes.remove(call.week(), call.day(), call.slot())) }
             // Writes a new recipe for this meal with Claude and puts it in the plan; not for a meal that was cooked.
             post("/generate") {
                 val service = call.user.generation ?: return@post call.respondGenerationOff()
                 val (week, day, slot) = Triple(call.week(), call.day(), call.slot())
-                val plans = call.user.plans
-                call.unprocessableOnConflict { plans.requireReplaceable(week, day, slot) } ?: return@post
+                val plan = call.user.plan
+                call.unprocessableOnConflict { plan.keptMeals.requireReplaceable(week, day, slot) } ?: return@post
                 val recipe = service.generate(call.receive<GenerateRequest>().copy(slot = slot))
                 val candidate = call.user.recipes.candidate(recipe.summary.id)
                     ?: throw GenerationException("The generated recipe has no amounts to plan with")
                 // Eaten while the recipe was written: the recipe stays in the account's recipes, and the dialog says so.
                 val kept = "; the new recipe \"${recipe.summary.title}\" is kept in your recipes"
-                call.unprocessableOnConflict(kept) { plans.place(week, day, slot, candidate) }?.let { call.respond(it) }
+                call.unprocessableOnConflict(kept) { plan.changes.place(week, day, slot, candidate) }?.let { call.respond(it) }
             }
             // Takes the side next to the meal out of its batch (issue 234); the meal keeps its main.
             delete("/side") { call.respond(call.user.preps.removeSide(call.week(), call.day(), call.slot())) }
             // Body: "EATEN", "SKIPPED" or "PLANNED".
             put("/status") {
-                call.respond(call.user.plans.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))
+                call.respond(call.user.plan.eating.setStatus(call.week(), call.day(), call.slot(), call.receive<MealStatus>()))
             }
             // Foods in the slot (issue 358), each change answering the week: add one, body {"ingredientId": 7, "amount": 2,
             // "unit": "bar"}, by which an empty slot becomes a slot of foods; replace one, same body; take one out, the last of a
             // slot of foods alone taking the meal with it.
             route("/foods") {
-                post { call.respond(call.user.plans.addFood(call.week(), call.day(), call.slot(), call.receive<MealFoodInput>())) }
+                post { call.respond(call.user.plan.foodChanges.addFood(call.week(), call.day(), call.slot(), call.receive<MealFoodInput>())) }
                 route("/{foodId}") {
-                    put { call.respond(call.user.plans.changeFood(call.week(), call.day(), call.slot(), call.foodId(), call.receive<MealFoodInput>())) }
-                    delete { call.respond(call.user.plans.removeFood(call.week(), call.day(), call.slot(), call.foodId())) }
+                    put { call.respond(call.user.plan.foodChanges.changeFood(call.week(), call.day(), call.slot(), call.foodId(), call.receive<MealFoodInput>())) }
+                    delete { call.respond(call.user.plan.foodChanges.removeFood(call.week(), call.day(), call.slot(), call.foodId())) }
                 }
             }
             // What was in the meal (issue 226): its recipe's ingredients with this meal's changes, and their numbers.
             route("/lines") {
-                get { call.respond(call.user.plans.lines(call.week(), call.day(), call.slot())) }
+                get { call.respond(call.user.plan.eating.lines(call.week(), call.day(), call.slot())) }
                 // Body {"lines": [{"ingredientId": 7, "grams": 60}]}: every change, replacing those before; [] resets.
                 put {
                     val lines = call.receive<MealAdjustment>().lines
-                    call.respond(call.user.plans.adjust(call.week(), call.day(), call.slot(), lines))
+                    call.respond(call.user.plan.eating.adjust(call.week(), call.day(), call.slot(), lines))
                 }
             }
         }

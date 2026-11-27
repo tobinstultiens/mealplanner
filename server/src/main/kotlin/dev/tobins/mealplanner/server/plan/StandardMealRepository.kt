@@ -27,17 +27,18 @@ class StandardMealRepository(
     private val recipes: RecipeRepository,
     private val ingredients: IngredientRepository,
     private val stock: StockRepository,
-    private val plans: PlanRepository,
+    private val changes: MealChanges,
+    private val keptMeals: KeptMeals,
     private val profiles: ProfileRepository,
 ) {
     /**
      * The standard meals for each of the slots they are set to be planned as ([StandardMeal]), each at the portion
      * that slot gets within the profile's range as a meal chosen by hand would, with what of it is not at home in the
-     * week starting [weekStart] ([missing]); and the slots of the week no standard meal can take ([PlanRepository.whyNoStandardMeal]).
+     * week starting [weekStart] ([missing]); and the slots of the week no standard meal can take ([KeptMeals.whyNoStandardMeal]).
      */
     fun week(weekStart: String): StandardMeals {
         val start = parseWeekStart(weekStart)
-        val targets = plans.targets()
+        val targets = profiles.planTargets()
         val range = profiles.portions()
         val atHome = stock.onHandFor(start)
         val meals = recipes.standardMeals().flatMap { candidate ->
@@ -50,11 +51,11 @@ class StandardMealRepository(
                 )
             }
         }
-        return StandardMeals(start.toString(), meals, plans.closedToStandardMeals(start))
+        return StandardMeals(start.toString(), meals, keptMeals.closedToStandardMeals(start))
     }
 
     /**
-     * Puts the standard meal [choice] in [day]'s [slot] of the week starting [weekStart] ([PlanRepository.putStandard]),
+     * Puts the standard meal [choice] in [day]'s [slot] of the week starting [weekStart] ([MealChanges.putStandard]),
      * and makes the ingredients of it the pantry had not at home staples again ([missing]): a standard meal's ingredients
      * are staples, and one that ran out is restocked as staples are, named on the shopping list rather than bought as
      * a row of its own. All in one transaction, so a refusal changes nothing. A recipe that is not one of my standard
@@ -68,7 +69,7 @@ class StandardMealRepository(
                 ?: throw ConflictException("\"${row.title}\" is not one of your standard meals")
             if (slot !in candidate.slots) throw ConflictException("\"${row.title}\" is not set to be planned as ${slot.name.lowercase()}")
             val missing = missing(candidate.recipeId, stock.onHandFor(start))
-            val plan = plans.putStandard(weekStart, day, slot, candidate, choice.eaten)
+            val plan = changes.putStandard(weekStart, day, slot, candidate, choice.eaten)
             for (ingredient in missing) ingredients.setStaple(ingredient.id, true)
             StandardChosen(plan, missing.map { it.name })
         }

@@ -51,8 +51,8 @@ class WeekRestTest {
     private val stock = StockRepository(db, foods, userId)
     private val cream = ingredients.create(IngredientInput("Cream", nevoCode = 9301))
     private var keepsUntilNextWeek = false
-    private val plans = PlanRepository(db, userId, recipes, profiles, stock, freshPacks = { prices.freshPacks(ingredients, mapOf(cream.id to keepsUntilNextWeek)) })
-    private val preps = PrepRepository(db, userId, plans, recipes, profiles) { LocalDate.parse(week) }
+    private val plans = PlanScope(db, userId, recipes, profiles, stock, freshPacks = { prices.freshPacks(ingredients, mapOf(cream.id to keepsUntilNextWeek)) })
+    private val preps = PrepRepository(db, userId, plans.weekMeals, plans.keptMeals, plans.view, recipes, profiles) { LocalDate.parse(week) }
 
     /** A pack of cream of [size], at 2 euros per 100 g. */
     private fun sellCream(size: String, euros: Double) =
@@ -72,7 +72,7 @@ class WeekRestTest {
     @Test
     fun aSmallRestOfAPackIsToldWithItsGramsAndEuros() {
         sellCream("200 g", 4.0)
-        val plan = plans.choose(week, 0, MealSlot.DINNER, creamy("Creamy").summary.id)
+        val plan = plans.changes.choose(week, 0, MealSlot.DINNER, creamy("Creamy").summary.id)
 
         val left = small(plan.creamGrams(), 200) ?: error("the test's pack must leave a small rest of ${plan.creamGrams()} g")
         val rest = plan.rest.single()
@@ -84,23 +84,23 @@ class WeekRestTest {
     @Test
     fun aBigRestIsNotToldAndNeitherIsOneOfAPackWithoutASizeOrOfAFoodThatKeeps() {
         sellCream("1000 g", 20.0)
-        assertEquals(emptyList(), plans.choose(week, 0, MealSlot.DINNER, creamy("Creamy").summary.id).rest, "most of the pack is left")
+        assertEquals(emptyList(), plans.changes.choose(week, 0, MealSlot.DINNER, creamy("Creamy").summary.id).rest, "most of the pack is left")
 
         sellCream("200 g", 4.0)
         keepsUntilNextWeek = true
-        assertEquals(emptyList(), plans.get(week).rest, "it keeps until next week")
+        assertEquals(emptyList(), plans.view.get(week).rest, "it keeps until next week")
         keepsUntilNextWeek = false
-        assertEquals(1, plans.get(week).rest.size, "the same week, as a fresh food")
+        assertEquals(1, plans.view.get(week).rest.size, "the same week, as a fresh food")
         sellCream("per bak", 1.5)
-        assertEquals(emptyList(), plans.get(week).rest, "no size in grams")
+        assertEquals(emptyList(), plans.view.get(week).rest, "no size in grams")
     }
 
     @Test
     fun aSkippedMealBuysNothing() {
         sellCream("200 g", 4.0)
-        plans.choose(week, 0, MealSlot.DINNER, creamy("Creamy").summary.id)
+        plans.changes.choose(week, 0, MealSlot.DINNER, creamy("Creamy").summary.id)
 
-        assertEquals(emptyList(), plans.setStatus(week, 0, MealSlot.DINNER, MealStatus.SKIPPED).rest)
+        assertEquals(emptyList(), plans.eating.setStatus(week, 0, MealSlot.DINNER, MealStatus.SKIPPED).rest)
     }
 
     @Test
@@ -125,8 +125,8 @@ class WeekRestTest {
         val dates = listOf("2026-11-22", "2026-11-23", "2026-11-24")
         val made = preps.create(week, PrepInput(batch.summary.id, dates[0], meals = dates.map { PrepSlot(it, MealSlot.DINNER) }))
 
-        val batchGrams = made.creamGrams() + plans.get(nextWeek).creamGrams()
+        val batchGrams = made.creamGrams() + plans.view.get(nextWeek).creamGrams()
         assertClose(small(batchGrams, 250) ?: error("the test's batch must leave a small rest, it takes $batchGrams g"), made.rest.single().grams)
-        assertEquals(emptyList(), plans.get(nextWeek).rest, "the week after only eats it")
+        assertEquals(emptyList(), plans.view.get(nextWeek).rest, "the week after only eats it")
     }
 }

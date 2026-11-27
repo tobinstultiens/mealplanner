@@ -39,7 +39,11 @@ import kotlin.random.Random
 class PlanningRepository(
     private val db: Database,
     private val userId: Long,
-    private val plans: PlanRepository,
+    private val weekMeals: WeekMeals,
+    private val keptMeals: KeptMeals,
+    private val weeks: WeekPlans,
+    private val costs: WeekCosts,
+    private val view: WeekView,
     private val recipes: RecipeRepository,
     private val stock: StockRepository,
     /** Today as the household sees it: which weeks are over. */
@@ -70,7 +74,7 @@ class PlanningRepository(
 
     /**
      * Chooses one of my recipes for the week's dinners, in place of hiding it; choosing it again changes nothing. Any of
-     * my recipes that is a meal with amounts, as for a meal chosen by hand ([PlanRepository.choose]), whatever its
+     * my recipes that is a meal with amounts, as for a meal chosen by hand ([MealChanges.choose]), whatever its
      * calories: nothing is refused for those. A [ConflictException] when every day still to choose for has a dinner
      * chosen already.
      */
@@ -83,7 +87,7 @@ class PlanningRepository(
             forgetEndedWeeks()
             val picked = rows(start).filter { it.refused == 0L }
             if (picked.none { it.recipeId == recipeId }) {
-                val open = openDays(start, plans.kept(start, plans.meals(start))).size
+                val open = openDays(start, keptMeals.kept(start, weekMeals.of(start))).size
                 if (picked.size >= open) throw ConflictException(noDayLeft(open))
                 q.upsertPick(userId, start.toString(), recipeId, 0)
             }
@@ -122,9 +126,9 @@ class PlanningRepository(
     /**
      * Plans the week with the dinners chosen for it ("Done", or "Fill the rest"): each goes on a day of its own
      * ([DinnerPool.place]), locked as a recipe chosen by hand, with its leftover lunch, and the planner fills everything
-     * else as [PlanRepository.generate] does, keeping what that keeps, with none of the recipes hidden for the week: "Not
+     * else as [WeekPlans.generate] does, keeping what that keeps, with none of the recipes hidden for the week: "Not
      * this week" says the user does not want it this week. Then the dinners are no longer chosen; the hidden recipes stay
-     * hidden for the week. With nothing chosen nor hidden it is [PlanRepository.generate]. A [ConflictException] when more
+     * hidden for the week. With nothing chosen nor hidden it is [WeekPlans.generate]. A [ConflictException] when more
      * dinners are chosen than there are days to put them on, or one can no longer be planned; nothing changes then.
      */
     fun done(weekStart: String, seed: Long = Random.nextLong()): WeekPlan {
@@ -132,34 +136,34 @@ class PlanningRepository(
         db.writing {
             forgetEndedWeeks()
             val (picked, hidden) = rows(start).partition { it.refused == 0L }
-            plans.fillWeek(start, seed, hidden = hidden.mapTo(HashSet()) { it.recipeId }) { kept ->
+            weeks.fillWeek(start, seed, hidden = hidden.mapTo(HashSet()) { it.recipeId }) { kept ->
                 if (picked.isEmpty()) return@fillWeek emptyList()
-                val every = plans.candidates(start, everyMeal = true).associateBy { it.recipeId }
+                val every = weeks.candidates(start, everyMeal = true).associateBy { it.recipeId }
                 val dinners = picked.map { row -> candidateOf(row.recipeId, every) ?: throw ConflictException("\"${row.title}\" has no amounts to plan with: take it out first") }
                 val days = openDays(start, kept)
                 if (dinners.size > days.size) throw ConflictException(noDayLeft(days.size, chosen = dinners.size))
-                DinnerPool.place(dinners, days, kept, every, plans.request(start, locked = kept, seed = seed))
+                DinnerPool.place(dinners, days, kept, every, weeks.request(start, locked = kept, seed = seed))
             }
             q.deletePicksPlaced(userId, start.toString())
         }
-        return plans.view(start)
+        return view.of(start)
     }
 
     /**
      * The week starting [start] as the planning screen shows it: the days still to choose a dinner for, the dinners chosen,
      * the hidden recipes and the strip's totals. The totals are of the week's meals that stay and the chosen dinners on the
      * days [DinnerPool.place] gives them now, with their leftover lunches: the meals [done] would store for them, with the
-     * numbers the Plan gives them ([PlanRepository.withNumbers], [PlanRepository.costOfWeek], [PlanRepository.sums]).
+     * numbers the Plan gives them ([WeekCosts.withNumbers], [WeekCosts.costOfWeek], [WeekCosts.sums]).
      * Chosen dinners beyond the days left count in no total until one is taken out.
      */
     private fun planning(start: LocalDate): WeekPlanning {
         val week = Week(start)
-        val costOf = plans.costsIn(start)
+        val costOf = costs.costsIn(start)
         val days = openDays(start, week.kept)
         val placed = DinnerPool.place(week.picked.take(days.size), days, week.kept, week.byId, week.request)
-        val counted = plans.withNumbers(start, week.kept, placed, costOf)
-        val (cost, costWithoutOffers) = plans.costOfWeek(counted, costOf)
-        val sums = plans.sums(counted)
+        val counted = costs.withNumbers(start, week.kept, placed, costOf)
+        val (cost, costWithoutOffers) = costs.costOfWeek(counted, costOf)
+        val sums = costs.sums(counted)
         val eaten = counted.filter { it.status != MealStatus.SKIPPED }
         val targets = week.request.targets
         return WeekPlanning(
@@ -192,14 +196,14 @@ class PlanningRepository(
     }
 
     /**
-     * What the week starting [start] is planned around: its meals that stay ([PlanRepository.kept]), the planner's
+     * What the week starting [start] is planned around: its meals that stay ([KeptMeals.kept]), the planner's
      * [request] with its candidates, [every] meal of mine as a candidate, the dinners [picked] and the recipes [hidden],
      * and the [pool] they make.
      */
     private inner class Week(start: LocalDate) {
-        val kept: List<PlannedMeal> = plans.kept(start, plans.meals(start))
-        val request: PlanRequest = plans.request(start, locked = kept, seed = 0)
-        val every: List<PlanCandidate> = plans.candidates(start, everyMeal = true)
+        val kept: List<PlannedMeal> = keptMeals.kept(start, weekMeals.of(start))
+        val request: PlanRequest = weeks.request(start, locked = kept, seed = 0)
+        val every: List<PlanCandidate> = weeks.candidates(start, everyMeal = true)
         val byId: Map<Long, PlanCandidate> = every.associateBy { it.recipeId }
         private val rows = rows(start)
         val hidden = rows.filter { it.refused != 0L }
@@ -215,9 +219,9 @@ class PlanningRepository(
      * what each takes off a serving, what is on hand, the rests of packs, the rating and how long ago it was eaten.
      */
     private inner class Details(start: LocalDate) {
-        private val costOf = plans.costsIn(start)
-        private val prices = plans.prices(start)
-        private val offers = plans.bestOffers(start)
+        private val costOf = costs.costsIn(start)
+        private val prices = costs.prices(start)
+        private val offers = costs.bestOffers(start)
         private val onHand = stock.onHandFor(start)
         private val names = recipes.ingredients.list().associate { it.id to it.name }
 
@@ -264,7 +268,7 @@ class PlanningRepository(
      * among the week's [kept] meals. A day that has passed is no day to plan a dinner for; of a week wholly ahead, every
      * day counts.
      */
-    private fun openDays(start: LocalDate, kept: List<PlannedMeal>): List<Int> = (0 until PlanRepository.DAYS).filter { day ->
+    private fun openDays(start: LocalDate, kept: List<PlannedMeal>): List<Int> = (0 until WeekMeals.DAYS).filter { day ->
         !start.plusDays(day.toLong()).isBefore(today()) && kept.none { it.day == day && it.slot == MealSlot.DINNER }
     }
 
@@ -282,7 +286,7 @@ class PlanningRepository(
         .associate { row -> row.recipeId to (ChronoUnit.DAYS.between(LocalDate.parse(row.weekStart), start) / 7).toInt() }
 
     /** Forgets the rows of every week that is over: a week that started more than six days before today. */
-    private fun forgetEndedWeeks() = q.deletePicksEnded(userId, today().minusDays(PlanRepository.DAYS - 1L).toString())
+    private fun forgetEndedWeeks() = q.deletePicksEnded(userId, today().minusDays(WeekMeals.DAYS - 1L).toString())
 
     companion object {
         /** The most suggestions one page holds. */

@@ -16,7 +16,7 @@ import dev.tobins.mealplanner.planner.BuyAhead
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.server.ConflictException
 import dev.tobins.mealplanner.server.NotFoundException
-import dev.tobins.mealplanner.server.plan.PlanRepository.Companion.DAYS
+import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.DAYS
 import dev.tobins.mealplanner.server.accounts.ProfileRepository
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.ShoppingExtra
@@ -24,8 +24,10 @@ import dev.tobins.mealplanner.server.ingredients.IngredientRepository
 import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.ingredients.StockSource
 import dev.tobins.mealplanner.server.plan.Batch
-import dev.tobins.mealplanner.server.plan.PlanRepository
 import dev.tobins.mealplanner.server.plan.Shortfalls
+import dev.tobins.mealplanner.server.plan.WeekCosts
+import dev.tobins.mealplanner.server.plan.WeekMeals
+import dev.tobins.mealplanner.server.plan.WeekShortfalls
 import dev.tobins.mealplanner.server.plan.parseWeekStart
 import dev.tobins.mealplanner.server.recipes.RecipeLines
 import dev.tobins.mealplanner.server.recipes.RecipeRepository
@@ -38,7 +40,7 @@ import java.time.LocalDate
 
 /**
  * One account's shopping list for a week: what the planned meals need, the account's own items, the
- * advice next to it, and the ticks. The meals come from [plans], which plans them and never asks for
+ * advice next to it, and the ticks. The meals come from [weekMeals], as the plan has them, which never asks for
  * the list; the ticks are the account's own rows of `shoppingCheck`, kept under [ShoppingKey]s with
  * what a row of the meals' needs said and saved when it was ticked, except those of own items, which
  * are kept with the item in `shoppingExtra`.
@@ -46,7 +48,9 @@ import java.time.LocalDate
 class ShoppingListRepository(
     private val db: Database,
     private val userId: Long,
-    private val plans: PlanRepository,
+    private val weekMeals: WeekMeals,
+    private val shortfalls: WeekShortfalls,
+    private val costs: WeekCosts,
     private val recipes: RecipeRepository,
     private val profiles: ProfileRepository,
     private val ingredients: IngredientRepository,
@@ -93,13 +97,13 @@ class ShoppingListRepository(
      */
     private fun list(start: LocalDate, advised: Boolean): ShoppingList {
         // A prepped batch is bought in the week it is made, as one meal of all its portions.
-        val meals = plans.forShopping(start)
+        val meals = weekMeals.forShopping(start)
         val sectionOf = sections()
         val lines = recipes.linesWithIngredients(meals.map { it.recipeId })
         val week = needsOf(start, meals, sectionOf, lines)
         // The stock went down for the meals eaten, so what is still needed goes by the meals still to cook.
-        val toCook = needsOf(start, plans.stillToCook(start, meals), sectionOf, lines).needs.associateBy { it.key }
-        countTaken(plans.shortfallsIn(start, meals), week.needs.associateBy { it.key }, toCook)
+        val toCook = needsOf(start, weekMeals.stillToCook(start, meals), sectionOf, lines).needs.associateBy { it.key }
+        countTaken(shortfalls.shortfallsIn(start, meals), week.needs.associateBy { it.key }, toCook)
         val ownRows = q.selectExtrasForWeek(userId, start.toString()).executeAsList()
         val own = ownNeeds(ownRows, sectionOf)
         val ticks = ticks(start)
@@ -171,7 +175,7 @@ class ShoppingListRepository(
 
     /** The earliest week before the one starting [start] whose list bought a batch eaten in it ([ShoppingList.preppedBoughtIn]). */
     private fun preppedBoughtIn(start: LocalDate): String? =
-        plans.meals(start).flatMap { listOfNotNull(it.prep, it.side?.prep) }
+        weekMeals.of(start).flatMap { listOfNotNull(it.prep, it.side?.prep) }
             .map { Batch.mondayOf(LocalDate.parse(it.madeOn)) }.filter { it < start }.minOrNull()?.toString()
 
     /**
@@ -183,7 +187,7 @@ class ShoppingListRepository(
 
     /**
      * Counts what adjusted meals took of what was at home beyond their recipes as their need (issue 226), on
-     * the rows of the ingredients that leaves a meal still to cook short of ([PlanRepository.shortfallsIn]): in
+     * the rows of the ingredients that leaves a meal still to cook short of ([WeekShortfalls.shortfallsIn]): in
      * the week's need ([week]), and for a meal still to cook in that of the meals to come ([toCook]), with the
      * meal named among the row's. So a ticked row needs more than was bought, and one not ticked more than is on
      * hand, by what the later meal is short. Every other row stays as the recipes have it, as an adjustment buys
@@ -332,12 +336,12 @@ class ShoppingListRepository(
      * meals as planned; otherwise a provisional choice among the dinners the planner could pick
      * then ([BuyAhead.provisional]), one batch each. Nothing of it is stored: next week is planned
      * as usual later, with what was ticked here on hand. The meals of a batch made this week are bought
-     * with it ([PlanRepository.forShopping]): a next week with only those counts as not planned, and the
+     * with it ([WeekMeals.forShopping]): a next week with only those counts as not planned, and the
      * provisional choice is for the dinners they leave free (issue 263), none when they fill every one.
      */
     private fun buyAhead(start: LocalDate, thisWeek: List<PlannedMeal>, advisor: ShoppingAdvisor): BuyAheadAdvice {
         val next = start.plusDays(DAYS.toLong())
-        val nextWeek = plans.forShopping(next)
+        val nextWeek = weekMeals.forShopping(next)
         val limit = if (nextWeek.isEmpty()) minOf(BuyAhead.MAX_MEALS, freeDinners(next)) else BuyAhead.MAX_MEALS
         // Next week still has no plan of its own: the advice is empty, not about planned meals.
         if (limit == 0) return BuyAheadAdvice(emptyList(), provisional = true)
@@ -358,14 +362,14 @@ class ShoppingListRepository(
             recipes.linesWithIngredients(meals.map { it.recipeId }),
             ratings,
             onHand = stock.onHandFor(next),
-            onOfferNextWeek = plans.onOffer(next),
+            onOfferNextWeek = costs.onOffer(next),
             limit = limit,
         )
         return BuyAheadAdvice(items, provisional = nextWeek.isEmpty())
     }
 
     /** The dinners of the week starting [start] that hold no meal yet: those the meals of a batch made the week before leave free. */
-    private fun freeDinners(start: LocalDate): Int = DAYS - plans.meals(start).count { it.slot == MealSlot.DINNER }
+    private fun freeDinners(start: LocalDate): Int = DAYS - weekMeals.of(start).count { it.slot == MealSlot.DINNER }
 
     /**
      * Ticks an item off, or back on. A buy-ahead item ticked is on hand from next week, a stock-up

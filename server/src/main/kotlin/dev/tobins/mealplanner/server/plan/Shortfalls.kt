@@ -8,7 +8,7 @@ import kotlin.math.min
 /**
  * One meal of a week as [shortfalls] walks it: the grams of each ingredient its recipe gives it ([gramsUsed]),
  * those it eats as adjusted ([MealAdjustments.gramsEaten]), and whether it is still to cook
- * ([PlanRepository.toCook]), as only such a meal can still come up short.
+ * ([WeekMeals.toCook]), as only such a meal can still come up short.
  */
 class MealDemand(val meal: PlannedMeal, val recipe: Map<Long, Double>, val eaten: Map<Long, Double>, val toCook: Boolean)
 

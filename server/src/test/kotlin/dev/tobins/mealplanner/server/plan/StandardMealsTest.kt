@@ -450,11 +450,11 @@ class StandardMealsTest {
         val foods = FoodRepository(db)
         val offers = OfferRepository(db, emptyList())
         val scope = UserScope(k.userId, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { today })
-        fun meals() = scope.plans.get(week).days.flatMap { day -> day.meals.map { listOf(day.date, it.slot, it.recipeId, it.portions) } }
+        fun meals() = scope.plan.view.get(week).days.flatMap { day -> day.meals.map { listOf(day.date, it.slot, it.recipeId, it.portions) } }
 
         val plans = listOf(false, true, false).map { standard ->
             scope.recipes.setStandard(k.eggs.id, standard)
-            scope.plans.generate(week, seed = 7)
+            scope.plan.weeks.generate(week, seed = 7)
             meals()
         }
         assertTrue(plans.first().any { it[2] == k.eggs.id }, "eggs on bread is in the rotation and planned: ${plans.first()}")

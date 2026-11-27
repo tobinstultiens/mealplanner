@@ -6,7 +6,7 @@ import dev.tobins.mealplanner.server.ingredients.FoodRepository
 import dev.tobins.mealplanner.server.ingredients.IngredientRepository
 import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.plan.DueNotifications
-import dev.tobins.mealplanner.server.plan.PlanRepository
+import dev.tobins.mealplanner.server.plan.PlanScope
 import dev.tobins.mealplanner.server.plan.PlanningRepository
 import dev.tobins.mealplanner.server.plan.PrepRepository
 import dev.tobins.mealplanner.server.plan.StandardMealRepository
@@ -59,8 +59,9 @@ class UserScope(
     /** The verdicts on today's offers, judged once for the request: the shopping list's advice and its answer share them. */
     val judgement by lazy { dealVerdicts.judgement(Instant.now()) }
     val offerExclusions = OfferExclusionRepository(db, accountId, ingredients)
-    val plans by lazy {
-        PlanRepository(
+    /** The plan's store and the classes with its rules ([PlanScope]). */
+    val plan by lazy {
+        PlanScope(
             db, accountId, recipes, profiles, stock,
             offersByIngredient = { from, until -> prices.offers(ingredients, from, until) },
             pricing = { from, until -> prices.pricing(ingredients, from, until, shops.inUse()) },
@@ -69,12 +70,12 @@ class UserScope(
             today = today,
         )
     }
-    val preps by lazy { PrepRepository(db, accountId, plans, recipes, profiles, today) }
-    val planning by lazy { PlanningRepository(db, accountId, plans, recipes, stock, today) }
-    val standardMeals by lazy { StandardMealRepository(db, recipes, ingredients, stock, plans, profiles) }
+    val preps by lazy { PrepRepository(db, accountId, plan.weekMeals, plan.keptMeals, plan.view, recipes, profiles, today) }
+    val planning by lazy { PlanningRepository(db, accountId, plan.weekMeals, plan.keptMeals, plan.weeks, plan.costs, plan.view, recipes, stock, today) }
+    val standardMeals by lazy { StandardMealRepository(db, recipes, ingredients, stock, plan.changes, plan.keptMeals, profiles) }
     val shopping by lazy {
         ShoppingListRepository(
-            db, accountId, plans, recipes, profiles, ingredients, stock,
+            db, accountId, plan.weekMeals, plan.shortfalls, plan.costs, recipes, profiles, ingredients, stock,
             offersByIngredient = { from, until -> prices.offers(ingredients, from, until) },
             shops = shops::inUse,
             regularPerKg = { prices.perKg(ingredients) },
@@ -87,7 +88,7 @@ class UserScope(
             today = today,
         )
     }
-    val tracking by lazy { TrackingRepository(db, accountId, plans, profiles, ingredients) }
-    val notifications by lazy { DueNotifications(shopping, plans, preps, tracking, profiles, shops::inUse, today) }
-    val generation by lazy { generator?.let { GenerationService(it, recipes, ingredients, stock, profiles, plans, offers, shops::inUse) } }
+    val tracking by lazy { TrackingRepository(db, accountId, plan.weekMeals, profiles, ingredients) }
+    val notifications by lazy { DueNotifications(shopping, plan.weekMeals, preps, tracking, profiles, shops::inUse, today) }
+    val generation by lazy { generator?.let { GenerationService(it, recipes, ingredients, stock, profiles, plan.weekMeals, offers, shops::inUse) } }
 }

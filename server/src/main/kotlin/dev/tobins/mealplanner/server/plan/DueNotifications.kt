@@ -25,7 +25,7 @@ import java.time.temporal.ChronoUnit
  */
 class DueNotifications(
     private val shopping: ShoppingListRepository,
-    private val plans: PlanRepository,
+    private val weekMeals: WeekMeals,
     private val preps: PrepRepository,
     private val tracking: TrackingRepository,
     private val profiles: ProfileRepository,
@@ -35,7 +35,7 @@ class DueNotifications(
 ) {
     fun facts(): NotificationFacts {
         val day = today()
-        val (weekStart, index, meals) = plans.mealsOn(day)
+        val (weekStart, index, meals) = weekMeals.mealsOn(day)
         return NotificationFacts(
             date = day.toString(),
             offersEnding = offersEnding(day, weekStart),
@@ -83,14 +83,14 @@ class DueNotifications(
 
     /**
      * Next week's first day, on a Saturday or Sunday, while that week has no meals of its own (those of a prepped
-     * batch made this week are there already, [PlanRepository.isPlanned]). Whatever the offers: the
+     * batch made this week are there already, [WeekMeals.isPlanned]). Whatever the offers: the
      * owner plans on Saturday, and only Jumbo lists next week's offers before the week starts (AH and Lidl are
      * fetched once it has), so tying the reminder to offers would leave AH and Lidl shoppers without it.
      */
     private fun planNextWeek(day: LocalDate, weekStart: LocalDate): LocalDate? {
         if (day.dayOfWeek != DayOfWeek.SATURDAY && day.dayOfWeek != DayOfWeek.SUNDAY) return null
         val next = weekStart.plusWeeks(1)
-        return next.takeIf { !plans.isPlanned(next) }
+        return next.takeIf { !weekMeals.isPlanned(next) }
     }
 
     /** The newest weigh-in, when it is a week old or older and there is a profile its weight goes to. */

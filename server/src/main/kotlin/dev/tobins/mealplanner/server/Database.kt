@@ -4,7 +4,7 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.ingredients.StockRepository
-import dev.tobins.mealplanner.server.plan.PlanRepository
+import dev.tobins.mealplanner.server.plan.Eating
 import dev.tobins.mealplanner.server.shopping.ShoppingListRepository
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -86,7 +86,7 @@ private class HolderStack(thread: Thread) : RuntimeException("The writer holding
 
 /**
  * The turn of [writing] in one database. Reentrant, as writers call others: marking a meal eaten or not
- * ([PlanRepository.setStatus]) and using up a bought item ([ShoppingListRepository.useUp]) change the stock
+ * ([Eating.setStatus]) and using up a bought item ([ShoppingListRepository.useUp]) change the stock
  * ([StockRepository]) inside their own. A thread's turn suits [writing], whose body does not suspend: the
  * transaction is the thread's too, and on a file database so is its connection.
  *

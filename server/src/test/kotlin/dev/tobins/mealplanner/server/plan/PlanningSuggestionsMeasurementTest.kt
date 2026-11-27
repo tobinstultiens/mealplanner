@@ -54,9 +54,9 @@ class PlanningSuggestionsMeasurementTest {
         account.recipes.syncCookingSite(checkNotNull(CookingSiteReader(cooking).readAll()))
         account.recipes.setAdded(ManyAddedInput(account.recipes.bank().map { it.id }, added = true))
         account.profiles.save(Profile(75.0, 180.0, 35, Sex.MALE, ActivityLevel.MODERATE))
-        for (weeksBefore in 4 downTo 1) account.plans.generate(week.minusWeeks(weeksBefore.toLong()).toString(), seed = weeksBefore.toLong())
+        for (weeksBefore in 4 downTo 1) account.plan.weeks.generate(week.minusWeeks(weeksBefore.toLong()).toString(), seed = weeksBefore.toLong())
         val stores = account.shops.inUse()
-        println("$copied offers of the week, stores ${stores.joinToString()}; ${account.plans.candidates(week).size} recipes in the rotation")
+        println("$copied offers of the week, stores ${stores.joinToString()}; ${account.plan.weeks.candidates(week).size} recipes in the rotation")
 
         val pool = account.planning.suggestions(week.toString(), emptySet(), PlanningRepository.MAX_SUGGESTIONS).suggestions
         val meals = account.planning.suggestions(week.toString(), emptySet(), PlanningRepository.MAX_SUGGESTIONS, query = "").suggestions

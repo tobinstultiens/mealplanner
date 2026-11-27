@@ -23,7 +23,7 @@ import java.time.Instant
  * no list of recipes: the shopping list, the stock and the numbers read them as they read any recipe's lines. With foods
  * alone that recipe is the slot's meal ([PlannedMeal.foodsOnly]), which an app that does not know foods reads as a meal of
  * a recipe; next to a recipe the foods count with it ([withFoods]). Which meal holds them, and the stock, is
- * [PlanRepository]'s.
+ * [WeekMeals]' and [FoodChanges]'.
  */
 class SlotFoods(private val db: Database, private val userId: Long, private val recipes: RecipeRepository) {
     private val q = db.recipeQueries
@@ -74,7 +74,7 @@ class SlotFoods(private val db: Database, private val userId: Long, private val 
     /**
      * Deletes the recipes of foods that no meal of the plan holds any more, with their lines: every write that may take a
      * slot's foods out (removing the slot, taking out its last food) ends with it; a meal that replaces another keeps the
-     * slot's foods ([PlanRepository.save]). Across the account and
+     * slot's foods ([WeekMeals.save]). Across the account and
      * idempotent, so a write that missed it leaves nothing for longer than the next one.
      */
     fun dropUnused() = q.deleteUnusedSlotFoods(userId)
