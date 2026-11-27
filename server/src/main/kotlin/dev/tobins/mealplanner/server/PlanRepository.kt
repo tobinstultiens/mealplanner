@@ -660,9 +660,15 @@ class PlanRepository(
      * The meals cooked after [meal] that its week leaves short ([shortfallsIn]) of an ingredient [meal] took more
      * of than its recipe from what was at home: what the Adjust screen warns of. A meal cooked before it took
      * its share first, and an ingredient [meal] had from the fridge took nothing another meal needed. A meal of
-     * a prepped batch took what it had when the batch was made, so it is where the batch is in the week.
+     * a prepped batch took what it had when the batch was made, so it is where the batch is in the week: a meal of
+     * a batch made in the week before has the warning of the meal that made it, the same in both weeks (issue 372).
      */
     private fun warnings(start: LocalDate, meal: PlannedMeal, week: List<PlannedMeal>): List<LaterShortfall> {
+        val cook = meal.prep?.let { batchesOf(listOf(meal))[it.id] }?.cook?.takeIf { it.week != start }
+        if (cook != null) {
+            val madeIn = meals(cook.week)
+            return warnings(cook.week, mealAt(madeIn, cook.meal.day, cook.meal.slot), madeIn)
+        }
         val view = forShopping(start, week)
         val result = shortfallsIn(start, view)
         val cooked = meal.prep?.let { prep -> view.firstOrNull { it.prep?.id == prep.id } } ?: meal
