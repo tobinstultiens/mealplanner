@@ -137,8 +137,8 @@ Only what starts the app, or what several features share:
 | File | Why it is in the root |
 |---|---|
 | `App.kt`, `Routes.kt` | Start the app and put the screens together, so they name every feature |
-| `ApiClient.kt` | Every feature's server calls; to be split per feature (#384) |
-| `Messages.kt`, `Strings.kt` | Every feature's texts, and the language; to be split per feature (#384) |
+| `ApiClient.kt`, `SharedApiCalls.kt` | The client (the address, the login, the errors and the retries every call shares), and the server calls that more than one feature makes |
+| `Messages.kt`, `AppMessages.kt`, `Strings.kt` | The `Msg` and `Plural` interfaces and the list of every enum of texts; the texts only the app's shell shows (tabs, notifications, updates); the language and how a text is filled in |
 | `Platform.kt` | The `expect`s every screen needs (back, system bars, keyboard, locale, the browser or not); the `actual`s are in the root of `androidMain` and `wasmJsMain` |
 | `SettingsStorage.kt`, `ScreenMemory.kt` | What the app keeps on the device, and where each screen was left |
 | `Notifications.kt` | What is due and when to notify, which the Android app posts |
@@ -146,7 +146,9 @@ Only what starts the app, or what several features share:
 
 The root may use every feature, and every feature may use the root. Test helpers that tests of several
 features share (`FakeBackend`, `FakeImageLoader`, `UnreachableServer`), the screenshot test, and tests of
-root files stay in the root test package, like the web client's files in `wasmJsMain`.
+root files stay in the root test package, like the web client's files in `wasmJsMain`. `FakeBackend` keeps
+its state, its server and its routing table there; each feature's sample data and routes are extension
+functions of it in `<feature>/Fake<Name>.kt` of the test source set.
 
 ### Which feature may use which
 
@@ -166,6 +168,20 @@ work, not as a rule:
 
 Adding a use is a reason to ask where the thing belongs instead.
 
+### Where a new text and a new server call go
+
+- A text goes into the enum of the feature that shows it: `PlanMsg` in `plan/PlanMessages.kt`, `ShoppingMsg`
+  in `shopping/ShoppingMessages.kt`, and so on, with a count-dependent one in the feature's `*Plural`. Give
+  it English and Dutch side by side and the same `{0}` placeholders in both; `StringsTest` checks every enum
+  that `messageTables` and `pluralTables` (`Messages.kt`) list, and `MessageTablesTest` fails for an enum
+  that is not in them. A text that two features show goes to `CommonMsg` in `ui/CommonMessages.kt`; one
+  that only the app's shell shows (tabs, notifications, updates) to `AppMsg`. A feature never imports
+  another feature's enum: that would be a use `FeatureUsesTest` does not allow.
+- A server call is an extension function of `ApiClient` in `<feature>/<Name>Calls.kt`, using `http` (and
+  `unlessUnknown` for a route an older server lacks); the client itself stays in `ApiClient.kt`. A call that
+  two features make goes to `SharedApiCalls.kt` in the root. A new file of texts or calls of a feature that
+  passes about 400 lines is split by screen.
+
 ### Where a new file goes
 
 - Into the package of the feature it is about; a file several features use goes to the feature with most
@@ -178,8 +194,7 @@ Adding a use is a reason to ask where the thing belongs instead.
 
 Targets of #381, step by step; the code does not do these yet:
 
-- A feature's texts and server calls in its package, the shared ones in one place (#384). Until then
-  `Messages.kt`, `Strings.kt` and `ApiClient.kt` are in the root, and many screens call the server themselves.
+- Many screens still call the server themselves.
 - A screen's loading and saving in a class of its own, tested without drawing, which the composable
   reads (the plan screen first, #388; the recipe page, #389). `ShoppingSession`, `RecipeDraft` and
   `ProductDraft` are such classes already.
