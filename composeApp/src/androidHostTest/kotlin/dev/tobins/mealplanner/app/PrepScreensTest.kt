@@ -17,7 +17,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import dev.tobins.mealplanner.api.MealPrep
 import dev.tobins.mealplanner.api.MealSlot
+import dev.tobins.mealplanner.api.MealStatus
+import dev.tobins.mealplanner.api.PrepMeal
 import dev.tobins.mealplanner.api.PrepSlot
 import dev.tobins.mealplanner.api.RecipeKeeps
 import org.junit.After
@@ -213,5 +216,48 @@ class PrepScreensTest {
         compose.waitUntil(timeoutMillis = 10_000) { backend.changes.any { it.startsWith("POST /api/plans/${FakeBackend.WEEK_START}/preps/1/spare") } }
         val sent = backend.changes.single { it.startsWith("POST /api/plans/${FakeBackend.WEEK_START}/preps/1/spare") }
         assertTrue(""""to":{"date":"2026-11-19","slot":"LUNCH"}""" in sent, sent)
+    }
+
+    /** Issue 370: before anything is picked, the dialog says what a prep needs and what it does to the slots it takes. */
+    @Test
+    fun thePrepDialogSaysWhatAPrepNeedsAndDoesBeforeAnythingIsPicked() {
+        showPlan()
+        compose.onNodeWithText("Prep a recipe…").performClick()
+        waitFor("Made on")
+        compose.onNode(hasAnyAncestor(isDialog()) and hasText("Cooked once on the day it is made", substring = true)).assertExists()
+        compose.onNode(hasAnyAncestor(isDialog()) and hasText("in place of what is planned there", substring = true)).assertExists()
+    }
+
+    /** Issue 370: a later day of a batch says the meal comes from the batch and when it was made, and shows no as-written servings. */
+    @Test
+    fun aLaterMealOfABatchSaysItComesFromTheBatchRatherThanShowingTheRecipeAsWritten() {
+        compose.setContent {
+            CompositionLocalProvider(LocalStrings provides Strings.English) {
+                RecipeDetailScreen(api, 4, null, onBack = {}, onEdit = {}, meal = MealToCook(4, 1.25, 0.0, skipped = false, prepMadeOn = FakeBackend.WEEK_START))
+            }
+        }
+        waitFor("Prepped on Mon 16 Nov: nothing to cook")
+        waitFor("In this meal: 1.25 servings")
+        compose.onNodeWithText("Makes", substring = true).assertDoesNotExist()
+    }
+
+    /** Issue 370: a batch with a meal eaten is not offered for removal: the dialog says what stays and lists only what can still be skipped. */
+    @Test
+    fun removingABatchOfWhichAMealWasEatenOffersNothingToRemove() {
+        val prep = MealPrep(
+            1, "2026-11-16", "2026-11-19", false,
+            listOf(
+                PrepMeal("2026-11-16", MealSlot.DINNER, 1.5, MealStatus.EATEN),
+                PrepMeal("2026-11-17", MealSlot.LUNCH, 1.25, MealStatus.SKIPPED),
+                PrepMeal("2026-11-18", MealSlot.LUNCH, 1.25, MealStatus.PLANNED),
+            ),
+        )
+        compose.setContent { CompositionLocalProvider(LocalStrings provides Strings.English) { RemovePrepDialog("Salad", prep, onDismiss = {}, onRemove = {}) } }
+        waitFor("The prep of Salad was made")
+        compose.onNodeWithText("Mark the meals you do not eat skipped instead: Wed 18 Nov lunch.", substring = true).assertExists()
+        compose.onNodeWithText("Mon 16 Nov", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Tue 17 Nov", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Remove").assertDoesNotExist()
+        compose.onNodeWithText("Close").assertExists()
     }
 }

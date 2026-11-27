@@ -363,20 +363,32 @@ fun RemovePrepText(prep: MealPrep) {
 /**
  * What removing [prep] does, naming its meals: every meal goes, of a prep eaten as sides every side, as the meals they go
  * with stay. Of one eaten both ways (issue 269) in two parts, as two different things happen: the meals that go, and the
- * meals that stay with their main and lose the side. Of a prep that was [made]: that it stays, and its meals are to be
- * skipped instead, in the words of how it is eaten.
+ * meals that stay with their main and lose the side. Of a prep that was [made]: that it stays, and the meals still to eat
+ * are to be skipped instead, in the words of how it is eaten; those eaten or skipped already are not listed, as there is
+ * nothing to do with them (issue 370), and when none is left it says so.
  */
 fun removePrepText(prep: MealPrep, t: Strings): String {
+    if (prep.made) {
+        val planned = prep.meals.filter { it.status == MealStatus.PLANNED }
+        if (planned.isEmpty()) return t(Msg.REMOVE_PREP_MADE_NOTHING_LEFT)
+        return t(madeText(prep), prepMealsText(planned, t, noteSides = true))
+    }
     val text = when {
-        prep.meals.all { it.side } -> if (prep.made) Msg.REMOVE_PREP_SIDES_MADE_TEXT else Msg.REMOVE_PREP_SIDES_TEXT
-        prep.meals.none { it.side } -> if (prep.made) Msg.REMOVE_PREP_MADE_TEXT else Msg.REMOVE_PREP_TEXT
-        prep.made -> Msg.REMOVE_PREP_MIXED_MADE_TEXT
+        prep.meals.all { it.side } -> Msg.REMOVE_PREP_SIDES_TEXT
+        prep.meals.none { it.side } -> Msg.REMOVE_PREP_TEXT
         else -> {
             val (sides, meals) = prep.meals.partition { it.side }
             return t(Msg.REMOVE_PREP_MIXED_TEXT, prepMealsText(meals, t, noteSides = false), prepMealsText(sides, t, noteSides = false))
         }
     }
     return t(text, prepMealsText(prep, t))
+}
+
+/** The sentence about a prep that was made, in the words of how it is eaten. */
+private fun madeText(prep: MealPrep): Msg = when {
+    prep.meals.all { it.side } -> Msg.REMOVE_PREP_SIDES_MADE_TEXT
+    prep.meals.none { it.side } -> Msg.REMOVE_PREP_MADE_TEXT
+    else -> Msg.REMOVE_PREP_MIXED_MADE_TEXT
 }
 
 /**
