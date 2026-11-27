@@ -1044,7 +1044,7 @@ the login screen (its "Settings" link while it asks for the address). The tokens
 The app is in English and Dutch. Progress → Settings → Appearance → Language picks System (Dutch when the
 device, or the browser for the web app, is set to a `nl` language, English otherwise), English or Nederlands;
 it applies at once and is kept. Numbers, prices and dates follow the same choice (a decimal comma, `vr 13 nov`
-in Dutch); with System they follow the device. The texts are in `composeApp/.../Messages.kt`, each with its
+in Dutch); with System they follow the device. The texts are in the `*Messages.kt` files of `composeApp`, one per feature, each text with its
 English and Dutch side by side, the notifications' texts among them, so these follow the same choice.
 Texts that come from the server (error messages, store deals, recipes) are shown as they are.
 
@@ -1078,7 +1078,7 @@ The server says what is due, the app decides whether to tell: `GET /api/notifica
 account and the server's today, the facts behind kinds 2 to 8 as data (`NotificationFacts`: names, dates, counts,
 the recipe; for kind 7, `prepsPastLastDay`: per batch whose last day was yesterday, the recipe, the shares left and
 the meals not marked; for kind 8, `accountRequests`, the user names waiting, empty for all but the owner's account),
-and the app words them in its language (`Messages.kt`). One WorkManager job (`NotificationWorker`)
+and the app words them in its language (the `*Messages.kt` files). One WorkManager job (`NotificationWorker`)
 replaces the daily update check: every four hours on any network, as Android allows, it checks the release and,
 when logged in, asks the server. Android decides when the periodic run happens, so it may never fall inside the two
 hours of "Mark what you ate"; therefore every run also schedules a one-off run five minutes after the next window
