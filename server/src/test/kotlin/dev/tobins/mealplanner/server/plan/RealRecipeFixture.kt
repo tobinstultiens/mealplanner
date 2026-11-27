@@ -11,7 +11,7 @@ import dev.tobins.mealplanner.server.openDatabase
 import dev.tobins.mealplanner.server.prices.OfferRepository
 import dev.tobins.mealplanner.server.prices.PriceRepository
 import dev.tobins.mealplanner.server.recipes.CookingSiteReader
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeScope
 import dev.tobins.mealplanner.server.shopping.ShopSections
 import java.io.File
 import java.time.LocalDate
@@ -50,14 +50,14 @@ object RealRecipeFixture {
                 row[4].ifBlank { null }, row[5].ifBlank { null }, null,
             )
         }
-        val recipes = RecipeRepository(db, ingredients, userId) { from, until -> prices.pricing(ingredients, from, until) }
-        recipes.syncCookingSite(checkNotNull(CookingSiteReader(cooking).readAll()))
-        recipes.setAdded(ManyAddedInput(recipes.bank().map { it.id }, added = true))
+        val recipes = RecipeScope(db, ingredients, userId) { from, until -> prices.pricing(ingredients, from, until) }
+        recipes.bankSync.syncCookingSite(checkNotNull(CookingSiteReader(cooking).readAll()))
+        recipes.mine.setAdded(ManyAddedInput(recipes.view.bank().map { it.id }, added = true))
         val sections = ShopSections(ingredients, prices)
         val packs = prices.freshPacks(ingredients, sections.keepsByIngredient(sections.byIngredient()))
         val week = LocalDate.of(2026, 11, 16)
         val pricing = prices.pricing(ingredients, week, week.plusDays(6))
-        val candidates = recipes.planCandidates(prices = pricing, freshPacks = packs)
+        val candidates = recipes.candidates.planCandidates(prices = pricing, freshPacks = packs)
         println("${candidates.size} candidates, ${candidates.count { it.freshUses.isNotEmpty() }} with fresh uses, ${packs.size} fresh ingredients with a pack")
         return Real(candidates, ingredients.list().associate { it.id to it.name })
     }

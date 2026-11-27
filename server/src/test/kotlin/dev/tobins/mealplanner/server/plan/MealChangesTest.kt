@@ -48,7 +48,7 @@ class MealChangesTest {
     init {
         alice.ingredients.create(IngredientInput("Beef", nevoCode = 10))
         alice.profiles.save(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT, kcalOverride = 2000))
-        for (i in 0..6) alice.recipes.create(RecipeInput("Beef $i", 4, "${1600 + i * 40} | g | Beef", "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER)))
+        for (i in 0..6) alice.recipes.edits.create(RecipeInput("Beef $i", 4, "${1600 + i * 40} | g | Beef", "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER)))
     }
 
     private fun WeekPlan.meal(day: Int, slot: MealSlot): PlannedMeal? = days[day].meals.singleOrNull { it.slot == slot }

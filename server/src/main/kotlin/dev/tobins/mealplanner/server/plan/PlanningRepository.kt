@@ -23,7 +23,8 @@ import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.db.SelectPicks
 import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.recipes.RecipeLines
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.MyRecipes
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.server.serverToday
 import dev.tobins.mealplanner.server.writing
 import java.time.LocalDate
@@ -44,7 +45,8 @@ class PlanningRepository(
     private val weeks: WeekPlans,
     private val costs: WeekCosts,
     private val view: WeekView,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
+    private val myRecipes: MyRecipes,
     private val stock: StockRepository,
     /** Today as the household sees it: which weeks are over. */
     private val today: () -> LocalDate = ::serverToday,
@@ -80,7 +82,7 @@ class PlanningRepository(
      */
     fun pick(weekStart: String, recipeId: Long): WeekPlanning {
         val start = parseWeekStart(weekStart)
-        val recipe = recipes.requireMine(recipeId)
+        val recipe = myRecipes.requireMine(recipeId)
         if (recipe.kind == RecipeKind.COMPONENT.name) throw ConflictException("This recipe is a building block, not a meal")
         recipes.candidate(recipeId) ?: throw ConflictException("This recipe has no amounts to plan with")
         db.writing {
@@ -108,7 +110,7 @@ class PlanningRepository(
      */
     fun hide(weekStart: String, recipeId: Long): WeekPlanning {
         val start = parseWeekStart(weekStart)
-        recipes.requireMine(recipeId)
+        myRecipes.requireMine(recipeId)
         db.writing {
             forgetEndedWeeks()
             q.upsertPick(userId, start.toString(), recipeId, 1)
@@ -277,7 +279,7 @@ class PlanningRepository(
 
     /**
      * Recipe [recipeId] as the planner sees it: one of [every] meal of mine, or else as any recipe of the account with
-     * amounts ([RecipeRepository.candidate]), such as one put back in the bank after it was chosen; null without amounts.
+     * amounts ([RecipeCandidates.candidate]), such as one put back in the bank after it was chosen; null without amounts.
      */
     private fun candidateOf(recipeId: Long, every: Map<Long, PlanCandidate>): PlanCandidate? = every[recipeId] ?: recipes.candidate(recipeId)
 

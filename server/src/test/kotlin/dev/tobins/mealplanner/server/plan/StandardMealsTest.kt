@@ -453,7 +453,7 @@ class StandardMealsTest {
         fun meals() = scope.plan.view.get(week).days.flatMap { day -> day.meals.map { listOf(day.date, it.slot, it.recipeId, it.portions) } }
 
         val plans = listOf(false, true, false).map { standard ->
-            scope.recipes.setStandard(k.eggs.id, standard)
+            scope.recipes.edits.setStandard(k.eggs.id, standard)
             scope.plan.weeks.generate(week, seed = 7)
             meals()
         }

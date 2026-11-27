@@ -17,7 +17,8 @@ import dev.tobins.mealplanner.server.ingredients.MealRef
 import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.DAYS
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.leftoversOf
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.MyRecipes
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.server.serverToday
 import java.time.LocalDate
 import kotlin.random.Random
@@ -36,7 +37,8 @@ class MealChanges(
     private val view: WeekView,
     private val adjustments: MealAdjustments,
     private val foods: SlotFoods,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
+    private val myRecipes: MyRecipes,
     private val profiles: ProfileRepository,
     private val stock: StockRepository,
     /** Today as the household sees it: a dinner moves only between today and the days after it (issue 255). */
@@ -182,10 +184,10 @@ class MealChanges(
      * filled. A [NotFoundException] when the recipe is not the account's, a [ConflictException] when it
      * has no amounts to plan with, is a component or when the slot's meal was cooked ([KeptMeals.requireNotCooked]).
      * Any of my recipes can be chosen, in the rotation or not; one only in the bank is a [ConflictException]
-     * until it is added ([RecipeRepository.requireMine]).
+     * until it is added ([MyRecipes.requireMine]).
      */
     fun choose(weekStart: String, day: Int, slot: MealSlot, recipeId: Long): WeekPlan {
-        val recipe = recipes.requireMine(recipeId)
+        val recipe = myRecipes.requireMine(recipeId)
         if (recipe.kind == RecipeKind.COMPONENT.name) throw ConflictException("This recipe is a building block, not a meal")
         val candidate = recipes.candidate(recipeId) ?: throw ConflictException("This recipe has no amounts to plan with")
         return place(weekStart, day, slot, candidate, locked = true)

@@ -124,7 +124,7 @@ class CookingSync(
         cloneDir(accountId).takeIf { it.canonicalFile != serverSite?.dir?.canonicalFile }?.deleteRecursively()
         val user = scope(accountId)
         user.pictures.removeBank()
-        user.recipes.syncCookingSite(emptyList())
+        user.recipes.bankSync.syncCookingSite(emptyList())
         users.setMeta(accountId, listOf(SYNCED_AT_KEY, SYNCED_COMMIT_KEY, SYNC_ERROR_KEY).associateWith { null })
     }
 
@@ -200,7 +200,7 @@ class CookingSync(
 
     /** Brings the account's recipes in line with [pages], read at [commit], and records the sync. */
     private fun importPages(accountId: Long, user: UserScope, commit: String?, pages: List<SitePage>): SyncResult =
-        user.recipes.syncCookingSite(pages).copy(autoLinked = user.ingredients.autoLink(), commit = commit).also {
+        user.recipes.bankSync.syncCookingSite(pages).copy(autoLinked = user.ingredients.autoLink(), commit = commit).also {
             users.setMeta(accountId, mapOf(SYNCED_AT_KEY to now().toString(), SYNCED_COMMIT_KEY to it.commit, SYNC_ERROR_KEY to null))
         }
 

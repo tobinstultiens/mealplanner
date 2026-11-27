@@ -215,15 +215,15 @@ class WriteLockTest {
         http.delete("/api/plans/$later/meals/0/dinner")
         whileAnotherWrites("using up what was bought", "ShoppingListRepository.useUp") { http.post("/api/plans/$later/shopping/use-up") { setBody(ShoppingRowKey("i$beef")) } }
 
-        // The catalogue (IngredientRepository.linking) and the recipes (RecipeRepository).
+        // The catalogue (IngredientRepository.linking) and the recipes (RecipeEdits, MyRecipes, BankSync).
         whileAnotherWrites("a new ingredient", "IngredientRepository.linking") { http.post("/api/ingredients") { setBody(IngredientInput("Pepper")) } }
         val own = http.post("/api/recipes") { setBody(RecipeInput("Beef bowl", 1, "300 | g | beef")) }.body<RecipeDetail>().summary
-        whileAnotherWrites("editing a recipe", "RecipeRepository.update") { http.put("/api/recipes/${own.id}") { setBody(RecipeInput("Beef bowl", 2, "300 | g | beef")) } }
-        whileAnotherWrites("taking it out of the rotation", "RecipeRepository.changeRotation") { http.put("/api/recipes/${own.id}/rotation") { setBody(RotationInput(false)) } }
-        whileAnotherWrites("adding it again, in the rotation", "RecipeRepository.changeAdded") { http.put("/api/recipes/${own.id}/added") { setBody(AddedInput(added = true)) } }
-        whileAnotherWrites("pinning it as a routine", "RecipeRepository.saveRoutines") { http.put("/api/routines") { setBody(Routines(snack = own.id)) } }
+        whileAnotherWrites("editing a recipe", "RecipeEdits.update") { http.put("/api/recipes/${own.id}") { setBody(RecipeInput("Beef bowl", 2, "300 | g | beef")) } }
+        whileAnotherWrites("taking it out of the rotation", "MyRecipes.changeRotation") { http.put("/api/recipes/${own.id}/rotation") { setBody(RotationInput(false)) } }
+        whileAnotherWrites("adding it again, in the rotation", "MyRecipes.changeAdded") { http.put("/api/recipes/${own.id}/added") { setBody(AddedInput(added = true)) } }
+        whileAnotherWrites("pinning it as a routine", "MyRecipes.saveRoutines") { http.put("/api/routines") { setBody(Routines(snack = own.id)) } }
         File(dir, "cooking/content/recipes/dinner0.md").appendText("\nA new note.")
-        whileAnotherWrites("a sync of the cooking site", "RecipeRepository.syncCookingSite") { http.post("/api/sync/cooking") }
+        whileAnotherWrites("a sync of the cooking site", "BankSync.syncCookingSite") { http.post("/api/sync/cooking") }
 
         // Logging in with new names (UserRepository.resolve).
         displayName = "Tee"
@@ -449,7 +449,7 @@ class WriteLockTest {
             elsewhere("account-$account") {
                 val user = scope(account)
                 repeat(8) { n ->
-                    val recipe = user.recipes.create(RecipeInput("Dish $account-$n", 2, "${100 + n} | g | beef"))
+                    val recipe = user.recipes.edits.create(RecipeInput("Dish $account-$n", 2, "${100 + n} | g | beef"))
                     assertEquals("Dish $account-$n" to 100.0 + n, recipe.summary.title to recipe.ingredients.single().line.amount)
                     val item = user.shopping.addExtra(week, ShoppingExtraInput("Item $n")).items.single { it.key.startsWith("x:") && it.name == "Item $n" }
                     user.shopping.setChecked(week, ShoppingCheck(item.key, true))
@@ -460,7 +460,7 @@ class WriteLockTest {
         writers.forEach { it.get(60, SECONDS) }
         for (account in accounts) {
             val user = scope(account)
-            assertEquals((0..7).map { "Dish $account-$it" }, user.recipes.list().map { it.title }.sorted(), "account $account")
+            assertEquals((0..7).map { "Dish $account-$it" }, user.recipes.view.list().map { it.title }.sorted(), "account $account")
             assertEquals((0..7).map { "Item $it" }, user.shopping.get(week).items.filter { it.key.startsWith("x:") && it.checked }.map { it.name }.sorted())
             assertEquals("7", users.meta(account, "last"))
         }

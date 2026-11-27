@@ -154,16 +154,16 @@ class RecipeToppingsTest {
     fun aSyncOfTheCookingSiteNeverChangesTheToppings() = testApplication {
         val http = start()
         val k = http.kitchen()
-        val recipes = RecipeRepository(db, IngredientRepository(db, FoodRepository(db), k.userId), k.userId)
+        val recipes = RecipeScope(db, IngredientRepository(db, FoodRepository(db), k.userId), k.userId)
         fun page(hash: String, rice: Int) = SitePage(HugoRecipeParser().parse("recipes/bowl.md", "---\ntitle: Site bowl\n---\n```ingredients\nservings: 2\n$rice | g | top rice\n```"), hash)
-        recipes.syncCookingSite(listOf(page("h1", 200)))
-        val site = recipes.bank().single()
+        recipes.bankSync.syncCookingSite(listOf(page("h1", 200)))
+        val site = recipes.view.bank().single()
         assertEquals(HttpStatusCode.OK, http.setToppings(site.id, k.egg to 60.0).status, "a bank recipe has toppings too")
 
-        recipes.syncCookingSite(listOf(page("h2", 250)))
+        recipes.bankSync.syncCookingSite(listOf(page("h2", 250)))
         assertEquals(listOf("Top egg"), http.get("/api/recipes/${site.id}").body<RecipeDetail>().toppings.map { it.name }, "changed on the site")
-        recipes.syncCookingSite(emptyList())
-        recipes.syncCookingSite(listOf(page("h2", 250)))
+        recipes.bankSync.syncCookingSite(emptyList())
+        recipes.bankSync.syncCookingSite(listOf(page("h2", 250)))
         assertEquals(listOf("Top egg"), http.get("/api/recipes/${site.id}").body<RecipeDetail>().toppings.map { it.name }, "gone from the site and back")
     }
 

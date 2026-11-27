@@ -11,7 +11,7 @@ import dev.tobins.mealplanner.planner.Pack
 import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.DAYS
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.shopping.bestOffer
 import java.time.LocalDate
 
@@ -22,7 +22,7 @@ import java.time.LocalDate
  */
 class WeekCosts(
     private val weekMeals: WeekMeals,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
     private val stock: StockRepository,
     private val adjustments: MealAdjustments,
     private val foods: SlotFoods,

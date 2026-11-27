@@ -622,7 +622,7 @@ class MigrationTest {
         val foods = FoodRepository(db)
         val offers = OfferRepository(db, emptyList())
         val scope = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
-        val stew = scope.recipes.create(RecipeInput("Stew", 2, "400 | g | beef")).summary
+        val stew = scope.recipes.edits.create(RecipeInput("Stew", 2, "400 | g | beef")).summary
         db.planQueries.upsertMeal(1, week, 0, "DINNER", stew.id, stew.title, 2.0, 800.0, 40.0, 0, 0, "PLANNED")
         val list = scope.shopping.get(week)
         // Still ticked as before, without an amount bought: never "more needed", never "no longer needed".
@@ -944,7 +944,7 @@ class MigrationTest {
         val foods = FoodRepository(db)
         val offers = OfferRepository(db, emptyList())
         val scope = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
-        val chicken = scope.recipes.create(RecipeInput("Chicken", 1, "1000 | g | kipfilet")).summary
+        val chicken = scope.recipes.edits.create(RecipeInput("Chicken", 1, "1000 | g | kipfilet")).summary
         db.planQueries.upsertMeal(1, week, 0, "DINNER", chicken.id, chicken.title, 1.0, 800.0, 40.0, 0, 0, "PLANNED")
         val row = scope.shopping.get(week).items.single()
         assertEquals(listOf("i1", true, 1000.0, null, null), listOf(row.key, row.checked, row.boughtGrams, row.boughtSaving, row.boughtOfferStore))
@@ -1014,21 +1014,21 @@ class MigrationTest {
         val offers = OfferRepository(db, emptyList())
         fun scope(id: Long) = UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
         val alice = scope(1).recipes
-        assertEquals(listOf("Curry", "Porridge", "Salsa", "Stew"), alice.list().map { it.title })
-        assertTrue(alice.list().all { it.added && it.inRotation && !it.removedFromSite })
-        assertEquals(4, alice.list().single { it.title == "Stew" }.rating, "the rating stays")
-        assertEquals(emptyList(), alice.bank(), "the recipe that had left the site is hidden in the bank")
-        assertEquals(listOf("Bob stew"), scope(2).recipes.list().map { it.title })
+        assertEquals(listOf("Curry", "Porridge", "Salsa", "Stew"), alice.view.list().map { it.title })
+        assertTrue(alice.view.list().all { it.added && it.inRotation && !it.removedFromSite })
+        assertEquals(4, alice.view.list().single { it.title == "Stew" }.rating, "the rating stays")
+        assertEquals(emptyList(), alice.view.bank(), "the recipe that had left the site is hidden in the bank")
+        assertEquals(listOf("Bob stew"), scope(2).recipes.view.list().map { it.title })
 
         // With its file back on the site, it is in the bank with its rating, not among Alice's recipes.
         val parser = HugoRecipeParser()
         val pages = listOf("recipes/stew.md" to "h1", "sauces/salsa.md" to "h2", "recipes/gone.md" to "h3b").map { (path, hash) ->
             SitePage(parser.parse(path, "---\ntitle: ${path.substringAfter('/').removeSuffix(".md")}\n---\n```ingredients\nservings: 2\n1 | | onion\n```"), hash)
         }
-        alice.syncCookingSite(pages)
-        val gone = alice.bank().single()
+        alice.bankSync.syncCookingSite(pages)
+        val gone = alice.view.bank().single()
         assertEquals(Triple(3L, false, 5), Triple(gone.id, gone.added, gone.rating))
-        assertEquals(listOf("Curry", "Porridge", "Salsa", "Stew"), alice.list().map { it.title })
+        assertEquals(listOf("Curry", "Porridge", "Salsa", "Stew"), alice.view.list().map { it.title })
         driver.close()
     }
 
@@ -1148,7 +1148,7 @@ class MigrationTest {
         val offers = OfferRepository(db, emptyList())
         fun scope(id: Long) = UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile())
         val alice = scope(1)
-        assertEquals(emptyList(), alice.recipes.find(1)!!.toppings)
+        assertEquals(emptyList(), alice.recipes.view.find(1)!!.toppings)
         assertEquals(listOf("Egg" to 60.0), alice.toppings.addOns(1).map { it.name to it.grams })
         assertEquals(listOf("Egg"), alice.toppings.set(1, ToppingsInput(listOf(ToppingInput(2, 60.0)))).toppings.map { it.name })
         assertEquals(emptyList(), scope(2).toppings.addOns(2))
@@ -1216,7 +1216,7 @@ class MigrationTest {
         val meals = alice.plan.view.get(week).days.flatMap { it.meals }
         assertTrue(meals.none { it.prep != null })
         assertEquals(listOf(2.0, 0.0, 1.0), meals.map { it.cookPortions })
-        alice.recipes.setKeeps(1, RecipeKeeps(days = 2))
+        alice.recipes.edits.setKeeps(1, RecipeKeeps(days = 2))
         val prepped = alice.preps.create(week, PrepInput(1, "2026-11-20", meals = listOf(PrepSlot("2026-11-20", MealSlot.DINNER), PrepSlot("2026-11-21", MealSlot.LUNCH))))
         assertEquals(listOf(null, null, null, 1L, 1L), prepped.days.flatMap { it.meals }.map { it.prep?.id })
         assertEquals("1", single(url, "SELECT count(*) FROM planMeal WHERE userId = 2"), "Bob's plan as it was")
@@ -1295,7 +1295,7 @@ class MigrationTest {
         assertEquals("1000.0", single(url, "SELECT grams FROM stock WHERE ingredientId = 1"))
 
         // A side of the salad next to Thursday's dinner and Friday's: eaten with Thursday's, its lettuce is kept apart from the stew's beef.
-        alice.plan.changes.place(week, 4, MealSlot.DINNER, alice.recipes.candidate(1)!!)
+        alice.plan.changes.place(week, 4, MealSlot.DINNER, alice.recipes.candidates.candidate(1)!!)
         alice.preps.create(week, PrepInput(2, "2026-11-19", meals = listOf(PrepSlot("2026-11-19", MealSlot.DINNER), PrepSlot("2026-11-20", MealSlot.DINNER)), side = 0.5))
         alice.stock.putOnHandFrom(2, LocalDate.parse(week), 1000.0, StockSource.STOCK_UP)
         alice.plan.eating.setStatus(week, 3, MealSlot.DINNER, MealStatus.EATEN)
@@ -1366,7 +1366,7 @@ class MigrationTest {
         val offers = OfferRepository(db, emptyList())
         val alice = UserScope(1, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(week) })
         alice.profiles.save(Profile(80.0, 180.0, 30, Sex.MALE, ActivityLevel.LIGHT))
-        assertEquals(listOf("Beef"), alice.recipes.setStandard(2, true).addedStaples)
+        assertEquals(listOf("Beef"), alice.recipes.edits.setStandard(2, true).addedStaples)
         alice.standardMeals.choose(week, 2, MealSlot.LUNCH, StandardChoice(2, eaten = true))
         // The toast's own 0.75 servings of beef apart from the share's, which stays taken.
         assertEquals("BOX:1:200.0,MEAL:1:75.0", single(url, "SELECT role || ':' || ingredientId || ':' || grams FROM stockUse WHERE userId = 1 AND day = 2 ORDER BY role"))
@@ -1433,7 +1433,7 @@ class MigrationTest {
         alice.planning.pick(week, 2)
         assertEquals(listOf(1L), alice.planning.hide(week, 1).notThisWeek.map { it.recipeId })
         assertEquals(listOf(2L), alice.planning.get(week).picks.map { it.recipeId })
-        alice.recipes.delete(2)
+        alice.recipes.mine.delete(2)
         assertEquals("1:1", single(url, "SELECT recipeId || ':' || refused FROM planPick"), "the soup's pick went with it")
         assertEquals("0", single(url, "SELECT count(*) FROM planPick WHERE userId = 2"))
         driver.close()
@@ -1591,35 +1591,35 @@ class MigrationTest {
         val offers = OfferRepository(db, emptyList())
         fun scope(id: Long) = UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(week) })
         val alice = scope(1)
-        val stew = alice.recipes.find(1)!!
+        val stew = alice.recipes.view.find(1)!!
         val parser = HugoRecipeParser()
         fun site(vararg files: Pair<String, String>) = files.map { (path, hash) ->
             SitePage(parser.parse(path, "---\ntitle: New ${path.substringAfter('/').removeSuffix(".md")}\n---\n```ingredients\nservings: 2\n100 | g | beef\n```"), hash)
         }
         val pages = site("recipes/stew.md" to "h1b", "recipes/curry.md" to "h3b", "recipes/old.md" to "h4")
         // The curry and the old one are the bank's; the stew is taken, and the soup's file is gone from a copy that is hers.
-        assertEquals(Triple(2, 0, 1), alice.recipes.syncCookingSite(pages).let { Triple(it.updated, it.removed, it.unchanged) })
+        assertEquals(Triple(2, 0, 1), alice.recipes.bankSync.syncCookingSite(pages).let { Triple(it.updated, it.removed, it.unchanged) })
         alice.pictures.sync(pages)
-        assertEquals(stew, alice.recipes.find(1), "the stew as it was, picture and all")
+        assertEquals(stew, alice.recipes.view.find(1), "the stew as it was, picture and all")
         assertEquals("/api/recipes/1/image?v=v1", stew.summary.imageUrl)
-        assertEquals(listOf("Gone soup", "Porridge", "Stew"), alice.recipes.list().map { it.title })
-        assertTrue(alice.recipes.list().none { it.removedFromSite })
-        assertEquals(listOf("New curry", "New old"), alice.recipes.bank().map { it.title }, "the bank follows the site; the taken stew is not in it")
-        assertEquals(listOf(1L), alice.recipes.standardMeals().map { it.recipeId })
-        assertEquals(listOf("Egg"), alice.recipes.toppings(1).map { it.name })
+        assertEquals(listOf("Gone soup", "Porridge", "Stew"), alice.recipes.view.list().map { it.title })
+        assertTrue(alice.recipes.view.list().none { it.removedFromSite })
+        assertEquals(listOf("New curry", "New old"), alice.recipes.view.bank().map { it.title }, "the bank follows the site; the taken stew is not in it")
+        assertEquals(listOf(1L), alice.recipes.candidates.standardMeals().map { it.recipeId })
+        assertEquals(listOf("Egg"), alice.recipes.view.toppings(1).map { it.name })
         assertEquals("1:MEAL,2:MEAL", single(url, "SELECT day || ':' || role FROM prepPortion WHERE userId = 1 ORDER BY day"))
 
         // The stew is hers to edit and stays edited, its file changed or gone; the soup, never edited, goes back to the
         // bank, hidden while its file is away.
-        val edited = alice.recipes.update(1, RecipeInput("My stew", 4, "1000 | g | beef", "Brown it well.", listOf("winter")))
-        alice.recipes.syncCookingSite(site("recipes/stew.md" to "h1c", "recipes/curry.md" to "h3b", "recipes/old.md" to "h4"))
-        assertEquals(edited, alice.recipes.find(1))
-        alice.recipes.setAdded(2, AddedInput(added = false))
-        alice.recipes.syncCookingSite(site("recipes/curry.md" to "h3b", "recipes/old.md" to "h4"))
-        assertEquals(edited, alice.recipes.find(1))
-        assertEquals(listOf("My stew", "Porridge"), alice.recipes.list().map { it.title })
-        assertEquals(listOf("New curry", "New old"), alice.recipes.bank().map { it.title })
-        assertEquals("Bob stew", scope(2).recipes.find(6)!!.summary.title, "Bob's copy is his")
+        val edited = alice.recipes.edits.update(1, RecipeInput("My stew", 4, "1000 | g | beef", "Brown it well.", listOf("winter")))
+        alice.recipes.bankSync.syncCookingSite(site("recipes/stew.md" to "h1c", "recipes/curry.md" to "h3b", "recipes/old.md" to "h4"))
+        assertEquals(edited, alice.recipes.view.find(1))
+        alice.recipes.mine.setAdded(2, AddedInput(added = false))
+        alice.recipes.bankSync.syncCookingSite(site("recipes/curry.md" to "h3b", "recipes/old.md" to "h4"))
+        assertEquals(edited, alice.recipes.view.find(1))
+        assertEquals(listOf("My stew", "Porridge"), alice.recipes.view.list().map { it.title })
+        assertEquals(listOf("New curry", "New old"), alice.recipes.view.bank().map { it.title })
+        assertEquals("Bob stew", scope(2).recipes.view.find(6)!!.summary.title, "Bob's copy is his")
         driver.close()
     }
 
@@ -1688,7 +1688,7 @@ class MigrationTest {
         val offers = OfferRepository(db, emptyList())
         fun scope(id: Long) = UserScope(id, db, foods, offers, PriceRepository(db, null, foods, offers), null, createTempDirectory("pictures").toFile(), today = { LocalDate.parse(week) })
         assertTrue(listOf(1L, 2L).flatMap { scope(it).ingredients.list() }.all { it.label == null && it.portions.isEmpty() && it.removedPortions.isEmpty() })
-        fun counted(account: Long, recipe: Long) = scope(account).recipes.find(recipe)!!.let { detail ->
+        fun counted(account: Long, recipe: Long) = scope(account).recipes.view.find(recipe)!!.let { detail ->
             val nutrition = detail.summary.nutrition!!
             listOf(detail.ingredients.map { it.grams }, listOf(nutrition.perServing.kcal, nutrition.perServing.proteinG).map { (it!! * 1000).roundToLong() / 1000.0 }, listOf(nutrition.complete, nutrition.approximate))
         }
@@ -1766,7 +1766,7 @@ class MigrationTest {
         val meals = alice.plan.weekMeals.of(LocalDate.parse(week))
         assertEquals(listOf("0 DINNER Stew 1.0 300.0 EATEN", "1 LUNCH Stew 1.0 300.0 PLANNED", "2 DINNER Stew 1.5 450.0 SKIPPED"), meals.map { "${it.day} ${it.slot} ${it.title} ${it.portions} ${it.kcal} ${it.status}" })
         assertTrue(meals.all { it.foodsId == null && !it.foodsOnly && it.foods.isEmpty() && it.recipeId == 1L }, "every meal is its recipe alone")
-        assertEquals(listOf(1L) to listOf(2L), alice.recipes.list().map { it.id } to alice.recipes.bank().map { it.id }, "the same recipes mine and in the bank")
+        assertEquals(listOf(1L) to listOf(2L), alice.recipes.view.list().map { it.id } to alice.recipes.view.bank().map { it.id }, "the same recipes mine and in the bank")
         assertEquals(listOf(3L), scope(2).plan.weekMeals.of(LocalDate.parse(week)).map { it.recipeId })
         driver.close()
     }

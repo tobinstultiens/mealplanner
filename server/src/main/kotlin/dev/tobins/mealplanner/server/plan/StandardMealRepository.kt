@@ -12,19 +12,22 @@ import dev.tobins.mealplanner.server.accounts.ProfileRepository
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.ingredients.IngredientRepository
 import dev.tobins.mealplanner.server.ingredients.StockRepository
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.MyRecipes
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
+import dev.tobins.mealplanner.server.recipes.RecipeEdits
 import dev.tobins.mealplanner.server.writing
 import java.time.LocalDate
 
 /**
  * One account's standard meals (issue 265): the meals of mine it marked as always made from what is at home
- * ([RecipeRepository.setStandard]), offered in one tap where a meal falls away, and put in a slot by hand. The planner
+ * ([RecipeEdits.setStandard]), offered in one tap where a meal falls away, and put in a slot by hand. The planner
  * knows nothing of them: it picks a standard meal in the rotation as any other recipe, and never one for being one.
  * See README, "Standard meals".
  */
 class StandardMealRepository(
     private val db: Database,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
+    private val myRecipes: MyRecipes,
     private val ingredients: IngredientRepository,
     private val stock: StockRepository,
     private val changes: MealChanges,
@@ -64,7 +67,7 @@ class StandardMealRepository(
     fun choose(weekStart: String, day: Int, slot: MealSlot, choice: StandardChoice): StandardChosen {
         val start = parseWeekStart(weekStart)
         return db.writing {
-            val row = recipes.requireMine(choice.recipeId)
+            val row = myRecipes.requireMine(choice.recipeId)
             val candidate = recipes.standardMeals().firstOrNull { it.recipeId == choice.recipeId }
                 ?: throw ConflictException("\"${row.title}\" is not one of your standard meals")
             if (slot !in candidate.slots) throw ConflictException("\"${row.title}\" is not set to be planned as ${slot.name.lowercase()}")
@@ -76,7 +79,7 @@ class StandardMealRepository(
     }
 
     /**
-     * The ingredients of standard meal [recipeId] that the pantry has not at home ([RecipeRepository.standardIngredients]):
+     * The ingredients of standard meal [recipeId] that the pantry has not at home ([RecipeCandidates.standardIngredients]):
      * neither a staple, which is always there, nor on hand for the week ([atHome], [StockRepository.onHandFor]). Marking
      * the meal made them all staples; one is missing when the account took it off the staples since, or the recipe has
      * gained it.

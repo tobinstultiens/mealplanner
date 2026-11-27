@@ -9,7 +9,7 @@ import dev.tobins.mealplanner.server.ingredients.StockRepository
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.dinnerOf
 import dev.tobins.mealplanner.server.plan.WeekMeals.Companion.mealAt
 import dev.tobins.mealplanner.server.recipes.RecipeLines
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeCandidates
 import dev.tobins.mealplanner.server.shopping.gramsUsed
 import dev.tobins.mealplanner.server.shopping.withoutWeighedRow
 import java.time.LocalDate
@@ -23,7 +23,7 @@ class WeekShortfalls(
     private val store: PlanStore,
     private val weekMeals: WeekMeals,
     private val adjustments: MealAdjustments,
-    private val recipes: RecipeRepository,
+    private val recipes: RecipeCandidates,
     private val stock: StockRepository,
 ) {
     /**

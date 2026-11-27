@@ -24,7 +24,9 @@ import kotlin.math.roundToInt
 /** Gathers what a generator should know, runs it, and stores the result as a GENERATED recipe. */
 class GenerationService(
     private val generator: RecipeGenerator,
-    private val recipes: RecipeRepository,
+    private val edits: RecipeEdits,
+    private val view: RecipeView,
+    private val mine: MyRecipes,
     private val ingredients: IngredientRepository,
     private val stock: StockRepository,
     private val profiles: ProfileRepository,
@@ -36,9 +38,9 @@ class GenerationService(
     suspend fun generate(request: GenerateRequest, today: LocalDate = serverToday()): RecipeDetail {
         val context = context(request, today)
         val generated = generator.generate(context)
-        val detail = recipes.create(toInput(generated, request.slot), RecipeSource.GENERATED)
+        val detail = edits.create(toInput(generated, request.slot), RecipeSource.GENERATED)
         // Exact food-name matches are linked now, so the nutrition is as complete as it can be.
-        if (ingredients.autoLink() > 0) return recipes.find(detail.summary.id)!!
+        if (ingredients.autoLink() > 0) return view.find(detail.summary.id)!!
         return detail
     }
 
@@ -63,7 +65,7 @@ class GenerationService(
             onHand = pantry.onHand.filter { it.id in onHandNow }.map { it.name },
             onOffer = onOffer.sorted(),
             recent = weekMeals.recentTitles(today),
-            existing = recipes.allTitles(),
+            existing = mine.allTitles(),
             likes = profiles.profile()?.likes.orEmpty(),
             dislikes = profiles.profile()?.dislikes.orEmpty(),
         )

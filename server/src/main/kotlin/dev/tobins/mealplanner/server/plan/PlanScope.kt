@@ -7,7 +7,7 @@ import dev.tobins.mealplanner.pricing.Pricing
 import dev.tobins.mealplanner.server.accounts.ProfileRepository
 import dev.tobins.mealplanner.server.db.Database
 import dev.tobins.mealplanner.server.ingredients.StockRepository
-import dev.tobins.mealplanner.server.recipes.RecipeRepository
+import dev.tobins.mealplanner.server.recipes.RecipeScope
 import dev.tobins.mealplanner.server.serverToday
 import java.time.LocalDate
 
@@ -19,7 +19,7 @@ import java.time.LocalDate
 class PlanScope(
     db: Database,
     userId: Long,
-    recipes: RecipeRepository,
+    recipes: RecipeScope,
     profiles: ProfileRepository,
     stock: StockRepository,
     /** Offers valid between two dates at every store, grouped by ingredient id. */
@@ -34,15 +34,15 @@ class PlanScope(
     today: () -> LocalDate = ::serverToday,
 ) {
     val store = PlanStore(db, userId)
-    val adjustments = MealAdjustments(db, userId, recipes, recipes.ingredients)
-    val foods = SlotFoods(db, userId, recipes)
-    val weekMeals = WeekMeals(store, recipes, stock, adjustments, foods)
+    val adjustments = MealAdjustments(db, userId, recipes.candidates, recipes.candidates.ingredients)
+    val foods = SlotFoods(db, userId, recipes.candidates)
+    val weekMeals = WeekMeals(store, recipes.candidates, stock, adjustments, foods)
     val keptMeals = KeptMeals(store, weekMeals)
-    val costs = WeekCosts(weekMeals, recipes, stock, adjustments, foods, offersByIngredient, pricing, shops, freshPacks)
+    val costs = WeekCosts(weekMeals, recipes.candidates, stock, adjustments, foods, offersByIngredient, pricing, shops, freshPacks)
     val view = WeekView(store, weekMeals, costs, adjustments, foods, profiles)
-    val shortfalls = WeekShortfalls(store, weekMeals, adjustments, recipes, stock)
-    val weeks = WeekPlans(store, weekMeals, keptMeals, costs, view, recipes, profiles, stock, freshPacks)
-    val eating = Eating(store, weekMeals, view, shortfalls, adjustments, foods, recipes, stock)
-    val changes = MealChanges(store, weekMeals, keptMeals, weeks, eating, view, adjustments, foods, recipes, profiles, stock, today)
+    val shortfalls = WeekShortfalls(store, weekMeals, adjustments, recipes.candidates, stock)
+    val weeks = WeekPlans(store, weekMeals, keptMeals, costs, view, recipes.candidates, recipes.mine, profiles, stock, freshPacks)
+    val eating = Eating(store, weekMeals, view, shortfalls, adjustments, foods, recipes.candidates, stock)
+    val changes = MealChanges(store, weekMeals, keptMeals, weeks, eating, view, adjustments, foods, recipes.candidates, recipes.mine, profiles, stock, today)
     val foodChanges = FoodChanges(store, weekMeals, changes, eating, view, foods)
 }

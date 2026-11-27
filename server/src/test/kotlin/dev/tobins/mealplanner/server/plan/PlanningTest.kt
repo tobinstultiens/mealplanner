@@ -123,8 +123,8 @@ class PlanningTest {
      * one never [tried], it was eaten two weeks before [week]: neither last week's, nor a favourite again.
      */
     private fun recipe(title: String, lines: String, rotation: Boolean = true, tried: Boolean = true, scope: UserScope = alice): Long {
-        val id = scope.recipes.create(RecipeInput(title, 4, lines, "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER))).summary.id
-        if (!rotation) scope.recipes.setRotation(id, RotationInput(false))
+        val id = scope.recipes.edits.create(RecipeInput(title, 4, lines, "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER))).summary.id
+        if (!rotation) scope.recipes.mine.setRotation(id, RotationInput(false))
         if (tried) {
             val (day, slot) = pastMeals % 7 to MealSlot.entries[pastMeals++ / 7]
             db.planQueries.upsertMeal(scope.accountId, start.minusWeeks(2).toString(), day.toLong(), slot.name, id, title, 1.0, 600.0, 40.0, 0, 0, MealStatus.EATEN.name)
@@ -192,7 +192,7 @@ class PlanningTest {
     fun aboutSixSuggestionsEachWithAGroundAPriceAndForAnOfferWhatItSavesAtTheAccountsStoresOnly() {
         (0..7).forEach(::chickenDish)
         (0..3).forEach(::beefDish)
-        val favourite = beefDish(9).also { alice.recipes.setRating(it, 5) }
+        val favourite = beefDish(9).also { alice.recipes.edits.setRating(it, 5) }
 
         val suggestions = suggest()
 
@@ -216,7 +216,7 @@ class PlanningTest {
     @Test
     fun withEnoughRecipesOnOfferToFillTheScreenItStillHoldsRecipesOfTheOtherGrounds() {
         val onOffer = (0..9).map(::chickenDish).toSet()
-        val favourites = (0..1).map { beefDish(it).also { id -> alice.recipes.setRating(id, 5) } }
+        val favourites = (0..1).map { beefDish(it).also { id -> alice.recipes.edits.setRating(id, 5) } }
         val withLettuce = recipe("Beef and lettuce", "1600 | g | Beef\n400 | g | Lettuce")
         alice.stock.setOnHand(lettuce.id, true)
 
@@ -233,7 +233,7 @@ class PlanningTest {
     fun aRecipeNeverPlannedIsSuggestedAsNotTriedYetAndOffersDoNotCrowdItOut() {
         (0..9).forEach(::chickenDish)
         val (rated, unrated) = listOf("New stew", "New soup").map { recipe(it, "1600 | g | Beef", tried = false) }
-        alice.recipes.setRating(rated, 4)
+        alice.recipes.edits.setRating(rated, 4)
         val skippedOnly = recipe("Skipped stew", "1600 | g | Beef", tried = false)
         db.planQueries.upsertMeal(alice.accountId, start.minusWeeks(1).toString(), 0, MealSlot.DINNER.name, skippedOnly, "Skipped stew", 1.0, 600.0, 40.0, 0, 0, MealStatus.SKIPPED.name)
 
@@ -266,7 +266,7 @@ class PlanningTest {
     @Test
     fun notThisWeekHidesARecipeForThisWeekOnlyChangesNothingInTheRotationAndIsForgottenWhenTheWeekIsOver() {
         // Rated, so that they are suggested next week too, when nothing is on offer.
-        val dinners = (0..7).map { chickenDish(it).also { id -> alice.recipes.setRating(id, 5) } }
+        val dinners = (0..7).map { chickenDish(it).also { id -> alice.recipes.edits.setRating(id, 5) } }
         val hidden = suggest().first().recipeId
 
         val planning = alice.planning.hide(week, hidden)
@@ -274,7 +274,7 @@ class PlanningTest {
         assertEquals(listOf(hidden), planning.notThisWeek.map { it.recipeId })
         assertTrue(suggest(count = 20).none { it.recipeId == hidden })
         assertTrue(suggest(count = 20, weekStart = nextWeek).any { it.recipeId == hidden }, "next week it is there")
-        assertTrue(alice.recipes.list().single { it.id == hidden }.inRotation)
+        assertTrue(alice.recipes.view.list().single { it.id == hidden }.inRotation)
         // "Fill the rest" does not plan it either: the user does not want it this week.
         assertTrue(alice.planning.done(week, seed = 3).meals().none { it.recipeId == hidden })
         assertTrue(alice.planning.get(week).notThisWeek.isNotEmpty(), "still hidden after planning the week")
@@ -359,7 +359,7 @@ class PlanningTest {
     @Test
     fun donePutsEveryChosenDinnerOnADayKeepsWhatStaysAndKeepsDinnersSharingAPackWithinItsDays() {
         (0..5).forEach(::beefDish)
-        val batch = recipe("Batch", "1600 | g | Beef").also { alice.recipes.setKeeps(it, RecipeKeeps(days = 3)) }
+        val batch = recipe("Batch", "1600 | g | Beef").also { alice.recipes.edits.setKeeps(it, RecipeKeeps(days = 3)) }
         // Tuesday's dinner eaten, Thursday's locked, and a batch made on Friday for its dinner and Saturday's lunch.
         alice.plan.weeks.generate(week, seed = 1)
         // Recipes of their own for the dinners chosen, which no meal that stays has.
@@ -392,7 +392,7 @@ class PlanningTest {
         val (kept, lost) = listOf("Kept", "Lost").map { recipe(it, "1600 | g | Beef") }
         listOf(kept, lost).forEach { alice.planning.pick(week, it) }
 
-        alice.recipes.update(lost, RecipeInput("Lost", 4, "| | salt to taste", "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER)))
+        alice.recipes.edits.update(lost, RecipeInput("Lost", 4, "| | salt to taste", "Cook.", mealSlots = listOf(MealSlot.LUNCH, MealSlot.DINNER)))
 
         val planning = alice.planning.get(week)
         assertEquals(listOf(kept to true, lost to false), planning.picks.map { it.recipeId to it.plannable })
@@ -516,9 +516,9 @@ class PlanningTest {
     @Test
     fun aLunchOfItsOwnTakesThePlaceOfLeftoversThatLeft() {
         val stew = beefDish(0)
-        val sandwich = alice.recipes.create(RecipeInput("Sandwich", 1, "150 | g | Beef", "Make.", mealSlots = listOf(MealSlot.LUNCH))).summary.id
+        val sandwich = alice.recipes.edits.create(RecipeInput("Sandwich", 1, "150 | g | Beef", "Make.", mealSlots = listOf(MealSlot.LUNCH))).summary.id
         // Monday's dinner is a single serving, with a sandwich on Tuesday; Wednesday's stew leaves leftovers, and Thursday has no lunch.
-        alice.plan.changes.choose(week, 0, MealSlot.DINNER, alice.recipes.create(RecipeInput("Single", 1, "500 | g | Beef", "Cook.")).summary.id)
+        alice.plan.changes.choose(week, 0, MealSlot.DINNER, alice.recipes.edits.create(RecipeInput("Single", 1, "500 | g | Beef", "Cook.")).summary.id)
         alice.plan.changes.choose(week, 1, MealSlot.LUNCH, sandwich)
         alice.plan.changes.setLocked(week, 1, MealSlot.LUNCH, false)
         alice.plan.changes.choose(week, 2, MealSlot.DINNER, stew)
@@ -533,7 +533,7 @@ class PlanningTest {
     @Test
     fun anEatenDinnerAndOneThatMakesABatchStayOnTheirDays() {
         (0..6).forEach(::beefDish)
-        val batch = recipe("Batch", "1600 | g | Beef").also { alice.recipes.setKeeps(it, RecipeKeeps(days = 3)) }
+        val batch = recipe("Batch", "1600 | g | Beef").also { alice.recipes.edits.setKeeps(it, RecipeKeeps(days = 3)) }
         alice.plan.weeks.generate(week, seed = 2)
         alice.plan.eating.setStatus(week, 1, MealSlot.DINNER, MealStatus.EATEN)
         alice.preps.create(week, PrepInput(batch, "2026-11-20", meals = listOf(PrepSlot("2026-11-20", MealSlot.DINNER), PrepSlot("2026-11-21", MealSlot.DINNER))))

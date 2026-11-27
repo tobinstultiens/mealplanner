@@ -22,7 +22,7 @@ class RecipePictures(private val db: Database, root: File, private val userId: L
     data class Outcome(val stored: Int, val unchanged: Int, val removed: Int, val skipped: Int)
 
     /**
-     * Brings the copies of the bank's recipes in line with [pages], after [RecipeRepository.syncCookingSite] stored their
+     * Brings the copies of the bank's recipes in line with [pages], after [BankSync.syncCookingSite] stored their
      * recipes; a recipe taken from the bank keeps the copy it had, as it keeps the rest of what the site had (issue 340).
      * A picture whose file is unchanged (same SHA-256) is left alone; one that cannot be used
      * is logged and remembered by its hash, so it is logged once and not tried again until it changes.
