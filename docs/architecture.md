@@ -205,14 +205,48 @@ Adding a use is a reason to ask where the thing belongs instead.
 - A test is in the package of what it tests, with the same name plus `Test`; an `actual` or a platform file
   is in the package of the code it belongs to.
 
+### A screen's state class
+
+What a screen loads, what it sends to the server and what it shows while that runs or fails is in a class of
+its own, not in the composable: the composable reads the class and tells it what the person did. The class
+is tested without drawing, with a server that answers what the test says. `ShoppingSession`, `RecipeDraft`,
+`ProductDraft` and, the example to follow, `PlanState` (`plan/PlanState.kt`) are such classes.
+
+How the plan screen's is made:
+
+- **The server it asks** is an interface of its own, `PlanServer` (`plan/PlanServer.kt`), with one method per
+  call the screen makes and `ApiClient.planServer()` to make it from the real client. A test gives the class a
+  fake that answers, waits or fails as the test says; `FakeBackend` stays for the tests that draw. The methods
+  throw like the calls they stand for, and the class turns that into what the screen shows (`load`).
+- **A plain class, not a `ViewModel`.** The web client has no `ViewModel`, the screen keeps nothing that must
+  outlive it (what it loaded stays in `ScreenMemory`, which the app already keeps for every screen), and a
+  plain class is made and tested like the others above. It runs in the screen's own coroutine scope, so
+  leaving the screen ends what it was doing, as it always did. The screen makes it with `rememberSaveable`:
+  `PlanState.Place` (the week shown) is what a re-created activity keeps, the rest is loaded again.
+- **What it holds** is what the screen draws and nothing of Compose's drawing: the week as `LoadState` (so
+  that it is kept in `ScreenMemory` and a failed refresh keeps what was shown), the shares in the box, the
+  standard meals, my recipes, whether a change is running (`busy`) and the offer after a skipped meal. Which
+  dialog is open and what is chosen in it stays in the composable: it is what the person is doing, not what
+  was loaded.
+- **What it is told.** The composable calls a function for what the person did (`reroll`, `move`,
+  `toggleLock`, `makePrep`, ...) and runs the loads in `LaunchedEffect`s keyed as before (`refresh`,
+  `refreshSpares`, ...): when to load stays with the composable, how stays with the class. A sentence for the
+  person goes out through a function the screen gives (`say`, the snackbar); a dialog that needs to close
+  when something went through is given a callback to do it.
+- **The check.** `ScreensCallNoServerTest` lists the files of each screen that has a state class and fails
+  when a composable in them calls the server (a call on `api`, or a function of the feature's `*Calls.kt`).
+  A screen that gets a state class is added to its list.
+
+A screen's state class is added to a feature the same way: the calls it needs in a `<Screen>Server` interface
+next to the state, the state in `<Screen>State.kt`, its test in `commonTest` with a fake server.
+
 ### Not done yet
 
 Targets of #381, step by step; the code does not do these yet:
 
-- Many screens still call the server themselves.
-- A screen's loading and saving in a class of its own, tested without drawing, which the composable
-  reads (the plan screen first, #388; the recipe page, #389). `ShoppingSession`, `RecipeDraft` and
-  `ProductDraft` are such classes already.
+- Many screens still call the server themselves, among them the screens the plan screen opens (planning,
+  another dinner, a slot's foods, picking a recipe).
+- The recipe page's state class (#389).
 
 ## Why
 
