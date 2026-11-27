@@ -1,7 +1,9 @@
-// Frozen from v0.1.12 (dd5ad93e7c8489f1199ba88c609352532d2b298f) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
+// Frozen from v0.1.13 (bd9ebd8e6d679057d814bb48ea7186dbd3816907) by scripts/freeze-api.sh. Do not edit: freeze again after a release.
 package dev.tobins.mealplanner.released.api
 
 import dev.tobins.mealplanner.released.recipes.IngredientLine
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /** An entry of the app's ingredient catalogue. */
@@ -21,9 +23,52 @@ data class Ingredient(
     val isStaple: Boolean,
     /** Used in amounts that add next to nothing (herbs, spices, leaveners): left out of nutrition. */
     val negligible: Boolean = false,
+    /**
+     * The unit the ingredient has in the recipe the account saved last (a line saved with the ingredient itself), so
+     * the editor starts a picked one in it; null when no saved recipe has it. Only the list answers it.
+     */
+    val lastUnit: String? = null,
+    /** Nutrition of its own, as a product's label gives it (issue 351): counted in place of [food]'s; null for none. */
+    val label: LabelNutrition? = null,
+    /** Its named portions ("bar" = 45 g), each a unit a recipe line of it can be in, in the order they were given. */
+    val portions: List<Portion> = emptyList(),
+    /**
+     * The names of portions it had and no longer has: a line in one of them is not counted, rather than counted as
+     * pieces, until the portion is given again.
+     */
+    val removedPortions: List<String> = emptyList(),
 )
 
-/** Body for creating or replacing an ingredient. */
+/**
+ * The values of a product's label (issue 351), in 100 g or 100 ml of it as [basis] says; a value the label does not give is
+ * null, which is unknown and not zero. Salt is kept as sodium, as NEVO has it ([dev.tobins.mealplanner.nutrition.Salt]).
+ */
+@Serializable
+data class LabelNutrition(
+    val basis: FoodBasis,
+    val per100: Nutrition,
+    /** Where the values came from ([LabelSource]: `ah:61758`, with `;changed` once corrected by hand); null when typed from the label. */
+    val source: String? = null,
+)
+
+/**
+ * A named portion of an ingredient: "bar" of [grams] g, or for a drink "glass" of [ml] ml; exactly one of the two. A recipe
+ * line of the ingredient in [name] counts as so many of it, weighed when it is counted, so correcting a portion corrects
+ * every recipe that uses it.
+ */
+@Serializable
+data class Portion(
+    val name: String,
+    val grams: Double? = null,
+    val ml: Double? = null,
+)
+
+/**
+ * Body for creating or replacing an ingredient. [label] replaces the values it had (null: none, counted by its NEVO food);
+ * [portions], when given, replaces its portions, and null leaves them as they are. Neither is sent when null, so that the
+ * body the editor sends for a NEVO food is the one a server from before them (refusing fields it does not know) takes.
+ */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class IngredientInput(
     val name: String,
@@ -34,6 +79,10 @@ data class IngredientInput(
     val pricePerKg: Double? = null,
     val isStaple: Boolean = false,
     val negligible: Boolean = false,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val label: LabelNutrition? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val portions: List<Portion>? = null,
 )
 
 /**
