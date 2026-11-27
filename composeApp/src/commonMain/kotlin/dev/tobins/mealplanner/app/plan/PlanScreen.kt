@@ -35,12 +35,12 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextDecoration
@@ -56,11 +56,6 @@ import dev.tobins.mealplanner.api.MealStatus
 import dev.tobins.mealplanner.api.PlanDay
 import dev.tobins.mealplanner.api.PlannedMeal
 import dev.tobins.mealplanner.api.PrepSlot
-import dev.tobins.mealplanner.api.SparePortion
-import dev.tobins.mealplanner.api.SpareMove
-import dev.tobins.mealplanner.api.StandardChosen
-import dev.tobins.mealplanner.api.StandardMeal
-import dev.tobins.mealplanner.api.StandardMeals
 import dev.tobins.mealplanner.api.WeekPlan
 import dev.tobins.mealplanner.app.ApiClient
 import dev.tobins.mealplanner.app.BackHandler
@@ -68,7 +63,6 @@ import dev.tobins.mealplanner.app.LocalStrings
 import dev.tobins.mealplanner.app.Msg
 import dev.tobins.mealplanner.app.RefreshNotice
 import dev.tobins.mealplanner.app.Strings
-import dev.tobins.mealplanner.app.followedDate
 import dev.tobins.mealplanner.app.recipes.GenerateDialog
 import dev.tobins.mealplanner.app.recipes.MealPlace
 import dev.tobins.mealplanner.app.recipes.MealToCook
@@ -76,15 +70,12 @@ import dev.tobins.mealplanner.app.recipes.RecipePhoto
 import dev.tobins.mealplanner.app.recipes.RecipePicker
 import dev.tobins.mealplanner.app.recipes.pictureUrls
 import dev.tobins.mealplanner.app.recipes.recipePicture
-import dev.tobins.mealplanner.app.recipes.rememberMyRecipes
 import dev.tobins.mealplanner.app.recipes.rotationIsEmpty
 import dev.tobins.mealplanner.app.recipes.slotsWithoutRecipes
 import dev.tobins.mealplanner.app.recipes.toCook
 import dev.tobins.mealplanner.app.rememberFrontReturns
-import dev.tobins.mealplanner.app.rememberLoad
+import dev.tobins.mealplanner.app.rememberScreenMemory
 import dev.tobins.mealplanner.app.rememberToday
-import dev.tobins.mealplanner.app.setMealStatus
-import dev.tobins.mealplanner.app.ui.AppError
 import dev.tobins.mealplanner.app.ui.AppIcons
 import dev.tobins.mealplanner.app.ui.BarAction
 import dev.tobins.mealplanner.app.ui.CommonMsg
@@ -98,9 +89,7 @@ import dev.tobins.mealplanner.app.ui.Spacing
 import dev.tobins.mealplanner.app.ui.Spot
 import dev.tobins.mealplanner.app.ui.dayLabel
 import dev.tobins.mealplanner.app.ui.dayMonthLabel
-import dev.tobins.mealplanner.app.ui.failureSentence
 import dev.tobins.mealplanner.app.ui.formatEuro
-import dev.tobins.mealplanner.app.ui.load
 import dev.tobins.mealplanner.app.ui.macrosText
 import dev.tobins.mealplanner.app.ui.mondayOf
 import dev.tobins.mealplanner.app.ui.numeric
@@ -135,20 +124,22 @@ fun PlanScreen(
     val today = rememberToday()
     val now = mondayOf(today)
     val frontReturns = rememberFrontReturns()
-    // The week that was this week when the screen last looked; the shown week follows it when it moves on (see followedDate).
-    var thisWeek by rememberSaveable { mutableStateOf(now) }
-    var weekStart by rememberSaveable { mutableStateOf(startWeek ?: thisWeek) }
-    val loaded = rememberLoad<WeekPlan>("plan:$weekStart")
-    var state by loaded
-    var reload by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
-    var busy by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    // My recipes again whenever the app comes back to the front or a prep is started: what keeps may have been set
+    // What the screen loads, sends and shows while that runs or fails is the state's; the composable draws it. The state
+    // reads the latest day and language when it needs them, and keeps the week for a re-created activity.
+    val latestToday by rememberUpdatedState(today)
+    val latestStrings by rememberUpdatedState(t)
+    val memory = rememberScreenMemory()
+    val server = remember(api) { api.planServer() }
+    fun newState(place: PlanState.Place) = PlanState(server, scope, memory, { latestToday }, { latestStrings }, { snackbar.showSnackbar(it) }, place)
+    val state = rememberSaveable(server, memory, saver = PlanState.saver(::newState)) { newState(PlanState.start(now, startWeek)) }
+    val weekStart = state.weekStart
+    val shown = state.plan
+    // My recipes are asked again whenever the app comes back to the front or a prep is started: what keeps may have been set
     // elsewhere meanwhile, and the Prep dialog offers the recipes that keep (issue 263).
-    var prepsStarted by remember { mutableIntStateOf(0) }
-    val myRecipes by rememberMyRecipes(api, frontReturns to prepsStarted)
+    val myRecipes = state.myRecipes
     val pictures = myRecipes?.let(::pictureUrls).orEmpty()
     // Known once my recipes are: with none of them in the rotation the planner has nothing to pick from, which is why slots stay empty.
     val emptyRotation = myRecipes?.let(::rotationIsEmpty) == true
@@ -156,20 +147,16 @@ fun PlanScreen(
     var generatingFor by remember { mutableStateOf<PlannedMeal?>(null) }
     // The slot a recipe is being chosen for: a planned meal's or an empty one's.
     var choosingFor by remember { mutableStateOf<Pair<Int, MealSlot>?>(null) }
-    // The prep being made (issue 234), the prep being removed with the title of its recipe, and the shares of skipped prepped meals still in the box.
+    // The prep being made (issue 234) and the prep being removed with the title of its recipe.
     // The dialogs stay open across a re-created activity, as the screen keeps its place (issue 263).
     var prepping by rememberSaveable(stateSaver = jsonSaver(PrepChoice.serializer().nullable)) { mutableStateOf(null) }
-    LaunchedEffect(prepping != null) { if (prepping != null) prepsStarted++ }
+    LaunchedEffect(prepping != null) { if (prepping != null) state.prepStarted() }
     // The meal the user asked to take out of the plan, until they confirm: it may be a standard meal the planner put there.
     var removingStandard by remember { mutableStateOf<PlannedMeal?>(null) }
     var removingPrep by rememberSaveable(stateSaver = jsonSaver(PairSerializer(String.serializer(), MealPrep.serializer()).nullable)) { mutableStateOf(null) }
     // The meal a side is being added to from a batch still to make (issue 269), with those batches and the new prep instead.
     var addingSide by rememberSaveable(stateSaver = jsonSaver(AddingSide.serializer().nullable)) { mutableStateOf(null) }
-    var spares by remember { mutableStateOf<List<SparePortion>>(emptyList()) }
     val preppable = myRecipes?.let(::preppable).orEmpty()
-    // The week's standard meals (issue 265), for the skip sheet and the picker, and the meal just skipped with those it offers.
-    var standard by remember(weekStart) { mutableStateOf<StandardMeals?>(null) }
-    var skipped by remember { mutableStateOf<Pair<PlannedMeal, List<StandardMeal>>?>(null) }
     // The week being planned on the planning screen (issue 255), the dinner "Another recipe" suggests others for, and the dinner
     // being moved to another day. They stay open across a re-created activity, as the screen keeps its place.
     var planningWeek by rememberSaveable { mutableStateOf(startWeek.takeIf { startPlanning }) }
@@ -178,81 +165,32 @@ fun PlanScreen(
     // The slot a food is being picked for or changed in (issue 358); it stays open across a re-created activity too.
     var foodAt by rememberSaveable(stateSaver = jsonSaver(FoodPlace.serializer().nullable)) { mutableStateOf(null) }
 
-    /** Asks for the shares in the box today again; a failure leaves the card as it was, as the plan says what went wrong. */
-    suspend fun refreshSpares() {
-        (load { api.spareShares(today) } as? Load.Ready)?.let { spares = it.value }
-    }
-
-    /** Asks for the week's standard meals again, as what the plan holds says which slots can take one; a failure keeps those shown. */
-    suspend fun refreshStandard(): StandardMeals? {
-        (load { api.standardMeals(weekStart) } as? Load.Ready)?.let { standard = it.value }
-        return standard
-    }
-
-    /** Tells which ingredients choosing a standard meal made staples again, so the shopping list names them to restock. */
-    fun sayRestocked(chosen: StandardChosen) {
-        if (chosen.addedStaples.isNotEmpty()) scope.launch { snackbar.showSnackbar(t(PlanMsg.STANDARD_RESTOCK, chosen.addedStaples.joinToString(", "))) }
-    }
-
     LaunchedEffect(now) {
-        if (now != thisWeek) {
-            weekStart = followedDate(thisWeek, weekStart, now)
-            thisWeek = now
-            listState.scrollToItem(0)
-        }
+        if (state.followToday(now)) listState.scrollToItem(0)
     }
-    LaunchedEffect(loaded, reload, frontReturns) { loaded.refresh { api.plan(weekStart) } }
-    LaunchedEffect(reload, frontReturns, today) { refreshSpares() }
-    LaunchedEffect(weekStart, reload, frontReturns) { refreshStandard() }
+    LaunchedEffect(state.loaded, state.reloads, frontReturns) { state.refresh() }
+    LaunchedEffect(state.reloads, frontReturns, today) { state.refreshSpares() }
+    LaunchedEffect(weekStart, state.reloads, frontReturns) { state.refreshStandard() }
+    LaunchedEffect(server, frontReturns, state.prepsStarted) { state.refreshMyRecipes() }
     // The week after the one shown, while the Prep dialog is open: a batch may be eaten into it, as a side next to its meals too.
-    var nextWeek by remember(weekStart) { mutableStateOf<WeekPlan?>(null) }
     LaunchedEffect(prepping != null, weekStart) {
-        if (prepping != null) (load { api.plan(plusDays(weekStart, 7)) } as? Load.Ready)?.let { nextWeek = it.value }
+        if (prepping != null) state.loadNextWeek()
     }
 
     /** Shows another week the user stepped to, from its top. */
     fun show(week: String) {
-        weekStart = week
+        state.show(week)
         scope.launch { listState.scrollToItem(0) }
     }
 
-    /** Runs a change on the server and shows the plan it returns; [then] follows a change that went through. */
-    fun change(then: suspend () -> Unit = {}, action: suspend () -> WeekPlan) {
-        if (busy) return
-        busy = true
-        scope.launch {
-            when (val result = load(action)) {
-                is Load.Ready -> {
-                    state = result
-                    refreshSpares()
-                    refreshStandard()
-                    then()
-                }
-                is Load.Failed -> snackbar.showSnackbar(failureSentence(result))
-                Load.Loading -> Unit
-            }
-            busy = false
-        }
-    }
-
-    /** Shows [plan], which a screen opened over this one made, and what follows from it. */
-    fun showPlanned(plan: WeekPlan) {
-        weekStart = plan.weekStart
-        state = Load.Ready(plan)
-        scope.launch {
-            refreshSpares()
-            refreshStandard()
-        }
-    }
-
     planningWeek?.let { week ->
-        BackHandler(enabled = true) { planningWeek = null; reload++ }
+        BackHandler(enabled = true) { planningWeek = null; state.reload() }
         PlanningScreen(
             api, week,
-            onBack = { planningWeek = null; reload++ },
+            onBack = { planningWeek = null; state.reload() },
             onPlanned = { plan ->
                 planningWeek = null
-                showPlanned(plan)
+                state.showPlanned(plan)
             },
             onOpenRecipes = { planningWeek = null; onOpenRecipes() },
         )
@@ -262,7 +200,7 @@ fun PlanScreen(
         BackHandler(enabled = true) { anotherFor = null }
         AnotherDinnerScreen(api, weekStart, meal, onBack = { anotherFor = null }) { plan ->
             anotherFor = null
-            showPlanned(plan)
+            state.showPlanned(plan)
         }
         return
     }
@@ -271,15 +209,15 @@ fun PlanScreen(
         BackHandler(enabled = true) { foodAt = null }
         SlotFoodScreen(api, weekStart, place, onBack = { foodAt = null }) { plan ->
             foodAt = null
-            showPlanned(plan)
+            state.showPlanned(plan)
         }
         return
     }
 
     moving?.let { meal ->
-        MoveDinnerDialog(meal, (state as? Load.Ready)?.value, today, onDismiss = { moving = null }) { toDay ->
+        MoveDinnerDialog(meal, (shown as? Load.Ready)?.value, today, onDismiss = { moving = null }) { toDay ->
             moving = null
-            change { api.moveDinner(weekStart, meal.day, toDay) }
+            state.move(meal, toDay)
         }
     }
 
@@ -289,15 +227,15 @@ fun PlanScreen(
             fixedSlot = meal.slot,
             title = t(PlanMsg.PLAN_NEW_FOR, t.slot(meal.slot), dayLabel(plusDays(weekStart, meal.day), t.locale)),
         ) { request ->
-            state = Load.Ready(api.generateIntoPlan(weekStart, meal.day, meal.slot, request))
+            state.generate(meal, request)
             generatingFor = null
         }
     }
 
     choosingFor?.let { (day, slot) ->
-        val inSlot = (state as? Load.Ready)?.value?.days?.getOrNull(day)?.meals?.firstOrNull { it.slot == slot }
+        val inSlot = (shown as? Load.Ready)?.value?.days?.getOrNull(day)?.meals?.firstOrNull { it.slot == slot }
         // A standard meal goes in by its own route, which keeps a skipped prepped meal's share in the box (issue 265).
-        val standardIds = standardChoices(standard, day, slot).mapTo(HashSet()) { it.recipeId }
+        val standardIds = standardChoices(state.standard, day, slot).mapTo(HashSet()) { it.recipeId }
         RecipePicker(
             api, slot,
             title = t(PlanMsg.PLAN_CHOOSE_FOR, t.slot(slot), dayLabel(plusDays(weekStart, day), t.locale)),
@@ -307,44 +245,20 @@ fun PlanScreen(
             onBrowseBank = { choosingFor = null; onOpenBank() },
         ) { recipe ->
             // A refusal (such as "this meal was eaten already") or a server from before the route: the picker shows why and stays open.
-            val result = if (recipe.id in standardIds) {
-                load { api.chooseStandard(weekStart, day, slot, recipe.id, eaten = false).also(::sayRestocked).plan }
-            } else {
-                load { api.chooseRecipe(weekStart, day, slot, recipe.id) }
-            }
-            when (result) {
-                is Load.Ready -> {
-                    state = Load.Ready(result.value ?: throw AppError(t(PlanMsg.PLAN_CHOOSE_UNSUPPORTED)))
-                    choosingFor = null
-                    refreshSpares()
-                    refreshStandard()
-                }
-                is Load.Failed -> throw AppError(failureSentence(result))
-                Load.Loading -> Unit
-            }
+            state.choose(day, slot, recipe.id, standardIds) { choosingFor = null }
         }
     }
 
-    skipped?.let { (meal, choices) ->
-        SkipSheet(meal.shownTitle(t), choices, enabled = !busy, onDismiss = { skipped = null }) { choice ->
-            skipped = null
-            change { api.chooseStandard(weekStart, meal.day, meal.slot, choice.recipeId, eaten = false).also(::sayRestocked).plan }
+    state.skipped?.let { (meal, choices) ->
+        SkipSheet(meal.shownTitle(t), choices, enabled = !state.busy, onDismiss = state::dismissSkipped) { choice ->
+            state.chooseInPlaceOfSkipped(meal, choice)
         }
     }
 
     prepping?.let { start ->
-        val hosts = sideHosts((state as? Load.Ready)?.value, nextWeek)
+        val hosts = sideHosts((shown as? Load.Ready)?.value, state.nextWeek)
         PrepDialog(start, weekDays = prepDays(weekStart, today), recipes = preppable, hosts = hosts, onDismiss = { prepping = null }) { input ->
-            when (val result = load { api.createPrep(weekStart, input) }) {
-                is Load.Ready -> {
-                    state = result
-                    prepping = null
-                    refreshSpares()
-                    null
-                }
-                is Load.Failed -> failureSentence(result)
-                Load.Loading -> null
-            }
+            state.makePrep(input) { prepping = null }
         }
     }
 
@@ -354,15 +268,7 @@ fun PlanScreen(
             onDismiss = { addingSide = null },
             onNewPrep = { addingSide = null; prepping = adding.newPrep },
         ) { batch, portions ->
-            when (val result = load { api.addSide(weekStart, batch.prep.id, adding.slot.copy(side = portions)) }) {
-                is Load.Ready -> {
-                    state = result
-                    addingSide = null
-                    null
-                }
-                is Load.Failed -> failureSentence(result)
-                Load.Loading -> null
-            }
+            state.addSide(batch.prep.id, adding.slot.copy(side = portions)) { addingSide = null }
         }
     }
 
@@ -374,7 +280,7 @@ fun PlanScreen(
             confirmButton = {
                 TextButton(onClick = {
                     removingStandard = null
-                    change { api.removeMeal(weekStart, meal.day, meal.slot) }
+                    state.remove(meal)
                 }) { Text(t(CommonMsg.REMOVE)) }
             },
             dismissButton = { TextButton(onClick = { removingStandard = null }) { Text(t(CommonMsg.CANCEL)) } },
@@ -384,7 +290,7 @@ fun PlanScreen(
     removingPrep?.let { (title, prep) ->
         RemovePrepDialog(title, prep, onDismiss = { removingPrep = null }) {
             removingPrep = null
-            change { api.removePrep(weekStart, prep.id) }
+            state.removePrep(prep)
         }
     }
 
@@ -403,10 +309,10 @@ fun PlanScreen(
             )
         },
         // The line has a place of its own: the content ends above it, and snackbars show above it.
-        bottomBar = { RefreshNotice(loaded) { reload++ } },
+        bottomBar = { RefreshNotice(state.loaded) { state.reload() } },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        when (val current = state) {
+        when (val current = shown) {
             Load.Loading -> LoadingState(Modifier.padding(padding))
             is Load.Failed -> Column(Modifier.padding(padding)) {
                 if (current.status == 409) {
@@ -417,7 +323,7 @@ fun PlanScreen(
                         onAction = onOpenProfile,
                     )
                 } else {
-                    ErrorMessage(t(PlanMsg.PLAN_LOAD_FAILED), current) { reload++ }
+                    ErrorMessage(t(PlanMsg.PLAN_LOAD_FAILED), current) { state.reload() }
                 }
             }
             is Load.Ready -> {
@@ -454,12 +360,12 @@ fun PlanScreen(
                             }
                             restLine(plan.rest, t)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                             // The planning screen (issue 255) in place of planning in one go; with dinners chosen and not on days yet, it goes on.
-                            Button(enabled = !busy, onClick = { planningWeek = weekStart }) {
+                            Button(enabled = !state.busy, onClick = { planningWeek = weekStart }) {
                                 Text(if (plan.dinnersChosen > 0) t.plural(PlanPlural.CONTINUE_PLANNING, plan.dinnersChosen) else t(PlanMsg.PLAN_THE_WEEK))
                             }
                             // A prep is made today or later: a week that is over has no day for it.
                             val days = prepDays(weekStart, today)
-                            TextButton(enabled = !busy && days.isNotEmpty(), onClick = { prepping = newPrep(preppable, days, today) }) {
+                            TextButton(enabled = !state.busy && days.isNotEmpty(), onClick = { prepping = newPrep(preppable, days, today) }) {
                                 Text(t(PlanMsg.PREP_A_RECIPE))
                             }
                             if (plan.emptySlots.isNotEmpty() && emptyRotation) {
@@ -479,11 +385,9 @@ fun PlanScreen(
                             }
                         }
                     }
-                    for (spare in sparesShown(spares, weekStart, today)) {
+                    for (spare in sparesShown(state.spares, weekStart, today)) {
                         item(key = "spare:${spare.prepId}:${spare.skipped.date}:${spare.skipped.slot}") {
-                            SpareCard(spare, today, enabled = !busy) { slot ->
-                                change { api.eatSpare(weekStart, spare.prepId, SpareMove(spare.skipped, slot)) }
-                            }
+                            SpareCard(spare, today, enabled = !state.busy) { slot -> state.eatSpare(spare, slot) }
                         }
                     }
                     if (!hasMeals) {
@@ -500,34 +404,21 @@ fun PlanScreen(
                                 targets = plan.targets,
                                 // A slot is offered on every day that has no meal in it.
                                 missingSlots = MealSlot.entries.filter { slot -> day.meals.none { it.slot == slot } },
-                                enabled = !busy,
+                                enabled = !state.busy,
                                 pictures = pictures,
                                 preppable = preppable.mapTo(HashSet()) { it.id },
                                 growable = { meal -> growable(plan, meal, today) },
                                 onOpenRecipe = { meal -> onOpenRecipe(meal.recipeId, meal.toCook(weekStart)) },
                                 onOpenSide = { meal, side -> onOpenRecipe(side.recipeId, side.toCook(meal.status == MealStatus.SKIPPED)) },
                                 // A dinner gets the suggestions of the planning screen for it (issue 255); another meal, the planner's next choice.
-                                onReroll = { meal ->
-                                    if (meal.slot == MealSlot.DINNER) anotherFor = meal else change { api.rerollMeal(weekStart, meal.day, meal.slot) }
-                                },
+                                onReroll = { meal -> if (meal.slot == MealSlot.DINNER) anotherFor = meal else state.reroll(meal) },
                                 onMove = { meal -> moving = meal },
                                 onGenerate = { meal -> generatingFor = meal },
                                 onChoose = { day, slot -> choosingFor = day to slot },
-                                onToggleSkipped = { meal ->
-                                    val status = if (meal.status == MealStatus.SKIPPED) MealStatus.PLANNED else MealStatus.SKIPPED
-                                    // Skipped, the standard meals for its slot are offered at once, unless none can take its place.
-                                    val offer: suspend () -> Unit = {
-                                        val choices = standardChoices(standard, meal.day, meal.slot, skipped = meal.recipeId)
-                                        if (status == MealStatus.SKIPPED && choices.isNotEmpty()) skipped = meal to choices
-                                    }
-                                    change(then = offer) {
-                                        api.setMealStatus(weekStart, meal.day, meal.slot, status)
-                                        api.plan(weekStart)
-                                    }
-                                },
-                                onToggleLock = { meal -> change { api.setMealLocked(weekStart, meal.day, meal.slot, !meal.locked) } },
+                                onToggleSkipped = state::toggleSkipped,
+                                onToggleLock = state::toggleLock,
                                 // A standard meal placed by hand goes again; one placed over a skipped prepped meal brings it back.
-                                standardRecipes = standard?.meals?.mapTo(HashSet()) { it.recipeId }.orEmpty(),
+                                standardRecipes = state.standard?.meals?.mapTo(HashSet()) { it.recipeId }.orEmpty(),
                                 onRemove = { meal -> removingStandard = meal },
                                 onAdjust = { meal -> onAdjust(MealPlace(weekStart, meal.day, meal.slot)) },
                                 onPrep = { meal ->
@@ -542,10 +433,10 @@ fun PlanScreen(
                                     val batches = growable(plan, meal, today)
                                     if (batches.isEmpty()) prepping = newPrep else addingSide = AddingSide(PrepSlot(date, meal.slot), batches, newPrep)
                                 },
-                                onRemoveSide = { meal -> change { api.removeSide(weekStart, meal.day, meal.slot) } },
+                                onRemoveSide = state::removeSide,
                                 onAddFood = { day, slot -> foodAt = FoodPlace(day, slot) },
                                 onOpenFood = { meal, food -> foodAt = FoodPlace(meal.day, meal.slot, food) },
-                                onRemoveFoods = { meal -> change { api.removeMeal(weekStart, meal.day, meal.slot) } },
+                                onRemoveFoods = state::remove,
                             )
                         }
                     }
