@@ -145,6 +145,18 @@ class PrepScreensTest {
     }
 
     @Test
+    fun aWeekPlannedPartlyByHandNamesOnlyTheSlotsNoRecipeIsFor() {
+        api.close()
+        backend.close()
+        // The server names every slot without a meal; the account has lunch and dinner recipes, none for breakfast or a snack.
+        backend = FakeBackend(false, false, false, false, emptySlots = listOf(MealSlot.BREAKFAST, MealSlot.DINNER, MealSlot.SNACK))
+        api = ApiClient(backend.settings)
+        showPlan()
+        // The whole sentence: "dinner" is not in it.
+        waitFor("No recipes yet for: breakfast, snack. Days stay")
+    }
+
+    @Test
     fun anOpenPrepDialogKeepsItsChoicesWhenTheActivityIsMadeAgain() {
         showPlan()
         compose.onNodeWithText("Prep a recipe…").performClick()

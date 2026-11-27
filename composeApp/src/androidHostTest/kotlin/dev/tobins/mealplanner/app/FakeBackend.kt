@@ -147,6 +147,8 @@ class FakeBackend(
     private val mixed: Boolean = false,
     /** The week holding only Monday's lunch of the chicken thighs prepped the Sunday before ([tailPrep]), not planned yet (issue 263). */
     private val tailOnly: Boolean = false,
+    /** The slots the week names as empty although it has meals, as one planned partly by hand: the server names every slot without a meal (issue 374). */
+    private val emptySlots: List<MealSlot> = emptyList(),
     /** The week says what fresh ingredients it leaves over (issue 244): five rests, so the line says "and 2 more". */
     private val weekRest: Boolean = false,
     /** The prep of [prepped] kept vacuum sealed rather than in a box, which its labels say (issue 263). */
@@ -830,7 +832,7 @@ class FakeBackend(
         weekStart = weekStart,
         targets = targets,
         days = (0..6).map { if (emptyWeek) PlanDay(plusDays(weekStart, it), emptyList(), 0.0, 0.0, 0.0) else planDay(it) },
-        emptySlots = if (emptyWeek) MealSlot.entries else emptyList(),
+        emptySlots = if (emptyWeek) MealSlot.entries else emptySlots,
         batchesToMake = if (growing) listOf(BatchToMake(2, "Chickpea salad with feta and roasted peppers", growingPrep)) else emptyList(),
         dinnersChosen = if (planning) picks.size else 0,
         cost = if (emptyWeek) null else 61.40,

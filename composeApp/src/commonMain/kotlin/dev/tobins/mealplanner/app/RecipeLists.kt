@@ -1,5 +1,6 @@
 package dev.tobins.mealplanner.app
 
+import dev.tobins.mealplanner.api.MealSlot
 import dev.tobins.mealplanner.api.RecipeKind
 import dev.tobins.mealplanner.api.RecipeSource
 import dev.tobins.mealplanner.api.RecipeSummary
@@ -79,3 +80,10 @@ internal fun List<RecipeSummary>.replacing(updated: RecipeSummary): List<RecipeS
 
 /** Whether the planner has nothing to pick from: none of my recipes is a meal in the rotation. */
 internal fun rotationIsEmpty(mine: List<RecipeSummary>): Boolean = mine.none { it.inRotation && it.kind == RecipeKind.MEAL }
+
+/**
+ * Of the slots the plan left empty ([empty]), those none of my meals is made for: only for these is "no recipes yet"
+ * true. A slot can also be empty because the week was only half planned by hand or because the recipes did not fit.
+ */
+internal fun slotsWithoutRecipes(empty: List<MealSlot>, mine: List<RecipeSummary>): List<MealSlot> =
+    empty.filter { slot -> mine.none { it.kind == RecipeKind.MEAL && slot in it.mealSlots } }
