@@ -1,6 +1,8 @@
 package dev.tobins.mealplanner.server
 
-import dev.tobins.mealplanner.server.generation.GenerationException
+import dev.tobins.mealplanner.server.accounts.LoginRefusedException
+import dev.tobins.mealplanner.server.accounts.RegistrationRefusedException
+import dev.tobins.mealplanner.server.recipes.generation.GenerationException
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall

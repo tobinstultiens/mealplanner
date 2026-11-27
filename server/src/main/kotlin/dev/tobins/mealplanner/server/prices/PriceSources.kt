@@ -1,9 +1,9 @@
 package dev.tobins.mealplanner.server.prices
 
 import dev.tobins.mealplanner.api.Store
-import dev.tobins.mealplanner.server.offers.AhApp
-import dev.tobins.mealplanner.server.offers.AhParser
-import dev.tobins.mealplanner.server.offers.ok
+import dev.tobins.mealplanner.server.prices.offers.AhApp
+import dev.tobins.mealplanner.server.prices.offers.AhParser
+import dev.tobins.mealplanner.server.prices.offers.ok
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
 import kotlinx.serialization.json.Json

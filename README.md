@@ -10,6 +10,9 @@ using weekly offers from AH, Jumbo and Lidl and recipes from the cooking site.
 | `composeApp` | Compose Multiplatform UI for Android and the web (WebAssembly). |
 | `androidApp` | Thin Android application that hosts `composeApp`. |
 
+Server and app are ordered by feature (`plan`, `shopping`, `recipes`, `ingredients`, `prices`,
+`tracking`, `accounts`); [docs/architecture.md](docs/architecture.md) says how, and where a new file goes.
+
 ## Requirements
 
 - JDK 17 to run Gradle (`JAVA_HOME=/usr/lib/jvm/java-17-openjdk` on this machine).

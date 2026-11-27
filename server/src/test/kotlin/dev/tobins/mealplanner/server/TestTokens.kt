@@ -1,6 +1,9 @@
 package dev.tobins.mealplanner.server
 
 import dev.tobins.mealplanner.api.AuthConfig
+import dev.tobins.mealplanner.server.accounts.Identity
+import dev.tobins.mealplanner.server.accounts.LOGIN_SCOPES
+import dev.tobins.mealplanner.server.accounts.TokenVerifier
 
 /**
  * Stands in for Authelia in tests: any token is valid and names its account ("t" is the

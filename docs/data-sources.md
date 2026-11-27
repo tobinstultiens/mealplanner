@@ -11,7 +11,7 @@ official API, so each can change without notice.
 | Jumbo | Offers page `www.jumbo.com/aanbiedingen/nu` | Promotion title, subtitle, tag text ("voor 9,99", "2e gratis"), start and end date | Promotion level, no original price |
 | Lidl | Offers page `www.lidl.nl/c/aanbiedingen/…` | Product, price, pack size, in-store dates, category | Old price only on some items |
 
-How the server uses them (`server/src/main/kotlin/.../offers/`): every six hours it fetches each
+How the server uses them (`server/src/main/kotlin/.../prices/offers/`): every six hours it fetches each
 store whose last successful fetch is over a day old; `POST /api/offers/refresh` fetches all at once.
 A store that fails keeps its previous offers and reports the error under `/api/offers`. When that error cannot be recorded either (the database stayed
 busy), it is only logged and the next store is fetched all the same; `/health/data` shows the store as
@@ -313,7 +313,7 @@ app says so.
 
 So that a later step can tell a good deal from an ordinary one ("this 2+1 pays 67 %, and it is 1+1 about
 every four weeks"), the server keeps what the stores offered and what the regular prices were, over time
-(`PriceHistory.sq`, `PriceHistoryRepository`, `history/PriceChanges.kt`). It is shared by every account like
+(`PriceHistory.sq`, `PriceHistoryRepository`, `prices/history/PriceChanges.kt`). It is shared by every account like
 the offers and prices, written only by the server's own refreshes, and read only for the verdicts on offers (below,
 "Is it a good deal?").
 History starts on the first refresh after version 13 of the database; nothing from before is kept.
@@ -420,7 +420,7 @@ many have a category, an address and a price per litre, the recordings and timin
 ### Is it a good deal?
 
 For each of an account's offers, the server says whether it is a good deal compared with the same product's own
-history at the same store (`history/DealVerdict.kt`, `history/OfferPeriods.kt`, `history/RegularPrices.kt`,
+history at the same store (`prices/history/DealVerdict.kt`, `prices/history/OfferPeriods.kt`, `prices/history/RegularPrices.kt`,
 `DealVerdictRepository`). The app gets them with the offers (issue 118, step c): each judged offer of `GET /api/offers`
 for today and of every answer that carries the week's shopping list has its verdict as `Offer.verdict` (`PriceVerdict`,
 an optional field of the shared API, below "In the app"), so the list the app keeps for the store, where it may have no
@@ -458,7 +458,7 @@ the next). Telling products apart by it would make every week of a Jumbo product
 apart by the pack (the owner's decision, issue 197); two products under one title and one pack would still share a
 history.
 
-**Markup in store texts** (`offers/StoreText.kt`, issue 320). The parsers take the markup out of an offer's title and pack
+**Markup in store texts** (`prices/offers/StoreText.kt`, issue 320). The parsers take the markup out of an offer's title and pack
 text where they read it from the store: a `<br>` line break becomes " · ", other tags go, character references such as
 `&amp;` are decoded. Every screen and the shopping list get the clean text. Rows of the price history recorded before
 keep the store's text; their keys are read through the same cleaning (`ProductKey.recorded`), so their periods continue.
@@ -467,7 +467,7 @@ A recorded title is found the same way: `selectOfferPeriods` looks rows up by th
 cleaned, so a title recorded with a tag, a `<br>` or a character reference still gives its product's earlier periods to
 the verdict. No row is changed.
 
-**Which texts are one pack** (`history/Packs.kt`, issue 118). A pack written another way one week would start a history
+**Which texts are one pack** (`prices/history/Packs.kt`, issue 118). A pack written another way one week would start a history
 of its own and stay "not enough history" for longer, so when the history is read (never when it is written: the rows
 keep the store's text) the pack texts of one product are compared without:
 - markup and Jumbo's footnotes, the lines of a subtitle after a line break that start with "M.u.v." (what the deal leaves
@@ -503,7 +503,7 @@ store dates include today, it is not today's offer, and it is shown today: it ha
 and it is named in the summary; of today's pack, it counts against today's (rules 2 and 6). An offer is *earlier* when
 it is not today's offer and it ended: its store dates ended before today, or it ended early, dated over today but no
 longer shown. Only earlier offers of today's pack are compared with. Each row of this table is a test in
-`history/OfferPeriodsTest.kt` or `history/VerdictPropertiesTest.kt`. The latter checks the properties behind the
+`prices/history/OfferPeriodsTest.kt` or `prices/history/VerdictPropertiesTest.kt`. The latter checks the properties behind the
 rules on 600 made-up histories (fixed seeds, under two seconds; packs by weight, by pieces and without a size), which
 include offers dated over months and from before the first read, other deals running alongside for weeks, looked-up
 regular prices, two prices without deal text on the same dates (Lidl's change mid-week), offers the store stopped
@@ -590,7 +590,7 @@ changes the verdict. Only the price of an amount of the same stuff says which pa
 or a share, which say nothing across packs, and never the price of a piece (the owner, issue 197): two products under
 one title, such as Jumbo's "Braadpan gietijzer" of 14 and of 24 cm, are pieces of different worth.
 
-**The rules,** in this order (the constants are named in `history/DealVerdict.kt` and `history/RegularPrices.kt`):
+**The rules,** in this order (the constants are named in `prices/history/DealVerdict.kt` and `prices/history/RegularPrices.kt`):
 1. *Not a deal* (`NOT_A_DEAL`): the regular price of the same pack went up in the 30 days before the offer began, and
    with the deal a pack costs at least 97 % of what it cost before. "Before" is the lowest regular price seen in those 30
    days (`REFERENCE_DAYS`), as the EU asks of a shop announcing a reduction (Directive 98/6/EC, article 6a); 97 % is the
@@ -1395,7 +1395,7 @@ NEVO. `LabelNutrition.source` says where the values came from; it is empty for v
 The product's form can fill itself from a lookup; the person checks the values against the pack and saves. A lookup
 saves nothing: the values found for one product differed between the two sources for six of seven products tried
 (issue 339, step 0, 26 November 2026), so they are a suggestion, not a fact. The server asks the sources; the app asks
-only the server (`server/.../products/`). Routes, all as of 26 November 2026, confirmed by hand that day:
+only the server (`server/.../ingredients/products/`). Routes, all as of 26 November 2026, confirmed by hand that day:
 
 - **AH, by name:** the app's product search, `GET /mobile-services/product/search/v2?query=…&sortOn=RELEVANCE&size=15`
   with the anonymous token and headers of the offers (`AhApp`). Of each product: `webshopId`, `title`, `brand`,

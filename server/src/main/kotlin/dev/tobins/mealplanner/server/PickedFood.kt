@@ -8,6 +8,9 @@ import dev.tobins.mealplanner.nutrition.portionKey
 import dev.tobins.mealplanner.nutrition.units
 import dev.tobins.mealplanner.recipes.IngredientLine
 import dev.tobins.mealplanner.recipes.toIngredientLine
+import dev.tobins.mealplanner.server.plan.MealAdjustments
+import dev.tobins.mealplanner.server.plan.SlotFoods
+import dev.tobins.mealplanner.server.tracking.TrackingRepository
 
 /*
  * A food of the account's catalogue picked in an amount of one of its units: what a slot of the plan holds (issue 358,
