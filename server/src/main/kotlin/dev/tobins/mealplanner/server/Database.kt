@@ -3,6 +3,9 @@ package dev.tobins.mealplanner.server
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.ingredients.StockRepository
+import dev.tobins.mealplanner.server.plan.PlanRepository
+import dev.tobins.mealplanner.server.shopping.ShoppingListRepository
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.time.Duration

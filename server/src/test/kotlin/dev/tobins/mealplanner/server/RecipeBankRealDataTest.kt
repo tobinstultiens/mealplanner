@@ -2,7 +2,11 @@ package dev.tobins.mealplanner.server
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import dev.tobins.mealplanner.api.RecipeSource
+import dev.tobins.mealplanner.server.accounts.UserRepository
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.ingredients.FoodRepository
+import dev.tobins.mealplanner.server.prices.OfferRepository
+import dev.tobins.mealplanner.server.prices.PriceRepository
 import java.io.File
 import java.sql.DriverManager
 import java.util.Properties

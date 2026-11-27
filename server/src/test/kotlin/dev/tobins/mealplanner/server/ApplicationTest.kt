@@ -4,6 +4,9 @@ import dev.tobins.mealplanner.DataHealth
 import dev.tobins.mealplanner.Health
 import dev.tobins.mealplanner.api.Store
 import dev.tobins.mealplanner.server.db.Database
+import dev.tobins.mealplanner.server.ingredients.FoodRepository
+import dev.tobins.mealplanner.server.prices.OfferRepository
+import dev.tobins.mealplanner.server.prices.PriceRepository
 import dev.tobins.mealplanner.server.prices.PriceSource
 import dev.tobins.mealplanner.server.prices.StoreProduct
 import java.time.Duration

@@ -27,7 +27,15 @@ import app.cash.sqldelight.db.SqlSchema
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import dev.tobins.mealplanner.recipes.HugoRecipeParser
 import dev.tobins.mealplanner.server.db.Database
-import dev.tobins.mealplanner.server.offers.OfferSource
+import dev.tobins.mealplanner.server.ingredients.FoodRepository
+import dev.tobins.mealplanner.server.ingredients.IngredientRepository
+import dev.tobins.mealplanner.server.ingredients.MealRef
+import dev.tobins.mealplanner.server.ingredients.StockRepository
+import dev.tobins.mealplanner.server.ingredients.StockSource
+import dev.tobins.mealplanner.server.prices.OfferRepository
+import dev.tobins.mealplanner.server.prices.PriceRepository
+import dev.tobins.mealplanner.server.prices.offers.OfferSource
+import dev.tobins.mealplanner.server.recipes.SitePage
 import kotlinx.coroutines.runBlocking
 import java.sql.DriverManager
 import java.sql.Statement
